@@ -351,7 +351,7 @@ class DeployTests(unittest.TestCase):
 
     def test_the_installer_shows_what_home_assistant_names(self):
         args = argparse.Namespace(assistant=None, wake_word=None, room=None, room_dashboard=None, voice_extras=None,
-                                  no_questions=False)
+                                  calendars=None, no_questions=False)
         said = []
         asker = Asker(interactive=True, ask=lambda _: "", say=said.append)
         with mock.patch.object(show_cli, "_asker", return_value=asker):
@@ -564,6 +564,169 @@ class RoomTests(unittest.TestCase):
         with self.assertRaises(ValueError) as cm:
             ha._ws_exchange(Sock(), "ha:8123", TOKEN, {"type": "x"}, key="dGhlIHNhbXBsZSBub25jZQ==")
         self.assertNotIn(TOKEN, str(cm.exception))
+
+
+class FakeCalendarHA(FakeHA):
+    """FakeHA with Home Assistant's CalDAV form and the Show's calendar_sources action."""
+
+    def __init__(self, *, calendars=(), caldav_error=None, caldav_brings=("calendar.personal",), **kw):
+        super().__init__(**kw)
+        self.calendars = {c: c.split(".", 1)[1].title() for c in calendars}
+        self.caldav_error = caldav_error
+        self.caldav_brings = caldav_brings
+        self.saved = []
+
+    def request(self, method, path, body=None):
+        if method == "POST" and path == "/api/config/config_entries/flow" and body["handler"] == "caldav":
+            self.calls.append((method, path, body))
+            return {"type": "form", "flow_id": "C1", "step_id": "user", "errors": {}}
+        if method == "POST" and path == "/api/config/config_entries/flow/C1":
+            self.calls.append((method, path, body))
+            if self.caldav_error:
+                return {"type": "form", "flow_id": "C1", "step_id": "user", "errors": {"base": self.caldav_error}}
+            for c in self.caldav_brings:
+                self.calendars[c] = c.split(".", 1)[1].title()
+            return {"type": "create_entry", "result": {"entry_id": "CAL1"}}
+        if path == "/api/states" and method == "GET":
+            return super().request(method, path, body) + [
+                {"entity_id": c, "state": "off", "attributes": {"friendly_name": n}} for c, n in self.calendars.items()]
+        if path == "/api/services" and method == "GET":
+            listed = super().request(method, path, body)
+            listed[1]["services"]["jarvis_show_5_calendar_sources"] = {}
+            return listed
+        return super().request(method, path, body)
+
+    def ws(self, message):
+        if message["type"] == "lovelace/config/save":
+            self.saved.append(message)
+            return {}
+        return super().ws(message)
+
+    def sources(self):
+        return [b for p, b in self.posted("/api/services/esphome/jarvis_show_5_calendar_sources")]
+
+
+ACCOUNT = ha.CalDAVAccount(url="https://cloud.example.org/remote.php/dav", username="jo", password="app-pass-123")
+
+
+class CalendarTests(unittest.TestCase):
+    def test_an_account_from_the_switches_is_added_and_its_calendar_shown(self):
+        fake = FakeCalendarHA()
+        _, log = run_deploy(fake, host="10.0.0.9", caldav=ACCOUNT, calendars="calendar.personal")
+        self.assertEqual(fake.posted("/api/config/config_entries/flow/C1")[0][1],
+                         {"url": ACCOUNT.url, "username": "jo", "password": "app-pass-123", "verify_ssl": True})
+        self.assertEqual(fake.sources(), [{"calendars": "calendar.personal"}])
+        self.assertIn("CalDAV account jo added", log)
+        self.assertIn("its calendars in Home Assistant: calendar.personal", log)
+        for line in log:
+            self.assertNotIn("app-pass-123", line)
+        self.assertNotIn("app-pass-123", repr(ACCOUNT))
+
+    def test_a_refused_password_is_said_and_nothing_else_breaks(self):
+        fake = FakeCalendarHA(caldav_error="invalid_auth")
+        _, log = run_deploy(fake, host="10.0.0.9", caldav=ACCOUNT)
+        self.assertTrue(any("refused the user name or password" in line for line in log))
+        self.assertIn(("DELETE", "/api/config/config_entries/flow/C1", None), fake.calls)
+        self.assertEqual(fake.sources(), [])
+        self.assertTrue(any("has no calendar" in line for line in log))
+
+    def test_asked_for_an_account_only_when_the_question_is_said_yes_to(self):
+        for answer, added in (("yes", True), ("no", False), (None, False)):
+            fake = FakeCalendarHA()
+            asked = []
+
+            def choose(label, current, options, names=None):
+                asked.append(label)
+                return {"calendar account": answer, "calendars": "all"}.get(label)
+            _, log = run_deploy(fake, choose=choose, host="10.0.0.9", voice_extras=False,
+                                ask_caldav=lambda: asked.append("account") or ACCOUNT)
+            self.assertEqual("account" in asked, added, answer)
+            self.assertEqual(bool(fake.posted("/api/config/config_entries/flow/C1")), added)
+            self.assertEqual(fake.sources(), [{"calendars": "calendar.personal"}] if added else [])
+
+    def test_the_calendars_offered_are_the_ones_there(self):
+        fake = FakeCalendarHA(calendars=("calendar.familie", "calendar.arbeit"))
+        offered = {}
+
+        def choose(label, current, options, names=None):
+            offered[label] = (options, names)
+            return {"calendars": "calendar.familie"}.get(label)
+        run_deploy(fake, choose=choose, host="10.0.0.9", voice_extras=False)
+        self.assertNotIn("calendar account", offered)  # nobody to ask for one
+        self.assertEqual(offered["calendars"][0], ["all", "calendar.arbeit", "calendar.familie"])
+        self.assertEqual(offered["calendars"][1]["calendar.familie"], "Familie (calendar.familie)")
+        self.assertEqual(fake.sources(), [{"calendars": "calendar.familie"}])
+
+        fake = FakeCalendarHA(calendars=("calendar.familie", "calendar.arbeit"))
+        run_deploy(fake, choose=lambda label, *_: "all" if label == "calendars" else None, host="10.0.0.9",
+                   voice_extras=False)
+        self.assertEqual(fake.sources(), [{"calendars": "calendar.arbeit, calendar.familie"}])
+
+    def test_a_switch_says_which_and_unknown_ones_are_left_out(self):
+        fake = FakeCalendarHA(calendars=("calendar.familie",))
+        _, log = run_deploy(fake, host="10.0.0.9", calendars="calendar.familie, calendar.weg")
+        self.assertEqual(fake.sources(), [{"calendars": "calendar.familie"}])
+        self.assertTrue(any("no calendar.weg" in line for line in log))
+
+    def test_an_empty_switch_or_nobody_to_ask_leaves_the_calendars_alone(self):
+        for kw in ({"calendars": ""}, {}):
+            fake = FakeCalendarHA(calendars=("calendar.familie",))
+            run_deploy(fake, host="10.0.0.9", **kw)
+            self.assertEqual(fake.sources(), [])
+            self.assertFalse(fake.posted("/api/config/config_entries/flow/C1"))
+
+    def test_the_card_on_a_missing_calendar_is_pointed_at_the_chosen_one(self):
+        fake = FakeCalendarHA(calendars=("calendar.familie", "calendar.arbeit"))
+        fake.boards = [{"url_path": "jarvis-display", "mode": "storage"}, {"url_path": "yaml-one", "mode": "yaml"}]
+        fake.views = {"jarvis-display": [{"cards": [{"type": "vertical-stack", "cards": [
+            {"type": "custom:jarvis-calendar-card", "entity": "calendar.personal", "title": "Kalender"}]}]}],
+            None: [{"cards": [{"type": "custom:jarvis-calendar-card", "entity": "calendar.arbeit"}]}]}
+        kept = []
+        _, log = run_deploy(fake, host="10.0.0.9", calendars="calendar.familie",
+                            keep_replaced=lambda what, config: kept.append((what, config)) or "kept")
+        self.assertEqual(len(fake.saved), 1)
+        self.assertEqual(fake.saved[0]["url_path"], "jarvis-display")
+        card = fake.saved[0]["config"]["views"][0]["cards"][0]["cards"][0]
+        self.assertEqual(card, {"type": "custom:jarvis-calendar-card", "entity": "calendar.familie", "title": "Kalender"})
+        self.assertEqual(kept[0][0], "dashboard-jarvis-display")
+        self.assertEqual(kept[0][1]["views"][0]["cards"][0]["cards"][0]["entity"], "calendar.personal")
+        self.assertIn("the calendar card on jarvis-display now shows calendar.familie", log)
+
+    def test_caldav_address_is_checked(self):
+        self.assertEqual(ha.check_caldav_url(" https://caldav.icloud.com "), "https://caldav.icloud.com")
+        for bad in ("caldav.icloud.com", "ftp://x.example.org", "https://"):
+            with self.assertRaises(ValueError):
+                ha.check_caldav_url(bad)
+
+
+class CalendarSwitchTests(unittest.TestCase):
+    def ns(self, **kw):
+        base = dict(caldav_url=None, caldav_user=None, caldav_password_file=None)
+        base.update(kw)
+        return argparse.Namespace(**base)
+
+    def test_the_password_comes_from_its_file_and_only_into_the_account(self):
+        with tempfile.TemporaryDirectory() as td:
+            pw = pathlib.Path(td) / "pw"
+            pw.write_text("app-pass-123\n")
+            got = show_cli._caldav_account(self.ns(caldav_url="https://cloud.example.org/remote.php/dav",
+                                                   caldav_user="jo", caldav_password_file=pw))
+        self.assertEqual((got.url, got.username, got.password),
+                         ("https://cloud.example.org/remote.php/dav", "jo", "app-pass-123"))
+        self.assertIsNone(show_cli._caldav_account(self.ns()))
+
+    def test_half_an_account_is_refused(self):
+        for kw in ({"caldav_user": "jo"}, {"caldav_url": "https://cloud.example.org/dav"}):
+            with self.assertRaises(SettingsError):
+                show_cli._caldav_account(self.ns(**kw))
+
+    def test_the_account_is_asked_for_at_the_terminal(self):
+        answers = iter(["https://cloud.example.org/remote.php/dav", "jo"])
+        asker = Asker(interactive=True, ask=lambda _: next(answers), ask_secret=lambda _: "app-pass-123",
+                      say=lambda _: None)
+        with mock.patch.object(show_cli, "_asker", return_value=asker):
+            got = show_cli._caldav_asker(argparse.Namespace())()
+        self.assertEqual((got.username, got.password), ("jo", "app-pass-123"))
 
 
 class FakeSignedIn:

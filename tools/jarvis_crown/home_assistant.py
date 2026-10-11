@@ -13,7 +13,7 @@ already has only fills in what is missing. No secret is ever put in an error mes
 from __future__ import annotations
 
 import base64
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import ipaddress
 import json
@@ -829,6 +829,162 @@ def _services(ha: HomeAssistant) -> set[str]:
     return set()
 
 
+# ------------------------------------------------------------------------------------------- calendars
+
+
+@dataclass(frozen=True)
+class CalDAVAccount:
+    """A calendar account for Home Assistant's CalDAV integration. The password goes to Home Assistant's
+    own form and nowhere else."""
+
+    url: str
+    username: str
+    password: str = field(default="", repr=False)
+    verify_ssl: bool = True
+
+
+def check_caldav_url(url: str) -> str:
+    url = url.strip()
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise ValueError("give the whole address, like https://cloud.example.org/remote.php/dav")
+    return url
+
+
+def _calendars(ha: HomeAssistant) -> dict[str, str]:
+    """The calendar entities Home Assistant has: entity id -> the name it shows."""
+    found = {}
+    for st in ha.request("GET", "/api/states") or []:
+        entity = str(st.get("entity_id") or "")
+        if entity.startswith("calendar.") and _ENTITY_ID_RE.fullmatch(entity):
+            found[entity] = str((st.get("attributes") or {}).get("friendly_name") or entity)
+    return found
+
+
+def add_caldav(ha: HomeAssistant, account: CalDAVAccount) -> str:
+    """Adds the account through Home Assistant's CalDAV form, which tries it before it saves it.
+    Returns what happened; raises when Home Assistant refused it."""
+    result = ha.request("POST", "/api/config/config_entries/flow", {"handler": "caldav", "show_advanced_options": False})
+    flow_id = result.get("flow_id") if isinstance(result, dict) else None
+    if not flow_id or result.get("type") != "form" or result.get("step_id") != "user":
+        if flow_id:
+            _drop_flow(ha, flow_id)
+        raise HomeAssistantError("Home Assistant's CalDAV integration did not ask for an account")
+    done = ha.request("POST", f"/api/config/config_entries/flow/{flow_id}", {
+        "url": account.url, "username": account.username, "password": account.password,
+        "verify_ssl": account.verify_ssl})
+    kind = done.get("type") if isinstance(done, dict) else None
+    if kind == "create_entry":
+        return f"CalDAV account {account.username} added"
+    if kind == "abort" and done.get("reason") == "already_configured":
+        return f"CalDAV account {account.username} was in Home Assistant already"
+    if kind == "form":
+        _drop_flow(ha, flow_id)
+    base = ((done.get("errors") or {}).get("base") if isinstance(done, dict) else None) or \
+        (done.get("reason") if isinstance(done, dict) else None)
+    raise HomeAssistantError({
+        "invalid_auth": "the calendar server refused the user name or password",
+        "cannot_connect": f"Home Assistant could not reach a calendar at {account.url}",
+    }.get(base, f"Home Assistant did not add the calendar account ({base or kind})"))
+
+
+def _calendar_cards(node: Any) -> list[dict]:
+    """The Jarvis calendar cards anywhere in a dashboard config, however deep in stacks and sections."""
+    found = []
+    if isinstance(node, dict):
+        if node.get("type") == "custom:jarvis-calendar-card":
+            found.append(node)
+        for value in node.values():
+            found += _calendar_cards(value)
+    elif isinstance(node, list):
+        for value in node:
+            found += _calendar_cards(value)
+    return found
+
+
+def _point_calendar_cards(ha: HomeAssistant, calendar: str, have: set[str],
+                          keep: Callable[[str, Any], str] | None) -> list[str]:
+    """Points every Jarvis calendar card whose calendar Home Assistant does not have (the dashboard ships
+    with calendar.personal as a stand-in) at calendar. A card on a calendar that is there is left alone.
+    Returns the dashboards changed."""
+    changed = []
+    boards = ha.ws({"type": "lovelace/dashboards/list"}) or []
+    for path in [None] + [b.get("url_path") for b in boards if b.get("mode") == "storage"]:
+        try:
+            config = ha.ws({"type": "lovelace/config", "url_path": path})
+        except HomeAssistantError:
+            continue
+        cards = [c for c in _calendar_cards(config) if c.get("entity") not in have]
+        if not cards:
+            continue
+        if keep:
+            keep(f"dashboard-{path or 'lovelace'}", json.loads(json.dumps(config)))
+        for card in cards:
+            card["entity"] = calendar
+        ha.ws({"type": "lovelace/config/save", "url_path": path, "config": config})
+        changed.append(path or "lovelace")
+    return changed
+
+
+def _set_up_calendars(ha: HomeAssistant, prefix: str, opts: "DeployOptions", choose: Chooser | None,
+                      progress: Callable[[str], None], sleep: Callable[[float], None],
+                      clock: Callable[[], float]) -> None:
+    """A CalDAV account for Home Assistant when one is given or wanted, then the calendars this Show
+    shows, and the dashboard's calendar card pointed at one that is there."""
+    have = _calendars(ha)
+    account = opts.caldav
+    if account is None and opts.ask_caldav and choose and opts.calendars is None:
+        names = {"yes": "yes, a CalDAV account (Nextcloud, iCloud, mailbox.org ...)", "no": "no"}
+        if choose("calendar account", "", ["yes", "no"], names) == "yes":
+            account = opts.ask_caldav()
+    if account is not None:
+        try:
+            progress(add_caldav(ha, account))
+        except HomeAssistantError as exc:
+            progress(f"WARN: {exc}; add it in Settings -> Devices & services -> CalDAV (docs/calendars.md)")
+        else:
+            until = clock() + 30
+            while not set(_calendars(ha)) - set(have) and clock() < until:
+                sleep(3)
+            new = sorted(set(_calendars(ha)) - set(have))
+            have = _calendars(ha)
+            progress(f"its calendars in Home Assistant: {', '.join(new)}" if new else
+                     "the account has no calendar Home Assistant can see yet")
+    if not have:
+        progress("Home Assistant has no calendar, so the Show shows none; docs/calendars.md says how to add one")
+        return
+    if opts.calendars:
+        chosen = [c.strip() for c in opts.calendars.split(",") if c.strip()]
+        unknown = [c for c in chosen if c not in have]
+        if unknown:
+            progress(f"WARN: Home Assistant has no {', '.join(unknown)}; the Show is given "
+                     + ("the others" if len(unknown) < len(chosen) else "no calendar"))
+        chosen = [c for c in chosen if c in have]
+    elif opts.calendars is None and choose:
+        options = (["all"] if len(have) > 1 else []) + sorted(have)
+        names = {"all": f"all {len(have)} of them", **{c: f"{n} ({c})" for c, n in have.items() if n != c}}
+        picked = choose("calendars", "", options, names)
+        chosen = sorted(have) if picked == "all" else [picked] if picked else []
+    else:
+        chosen = []
+    if not chosen:
+        progress("the Show's calendars left as they are")
+        return
+    action = f"{prefix}_calendar_sources"
+    if action in _services(ha):
+        ha.request("POST", f"/api/services/esphome/{action}", {"calendars": ", ".join(chosen)})
+        progress(f"the Show shows {', '.join(chosen)}")
+    else:
+        progress(f"WARN: the Show has no esphome.{action} action yet, so it was not given its calendars")
+    try:
+        boards = _point_calendar_cards(ha, chosen[0], set(have), opts.keep_replaced)
+    except HomeAssistantError as exc:
+        progress(f"WARN: the dashboard's calendar card was not changed: {exc}")
+        return
+    for board in boards:
+        progress(f"the calendar card on {board} now shows {chosen[0]}")
+
+
 def show_username(name: str) -> str:
     return "show_" + service_prefix(name)
 
@@ -992,6 +1148,9 @@ class DeployOptions:
     room: str | None = None        # the area it is in, by name or id; None as above
     room_dashboard: bool | None = None  # make a small one for the room if it has none; None: ask
     voice_extras: bool | None = None    # the house's answers and music sentences (voice_kit); None: ask
+    calendars: str | None = None   # the calendar entities the Show shows, "a, b"; '': leave them; None: ask
+    caldav: CalDAVAccount | None = None  # a calendar account to add to Home Assistant, without asking
+    ask_caldav: Callable[[], CalDAVAccount | None] | None = None  # asks for one, once choose says yes
     # Saves an automation or script config before voice_kit replaces it: (what, config) -> where it went.
     keep_replaced: Callable[[str, Any], str] | None = None
     settings: DeviceSettings = DeviceSettings()
@@ -1103,4 +1262,9 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
         progress(_switch_on(ha, entities, "_sendspin"))
     if own_given:
         progress(_switch_on(ha, entities, "_own_user"))
+    if opts.calendars != "" and (opts.calendars or opts.caldav or choose):
+        try:
+            _set_up_calendars(ha, prefix, opts, choose, progress, sleep, clock)
+        except HomeAssistantError as exc:
+            progress(f"WARN: the calendars stopped part way: {exc}")
     return entry_id

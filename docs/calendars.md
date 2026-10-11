@@ -9,6 +9,18 @@ If the card says "Keine Termine" for weeks, or the date under the clock does not
 it, the calendar either isn't in Home Assistant yet or the card and the Show are pointed at a name
 that doesn't exist. The dashboard ships with `calendar.personal` as a placeholder.
 
+The installer can do steps 1, 3 and 4 for a CalDAV account. It asks for the account and which
+calendars the Show shows, and points the card at one of them
+([step 9 of its Home Assistant part](jarvis-crown-installer.md)). To run only that part again
+for a Show that's already installed:
+
+```sh
+python3 tools/jarvis-show.py home-assistant --name kitchenShow
+```
+
+The rest of this page is the same thing by hand, and covers calendars that aren't on a CalDAV
+server.
+
 ## 1. Get the calendar into Home Assistant
 
 Pick the integration for wherever the calendar lives. Each one adds its calendars as entities.

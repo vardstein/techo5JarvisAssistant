@@ -473,7 +473,21 @@ What happens with the answers:
      its own actions, and turns its Sendspin switch on;
   8. with a Music Assistant admin, makes the Show's own Music Assistant user (`jarvis-show-5` for
      "Jarvis Show 5", not an admin, with a random password nobody keeps) and gives the Show a token
-     for it, replacing the one made last time. See [Lyrics](lyrics.md).
+     for it, replacing the one made last time. See [Lyrics](lyrics.md);
+  9. sets up the calendars ([Calendars](calendars.md)). When there's someone at the terminal, it
+     first asks whether to add a calendar account to Home Assistant. Yes asks for the CalDAV
+     server's address, the user name and the password (an app password where the server has them).
+     It fills these into Home Assistant's own CalDAV form, which tries them before saving. The
+     password goes to Home Assistant only. The installer doesn't write it anywhere, and the Show
+     never gets it. Then it lists the calendars Home Assistant has and asks which one the Show
+     shows on its calendar page ("all" offered when there are several; Enter takes all of them,
+     or the only one). It hands that to the Show through `calendar_sources`. A Jarvis calendar card on a
+     dashboard that points at a calendar Home Assistant doesn't have (the dashboard ships with
+     `calendar.personal` as a placeholder) is pointed at the first one picked. Its old configuration is
+     saved in `backups/home-assistant/` first. A card on a calendar that is there is left alone.
+     `--caldav-url`, `--caldav-user` and `--caldav-password-file` add an account without asking,
+     `--calendars` says which calendars ahead of time, and `--calendars ''` leaves them alone. A
+     server with a self-signed certificate has to be added by hand, with **Verify SSL** off.
 
   The Show's actions are named after its ESPHome node (`esphome.<node>_dashboard_server` and so on).
   The tool takes the node from Home Assistant, so a Show renamed since it was installed is still
@@ -601,6 +615,8 @@ uses the Home Assistant, DashCast, Music Assistant and choice switches.
 | `--room NAME` | The Home Assistant area it stands in, by name or id. `''` leaves it alone. |
 | `--room-dashboard`, `--no-room-dashboard` | Make a small dashboard for its room when the room has none, or never. Asked otherwise. |
 | `--voice-extras`, `--no-voice-extras` | Set up the voice extras in Home Assistant (step 6 above), or don't. Asked otherwise. |
+| `--calendars LIST` | The calendars the Show shows, like `calendar.personal, calendar.familie` (step 9 above). `''` leaves them alone. Asked otherwise. |
+| `--caldav-url URL`, `--caldav-user NAME`, `--caldav-password-file FILE` | Add this CalDAV account to Home Assistant. The password goes to Home Assistant's form and is kept nowhere here. |
 | `--no-questions` | Asks nothing. Only switches and the keyring count. `TECHO5_NO_PROMPT=1`, or running without a terminal, does the same. |
 
 Secrets only ever come from files, the keyring or a hidden question, never from a switch's value

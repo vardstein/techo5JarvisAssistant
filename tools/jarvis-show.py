@@ -25,7 +25,7 @@ from jarvis_crown import home_assistant as ha_api  # noqa: E402
 from jarvis_crown import ui  # noqa: E402
 from jarvis_crown import music_assistant as ma_api  # noqa: E402
 from jarvis_crown.shows import known_shows, show_named  # noqa: E402
-from jarvis_crown.settings import RUN, Asker, Settings, SettingsError, gather, save_defaults, secret_files  # noqa: E402
+from jarvis_crown.settings import RUN, Asker, Settings, SettingsError, gather, read_secret_file, save_defaults, secret_files  # noqa: E402
 from jarvis_crown.preflight import SERIAL_GROUPS, _group_names, preflight_ok, print_checks, run_preflight  # noqa: E402
 from jarvis_crown.recovery import RecoveryError, adb_recovery_serials, identify_recovery_show  # noqa: E402
 from jarvis_crown.to_fastboot import ToFastbootError, bring_to_fastboot  # noqa: E402
@@ -103,6 +103,15 @@ def parse_args() -> argparse.Namespace:
                        help="set up the Home Assistant pieces around the Shows: the room going quiet while a "
                             "Show listens, and with a German assistant local answers (room, temperature, "
                             "forecast, volume) and music by voice (default: ask; Enter is no)")
+    setup.add_argument("--calendars",
+                       help="the Home Assistant calendars the Show shows, like 'calendar.personal, calendar.family' "
+                            "(default: ask; '' leaves them alone)")
+    setup.add_argument("--caldav-url", help="add this CalDAV calendar account to Home Assistant (Nextcloud, iCloud, "
+                                            "mailbox.org ...), with --caldav-user and --caldav-password-file")
+    setup.add_argument("--caldav-user", help="its user name")
+    setup.add_argument("--caldav-password-file", type=Path,
+                       help="a file holding its password, best an app password; it goes to Home Assistant and "
+                            "is kept nowhere here")
     setup.add_argument("--no-questions", action="store_true", help="ask nothing; take switches and the keyring only")
     hass = parser.add_argument_group("home-assistant: add an installed Show to Home Assistant")
     hass.add_argument("--host", help="the Show's address, when Home Assistant has not discovered it; install and "
@@ -242,6 +251,12 @@ QUESTIONS = {  # label: (question, help, names for the options, the answers Ente
                      "The room's music goes quiet while the Show listens. With a German assistant it also "
                      "answers about the room, the temperature, the weather and the volume, and plays music by "
                      "voice. Anything you made yourself is only replaced if you say so.", {}, ()),
+    "calendar account": ("Add a calendar account to Home Assistant?",
+                         "For the dashboard's calendar card and the Show's own calendar page. Home Assistant "
+                         "keeps the password; the installer and the Show don't.", {}, ()),
+    "calendars": ("Which calendars should the Show show?",
+                  "On its calendar page, a tap on the date under the clock. More can be picked later on the "
+                  "Show: Settings, General, Calendars.", {}, ("all", "calendar.")),
 }
 
 
@@ -252,7 +267,8 @@ def _chooser(args):
     if not asker.interactive:
         return None
     given = {"assistant": args.assistant, "wake word": args.wake_word, "room": args.room,
-             "room dashboard": args.room_dashboard, "voice extras": args.voice_extras}
+             "room dashboard": args.room_dashboard, "voice extras": args.voice_extras,
+             "calendars": args.calendars}
 
     def choose(label: str, current: str, options: list[str], shown: dict[str, str] | None = None) -> str | None:
         if given.get(label) is not None:
@@ -316,10 +332,16 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
         saved = key_file.parent / "address"
         if saved.is_file():
             host = saved.read_text(encoding="utf-8").strip() or None
+    try:
+        caldav = _caldav_account(args)
+    except (SettingsError, ValueError) as exc:
+        ui.out.fail(f"{exc}")
+        return 1
     opts = ha_api.DeployOptions(
         name=name, psk=psk, host=host, wake_word=args.wake_word or None, assistant=args.assistant or None,
         room=args.room or None, room_dashboard=args.room_dashboard, voice_extras=args.voice_extras,
-        keep_replaced=_keeper(backups),
+        keep_replaced=_keeper(backups), calendars=args.calendars, caldav=caldav,
+        ask_caldav=_caldav_asker(args),
         settings=ha_api.DeviceSettings(dashcast=settings.dashcast, dashcast_key=settings.dashcast_key,
                                        ha_url=settings.ha_url, ha_token=settings.ha_token,
                                        music_assistant=settings.music_assistant, own_user=settings.own_ha_user,
@@ -335,6 +357,48 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
         return 5
     ui.out.finish(f"{name} is in Home Assistant and set up")
     return 0
+
+
+def _caldav_account(args) -> ha_api.CalDAVAccount | None:
+    """The calendar account the switches give; the password is read from its file and handed on only."""
+    if not args.caldav_url:
+        if args.caldav_user or args.caldav_password_file:
+            raise SettingsError("--caldav-user and --caldav-password-file need --caldav-url")
+        return None
+    if not args.caldav_user:
+        raise SettingsError("--caldav-url needs --caldav-user")
+    password = read_secret_file(args.caldav_password_file, "CalDAV password") if args.caldav_password_file else ""
+    return ha_api.CalDAVAccount(url=ha_api.check_caldav_url(args.caldav_url), username=args.caldav_user.strip(),
+                                password=password)
+
+
+def _caldav_asker(args):
+    """Asks for a calendar account at the terminal; None when nobody is at it."""
+    asker = _asker(args)
+    if not asker.interactive:
+        return None
+
+    def filled(value: str) -> str:
+        if not value.strip():
+            raise ValueError("this one can't be empty")
+        return value.strip()
+
+    def ask() -> ha_api.CalDAVAccount | None:
+        url = asker.text("The calendar server's address", None, ha_api.check_caldav_url, help=(
+            "Nextcloud: https://cloud.example.org/remote.php/dav, iCloud: https://caldav.icloud.com. "
+            "Enter to skip."))
+        if not url:
+            return None
+        user = asker.text("User name", None, filled, help="Enter to skip.")
+        if not user:
+            return None
+        password = asker.secret("Password", filled, help=(
+            "An app password where the server has them: Nextcloud under Settings, Security; iCloud at "
+            "account.apple.com. It goes to Home Assistant only."))
+        if not password:
+            return None
+        return ha_api.CalDAVAccount(url=url, username=user, password=password)
+    return ask
 
 
 def _music_assistant_login(settings: Settings):
