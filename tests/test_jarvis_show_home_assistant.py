@@ -614,8 +614,8 @@ class FakeCalendarHA(FakeHA):
             self.calls.append((method, path, body))
             if self.caldav_error:
                 return {"type": "form", "flow_id": "C1", "step_id": "user", "errors": {"base": self.caldav_error}}
-            for c in self.caldav_brings:
-                self.calendars[c] = c.split(".", 1)[1].title()
+            for c in self.caldav_brings:  # a second calendar of one name is calendar.<name>_2, same name
+                self.calendars[c] = c.split(".", 1)[1].removesuffix("_2").title()
             return {"type": "create_entry", "result": {"entry_id": "CAL1"}}
         if path == "/api/states" and method == "GET":
             return super().request(method, path, body) + [
@@ -673,6 +673,21 @@ class CalendarTests(unittest.TestCase):
             self.assertEqual("account" in asked, added, answer)
             self.assertEqual(bool(fake.posted("/api/config/config_entries/flow/C1")), added)
             self.assertEqual(fake.sources(), [{"calendars": "calendar.personal"}] if added else [])
+
+    def test_an_account_it_may_have_already_is_said_before_and_after(self):
+        fake = FakeCalendarHA(calendars=("calendar.personal",), caldav_brings=("calendar.personal_2",))
+        offered = {}
+
+        def choose(label, current, options, names=None):
+            offered[label] = names
+            return {"calendar account": "yes", "calendars": "calendar.personal"}.get(label)
+        _, log = run_deploy(fake, choose=choose, host="10.0.0.9", voice_extras=False, ask_caldav=lambda: ACCOUNT)
+        self.assertEqual(offered["calendar account"]["no"], "no, keep the 1 it has: Personal")
+        self.assertTrue(any(line.startswith("WARN: calendar.personal_2 has the name of a calendar") for line in log))
+
+        fake = FakeCalendarHA(calendars=("calendar.familie",), caldav_brings=("calendar.personal",))
+        _, log = run_deploy(fake, choose=choose, host="10.0.0.9", voice_extras=False, ask_caldav=lambda: ACCOUNT)
+        self.assertFalse(any("Home Assistant had already" in line for line in log))
 
     def test_the_calendars_offered_are_the_ones_there(self):
         fake = FakeCalendarHA(calendars=("calendar.familie", "calendar.arbeit"))

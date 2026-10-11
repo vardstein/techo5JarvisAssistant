@@ -935,6 +935,11 @@ def _set_up_calendars(ha: HomeAssistant, prefix: str, opts: "DeployOptions", cho
     account = opts.caldav
     if account is None and opts.ask_caldav and choose and opts.calendars is None:
         names = {"yes": "yes, a CalDAV account (Nextcloud, iCloud, mailbox.org ...)", "no": "no"}
+        if have:
+            # An account Home Assistant has already, in the UI or in configuration.yaml, would come in a
+            # second time with every calendar as calendar.<name>_2.
+            names = {"yes": "yes, another CalDAV account",
+                     "no": f"no, keep the {len(have)} it has: " + ", ".join(sorted(set(have.values())))}
         if choose("calendar account", "", ["yes", "no"], names) == "yes":
             account = opts.ask_caldav()
     if account is not None:
@@ -946,10 +951,18 @@ def _set_up_calendars(ha: HomeAssistant, prefix: str, opts: "DeployOptions", cho
             until = clock() + 30
             while not set(_calendars(ha)) - set(have) and clock() < until:
                 sleep(3)
-            new = sorted(set(_calendars(ha)) - set(have))
-            have = _calendars(ha)
+            now = _calendars(ha)
+            new = sorted(set(now) - set(have))
+            twice = [c for c in new if now[c] in set(have.values())]
+            have = now
             progress(f"its calendars in Home Assistant: {', '.join(new)}" if new else
                      "the account has no calendar Home Assistant can see yet")
+            if twice:
+                same = "has the name of a calendar" if len(twice) == 1 else "have the names of calendars"
+                progress(f"WARN: {', '.join(twice)} {same} Home Assistant had already, so this may be the "
+                         "same account twice; then pick only one of each, and remove the "
+                         "account you don't want in Settings -> Devices & services -> CalDAV (or "
+                         "configuration.yaml)")
     if not have:
         progress("Home Assistant has no calendar, so the Show shows none; docs/calendars.md says how to add one")
         return

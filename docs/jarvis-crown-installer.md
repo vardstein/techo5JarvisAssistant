@@ -475,7 +475,10 @@ What happens with the answers:
      "Jarvis Show 5", not an admin, with a random password nobody keeps) and gives the Show a token
      for it, replacing the one made last time. See [Lyrics](lyrics.md);
   9. sets up the calendars ([Calendars](calendars.md)). When there's someone at the terminal, it
-     first asks whether to add a calendar account to Home Assistant. Yes asks for the CalDAV
+     first asks whether to add a calendar account to Home Assistant. When Home Assistant has calendars
+     already, the question names them, because an account it has already (in the UI or in
+     `configuration.yaml`) would come in a second time as `calendar.<name>_2`. If new calendars have
+     the names of ones it had, the tool warns that it may be the same account twice. Yes asks for the CalDAV
      server's address, the user name and the password (an app password where the server has them).
      It fills these into Home Assistant's own CalDAV form, which tries them before saving. The
      password goes to Home Assistant only. The installer doesn't write it anywhere, and the Show
