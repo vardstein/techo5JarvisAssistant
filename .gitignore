@@ -18,3 +18,6 @@ inputs/
 # Per-unit backups and installer keys: never committed.
 backups/
 build/
+
+# Claude Code's local settings and worktrees.
+.claude/
