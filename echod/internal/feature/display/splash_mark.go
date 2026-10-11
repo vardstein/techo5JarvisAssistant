@@ -28,11 +28,11 @@ var markFiles embed.FS
 
 // markFile is the picture drawn for each preset, by its name.
 var markFile = map[string]string{
-	"Obsidian Jade": "obsidian",
-	"White Jade":    "white",
-	"Leaf Jade":     "leafgreen",
-	"Sakura Jade":   "sakura",
-	"Ember Jade":    "ember",
+	"Obsidian":    "obsidian",
+	"White Jade":  "white",
+	"Leaf Jade":   "leafgreen",
+	"Sakura Jade": "sakura",
+	"Ember Jade":  "ember",
 }
 
 // marks holds each picture at the size last asked for, so the splash scales it once and not every

@@ -56,6 +56,8 @@ For each board separately:
 - [ ] preserve the complete per-device recovery backup off-device;
 - [ ] install the exact signed release being accepted;
 - [ ] first boot reaches the expected Jarvis product profile;
+- [ ] the starter guide shows on first boot in Obsidian, taps through its four pages (Skip ends it),
+      and does not come back after a reboot or an update;
 - [ ] correct screen geometry: Crown 1280×800, Checkers 960×480;
 - [ ] Wi-Fi, Bluetooth, microphones, speaker, touch and display pass;
 - [ ] wake word, Assist, Direct fallback and local Stop pass ([voice-test-phrases.md](voice-test-phrases.md));

@@ -35,7 +35,7 @@ func TestLightThemesAreKnownToBeLight(t *testing.T) {
 }
 
 func TestOnlyJODSPresetsAreExposed(t *testing.T) {
-	want := []string{"Obsidian Jade", "White Jade", "Leaf Jade", "Sakura Jade", "Ember Jade"}
+	want := []string{"Obsidian", "White Jade", "Leaf Jade", "Sakura Jade", "Ember Jade"}
 	if len(Presets) != len(want) {
 		t.Fatalf("got %d presets, want %d JODS presets: %+v", len(Presets), len(want), Presets)
 	}
@@ -44,7 +44,7 @@ func TestOnlyJODSPresetsAreExposed(t *testing.T) {
 			t.Fatalf("preset %d = %q, want %q", i, Presets[i].Name, name)
 		}
 	}
-	if Named("Walnut").Name != "Obsidian Jade" {
-		t.Fatalf("legacy preset should migrate to Obsidian Jade, got %q", Named("Walnut").Name)
+	if Named("Walnut").Name != "Obsidian" {
+		t.Fatalf("legacy preset should migrate to Obsidian, got %q", Named("Walnut").Name)
 	}
 }

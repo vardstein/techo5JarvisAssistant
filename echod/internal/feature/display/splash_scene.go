@@ -16,7 +16,7 @@ import (
 // mark seated on a stone throne on its top platform, its tail hanging down the front of the seat.
 // Every color is the palette's ground mixed with a little leaf, stone or fire, weakly in the middle
 // where the words go and more strongly at the edges, so the wordmark and the steps of coming up read
-// as well on a light palette as on Obsidian Jade. The leaf, stone and fire take on the palette's
+// as well on a light palette as on Obsidian. The leaf, stone and fire take on the palette's
 // accent and dim text, so the scene changes with the theme. It is drawn once per panel and palette
 // and copied in on every frame after.
 

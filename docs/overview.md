@@ -18,8 +18,8 @@ Android, with one Go daemon, `echod`, doing everything the device does:
   control on the view — and of the Show's own camera, and
   a swipe-down settings screen with its categories down the left (Display, Sound, Alarms,
   Connections, Privacy, General) and each one's settings on a card beside them, a drawer in from the
-  right edge with Cameras and Radio, and Wi-Fi setup with an on-screen keyboard. A first-run card
-  shows once.
+  right edge with Cameras and Radio, and Wi-Fi setup with an on-screen keyboard. A four-page
+  starter guide shows on the first boot (and after a reset), never after an update.
 - **Timers and alarms**: voice timers from Home Assistant count down under the clock; alarms are set
   on the settings screen (Alarms) or with the `alarm_set` action, or followed from Home Assistant `input_datetime`
   helpers (`alarms_follow`), and ring from the device's own clock even when Home Assistant is down.

@@ -87,7 +87,7 @@ type Screen struct {
 }
 
 // DefaultTheme is the palette a new device comes up in.
-const DefaultTheme = "Obsidian Jade"
+const DefaultTheme = "Obsidian"
 
 // Palette is a custom theme's five colors, as #rrggbb.
 type Palette struct {

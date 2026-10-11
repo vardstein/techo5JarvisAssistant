@@ -176,6 +176,9 @@ type Display struct {
 	drawerScroll int
 	drawerPick   string
 
+	// guidePage is the starter guide's page while it is up (render_welcome.go).
+	guidePage int
+
 	// touchedAt is the last finger on the panel; nightDark is the screen having been put out by the
 	// night schedule rather than by anyone.
 	touchedAt time.Time
@@ -758,13 +761,23 @@ func (d *Display) gesture(g touch.Gesture) {
 		return
 	}
 
-	// The first-run card: any tap puts it away for good.
+	// The starter guide: a tap is the next page, and Skip or a tap on the last page puts it away for
+	// good. Nothing else takes a finger while it is up.
 	if !config.Get().Screen.Welcomed {
-		if g.Kind == touch.Tap {
-			if err := config.Set().Screen().Welcomed(true); err != nil {
-				slog.Warn("saving the welcome failed", "err", err)
+		if g.Kind == touch.Tap && d.r != nil {
+			d.mu.Lock()
+			d.guidePage++
+			done := d.guidePage >= len(guidePages()) || image.Pt(g.X, g.Y).In(d.r.guideSkip())
+			if done {
+				d.guidePage = 0 // a reset that brings the guide back starts it from the top
 			}
-			slog.Info("first-run card put away")
+			d.mu.Unlock()
+			if done {
+				if err := config.Set().Screen().Welcomed(true); err != nil {
+					slog.Warn("saving the welcome failed", "err", err)
+				}
+				slog.Info("starter guide put away")
+			}
 			d.wake()
 		}
 		return
@@ -1650,7 +1663,7 @@ func (d *Display) frame() time.Duration {
 
 	// Apply the configured palette before any page can draw. Fresh devices show the welcome page
 	// before ordinary idle rendering, so doing this later would briefly (or indefinitely, until the
-	// welcome is dismissed) expose the old compiled-in TECHO5 palette instead of the default, Obsidian Jade.
+	// welcome is dismissed) expose the old compiled-in TECHO5 palette instead of the default, Obsidian.
 	t := current()
 	applyTheme(t)
 	d.syncThemeSelect(t.name)
@@ -1697,7 +1710,10 @@ func (d *Display) frame() time.Duration {
 		on = lit // the night may have just turned the panel back on: this frame is its first
 	}
 	if !config.Get().Screen.Welcomed {
-		d.r.welcome(scene{now: now})
+		d.mu.Lock()
+		page := d.guidePage
+		d.mu.Unlock()
+		d.r.welcome(scene{now: now}, page)
 		if err := d.dev.Present(); err != nil {
 			slog.Warn("presenting the frame failed", "err", err)
 		}
