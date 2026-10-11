@@ -9,6 +9,7 @@ package security
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
@@ -55,7 +56,7 @@ type State struct {
 	SSHRunning   bool
 	USBAvailable bool // the rootfs has techo5-usb to open and close the port
 	USB          bool
-	Keys         []string // one label per authorized key: its comment, or its type
+	Keys         []Key // the authorized keys, as the screen names them
 	Camera       bool
 	Screen       bool
 	Encrypted    bool // Home Assistant's link has a real key
@@ -212,7 +213,7 @@ func (f *Feature) State() State {
 	if st.SSHAvailable {
 		st.SSHRunning = sshRunning()
 		for _, k := range readKeys() {
-			st.Keys = append(st.Keys, keyLabel(k))
+			st.Keys = append(st.Keys, keyOf(k))
 		}
 	}
 	return st
@@ -327,13 +328,53 @@ func bodyType(b64 string) (string, error) {
 	return string(raw[4 : 4+n]), nil
 }
 
-// keyLabel is how a key is named on the screen.
-func keyLabel(k string) string {
+// Key is an authorized key as the screen names it.
+//
+// The comment alone misled. It is whatever the key's maker typed, and a laptop key that had once been
+// labelled for the router showed up as "openWRTAdminToken", which reads like a token was handed over.
+// So the comment comes with the key's type and the end of its fingerprint, which is the key itself
+// and ends the same way `ssh-keygen -lf key.pub` does, so a key on the screen can be matched to the
+// file it came from.
+type Key struct {
+	Comment string // as the key's maker wrote it; can be empty
+	Kind    string // type and fingerprint end: "ED25519 …bZQxtE"
+}
+
+func keyOf(k string) Key {
 	fields := strings.Fields(k)
-	if len(fields) >= 3 {
-		return strings.Join(fields[2:], " ")
+	key := Key{Kind: keyType(fields[0])}
+	if len(fields) >= 2 {
+		if raw, err := base64.StdEncoding.DecodeString(fields[1]); err == nil {
+			sum := sha256.Sum256(raw)
+			fp := base64.RawStdEncoding.EncodeToString(sum[:])
+			key.Kind += " …" + fp[len(fp)-fingerprintTail:]
+		}
 	}
-	return fields[0]
+	if len(fields) >= 3 {
+		key.Comment = strings.Join(fields[2:], " ")
+	}
+	return key
+}
+
+// fingerprintTail is how much of the fingerprint is shown: enough to tell one's own keys apart at a
+// glance, short enough to sit next to the comment on the row.
+const fingerprintTail = 6
+
+// keyType is the key's type the way ssh-keygen names it.
+func keyType(t string) string {
+	switch {
+	case t == "ssh-ed25519":
+		return "ED25519"
+	case t == "sk-ssh-ed25519@openssh.com":
+		return "ED25519-SK"
+	case t == "ssh-rsa":
+		return "RSA"
+	case strings.HasPrefix(t, "ecdsa-sha2-"):
+		return "ECDSA"
+	case strings.HasPrefix(t, "sk-ecdsa-sha2-"):
+		return "ECDSA-SK"
+	}
+	return t
 }
 
 // encrypted reports whether the Home Assistant link has a key of its own rather than the reserved

@@ -161,11 +161,20 @@ func securityRows(sv sheetView) []settingRow {
 		}
 		keys := "None"
 		if len(sec.Keys) > 0 {
-			keys = strings.Join(sec.Keys, ", ")
+			keys = ""
 		}
 		rows = append(rows,
 			settingRow{id: "ssh", label: "SSH", sub: sub, kind: ctlToggle, on: sec.SSH},
 			settingRow{label: "SSH keys", sub: "Sent from Home Assistant", kind: ctlValue, value: keys})
+		// A row each, named by its comment with the type and fingerprint end beside it: all three on
+		// one row cut the comment off, and the comment alone named a laptop key after a router.
+		for _, k := range sec.Keys {
+			if k.Comment == "" {
+				rows = append(rows, settingRow{label: k.Kind, kind: ctlValue})
+				continue
+			}
+			rows = append(rows, settingRow{label: k.Comment, kind: ctlValue, value: k.Kind})
+		}
 	}
 	if sec.USBAvailable {
 		sub := "Closed to computers and USB devices"

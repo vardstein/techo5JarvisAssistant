@@ -481,7 +481,7 @@ func (d *Display) sheetView(now time.Time) sheetView {
 		sv.security = security.Get().State()
 		if st.demo {
 			for i := range sv.security.Keys {
-				sv.security.Keys[i] = "laptop"
+				sv.security.Keys[i].Comment = "laptop"
 			}
 		}
 	}

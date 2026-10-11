@@ -1765,7 +1765,7 @@ func (d *Display) frame() time.Duration {
 			s.sheet.name, s.sheet.wifi, s.sheet.address = "Kitchen", "HomeWiFi  ·  192.168.1.50", "192.168.1.50"
 			s.sheet.wifiName, s.sheet.weather, s.sheet.demo = "HomeWiFi", "Home", true
 			for i := range s.security.Keys {
-				s.security.Keys[i] = "laptop"
+				s.security.Keys[i].Comment = "laptop"
 			}
 		}
 		d.mu.Lock()

@@ -8,7 +8,7 @@ import (
 
 func TestParseKeys(t *testing.T) {
 	ed := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHD8TFGO3hxbn85EQV6PpKWtoA9r2RMDQwp1Z1MiR7KV someone@desk"
-	// No comment on the second one, so keyLabel has to fall back to the type. Both are real keys:
+	// No comment on the second one, so it is named by its type and fingerprint alone. Both are real keys:
 	// what is inside a key is checked now, and a made-up body would be refused as it should be.
 	bare := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDekQK/lzJW2ohfEa2o8Sp7RjfCeYDVryU67akoQN5vZ"
 
@@ -19,11 +19,12 @@ func TestParseKeys(t *testing.T) {
 	if len(keys) != 2 || keys[0] != ed || keys[1] != bare {
 		t.Fatalf("keys = %q", keys)
 	}
-	if got := keyLabel(keys[0]); got != "someone@desk" {
-		t.Errorf("label = %q", got)
+	// The fingerprint ends are what ssh-keygen -lf prints for these two keys.
+	if got := keyOf(keys[0]); got != (Key{Comment: "someone@desk", Kind: "ED25519 …bZQxtE"}) {
+		t.Errorf("key = %+v", got)
 	}
-	if got := keyLabel(keys[1]); got != "ssh-ed25519" {
-		t.Errorf("label without a comment = %q", got)
+	if got := keyOf(keys[1]); got != (Key{Kind: "ED25519 …hBLNIY"}) {
+		t.Errorf("key without a comment = %+v", got)
 	}
 
 	if keys, err := parseKeys("  \n"); err != nil || len(keys) != 0 {

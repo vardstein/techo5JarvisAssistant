@@ -18,6 +18,7 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/feature/home"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/phone"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/remind"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/security"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/hass"
 )
 
@@ -134,6 +135,10 @@ func TestShowScenesDraw(t *testing.T) {
 			sheet: settings{cat: catSound, volume: 15, wakeWord: "Okay Nabu"}},
 		"settings-sound-tone": {now: at, phase: "idle", showSheet: true,
 			sheet: settings{cat: catSound, volume: 15, wakeWord: "Okay Nabu", cardScroll: 210}},
+		// A row per key: its comment, with type and fingerprint end beside it (security.Key).
+		"settings-security": {now: at, phase: "idle", showSheet: true, sheet: settings{cat: catSecurity},
+			security: security.State{SSHAvailable: true, SSH: true, SSHRunning: true, Encrypted: true,
+				Keys: []security.Key{{Comment: "openWRTAdminToken", Kind: "ED25519 …bZQxtE"}, {Kind: "RSA …Vq3s0A"}}}},
 		// A turn under the sheet, said in the strip (render_turnstrip.go).
 		"settings-listening": {now: at, phase: "listening", showSheet: true,
 			sheet: settings{cat: catSound, volume: 15, wakeWord: "Okay Nabu"}},
