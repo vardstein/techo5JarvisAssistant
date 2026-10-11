@@ -100,9 +100,10 @@ func address() string {
 var resetMark = layout.StateDir + "/factory_reset"
 
 // factoryReset leaves the mark and restarts; the boot script erases. Nothing is erased here, while
-// the daemon is running and could write some of it back. A variable so a test can stand in for it.
-var factoryReset = func() {
-	if err := os.WriteFile(resetMark, []byte("screen\n"), 0o600); err != nil {
+// the daemon is running and could write some of it back. how is what asked for it (screen or
+// buttons), written into the mark. A variable so a test can stand in for it.
+var factoryReset = func(how string) {
+	if err := os.WriteFile(resetMark, []byte(how+"\n"), 0o600); err != nil {
 		slog.Error("factory reset: leaving the mark failed, nothing erased", "err", err)
 		return
 	}

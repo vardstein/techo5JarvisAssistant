@@ -405,7 +405,7 @@ func TestStepperTakesTheRowsHeight(t *testing.T) {
 func TestFactoryResetAsksTwiceSlowly(t *testing.T) {
 	resets := 0
 	was := factoryReset
-	factoryReset = func() { resets++ }
+	factoryReset = func(string) { resets++ }
 	t.Cleanup(func() { factoryReset = was })
 
 	d := &Display{r: testRenderer()}

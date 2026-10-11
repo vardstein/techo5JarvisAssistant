@@ -174,7 +174,7 @@ func (d *Display) deviceRowTap(id string, p part, opt int) bool {
 		d.mu.Unlock()
 		if armed {
 			slog.Warn("factory reset asked for from the screen")
-			factoryReset()
+			factoryReset("screen")
 		}
 	case "wifi":
 		if wifi.Available() {

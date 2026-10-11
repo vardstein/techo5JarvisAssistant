@@ -344,6 +344,10 @@ func build() *Player {
 		if e.Kind == buttons.Hold {
 			return
 		}
+		// Both volume buttons held together is the Show's factory reset, not a volume change.
+		if b := buttons.Get(); b.Down(buttons.VolumeUp) && b.Down(buttons.VolumeDown) {
+			return
+		}
 		switch e.Name {
 		case buttons.VolumeUp, buttons.VolumeDown:
 			// A ring takes the press. Somebody reaching for a volume button over a ringing alarm

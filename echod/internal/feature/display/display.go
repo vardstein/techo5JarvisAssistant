@@ -49,6 +49,7 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/feature/timer"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/voice"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/ambient"
+	"github.com/HuskerMinion/techo5/echod/internal/hardware/buttons"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/screen"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/touch"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/hass"
@@ -148,7 +149,13 @@ type Display struct {
 	// splashMin has passed, however long that takes. Only a ring or the Wi-Fi page cut it short.
 	booting bool
 	started time.Time
-	logo    *splash
+
+	// comboAt is when both volume buttons went down for a factory reset, zero while they are not
+	// (reset_combo.go); comboLit that the count lit a dark panel, and comboUndo that a count stopped
+	// and the next frame should put it back out.
+	comboAt             time.Time
+	comboLit, comboUndo bool
+	logo                *splash
 	// online is whether the device had a network address at onlineAt, looked at once a second.
 	online   bool
 	onlineAt time.Time
@@ -345,6 +352,7 @@ func build() *Display {
 	d.lang = langSelect()
 	voice.Changed.Listen(d.changed)
 	media.Get().OnVolume.Listen(d.volumeMoved)
+	buttons.Get().Events.Listen(d.resetCombo)
 	ambient.Get().Lux.Listen(d.lux)
 	touch.Get().Gestures.Listen(d.gesture)
 	// A device with no address a while after boot gets the Wi-Fi page without being asked: a
@@ -1626,6 +1634,13 @@ func (d *Display) frame() time.Duration {
 	d.syncThemeSelect(t.name)
 
 	now := time.Now()
+	// The buttons' factory reset count goes over everything, the splash and a dark night included.
+	if d.comboFrame(now, on) {
+		if err := d.dev.Present(); err != nil {
+			slog.Warn("presenting the frame failed", "err", err)
+		}
+		return comboTick
+	}
 	d.popupTick(now)
 	ring := d.ringing(now)
 	call := phone.Get().State()

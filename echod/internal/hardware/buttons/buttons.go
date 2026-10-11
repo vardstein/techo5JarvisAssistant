@@ -78,6 +78,23 @@ const doubleTap = 400 * time.Millisecond
 // LongHolds reports whether this device reports LongHold at all.
 func LongHolds() bool { return longHoldAfter > 0 }
 
+// Down reports whether a button is held right now. It is already true while the press's own events
+// are being emitted, so a listener can tell that the button it just heard joined another one.
+func (c *Controller) Down(n Name) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.down[n]
+}
+
+func (c *Controller) setDown(n Name, on bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.down == nil {
+		c.down = map[Name]bool{}
+	}
+	c.down[n] = on
+}
+
 // HasAction reports whether this hardware actually has a physical action button. First-generation
 // Shows do not: setup authorization is answered on their touchscreen instead. Keeping this derived
 // from the board-specific key map prevents UI copy from telling a Show owner to press a button that
@@ -115,6 +132,10 @@ type Controller struct {
 
 	// tapped is when each button last reported a Tap, for recognizing the second of a pair.
 	tapped map[Name]time.Time
+
+	// down is which buttons are held right now, across every input node: two buttons pressed together
+	// can come from two nodes (the Show's mute button is a node of its own).
+	down map[Name]bool
 }
 
 var (
@@ -246,8 +267,9 @@ func (c *Controller) emit(name Name, kind Kind) {
 func (c *Controller) watch(ctx context.Context, d *input.Device) error {
 	down := map[uint16]*held{}
 	defer func() {
-		for _, h := range down {
+		for code, h := range down {
 			h.stop()
+			c.setDown(codes[code], false) // a node that went away holds nothing down
 		}
 	}()
 
@@ -259,25 +281,32 @@ func (c *Controller) watch(ctx context.Context, d *input.Device) error {
 			}
 			return fmt.Errorf("buttons: reading %s: %w", d.Path, err)
 		}
-		if e.Type != input.EvKey {
-			continue
-		}
-		name, ok := codes[e.Code]
-		if !ok {
-			continue
-		}
+		c.key(down, e)
+	}
+}
 
-		switch e.Value {
-		case 1:
-			down[e.Code] = c.pressed(name)
-		case 0:
-			h, ok := down[e.Code]
-			if !ok {
-				continue
-			}
-			delete(down, e.Code)
-			c.released(name, h)
+// key takes one record from a node; down is that node's buttons between press and release.
+func (c *Controller) key(down map[uint16]*held, e input.Event) {
+	if e.Type != input.EvKey {
+		return
+	}
+	name, ok := codes[e.Code]
+	if !ok {
+		return
+	}
+
+	switch e.Value {
+	case 1:
+		c.setDown(name, true)
+		down[e.Code] = c.pressed(name)
+	case 0:
+		h, ok := down[e.Code]
+		if !ok {
+			return
 		}
+		delete(down, e.Code)
+		c.setDown(name, false)
+		c.released(name, h)
 	}
 }
 

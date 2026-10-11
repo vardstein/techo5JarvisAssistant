@@ -372,6 +372,13 @@ go to **General**, and tap **Factory reset** at the bottom. The button turns int
 moment and tap it. A quick double tap doesn't count, and after eight seconds it goes back to
 **Reset**.
 
+If the screen can't be used (a cracked panel, touch that stopped working), hold **volume up and
+volume down together for ten seconds** while the Show is running. The screen lights up and counts
+down in red; let go of either button and nothing happens. This works on any page, the start-up
+screen included. Press them once the logo is up, not while you're powering the Show on: it only
+listens for them once it is running. Only the Show has this; a Spot or a Dot is reset from its
+settings.
+
 The Show restarts and erases, before anything else starts:
 
 - its settings, alarms, name, Bluetooth pairings and wake words;
