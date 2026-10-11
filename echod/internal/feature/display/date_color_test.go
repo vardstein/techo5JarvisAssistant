@@ -54,10 +54,43 @@ func TestAChosenDateColorIsKeptOverAPhoto(t *testing.T) {
 		t.Fatal(err)
 	}
 	img, at = draw1()
-	if !has(img, at, rose.c) {
+	if !has(img, at, readableOn(rose.of(), walnut)) {
 		t.Errorf("the chosen date color %s did not survive over a photo", rose.label)
 	}
 	if has(img, at, photoGold) {
 		t.Error("the date still turned gold with a color chosen")
+	}
+}
+
+// Every date color reads on every theme's ground, light or dark, and the themes' own dim text, the
+// date's default, does too: the choices used to be made for the old dark ground, and White on White
+// Jade was all but invisible. A name an older build saved falls back to the default.
+func TestEveryDateColorReadsOnEveryTheme(t *testing.T) {
+	config.Use(filepath.Join(t.TempDir(), "state.json"))
+	g, a, x, d, e := walnut, amber, cream, dim, ember
+	t.Cleanup(func() { walnut, amber, cream, dim, ember = g, a, x, d, e })
+	for _, th := range append(themes, theme{name: "old dark", colors: [roles]color.RGBA{{0x1c, 0x15, 0x11, 0xff}, {0xe9, 0xa2, 0x3b, 0xff}, {0xe8, 0xdc, 0xc8, 0xff}, {0x8a, 0x7d, 0x6c, 0xff}, {0x3a, 0x2c, 0x22, 0xff}}}) {
+		applyTheme(th)
+		if c := contrast(dim, walnut); c < dateReadable {
+			t.Errorf("%s: its dim text, the date's default, is %.2f:1 on its ground", th.name, c)
+		}
+		for i, dc := range dateColors[1:] {
+			if err := config.Set().Screen().DateColor(dc.value); err != nil {
+				t.Fatal(err)
+			}
+			if dateColorIndex() != i+1 {
+				t.Fatalf("%s did not stick", dc.label)
+			}
+			got := color.RGBAModel.Convert(dateColor(dim)).(color.RGBA)
+			if c := contrast(got, walnut); c < dateReadable {
+				t.Errorf("%s: %s is %.2f:1 on the ground", th.name, dc.label, c)
+			}
+		}
+	}
+	if err := config.Set().Screen().DateColor("white"); err != nil {
+		t.Fatal(err)
+	}
+	if dateColorIndex() != 0 {
+		t.Error("an old build's White did not fall back to the default")
 	}
 }

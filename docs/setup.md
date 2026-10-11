@@ -106,7 +106,8 @@ All of these are on the Show, under Settings → **Display**, and are entities i
   example. Set Night hours to **Controlled by Home Assistant** to leave the night to the switch alone.
   See [Turning the night on from an automation](actions.md#turning-the-night-on-from-an-automation).
 - **Clock format**, **Clock position** (center, or a smaller clock in a bottom corner so a photo
-  stays in view) and **Date color**.
+  stays in view) and **Date color** (the theme's own, its text or accent color, or another Jade
+  palette's accent; each is made dark or light enough to read on the theme's ground).
 - **Theme**, **Answer time** and **Now playing** (the full page, or a strip over the clock).
 - **Turn screen**: how a voice request looks. **Glow** (the default) is a bar of light that rises with
   the voice, **Wave** is glowing lines and **Bars** is an LED-style equalizer, all moving with the

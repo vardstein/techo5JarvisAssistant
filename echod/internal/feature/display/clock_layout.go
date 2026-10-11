@@ -5,10 +5,12 @@ package display
 import (
 	"image/color"
 	"log/slog"
+	"math"
 
 	esphome "github.com/ygelfand/go-esphome-device"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/palette"
 )
 
 // Where the home screen's clock sits, and the date's color: for a photo behind the clock, whose
@@ -23,17 +25,58 @@ var clockPositions = []struct {
 	{"Bottom right", "bottom-right"},
 }
 
-// dateColors are the date's colors; Default is the theme's own.
+// dateColors are the date's colors, all taken from the theme in force so none is left over from an
+// older look: Default is the theme's dim text, Text and Accent its own, and the three after them the
+// other JODS palettes' accents. Each is made to read on the ground it is drawn over (readableOn). A
+// name saved by an older build (white, gold, …) is not among them and reads as Default: those were
+// made for a dark ground, and White on White Jade is gone.
 var dateColors = []struct {
 	label, value string
-	c            color.RGBA
+	of           func() color.RGBA
 }{
-	{"Default", "", color.RGBA{}},
-	{"White", "white", color.RGBA{240, 240, 240, 255}},
-	{"Gold", "gold", color.RGBA{255, 200, 90, 255}},
-	{"Sky", "sky", color.RGBA{120, 190, 255, 255}},
-	{"Mint", "mint", color.RGBA{120, 230, 170, 255}},
-	{"Rose", "rose", color.RGBA{255, 140, 170, 255}},
+	{"Default", "", func() color.RGBA { return dim }},
+	{"Text", "text", func() color.RGBA { return cream }},
+	{"Accent", "accent", func() color.RGBA { return amber }},
+	{"Leaf Jade", "leaf", func() color.RGBA { return rgb(palette.Named("Leaf Jade").Accent) }},
+	{"Sakura Jade", "sakura", func() color.RGBA { return rgb(palette.Named("Sakura Jade").Accent) }},
+	{"Ember Jade", "ember", func() color.RGBA { return rgb(palette.Named("Ember Jade").Accent) }},
+}
+
+// dateReadable is the contrast every date color keeps against the ground, the WCAG figure for large
+// text; the themes' own dim text sits just above it.
+const dateReadable = 3.0
+
+// readableOn is c, darkened on a light ground or lightened on a dark one until it reads there.
+func readableOn(c, ground color.RGBA) color.RGBA {
+	toward := color.RGBA{0, 0, 0, 0xff}
+	if luminance(ground) < 0.4 {
+		toward = color.RGBA{0xff, 0xff, 0xff, 0xff}
+	}
+	for i := 0; i < 10 && contrast(c, ground) < dateReadable; i++ {
+		c = lerp(c, toward, 0.15)
+	}
+	return c
+}
+
+// luminance is c's relative luminance, as WCAG works it out.
+func luminance(c color.RGBA) float64 {
+	lin := func(v uint8) float64 {
+		f := float64(v) / 255
+		if f <= 0.04045 {
+			return f / 12.92
+		}
+		return math.Pow((f+0.055)/1.055, 2.4)
+	}
+	return 0.2126*lin(c.R) + 0.7152*lin(c.G) + 0.0722*lin(c.B)
+}
+
+// contrast is the WCAG contrast ratio of a and b, 1 to 21.
+func contrast(a, b color.RGBA) float64 {
+	la, lb := luminance(a), luminance(b)
+	if la < lb {
+		la, lb = lb, la
+	}
+	return (la + 0.05) / (lb + 0.05)
 }
 
 func clockPositionIndex() int {
@@ -88,7 +131,7 @@ func clockAlign() (align int, foot bool) {
 // photo too (chosenColor), where the theme's would turn gold.
 func dateColor(fallback color.RGBA) color.Color {
 	if i := dateColorIndex(); i > 0 {
-		return chosenColor(dateColors[i].c)
+		return chosenColor(readableOn(dateColors[i].of(), walnut))
 	}
 	return fallback
 }
