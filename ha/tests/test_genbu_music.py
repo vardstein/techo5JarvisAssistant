@@ -88,9 +88,9 @@ async def test_a_show_plays_in_its_own_room(hass: HomeAssistant):
     # Nothing else in the bedroom: the Show itself, never the living room.
     assert music(hass) == {device: own, sat: own}
     select = hass.states.get("select.bedroomecho8_music_plays_on")
-    assert select.state == "Automatic (bedroomEcho8)"
+    assert select.state == "Automatic: no speaker in Bedroom (bedroomEcho8)"
     assert select.attributes["player"] == own
-    assert set(select.attributes["options"]) == {"Automatic (bedroomEcho8)", "Wohnzimmer", "bedroomEcho8"}
+    assert set(select.attributes["options"]) == {"Automatic: no speaker in Bedroom (bedroomEcho8)", "Wohnzimmer", "bedroomEcho8"}
 
     # A speaker turns up in the bedroom: that is the room's speaker now.
     bed = player(hass, "bedroom_speaker", "Schlafzimmer", "Bedroom")
@@ -108,6 +108,7 @@ async def test_a_show_moved_to_another_room_plays_there(hass: HomeAssistant):
     dr.async_get(hass).async_update_device(device, area_id=room(hass, "Living Room"))
     await look(hass)
     assert music(hass)[sat] == living
+    assert hass.states.get("select.hall_music_plays_on").state == "Automatic: speaker in Living Room (Wohnzimmer)"
 
 
 async def test_picked_by_hand_and_back_to_automatic(hass: HomeAssistant):
@@ -121,7 +122,7 @@ async def test_picked_by_hand_and_back_to_automatic(hass: HomeAssistant):
     assert music(hass)[sat] == living
     assert hass.states.get("select.hall_music_plays_on").state == "Wohnzimmer"
     await hass.services.async_call("select", "select_option", {
-        "entity_id": "select.hall_music_plays_on", "option": "Automatic (Küche)"}, blocking=True)
+        "entity_id": "select.hall_music_plays_on", "option": "Automatic: speaker in Kitchen (Küche)"}, blocking=True)
     await hass.async_block_till_done()
     assert music(hass)[sat] == kitchen
 
@@ -134,14 +135,14 @@ async def test_an_offline_speaker_falls_back_to_the_show_at_once(hass: HomeAssis
     select = "select.genbushow5_music_plays_on"
     fallback = "sensor.genbushow5_music_falls_back_to"
     assert music(hass)[sat] == living
-    assert hass.states.get(select).state == "Automatic (Wohnzimmer, else Jarvis Show 5)"
+    assert hass.states.get(select).state == "Automatic: speaker in Living Room (Wohnzimmer)"
     assert hass.states.get(fallback).state == "Jarvis Show 5"
     assert hass.states.get(fallback).attributes["player"] == own
 
     # No look in between: the speaker going offline is enough.
     await flip(hass, living, "unavailable", "Wohnzimmer")
     assert music(hass)[sat] == own
-    assert hass.states.get(select).state == "Automatic (Jarvis Show 5 while Wohnzimmer is offline)"
+    assert hass.states.get(select).state == "Automatic: Wohnzimmer is offline (Jarvis Show 5)"
 
     await flip(hass, living, "idle", "Wohnzimmer")
     assert music(hass)[sat] == living
