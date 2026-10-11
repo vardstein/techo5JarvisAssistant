@@ -37,6 +37,16 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertIn("jarvis-show-rootfs-${{ steps.meta.outputs.version }}.tar.gz", source)
         self.assertIn("tools/release-jarvis-show.sh", source)
 
+    def test_stable_needs_release_notes(self):
+        source = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        self.assertIn('[ -s "release-notes/$base.md" ]', source)
+        self.assertIn('notes="$(cat "release-notes/$base.md")"', source)
+
+    def test_checks_run_on_work_branches(self):
+        for name in ("build.yml", "dashcast.yml"):
+            source = (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+            self.assertIn("branches: ['feature/**', 'task/**', 'fix/**'", source, name)
+
     def test_channels_are_moved_by_the_checking_mover(self):
         # Parallel pushes once left a channel holding one release's manifest and another's signature;
         # release_channels.py works the target out from the release list and reads the channel back.

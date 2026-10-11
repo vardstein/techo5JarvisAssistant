@@ -8,7 +8,7 @@ name: dashcast image
 
 on:
   push:
-    branches: [genbuShowCrown]
+    branches: ['feature/**', 'task/**', 'fix/**', genbuShowCrown]
     paths: ['dashcast/**', '.github/workflows/dashcast.yml']
     tags: ['v*.*.*']
   pull_request:

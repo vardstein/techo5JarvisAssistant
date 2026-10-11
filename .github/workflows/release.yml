@@ -76,6 +76,12 @@ jobs:
               stable) version="v$base-stable.$n";;
             esac
             notes="Jarvis Show $version ($channel channel, $(git rev-parse --short HEAD))"
+            # A stable release says what it brings. The notes are written on dev while the release is on
+            # staging (docs/WORKFLOW.md) and come along with the fast-forward.
+            if [ "$channel" = stable ]; then
+              [ -s "release-notes/$base.md" ] || { echo "release-notes/$base.md is missing; stable needs release notes" >&2; exit 1; }
+              notes="$(cat "release-notes/$base.md")"
+            fi
           elif [ "$GITHUB_REF_TYPE" = tag ]; then
             version="$GITHUB_REF_NAME"
             notes="Jarvis Show $version"

@@ -33,8 +33,9 @@ The stable release is GitHub's "latest" release even though its name has a suffi
 release script marks it latest and the others prerelease. `v1.0.0` predates channel names; a bare
 `vX.Y.Z` still counts as stable and ranks past every build of the same `X.Y.Z`.
 
-Usual flow: work lands on `dev`; when it is good, fast-forward `staging` to it; when staging has run fine
-on a unit, fast-forward `stable` to staging. After a stable release, bump `VERSION` on `dev` before the
+Usual flow: finished features land on `dev`; when a set of them is good, fast-forward `staging` to it;
+when staging has run fine on the house's Shows, fast-forward `stable` to staging, with release notes in
+`release-notes/X.Y.Z.md`. [WORKFLOW.md](WORKFLOW.md) has the whole path, from feature branch to stable. After a stable release, bump `VERSION` on `dev` before the
 next push. The workflow stops if VERSION is already released on stable (`vX.Y.Z-stable.N` or a bare
 `vX.Y.Z`), so there is never a second stable release of one version.
 
