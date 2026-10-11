@@ -514,7 +514,7 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
         if ma_token is None:
             ma_token, ma_user = _ma_sign_in(asker, music, d.get("music_assistant_user"), ma_login, ma_logout,
                                             run, local)
-        if ma_token is None and ma_user is None:
+        if ma_token is None:
             ma_token = asker.secret("a Music Assistant admin's token instead (optional)", ma_check_token,
                                     help="Used for this run only, like the sign-in, and never stored anywhere. "
                                          "Make one in Music Assistant under Settings, your profile, Long-lived "
@@ -606,6 +606,7 @@ def _ma_sign_in(asker: Asker, host: str, remembered: str | None, login: Callable
                            ". It signs out when the run ends and keeps neither the password nor the sign-in.")
     if not user:
         return None, None
+    hinted = False
     for _ in range(SIGN_IN_TRIES):
         password = _password(asker, user, "Only for this sign-in; it is dropped right after.")
         if password is None:
@@ -614,6 +615,12 @@ def _ma_sign_in(asker: Asker, host: str, remembered: str | None, login: Callable
             token, token_id = login(host, user, password)
         except ma_api.NotSignedIn as exc:
             asker.warn(f"could not sign in: {exc}")
+            if "username or password" in str(exc) and not hinted:
+                hinted = True
+                asker.note("If Music Assistant made this account itself, when it was first opened from the Home "
+                           "Assistant sidebar, the account has no password of its own yet. Set one in Music "
+                           "Assistant under Settings, your profile (8 characters or more), or press Enter here "
+                           "and give a long-lived token instead.")
             continue
         except ma_api.MusicAssistantError as exc:
             asker.warn(f"Music Assistant: {exc}")

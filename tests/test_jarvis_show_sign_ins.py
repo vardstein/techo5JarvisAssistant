@@ -280,9 +280,25 @@ class GatherSignInTests(unittest.TestCase):
     def test_music_assistant_admin_refused_means_no_lyrics(self):
         def login(host, user, password):
             raise ma.NotSignedIn("'kid' is not a Music Assistant admin")
-        s, said = self.gather(["-", "-", "10.0.0.6", "kid"], ["x", "y", "z"], ma_login=login)
+        s, said = self.gather(["-", "-", "10.0.0.6", "kid"], ["x", "y", "z", ""], ma_login=login)
         self.assertIsNone(s.music_assistant_token)
         self.assertTrue(any("lyrics won't work" in line for line in said))
+        self.assertFalse(any("sidebar" in line for line in said), "a refused admin is not a password problem")
+
+    def test_music_assistant_password_refused_then_a_token(self):
+        # an account Music Assistant made from the Home Assistant sidebar has no password of its own
+        def login(host, user, password):
+            raise ma.NotSignedIn(f"Music Assistant did not let {user!r} sign in (Invalid username or password)")
+        s, said = self.gather(["-", "-", "10.0.0.6", "jade"], ["x", "y", "z", "ma-long-lived-token"],
+                              ma_login=login)
+        self.assertEqual((s.music_assistant_token, s.music_assistant_user), ("ma-long-lived-token", "jade"))
+        self.assertEqual(sum("sidebar" in line for line in said), 1, "the hint is given once")
+        self.assertFalse(self.run.active)
+
+    def test_music_assistant_enter_at_the_password_asks_for_a_token(self):
+        s, _ = self.gather(["-", "-", "10.0.0.6", "jade"], ["", "ma-long-lived-token"],
+                           ma_login=lambda *a: self.fail("nobody signs in"))
+        self.assertEqual(s.music_assistant_token, "ma-long-lived-token")
 
 
 class MusicAssistantSignInTests(unittest.TestCase):

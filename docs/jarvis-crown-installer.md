@@ -343,9 +343,15 @@ remembered with the addresses, so next time the username is already filled in.
 With an admin signed in, the Show becomes a Home Assistant user of its own by default (see
 `--own-ha-user` below) and gets that user's token, so you make no token for it by hand. Without an
 admin you're asked for the Show's own long-lived token instead (made as the user the Show should be:
-profile, Security, Long-lived access tokens). Enter at the Music Assistant username asks for an
-admin's Music Assistant token instead; Enter there too means music plays, but lyrics won't work on
-the Show.
+profile, Security, Long-lived access tokens). When the Music Assistant sign-in is skipped or doesn't
+work out (Enter at its username or password, or three wrong passwords), an admin's Music Assistant
+token is asked for instead; Enter there too means music plays, but lyrics won't work on the Show.
+
+Music Assistant running as a Home Assistant app makes an account by itself for whoever first opens
+it from the Home Assistant sidebar. That account signs in through Home Assistant and has no password
+of its own, so a password sign-in is refused until one is set in Music Assistant under Settings,
+your profile (8 characters or more). The installer says so after the first refused password. A
+long-lived token from the same profile page works too, without setting a password.
 
 The Wi-Fi network is picked by number from the ones this computer sees (NetworkManager's list, when
 there is one) or typed by name. The passphrase is asked twice, since nobody sees it, and checked
