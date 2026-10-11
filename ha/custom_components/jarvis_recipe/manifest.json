@@ -1,0 +1,13 @@
+{
+  "domain": "jarvis_recipe",
+  "name": "Jarvis Rezepte",
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/vardstein/techo5JarvisAssistant/blob/jarvis-crown-v1/docs/recipes.md",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "1.0.0"
+}

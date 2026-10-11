@@ -27,14 +27,17 @@ formatted for de-DE. Change the strings in the card files if you need another la
 | `www/openjade/jarvis-weather-card.js` | Current weather: condition, temperature, feels-like, humidity, wind |
 | `www/openjade/jarvis-live-timer-card.js` | The voice satellite's timer that runs out first, counting down. Takes no space when no timer runs |
 | `www/openjade/jarvis-calendar-card.js` | The next event from one calendar (`entity`) or several (`entities`), however far off: it looks two weeks ahead first, then further, up to a year (`maxDaysAhead`). A missing or unreadable calendar is said, not shown as "Keine Termine" |
+| `www/openjade/jarvis-recipe-card.js` | The recipe Jarvis last looked up (`sensor.jarvis_recipe`): ingredients left, steps right, a long one scrolls. For the recipe page, see [docs/recipes.md](../docs/recipes.md) |
 | `jarvis-dashboard.yaml` | The dashboard itself, with example entity ids |
+| `jarvis-recipe-dashboard.yaml` | The recipe page, a dashboard of its own at `jarvis-rezept` |
 
 ## Installing
 
 1. Install [wall-clock-card](https://github.com/rkotulan/ha-wall-clock-card), through HACS or by
    hand from its releases. The dashboard was built against v3.17.3.
-2. Copy the four files in `www/openjade/` to `/config/www/openjade/` on Home Assistant (the File
-   editor or Samba add-on will do). Home Assistant serves them under `/local/openjade/`.
+2. Copy the four cards in `www/openjade/` to `/config/www/openjade/` on Home Assistant (the File
+   editor or Samba add-on will do). Home Assistant serves them under `/local/openjade/`. The recipe
+   card is only for the recipe page ([docs/recipes.md](../docs/recipes.md)).
 3. Add them as resources, type *JavaScript module*: **Settings → Dashboards → ⋮ → Resources**, or
    under `lovelace: resources:` in `configuration.yaml` if you keep resources in YAML.
 

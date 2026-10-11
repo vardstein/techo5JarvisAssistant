@@ -1,0 +1,16 @@
+# The recipe page: the recipe Jarvis last looked up, ingredients on the
+# left and steps on the right. Make it a dashboard of its own at the
+# address jarvis-rezept, which is how the Show finds it
+# (docs/recipes.md). It needs the jarvis_recipe integration and
+# jarvis-recipe-card.js; see README.md.
+#
+# The card fills the screen by itself and sizes its text to it, so there
+# is nothing to set. A sensor other than sensor.jarvis_recipe goes under
+# entity.
+views:
+  - title: Rezept
+    path: rezept
+    type: panel
+    cards:
+      - type: custom:jarvis-recipe-card
+        entity: sensor.jarvis_recipe
