@@ -1,155 +1,174 @@
 # One update point per house (job 51)
 
-Status: design, not built yet. Questions for Jade are at the end.
+Status: design agreed with Jade on 2026-10-11, not built yet.
 
 Today every Genbu Show checks GitHub on its own every 10 minutes, and each one speaks up about an update every
 4 hours. With several Shows in one house you hear the same question from every room, and the Shows drift
 apart: one says yes, another is off for a week, a third was installed from a newer build.
 
-This design gives a house one Show that decides the version. The others follow it.
+This design gives a house one place that decides the version: Home Assistant. One Show in the house, the main
+update Show, looks for updates and asks about them. The other Shows follow.
 
-## Roles
+## Who decides what
 
-**Main update Show (the leader).** It works like a Show does today. It checks its channel, tells and asks,
-and installs at night when auto-update is on. It also publishes the **house version**, which is the version it
-is running now.
+| Who | Job |
+|---|---|
+| **Home Assistant** (the Genbu integration) | The source of truth. It knows every Genbu Show in the house and which of them are main update Shows. It publishes the **house version**, and it asks you when a main Show goes missing. It is the only one that ever picks a main Show, so two Shows can never race for the job. |
+| **Main update Show** | Works like a Show does today. It checks its channel, tells and asks, and installs at night when auto-update is on. Its version, once its update has committed, is what the house version is made from. |
+| **Following Show** | Never checks the channel for offers and never speaks about updates on its own. It reads the house version and moves to it. |
 
-**Following Show (a follower).** It never checks the channel for offers and never speaks about updates on
-its own. It reads the house version from Home Assistant and moves to it.
+Most houses have one main update Show. More are allowed. HA warns before a second one is added, and the
+house version then is the **newest** version any main Show runs. So main Shows can only pull the house up,
+never back and forth (Jade's choice: "follow one, leaders sync").
 
-Most houses have one leader. More are allowed, and the installer warns before it makes a second one
-(see "More than one leader").
+Dots will become following Shows later. The integration finds them the same way.
 
-Dots will take the same follower role later. Nothing here is specific to the Show except where it says so.
+## The Genbu integration in Home Assistant
 
-## The house version entity
+This is a small custom integration, `genbu`, of the same kind as `jarvis_recipe`. *Jade: we could merge the
+two into one Genbu integration later.*
 
-The leader publishes an ESPHome text sensor, `house_version`, which Home Assistant names
-`sensor.<node>_house_version`. Its value is a release tag such as `v1.0.3-stable.52`.
+**What it finds.** Every device from the ESPHome integration whose manufacturer is `OpenJade`. That is what
+echod reports for the Show today. It keys them by HA device id, so renaming a Show (job 41) changes nothing.
 
-- It is set **after the leader's own update has committed**: the new slot ran its 5-minute trial and stayed.
-  So the leader is also the canary. A release that breaks the leader never reaches the other Shows, because
-  the leader rolls back and its house version stays where it was.
-- It is only ever a tag. It carries no download links, so nothing can be smuggled in through Home Assistant.
-  A follower fetches that tag's signed manifest from GitHub itself (see "How a follower installs").
+**What it holds,** under fixed entity ids so a Show never has to be told where to look:
 
-## How a follower knows its leader
+| Entity | What it is |
+|---|---|
+| `sensor.genbu_house_version` | The house version, e.g. `v1.0.3-stable.52`. Attributes: `main_shows` (ESPHome node names), `since`, `shows` (each Show's version and whether it is online). |
+| `select.genbu_main_update_show` | The main update Show, picked from the Genbu Shows. A second main is added in the integration's options, with the warning. |
 
-Each follower gets a text entity, `update_leader`, that holds the leader's entity id. It is stored in
-`/data/misc/techo5/state.json`, so it survives updates.
+**Where the house version comes from.** Each Show already reports its running version through its ESPHome
+`firmware` update entity (`installed_version`). The house version is the newest `installed_version` among
+the main Shows. It only counts after that Show's update has committed. The Show reports the new version only
+after its 5-minute trial, so the main Show is also the canary: a release that breaks it rolls back, and the
+house never moves.
 
-- The installer fills it in (see below). Home Assistant or a person can change it later with
-  `text.set_value`, without reinstalling.
-- The follower reads the leader's state over its existing ESPHome link (hastate). Weather and the radio
-  list arrive the same way. **No Home Assistant token is needed.**
-- Changing the leader makes the follower reconnect, because hastate declares what it follows at connect time.
-- The rename tool (job 41) also updates `update_leader` on every follower when the leader is renamed, since
-  the entity id changes with the name.
+**What it never does.** It never downloads anything and never tells a Show *what* to install beyond a tag.
+Each Show fetches that tag's signed manifest from GitHub and checks it itself.
 
-## When a follower moves
+## On the Show
+
+A Show reads two values over its existing ESPHome link (hastate), the same way it gets the weather: the
+state of `sensor.genbu_house_version` and its `main_shows` attribute. **No HA token is needed.**
+
+- If its own node name is in `main_shows`, it is a main update Show.
+- If the integration is there and its name is not in `main_shows`, it is a following Show. Its
+  `update_channel` select shows **House** and does not offer Stable, Staging or Dev.
+- If the integration is not there (the sensor does not exist), it is a free Show on its channel, as today.
+  Nothing changes for a house without the integration.
+
+### When a following Show moves
 
 | Situation | What happens |
 |---|---|
-| Fresh install, its version differs from the house (older **or newer**) | It moves to the house version without asking. The installer has already told the user. |
+| Fresh install, its version differs from the house (older **or newer**) | It moves to the house version without asking. The installer has already said so. |
 | It was off and boots on a different version than the house | It asks once by voice and on screen: "The house runs 1.0.3. Update now?" "Yes" installs. "No" asks again on the next boot or in 24 hours, never during quiet hours. |
-| It is running when the leader moves on | It follows without asking, once nobody is using it: no music, call, timer or alarm about to ring. Overnight auto-update rules do not apply: the user already said yes on the leader. *(See question 2.)* |
-| The leader is gone (entity unavailable) | It stays where it is. `update_status` says "Main update Show not reachable since …". Nothing is spoken. *(See question 3.)* |
-| The house version is not installable on this device | It stays and says so in `update_status`, for example when the release has no manifest for its product or board. |
+| It is running when the house version changes | It follows straight away once nobody is using it: no music, call, or timer or alarm due soon. It does not ask, because your "yes" on the main Show counts for the house (Jade's choice). |
+| The house version is not installable here | It stays and says so in `update_status`, for example when the release has no manifest for its product or board. |
+| The main Show is missing | It stays where it is. See below. |
 
-A follower's Home Assistant update card shows `installed = its version`, `latest = house version`. The card's
-Install button means "align with the house", so it also works for a downgrade.
+A following Show's HA update card shows `installed = its version` and `latest = house version`. Its Install
+button means "go to the house version", so it also works when that means going back.
 
-## How a follower installs
+### How a following Show installs
 
-- The channel's manifest URL is replaced by the tag's own:
-  `releases/download/<tag>/manifest.json` and `.sig`. Every release already has these.
+- It uses the tag's own manifest, not the channel's: `releases/download/<tag>/manifest.json` and `.sig`.
+  Every release already has these.
 - The same checks run as today: release key signature, `product = genbu-show-v1`, the board in `boards`,
   sha256 and size.
 - The same slot install, trial and rollback run as today.
-- **New: a downgrade is allowed, but only on this path** (aligning with the house). The channel path keeps
-  "newer only".
-- Settings survive going back a version: `config/unknown.go` keeps keys an older build does not know. A
-  setting a newer build *changed the meaning of* could still confuse an older one. That has not happened so
-  far, and the release notes would have to say so.
-- A rollback floor guards against a Home Assistant user pushing every Show back to an old release with a
-  known hole. A follower refuses a house version below the floor carried in its own signed manifest
-  (`min_align`, set by CI, empty for now). *(See question 4.)*
+- **New: going back a version is allowed, but only on this path.** The channel path stays "newer only".
+- Settings survive going back: `config/unknown.go` keeps keys an older build does not know.
+- A floor stops a house version from taking a Show below a release with a known hole. The `min_align`
+  field is set by CI in each signed manifest and is empty for now.
 
-## The update channel select
+## When the main update Show goes missing
 
-Followers get a new option, **House**, in `update_channel`, next to Stable, Staging and Dev. It is the
-follower role. Picking Stable, Staging or Dev on a follower makes it a free Show again: it checks GitHub
-itself, as today.
+Jade asked for all of these together without a race: stay put, tell me in HA, let me pick the new one, and
+take over by itself if nobody answers. One decider (HA) makes that safe.
 
-The leader is a Show with the switch **Main update Show** (`update_leader_role`) turned on. Only a Show on a
-real channel can have it on.
+| After | What happens |
+|---|---|
+| **0–1 h** | Nothing. Restarts and updates take minutes. |
+| **1 h** | Following Shows keep their version. `update_status` on each says "Main update Show <name> not reachable since 14:02". Nothing is spoken. |
+| **24 h** | HA asks you. The integration opens a **Repairs** issue: "<name> has been offline since … Pick a new main update Show". The fix flow lists the Shows that are online, with their versions. It recommends the one already on the house version that was online most recently. Other choices are "keep waiting 7 more days" and "this Show is gone for good" (it is removed from the main list). If you set a phone in the integration options, the same goes there as a push notification with a link. |
+| **7 days, no answer** | HA picks the recommended Show itself. The house version stays, and the Repairs issue says what it did and how to change it. |
+| **Old main Show comes back** | It sees it is no longer in `main_shows` and is a following Show from then on. If you want it back as main, pick it in the select. |
 
-So in Home Assistant you can see and change the roles without the installer.
+Why this cannot race:
+
+- Only the integration ever changes `main_shows`, and HA runs it in one place.
+- The Shows only read.
+- Repairs has one issue per missing main Show (fixed issue id), so ten following Shows do not make ten
+  issues.
+- "Missing" is HA's own view: the main Show's entities are `unavailable`. A following Show that lost its own
+  connection to HA does not count time at all.
+
+The Show screens stay quiet by default, with HA as the one place to look. The update page on each Show shows
+one line: "Following <main> · house version 1.0.3", or "Main update Show <name> not reachable since …".
 
 ## Installer flow
 
-After the Home Assistant sign-in (job 40) and before the Show is added:
+After the HA sign-in (job 40):
 
-1. **Scan.** Use the template API, which is already used for entity lists:
-   `integration_entities('esphome')` filtered to `*_house_version`, with each state.
-2. **None found.** Ask: "Make <name> the main update Show for this house? It will be the only one that
-   checks for and asks about updates. (Recommended for your first Show.)" The default is yes.
-3. **One found.** Say "<leader> is this house's main update Show (house version <tag>). <name> will follow
+1. **Check for the integration** (config entries of domain `genbu`).
+   - **Missing:** say how to add it: copy the folder, restart HA, add the integration. The installer then
+     sets it up through the config flow over REST, which it already uses for ESPHome. The user can skip;
+     the Show then stays a free Show on its channel.
+2. **No main update Show yet:** ask "Make <name> the main update Show for this house? It will be the only
+   one that looks for and asks about updates. (Recommended for your first Show.)" The default is yes.
+3. **One exists:** say "<main> is this house's main update Show (house version <tag>). <name> will follow
    it." Offer "follow" (default) or "make this one a main update Show too".
-4. **Several found.** List them with their versions and ask which one to follow.
-5. **Choosing a second leader** gets the warning: "<leader> is already the main update Show. With two,
-   whichever announces a new version first decides for the followers, and the two can disagree. Continue?"
-   The default is no.
-6. **After the Show is added**, the installer sets `update_channel = House` and `update_leader = <entity>`
-   through Home Assistant. The Show then aligns on its own (the first row of the table above). The installer
-   waits for the version to match or for a reported failure, and shows the result.
+4. **Making a second main** gets the warning: "<main> is already the main update Show. With two, the house
+   follows whichever of them is newest. They cannot fight, but you get two Shows that ask about updates.
+   Continue?" The default is no.
+5. **After the Show is added,** the installer sets the choice through the integration's select or options
+   over REST. A following Show then aligns on its own (the first row of the table above). The installer
+   waits until the versions match or a failure is reported, and shows the result.
 
-`--leader <entity>` and `--main-update-show` skip the questions for scripted installs. Without Home
-Assistant access the installer skips all of this, and the Show stays a free Show on its channel.
-
-## More than one leader
-
-Jade's rule: the one that triggers first wins, so followers are never pulled back and forth.
-
-A follower follows **one** leader entity, the one picked at install. With two leaders, each follower takes
-its own leader's version, so two groups can end up on different versions. *(See question 1.)* To stop the
-leaders drifting apart, a leader also follows the other leaders it finds. When another leader announces a
-**newer** house version first, it moves to that version as well, and never to an older one. So the first
-leader to announce a version decides, and the second one catches up instead of fighting it.
+`--main-update-show` and `--follow` skip the questions for scripted installs.
 
 ## What changes where
 
+- **`ha/custom_components/genbu`** (new):
+  - device discovery (manufacturer OpenJade);
+  - the house version sensor and the main select;
+  - options flow for more mains, with the warning;
+  - Repairs issue and fix flow;
+  - the 7-day auto-pick;
+  - optional push target;
+  - tests with HA's test harness if it is available, otherwise pure logic tests.
 - **echod `feature/firmware`:**
-  - the role switch;
+  - follow the two values via hastate;
+  - role from `main_shows`;
   - the House channel;
-  - the `house_version` sensor, set on trial commit;
-  - the `update_leader` text;
-  - the follower loop (align, boot ask, idle follow);
+  - the following loop (align, boot ask, idle follow);
   - `update.FetchTag`;
-  - the downgrade allowed only on the align path.
-- **echod `feature/firmware/tell.go`:** followers stay quiet. The boot ask reuses `remind.Ask`.
-- **`tools/jarvis_crown`:** the scan, the questions and warnings, setting the two entities, waiting for
-  alignment, and the rename tool update.
-- **CI:** an optional `min_align` in the manifest (empty for now).
+  - going back allowed only on the align path;
+  - the status line.
+- **echod `feature/firmware/tell.go`:** following Shows stay quiet. The boot ask reuses `remind.Ask`.
+- **`tools/jarvis_crown`:** integration check and setup, the questions and warning, setting the choice,
+  waiting for alignment.
 - **Tests:**
-  - leader publishes only after commit;
-  - follower aligns up and down;
+  - house version is the newest main's committed version;
+  - following Show aligns up and down;
   - boot ask once per boot or 24 hours;
   - no ask in quiet hours;
   - no install while busy;
-  - a tag below the floor is refused;
-  - the channel path still refuses downgrades;
-  - installer scan with 0, 1 or 2 leaders.
+  - floor refused;
+  - channel path still refuses going back;
+  - missing-main timeline;
+  - one Repairs issue, however many Shows;
+  - old main comes back as a follower;
+  - installer with 0, 1 or 2 mains and without the integration.
 
-## Open questions for Jade
+## Decided
 
-1. **Two leaders.** Is "followers follow the leader picked at install, and leaders catch up to the newest
-   one" what you meant by "the one triggering first dominates"? The other reading is that every follower
-   listens to all leaders and takes whichever announced last. That one can flip a follower back and forth.
-2. **Online followers.** When the leader updates, should running followers follow straight away when idle
-   (my proposal), or wait for the night window like auto-update?
-3. **Leader gone for long.** Should a follower whose leader has been unreachable for, say, 7 days fall back
-   to checking its own channel? My proposal is no: stay put and show it in Home Assistant, and only the
-   status text says so.
-4. **Downgrade floor.** Is a CI-set floor fine, or should followers never downgrade below the version they
-   were installed with?
+Jade's answers on 2026-10-11:
+
+- **Two mains:** follow one, mains sync upward. The house version is the newest main's version.
+- **Following Shows** follow straight away when idle.
+- **Missing main:** all of it together without a race. HA decides, as described above.
+- **Floor:** CI-set. Each signed manifest can carry `min_align`, empty for now. A Show refuses a house
+  version below its own manifest's floor.
