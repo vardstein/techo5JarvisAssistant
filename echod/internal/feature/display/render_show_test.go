@@ -134,6 +134,11 @@ func TestShowScenesDraw(t *testing.T) {
 			sheet: settings{cat: catSound, volume: 15, wakeWord: "Okay Nabu"}},
 		"settings-sound-tone": {now: at, phase: "idle", showSheet: true,
 			sheet: settings{cat: catSound, volume: 15, wakeWord: "Okay Nabu", cardScroll: 210}},
+		// A turn under the sheet, said in the strip (render_turnstrip.go).
+		"settings-listening": {now: at, phase: "listening", showSheet: true,
+			sheet: settings{cat: catSound, volume: 15, wakeWord: "Okay Nabu"}},
+		"settings-thinking": {now: at, phase: "thinking", heard: "Ja, bitte", showSheet: true,
+			sheet: settings{cat: catSound, volume: 15, wakeWord: "Okay Nabu"}},
 		"clock-music-strip": {now: at, phase: "idle", weather: sky, strip: true, playing: true,
 			radio: home.Radio{Now: "Music Assistant", Title: "Reason That I Sing", Artist: "Release", Music: true}},
 		"clock-music-strip-paused": {now: at, phase: "idle", weather: sky, strip: true, paused: true,

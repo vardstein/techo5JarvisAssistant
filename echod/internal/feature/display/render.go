@@ -254,6 +254,9 @@ type renderer struct {
 	shapes   alertOverlay    // the alert shapes drawn over the rain map, kept while they stay the same
 	dateAt   image.Rectangle // the date under the clock, the same way: a tap there opens the calendar
 	popupAt  image.Rectangle // an event's pop-up, the same way: a tap on it takes it down
+	// turnStripAt is the voice turn's strip over a page that hides the turn, the same way: it takes
+	// a tap, so the page under it is not pressed blind.
+	turnStripAt image.Rectangle
 
 	// cover is the now-playing page's picture at the size it is drawn, and the color it lends the
 	// ground, kept while the song's picture stays the same.
@@ -380,6 +383,7 @@ func (r *renderer) draw(s scene) {
 	r.setWeatherAt(image.Rectangle{})
 	r.setDateAt(image.Rectangle{})
 	r.setPopupAt(image.Rectangle{})
+	r.setTurnStripAt(image.Rectangle{})
 	r.clearAlertTaps()
 	// The red night clock is the whole screen: nothing else, not even the header, is drawn over it,
 	// and it stays up while an alarm or a timer rings (a tap on it stops the ring). A call has lifted
@@ -435,6 +439,8 @@ func (r *renderer) draw(s scene) {
 		switch {
 		case s.announceRecording:
 			r.recordingStrip(s)
+		case turnCovered(s):
+			r.turnStrip(s)
 		case s.showAnnouncement:
 			r.announcementStrip(s)
 		}

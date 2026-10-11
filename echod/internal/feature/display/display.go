@@ -723,6 +723,13 @@ func (d *Display) gesture(g touch.Gesture) {
 		return
 	}
 
+	// A voice turn said in the strip over a page: the strip takes the tap, so a row hidden under it is
+	// not pressed while somebody is answering.
+	if g.Kind == touch.Tap && d.r != nil && d.r.turnStripTapped(image.Pt(g.X, g.Y)) {
+		d.wake()
+		return
+	}
+
 	// A reminder: a tap on its card puts it away, here and on every device it went off on. Only the
 	// card, as with the strip, so a finger meant for the music behind it still reaches the music.
 	if g.Kind == touch.Tap && d.r != nil && d.r.popupTapped(image.Pt(g.X, g.Y)) {
