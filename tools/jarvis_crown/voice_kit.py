@@ -6,7 +6,7 @@ What the Shows use in Home Assistant beyond their own device, set up the same wa
   Show listens and answers) and volume-where-the-music-is ("Lautstärke auf 30" sets the music in the room);
 - per Show, an automation from turn-room-down with the Show, its room's speakers and its near-miss event;
 - answers that never need the language model: where we are, how warm it is in a room or outside,
-  tomorrow's weather, and the volume;
+  tomorrow's weather, the volume, and the Wecker set on the Show that was asked;
 - with Music Assistant: random music, music by mood or artist, and radio by name, started without the
   model and answered with what plays.
 
@@ -229,6 +229,62 @@ def volume(house: House) -> dict:
         "alias": "Jarvis - Volume",
         "description": f"Blueprint {BLUEPRINT_FOLDER}/{VOLUME}.",
         "use_blueprint": {"path": f"{BLUEPRINT_FOLDER}/{VOLUME}", "input": {"rooms": words}},
+    }
+
+
+# A Show is told apart from other voice devices by its stop-alarm entity. Its actions are named after its
+# node, which echod makes from the device's name the way layout.Slug does: a-z and 0-9 kept, any run of
+# other characters one separator, none at the ends.
+WECKER_VARIABLES = {
+    "techo5": "{{ trigger.device_id is not none and device_entities(trigger.device_id) "
+              "| select('search', 'stop_alarm') | list | count > 0 }}",
+    "node": "{{ device_attr(trigger.device_id, 'name') | lower | regex_replace('[^a-z0-9]+', '_') "
+            "| regex_replace('^_+|_+$', '') if techo5 else '' }}",
+    "spoken": "{{ (trigger.slots.when | default('')) | lower | replace('.', ':') | trim }}",
+    "nums": "{{ spoken | regex_findall('[0-9]{1,2}') | map('int') | list }}",
+    "length": "{{ spoken is search('minute|stunde') }}",
+    # A length of time in minutes, or -1 when none was heard.
+    "minutes": "{%- if spoken is search('halben? stunde') -%}30{%- elif not nums and 'stunde' in spoken -%}60"
+               "{%- elif not nums -%}-1{%- elif 'stunde' in spoken -%}"
+               "{{ nums[0] * 60 + (nums[1] if nums | count > 1 else 0) }}{%- else -%}{{ nums[0] }}{%- endif -%}",
+    "half": "{{ spoken is search('halb') }}",
+    "evening": "{{ spoken is search('abend|nachmittag|nachts') }}",
+    "h": "{{ (nums[0] - 1 if half else nums[0]) if nums else -1 }}",
+    "m": "{{ 30 if half else (nums[1] if nums | count > 1 else 0) }}",
+    "hh": "{{ h + 12 if evening and 0 <= h < 12 else h }}",
+    # Rounded to the nearest minute, so "für 1 Minute" doesn't ring a few seconds later.
+    "at": "{%- if length -%}{{ (now() + timedelta(minutes=minutes | int, seconds=30)).strftime('%H:%M') }}"
+          "{%- else -%}{{ '%02d:%02d' | format(hh | int, m | int) }}{%- endif -%}",
+}
+
+
+def wecker() -> dict:
+    return {
+        "alias": "Jarvis - Wecker",
+        "description": 'Stellt den Wecker auf dem Gerät, das gefragt wurde, ohne das Sprachmodell: "stell einen '
+                       'Wecker auf 7 Uhr", "weck mich in 20 Minuten". Das Modell würde sonst nur sagen, der '
+                       'Wecker sei gestellt.',
+        "triggers": [{"trigger": "conversation", "command": [
+            "(stell|stelle) [mir] [einen|den|meinen] wecker (auf|für|um|in) {when}",
+            "(weck|wecke) mich [bitte] (um|in) {when}",
+            "wecker (auf|für|um|in) {when}"]}],
+        "actions": [
+            {"variables": dict(WECKER_VARIABLES)},
+            {"choose": [
+                {"conditions": "{{ not techo5 }}", "sequence": [
+                    {"set_conversation_response": "Sag das bitte dem Gerät, auf dem der Wecker klingeln soll."}]},
+                {"conditions": "{{ length and not (1 <= minutes | int <= 1440) }}", "sequence": [
+                    {"set_conversation_response": "Wie lange? Das habe ich nicht verstanden."}]},
+                {"conditions": "{{ not length and (h < 0 or hh > 23 or m > 59) }}", "sequence": [
+                    {"set_conversation_response": "Für wann? Die Uhrzeit habe ich nicht verstanden."}]}],
+             "default": [
+                 {"action": "esphome.{{ node }}_alarm_set",
+                  "data": {"time": "{{ at }}", "days": "once", "label": "Wecker"}},
+                 {"set_conversation_response":
+                  "{%- if length -%}Wecker klingelt in {{ minutes }} "
+                  "{{ 'Minute' if minutes | int == 1 else 'Minuten' }}, um {{ at }} Uhr."
+                  "{%- else -%}Wecker steht auf {{ at }} Uhr.{%- endif -%}"}]}],
+        "mode": "queued",
     }
 
 
@@ -714,6 +770,7 @@ def _set_up(run: _Run, show: str, entities: list[str]) -> None:
     run.put("automation", "jarvis_local_volume", volume(house))
     run.put("automation", "jarvis_local_where_are_we", where_are_we(house))
     run.put("automation", "jarvis_local_room_temperature", room_temperature(house))
+    run.put("automation", "jarvis_local_wecker", wecker())
     if house.weather:
         run.put("automation", "jarvis_local_forecast", forecast(house))
     else:

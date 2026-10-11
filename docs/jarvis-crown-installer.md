@@ -451,7 +451,8 @@ What happens with the answers:
      - when one of the Assist pipelines speaks German, answers that never reach the language model:
        the [volume](voice-setup.md#volume-the-music-or-the-show) blueprint with an automation from it,
        "Wo sind wir?", "Wie warm ist es in der Küche?" (each room's temperature sensor, or "draußen"
-       from the weather), and "Wie wird das Wetter morgen?";
+       from the weather), "Wie wird das Wetter morgen?", and "Stell einen Wecker auf 7 Uhr" or "Weck
+       mich in 20 Minuten", which sets the alarm on the Show that was asked;
      - with Music Assistant in Home Assistant as well, music by voice without the model: "Spiel
        Musik", "Spiel was Ruhiges", "Musik von Queen", "Hör Radio FFH". It plays in the room of the
        Show that was asked, and the scripts behind it (`play_random_music`, `jarvis_play_mood`,

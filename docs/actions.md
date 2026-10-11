@@ -224,7 +224,7 @@ triggers:
 conditions:
   - "{{ device_entities(trigger.device_id) | select('search', 'stop_alarm') | list | count > 0 }}"
 actions:
-  - action: esphome.{{ device_attr(trigger.device_id, 'name') | slugify }}_alarm_snooze_for
+  - action: esphome.{{ device_attr(trigger.device_id, 'name') | lower | regex_replace('[^a-z0-9]+', '_') | regex_replace('^_+|_+$', '') }}_alarm_snooze_for
     data:
       sentence: "{{ trigger.sentence }}"
     response_variable: snooze
@@ -295,7 +295,7 @@ actions:
     sequence:
     - set_conversation_response: What should I remind you about?
   default:
-  - action: esphome.{{ device_attr(trigger.device_id, 'name') | slugify }}_reminder_set
+  - action: esphome.{{ device_attr(trigger.device_id, 'name') | lower | regex_replace('[^a-z0-9]+', '_') | regex_replace('^_+|_+$', '') }}_reminder_set
     data:
       time: '{{ p.when }}'
       days: '{{ p.days }}'
@@ -352,7 +352,10 @@ actions:
       techo5: >-
         {{ trigger.device_id is not none and
            device_entities(trigger.device_id) | select('search', 'stop_alarm') | list | count > 0 }}
-      node: "{{ device_attr(trigger.device_id, 'name') | slugify if techo5 else '' }}"
+      # The Show's actions are named after its node, made from its name: a-z and 0-9 kept, the rest "_".
+      node: >-
+        {{ device_attr(trigger.device_id, 'name') | lower | regex_replace('[^a-z0-9]+', '_')
+           | regex_replace('^_+|_+$', '') if techo5 else '' }}
       spoken: "{{ (trigger.slots.when | default('')) | lower | replace('.', '') | trim }}"
       pm: "{{ 'pm' in spoken or 'p m' in spoken }}"
       am: "{{ 'am' in spoken or 'a m' in spoken }}"
@@ -401,7 +404,9 @@ actions:
       techo5: >-
         {{ trigger.device_id is not none and
            device_entities(trigger.device_id) | select('search', 'stop_alarm') | list | count > 0 }}
-      node: "{{ device_attr(trigger.device_id, 'name') | slugify if techo5 else '' }}"
+      node: >-
+        {{ device_attr(trigger.device_id, 'name') | lower | regex_replace('[^a-z0-9]+', '_')
+           | regex_replace('^_+|_+$', '') if techo5 else '' }}
       spoken: "{{ (trigger.slots.when | default('')) | lower | replace('.', '') | trim }}"
       everything: "{{ 'all' in trigger.sentence | lower or 'alarms' in trigger.sentence | lower }}"
       pm: "{{ 'pm' in spoken or 'p m' in spoken }}"
@@ -531,6 +536,9 @@ agent, if there is one. An agent can answer "Wecker steht auf 15 Minuten" withou
 This one answers the German sentences itself. For it to run before the agent, the pipeline needs
 **Prefer handling commands locally** on (Settings > Voice assistants > your assistant).
 
+The installer's voice extras set it up as `jarvis_local_wecker` when an Assist pipeline speaks
+German. The YAML below is the same automation, for a house set up by hand.
+
 It takes a time of day ("um 7 Uhr 30", "auf 7:30", "um halb 8", "um 9 Uhr abends") or a length of time
 ("für 15 Minuten", "in einer halben Stunde", "in 2 Stunden"). A length of time becomes a one-off
 alarm at that time from now, so it shows up as the Wecker on the clock and in Home Assistant's
@@ -538,19 +546,21 @@ next-alarm sensor. For a countdown that the timer card shows, say "Timer" instea
 für 15 Minuten" is one of Home Assistant's own sentences.
 
 ```yaml
-alias: TECHO5 - Wecker per Sprache stellen
+alias: Jarvis - Wecker
 triggers:
   - trigger: conversation
     command:
-      - "(stell|stelle) [mir] [einen|den|meinen] Wecker (auf|für|um|in) {when}"
+      - "(stell|stelle) [mir] [einen|den|meinen] wecker (auf|für|um|in) {when}"
       - "(weck|wecke) mich [bitte] (um|in) {when}"
-      - "Wecker (auf|für|um|in) {when}"
+      - "wecker (auf|für|um|in) {when}"
 actions:
   - variables:
       techo5: >-
         {{ trigger.device_id is not none and
            device_entities(trigger.device_id) | select('search', 'stop_alarm') | list | count > 0 }}
-      node: "{{ device_attr(trigger.device_id, 'name') | slugify if techo5 else '' }}"
+      node: >-
+        {{ device_attr(trigger.device_id, 'name') | lower | regex_replace('[^a-z0-9]+', '_')
+           | regex_replace('^_+|_+$', '') if techo5 else '' }}
       spoken: "{{ (trigger.slots.when | default('')) | lower | replace('.', ':') | trim }}"
       nums: "{{ spoken | regex_findall('[0-9]{1,2}') | map('int') | list }}"
       length: "{{ spoken is search('minute|stunde') }}"

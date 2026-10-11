@@ -1,5 +1,6 @@
 import json
 import pathlib
+import re
 import sys
 import unittest
 
@@ -151,7 +152,7 @@ class SetUpTests(unittest.TestCase):
         self.assertEqual(sorted(fake.configs), [
             ("automation", "jarvis_local_forecast"), ("automation", "jarvis_local_random_music"),
             ("automation", "jarvis_local_room_temperature"), ("automation", "jarvis_local_volume"),
-            ("automation", "jarvis_local_where_are_we"), ("automation", "techo5_turn_room_down_jarvis_show_5"),
+            ("automation", "jarvis_local_wecker"), ("automation", "jarvis_local_where_are_we"), ("automation", "techo5_turn_room_down_jarvis_show_5"),
             ("script", "jarvis_music_start"), ("script", "jarvis_play_mood"), ("script", "jarvis_play_radio"),
             ("script", "play_random_music")])
         duck = fake.configs[("automation", "techo5_turn_room_down_jarvis_show_5")]["use_blueprint"]["input"]
@@ -170,7 +171,7 @@ class SetUpTests(unittest.TestCase):
         fake.posts.clear()
         log = run(fake)
         self.assertEqual(fake.posts, [])
-        self.assertEqual(sum("is already there" in line for line in log), 10)
+        self.assertEqual(sum("is already there" in line for line in log), 11)
 
     def test_one_that_differs_is_kept_unless_the_person_says_so(self):
         fake = FakeHA()
@@ -275,6 +276,31 @@ class SetUpTests(unittest.TestCase):
         log = run(fake)
         self.assertNotIn(("automation", "techo5_turn_room_down_jarvis_show_5"), fake.configs)
         self.assertIn("no speakers to turn down in no room, so no turn-the-room-down automation", log)
+
+
+class WeckerTests(unittest.TestCase):
+    def test_it_sets_the_alarm_on_the_show_that_was_asked(self):
+        fake = FakeHA()
+        run(fake)
+        wecker = fake.configs[("automation", "jarvis_local_wecker")]
+        default = wecker["actions"][1]["default"]
+        self.assertEqual(default[0]["action"], "esphome.{{ node }}_alarm_set")
+        self.assertEqual(default[0]["data"], {"time": "{{ at }}", "days": "once", "label": "Wecker"})
+        self.assertEqual(wecker["mode"], "queued")
+
+    def test_the_node_is_made_from_the_name_like_the_daemon_makes_it(self):
+        node = kit.WECKER_VARIABLES["node"]
+        self.assertIn("regex_replace('[^a-z0-9]+', '_')", node)
+        self.assertIn("regex_replace('^_+|_+$', '')", node)
+        for name in ("genbuShow5", "Jarvis Show 5", "Küche", "  Kitchen -- Show!"):
+            with self.subTest(name=name):
+                same = re.sub(r"^_+|_+$", "", re.sub(r"[^a-z0-9]+", "_", name.lower()))
+                self.assertEqual(same, kit.service_prefix(name))
+
+    def test_a_house_without_german_gets_no_wecker(self):
+        fake = FakeHA(language="en")
+        run(fake)
+        self.assertNotIn(("automation", "jarvis_local_wecker"), fake.configs)
 
 
 class TemplateTests(unittest.TestCase):

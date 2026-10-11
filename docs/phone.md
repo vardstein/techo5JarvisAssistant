@@ -112,7 +112,7 @@ actions:
     then:
       - set_conversation_response: "I don't have a number for {{ trigger.slots.who }}."
       - stop: unknown
-  - action: "esphome.{{ device_attr(trigger.device_id, 'name') | slugify }}_phone_call"
+  - action: "esphome.{{ device_attr(trigger.device_id, 'name') | lower | regex_replace('[^a-z0-9]+', '_') | regex_replace('^_+|_+$', '') }}_phone_call"
     data:
       number: "{{ number }}"
   - set_conversation_response: "Calling {{ trigger.slots.who }}."
@@ -129,8 +129,9 @@ triggers:
 variables:
   device: "{{ trigger.device_id }}"
   room: "{{ device_attr(device, 'name') }}"
-  call: "esphome.{{ room | slugify }}_phone_call"
-  hangup: "esphome.{{ room | slugify }}_phone_hangup"
+  node: "{{ room | lower | regex_replace('[^a-z0-9]+', '_') | regex_replace('^_+|_+$', '') }}"
+  call: "esphome.{{ node }}_phone_call"
+  hangup: "esphome.{{ node }}_phone_hangup"
   satellite: "{{ device_entities(device) | select('match', 'assist_satellite\\.') | first }}"
 actions:
   - action: notify.mobile_app_alex_phone

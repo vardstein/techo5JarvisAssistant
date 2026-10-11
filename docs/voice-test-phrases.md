@@ -22,6 +22,7 @@ wrote (the assistant's debug view in Home Assistant shows what it heard).
 | "Wie warm ist es im Bad?" | The bathroom's temperature (any area with a temperature sensor works). |
 | "Wie kalt ist es draußen?" | The outside temperature. |
 | "Wie wird das Wetter morgen?" | Tomorrow's forecast from the weather entity, not a made-up one. |
+| "Stell einen Wecker für 2 Minuten." | "Wecker klingelt in 2 Minuten, um …", "Wecker HH:MM" shows under the clock, and it rings then. |
 | "Spiel Musik." / "Mach Musik an." | A random song from the library starts on the room's speaker, then "Musik läuft." |
 
 ## Volume
