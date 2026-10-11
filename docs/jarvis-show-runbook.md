@@ -13,13 +13,17 @@ commands. Details of each step are in [jarvis-crown-installer.md](jarvis-crown-i
 ## Before connecting the device
 
 The installer runs on Linux with Python 3.10+, `adb`, `fastboot`, `git`, `bash`, and GNU `timeout`.
-Recovery needs serial access, so the login has to belong to `dialout` or `uucp`. `id -nG` shows the
-groups. When the group exists but this login session doesn't have it yet, run the installer under it
-for this one session:
+Recovery needs serial access, so the login has to belong to `dialout` or `uucp`. `getent group dialout`
+lists the members. When you're not one, add yourself, then run the installer under the group so you
+don't have to log in again:
 
 ```sh
+sudo usermod -aG dialout "$USER"
 sg dialout -c 'python3 tools/jarvis-show.py preflight --board crown'
 ```
+
+`sg` on its own only works once you're a member. Otherwise it asks for a group password that doesn't
+exist. On NixOS, a rebuild can drop a membership added this way, so check again before each install.
 
 Keep the Show on mains power, use a known-good USB data cable, and connect only this one Show. The
 installer refuses zero or several devices.
