@@ -14,10 +14,11 @@ import (
 )
 
 // The dashboard page: a Home Assistant dashboard over the whole screen, drawn here or streamed from a
-// dashcast server. A swipe in from the left edge brings it up from the clock, and the same swipe takes
-// it on to the room's dashboard when the house has one, and away again; "go home" does too. The screen's own edges keep working on it: down from the top is
-// the settings, in from the right the drawer, so a dashboard that is the home page does not lock
-// anybody out of the rest.
+// dashcast server. Standing in for the clock (the default), it is the home page and the clock only
+// shows while it can't be; a swipe in from the left edge brings it up from there, and on a dashboard
+// goes to the room's when the house has one, and back; "go home" brings it up too. The screen's own
+// edges keep working on it: down from the top is the settings, in from the right the drawer, so a
+// dashboard that is the home page does not lock anybody out of the rest.
 const (
 	// dashForget is how long an opened dashboard stays up untouched before the clock comes back,
 	// when it is not also the idle page.
@@ -80,12 +81,15 @@ func (d *Display) closeDashboard() {
 	d.wake()
 }
 
-// back is the tab at the left edge and the swipe in from it, which goes round: the clock, the Show's
-// own dashboard, the room's when the house has one (dashboard.RoomPath), and the clock again. Over
+// back is the tab at the left edge and the swipe in from it. With the dashboard standing in for the
+// clock it goes between the Show's own dashboard and the room's when the house has one
+// (dashboard.RoomPath), and never to the clock: that is only for when there is no dashboard to show.
+// Otherwise it goes round: the clock, the Show's dashboard, the room's, and the clock again. Over
 // Music Assistant's pages it is the Show's own dashboard, when it has one, rather than the page the
 // library was opened from.
 func (d *Display) back() {
 	room := dashboard.Get().RoomPath()
+	home := dashboard.Get().Idle()
 	d.mu.Lock()
 	page := d.dashPage
 	switch {
@@ -100,6 +104,15 @@ func (d *Display) back() {
 		d.mu.Unlock()
 		slog.Info("dashboard: the room's", "path", room)
 		d.wake()
+		return
+	case home && page != "":
+		d.dash, d.dashPage, d.dashTouched, d.dashEdge = true, "", time.Now(), edgeNone
+		d.mu.Unlock()
+		slog.Info("dashboard: the Show's own")
+		d.wake()
+		return
+	case home:
+		d.mu.Unlock()
 		return
 	}
 	d.mu.Unlock()
@@ -162,9 +175,10 @@ func (d *Display) dashScene(s *scene, busy bool) {
 	if (streamed || warm) && d.r != nil {
 		s.dash = f.Stream(d.r.w, d.r.h, page)
 	}
-	// Standing in for the clock, the dashboard waits behind it for its first picture. One asked for
-	// shows that it is connecting, since somebody is looking for it.
-	if streamed && !asked && !s.dash.Ready && s.dash.Problem == "" {
+	// Standing in for the clock, the dashboard waits behind it for its first picture, and one that
+	// can't be reached leaves the clock up rather than an error on black. One asked for shows that it
+	// is connecting, or what went wrong, since somebody is looking for it.
+	if streamed && !asked && !s.dash.Ready {
 		want, behind = false, false
 	}
 	s.showDash, s.dashBehind = want, behind

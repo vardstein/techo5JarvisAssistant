@@ -112,8 +112,8 @@ func TestBackFromTheLibraryIsTheDashboard(t *testing.T) {
 		t.Fatalf("back from the library: dash %v page %q, want the dashboard", d.dash, d.dashPage)
 	}
 	d.back()
-	if d.dash {
-		t.Fatal("back from the dashboard left it up")
+	if !d.dash || d.dashPage != "" {
+		t.Fatalf("back from the dashboard that is the home page: dash %v page %q, want it to stay", d.dash, d.dashPage)
 	}
 }
 
