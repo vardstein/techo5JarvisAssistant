@@ -55,7 +55,7 @@ def make_lineage(root: pathlib.Path, board: str):
 def make_shared_rootfs(root: pathlib.Path, boards=("crown", "checkers"), version="v1-test"):
     path = root / "jarvis-show-rootfs.tar.gz"
     payload = json.dumps({
-        "product": "jarvis-show-v1",
+        "product": "genbu-show-v1",
         "boards": list(boards),
         "version": version,
     }).encode()

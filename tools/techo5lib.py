@@ -28,7 +28,7 @@ ALPINE_SHA256 = '50942d567e6ee422c16cb46d5c282ed9d8adc9007c2a483faf4148a18c64ce3
 # manifest is believed only when this key signed it: HTTPS alone would let anything that can present a
 # certificate this computer accepts hand the installer a root filesystem of its own.
 RELEASE_KEY = 'hGZ6WbvLSUjOM09c79iktfAl5StTTFH3Dtps2iyy1nY='
-JARVIS_SHOW_PRODUCT = 'jarvis-show-v1'
+JARVIS_SHOW_PRODUCT = 'genbu-show-v1'
 # Where Jarvis Show releases are published; the daemon's updater has the same one compiled in.
 JARVIS_SHOW_REPO = os.environ.get('JARVIS_SHOW_RELEASE_REPO', 'vardstein/techo5JarvisAssistant')
 JARVIS_SHOW_BOARDS = ('crown', 'checkers')

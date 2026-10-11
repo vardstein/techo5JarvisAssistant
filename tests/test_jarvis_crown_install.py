@@ -34,11 +34,11 @@ def sha256(path):
     return h.hexdigest()
 
 
-def make_rootfs(folder, *, product="jarvis-crown-v1", board="crown", version="v1-test"):
+def make_rootfs(folder, *, product="genbu-show-v1", board="crown", version="v1-test"):
     path = pathlib.Path(folder) / "rootfs.tar.gz"
-    payload = json.dumps({"product": product, "board": board, "version": version}).encode()
+    payload = json.dumps({"product": product, "boards": [board], "version": version}).encode()
     with tarfile.open(path, "w:gz") as archive:
-        info = tarfile.TarInfo("./etc/jarvis-crown-release.json")
+        info = tarfile.TarInfo("./etc/jarvis-show-release.json")
         info.size = len(payload)
         info.mode = 0o644
         archive.addfile(info, io.BytesIO(payload))
@@ -99,7 +99,7 @@ class JarvisCrownInstallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             rootfs = make_rootfs(td)
             ident = verify_jarvis_rootfs(rootfs, sha256(rootfs))
-            self.assertEqual(ident.product, "jarvis-crown-v1")
+            self.assertEqual(ident.product, "genbu-show-v1")
             self.assertEqual(ident.board, "crown")
             self.assertEqual(ident.version, "v1-test")
             with self.assertRaisesRegex(InstallError, "SHA-256 mismatch"):
@@ -113,7 +113,11 @@ class JarvisCrownInstallTests(unittest.TestCase):
     def test_upstream_or_wrong_board_rootfs_is_rejected(self):
         with tempfile.TemporaryDirectory() as td:
             rootfs = make_rootfs(td, product="techo5", board="crown")
-            with self.assertRaisesRegex(InstallError, "legacy Crown rootfs marker"):
+            with self.assertRaisesRegex(InstallError, "rootfs marker is not 'genbu-show-v1'"):
+                verify_jarvis_rootfs(rootfs, sha256(rootfs))
+            # An image from before the rename names the old product and is refused the same way.
+            rootfs = make_rootfs(td, product="jarvis-show-v1", board="crown")
+            with self.assertRaisesRegex(InstallError, "rootfs marker is not 'genbu-show-v1'"):
                 verify_jarvis_rootfs(rootfs, sha256(rootfs))
 
     def test_final_confirmation_is_exact(self):

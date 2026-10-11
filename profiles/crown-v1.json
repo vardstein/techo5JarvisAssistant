@@ -1,6 +1,6 @@
 {
-  "product": "jarvis-crown-v1",
-  "platform": "jarvis-show-v1",
+  "product": "genbu-crown-v1",
+  "platform": "genbu-show-v1",
   "board": "crown",
   "fastboot_product": "CROWN",
   "model": "Echo Show 8 1st gen / C7H6N3",

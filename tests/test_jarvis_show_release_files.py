@@ -58,7 +58,7 @@ class FetchRootfsTests(unittest.TestCase):
                 with self.subTest(board=board, channel=channel), tempfile.TemporaryDirectory() as td:
                     FakeRelease.calls = []
                     got = releases.fetch_rootfs(channel, board, pathlib.Path(td), release=FakeRelease)
-                    self.assertEqual(FakeRelease.calls, [(techo5lib.JARVIS_SHOW_REPO, tag, "jarvis-show-v1", board)])
+                    self.assertEqual(FakeRelease.calls, [(techo5lib.JARVIS_SHOW_REPO, tag, "genbu-show-v1", board)])
                     self.assertEqual(got.sha256, hashlib.sha256(b"rootfs for arm").hexdigest())
                     self.assertEqual((got.version, got.channel), ("v1.0.1-dev.41", channel))
 

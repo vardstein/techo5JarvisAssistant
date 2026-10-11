@@ -27,7 +27,7 @@ not a claim that the product is accepted today.
   - [ ] a physical Crown/Checkers privacy latch always wins and cannot be released by HA or touchscreen;
   - [ ] HA reports `muted`, `unmuted`, `physical mute active`, and `remote unmute not permitted` truthfully.
 - [ ] The release manifest is signed by the Jarvis Show release key and tamper verification fails as expected.
-- [ ] Rootfs contains `jarvis-show-v1`, version and both supported-board markers.
+- [ ] Rootfs contains `genbu-show-v1`, version and both supported-board markers.
 - [ ] Published release contains only intended Show artifacts; no upstream/legacy publisher path was used.
 
 ## Gate B — installer dry-run acceptance

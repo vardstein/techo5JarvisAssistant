@@ -113,8 +113,8 @@ path = pathlib.Path(sys.argv[1])
 sha = sys.argv[2]
 for board in ("crown", "checkers"):
     ident = verify_jarvis_rootfs(path, sha, board=board)
-    if ident.product != "jarvis-show-v1":
-        raise SystemExit("rootfs is not a shared jarvis-show-v1 image")
+    if ident.product != "genbu-show-v1":
+        raise SystemExit("rootfs is not a shared genbu-show-v1 image")
     if ident.version != sys.argv[3]:
         raise SystemExit(f"rootfs marker version {ident.version!r} does not match release filename")
 print("PASS: shared Jarvis Show rootfs marker/version")
@@ -123,7 +123,7 @@ PY
 from="https://github.com/$REPO/releases/download/$VERSION"
 mk=(run ./cmd/mkmanifest
   -version "$VERSION"
-  -product "jarvis-show-v1"
+  -product "genbu-show-v1"
   -board crown
   -board checkers
   -title "Jarvis Show $VERSION"

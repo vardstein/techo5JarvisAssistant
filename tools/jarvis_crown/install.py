@@ -28,8 +28,7 @@ BOOT_SHA256_BY_BOARD: dict[str, str | None] = {
     "checkers": CHECKERS_BOOT_SHA256,
 }
 ROOTFS_MARKER = "etc/jarvis-show-release.json"
-LEGACY_CROWN_ROOTFS_MARKER = "etc/jarvis-crown-release.json"
-PROFILE_ID = "jarvis-show-v1"
+PROFILE_ID = "genbu-show-v1"
 SUPPORTED_BOARDS = ("crown", "checkers")
 UPDATE_CHANNELS = ("stable", "staging", "dev")  # echod/internal/update/channel.go
 FINAL_CONFIRM_PHRASE = "ERASE"  # compatibility alias
@@ -122,10 +121,6 @@ def verify_jarvis_rootfs(path: Path, expected_sha256: str, *, board: str = "crow
     try:
         with tarfile.open(path, mode="r:*") as archive:
             raw = _read_marker(archive, ROOTFS_MARKER)
-            legacy = False
-            if raw is None and profile.board == "crown":
-                raw = _read_marker(archive, LEGACY_CROWN_ROOTFS_MARKER)
-                legacy = raw is not None
             if raw is None:
                 raise InstallError(f"rootfs does not contain a regular {ROOTFS_MARKER} marker")
     except InstallError:
@@ -138,24 +133,17 @@ def verify_jarvis_rootfs(path: Path, expected_sha256: str, *, board: str = "crow
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise InstallError(f"invalid Jarvis rootfs marker: {exc}") from exc
 
-    if legacy:
-        product = payload.get("product")
-        legacy_board = payload.get("board")
-        boards = (legacy_board,) if isinstance(legacy_board, str) else ()
-        if product != "jarvis-crown-v1" or boards != ("crown",):
-            raise InstallError("legacy Crown rootfs marker is not a valid Jarvis Crown image")
-    else:
-        product = payload.get("product")
-        raw_boards = payload.get("boards")
-        if product != PROFILE_ID or not isinstance(raw_boards, list):
-            raise InstallError(
-                f"rootfs marker is not {PROFILE_ID!r} with an explicit boards list"
-            )
-        boards = tuple(str(value).lower() for value in raw_boards)
-        if not boards or any(value not in SUPPORTED_BOARDS for value in boards):
-            raise InstallError(f"rootfs marker has invalid supported boards: {boards!r}")
-        if len(set(boards)) != len(boards):
-            raise InstallError("rootfs marker contains duplicate board entries")
+    product = payload.get("product")
+    raw_boards = payload.get("boards")
+    if product != PROFILE_ID or not isinstance(raw_boards, list):
+        raise InstallError(
+            f"rootfs marker is not {PROFILE_ID!r} with an explicit boards list"
+        )
+    boards = tuple(str(value).lower() for value in raw_boards)
+    if not boards or any(value not in SUPPORTED_BOARDS for value in boards):
+        raise InstallError(f"rootfs marker has invalid supported boards: {boards!r}")
+    if len(set(boards)) != len(boards):
+        raise InstallError("rootfs marker contains duplicate board entries")
 
     if profile.board not in boards:
         raise InstallError(

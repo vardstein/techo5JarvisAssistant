@@ -8,7 +8,7 @@ disabled so this fork cannot accidentally publish Dot/Spot/upstream artifacts.
 
 A release tag uses a rankable `vX.Y.Z` or prerelease version. CI tests the installer/daemon, builds the
 shared ARMv7 Show rootfs, builds the Show daemon, and creates GitHub provenance attestations for both.
-The rootfs builder embeds `etc/jarvis-show-release.json` naming `jarvis-show-v1`, `crown`, `checkers`
+The rootfs builder embeds `etc/jarvis-show-release.json` naming `genbu-show-v1`, `crown`, `checkers`
 and the exact release version.
 
 The release signing seed is not stored in Git. GitHub Actions expects it in the repository secret

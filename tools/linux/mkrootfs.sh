@@ -127,7 +127,7 @@ chmod 1777 "$R/tmp"
 echo "Genbu Show rootfs $VERSION built $(date -u '+%Y-%m-%dT%H:%MZ'), daemon $("$R/usr/local/bin/techo5" --version 2>/dev/null | head -1)" > "$R/etc/techo5-release"
 cat > "$R/etc/jarvis-show-release.json" <<EOF
 {
-  "product": "jarvis-show-v1",
+  "product": "genbu-show-v1",
   "boards": ["crown", "checkers"],
   "version": "$VERSION"
 }

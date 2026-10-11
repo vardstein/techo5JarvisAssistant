@@ -88,7 +88,7 @@ Kernel/initramfs/boot updates remain a separate maintenance operation and are no
 
 ## PASS — release identity and rootfs identity are independently checked
 
-Signed manifests are bound to `product=jarvis-show-v1`, supported boards, size and SHA-256. Downloaded rootfs archives are then inspected for exactly one matching internal release marker before `slotctl` can touch the inactive slot. Stable/dev channel isolation and downgrade checks remain active.
+Signed manifests are bound to `product=genbu-show-v1`, supported boards, size and SHA-256. Downloaded rootfs archives are then inspected for exactly one matching internal release marker before `slotctl` can touch the inactive slot. Stable/dev channel isolation and downgrade checks remain active.
 
 ## PASS — expected reboots/re-enumeration are bounded, not sleep-driven
 

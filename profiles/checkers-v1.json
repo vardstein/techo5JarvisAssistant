@@ -1,6 +1,6 @@
 {
-  "product": "jarvis-checkers-v1",
-  "platform": "jarvis-show-v1",
+  "product": "genbu-checkers-v1",
+  "platform": "genbu-show-v1",
   "board": "checkers",
   "fastboot_product": "CHECKERS",
   "model": "Echo Show 5 1st gen / H23K37",

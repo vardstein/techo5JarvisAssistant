@@ -14,7 +14,7 @@ A Jarvis Show manifest carries signed identity fields:
 
 ```json
 {
-  "product": "jarvis-show-v1",
+  "product": "genbu-show-v1",
   "boards": ["crown", "checkers"],
   "version": "vX.Y.Z"
 }

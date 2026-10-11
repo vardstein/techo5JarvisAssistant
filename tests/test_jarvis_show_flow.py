@@ -285,7 +285,7 @@ class FlowAcceptanceTests(unittest.TestCase):
     def test_install_show_provisions_board_specific_profile(self):
         source = (ROOT / "tools" / "install-show.py").read_text(encoding="utf-8")
         self.assertIn("if a.jarvis_show_prestaged:", source)
-        self.assertIn("printf 'jarvis-%s-v1\\\\n'", source)
+        self.assertIn("printf 'genbu-%s-v1\\\\n'", source)
         self.assertNotIn("if a.jarvis_crown_prestaged:\n        prov +=", source)
 
     def test_jarvis_prestaged_path_requires_amazon_logo_safety_flag(self):

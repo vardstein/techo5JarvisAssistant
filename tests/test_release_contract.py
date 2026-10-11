@@ -26,7 +26,7 @@ class ReleaseContractTests(unittest.TestCase):
     def test_rootfs_builder_emits_shared_product_marker(self):
         source = (ROOT / "tools/linux/mkrootfs.sh").read_text(encoding="utf-8")
         self.assertIn('jarvis-show-release.json', source)
-        self.assertIn('"product": "jarvis-show-v1"', source)
+        self.assertIn('"product": "genbu-show-v1"', source)
         self.assertIn('"boards": ["crown", "checkers"]', source)
         self.assertIn('"version": "$VERSION"', source)
 
@@ -80,7 +80,7 @@ if __name__ == "__main__":
 class SupplyChainReleaseContractTests(unittest.TestCase):
     def test_release_manifest_is_bound_to_product_and_both_first_gen_boards(self):
         source = (ROOT / "tools/release-jarvis-show.sh").read_text(encoding="utf-8")
-        self.assertIn('-product "jarvis-show-v1"', source)
+        self.assertIn('-product "genbu-show-v1"', source)
         self.assertIn('-board crown', source)
         self.assertIn('-board checkers', source)
         self.assertIn('ident.version != sys.argv[3]', source)
@@ -123,7 +123,7 @@ class SupplyChainReleaseContractTests(unittest.TestCase):
         self.assertIn("expected_product=None, expected_board=None", lib)
         self.assertIn("signed but belongs to product", lib)
         self.assertIn("signed but does not support board", lib)
-        self.assertIn("expected_product='jarvis-show-v1', expected_board=dev", installer)
+        self.assertIn("expected_product='genbu-show-v1', expected_board=dev", installer)
 
     def test_release_script_rejects_world_readable_signing_seed(self):
         with tempfile.TemporaryDirectory() as tmp:

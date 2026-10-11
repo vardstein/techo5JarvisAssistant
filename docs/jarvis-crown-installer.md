@@ -222,8 +222,8 @@ The wrapper will not construct an install plan until all of these are true:
 - the boot image is byte-for-byte the known-good Crown v0.8.0 image
   (`cf5a492f7ee7ec16305905c58bf7f0b2e3f3e75521668ca905b9ae1ffb6d0baa`);
 - the rootfs matches the exact SHA-256 supplied by the future signed Jarvis Crown release metadata;
-- the rootfs contains a regular `etc/jarvis-crown-release.json` marker naming
-  `product=jarvis-crown-v1`, `board=crown`, and a non-empty version;
+- the rootfs contains a regular `etc/jarvis-show-release.json` marker naming
+  `product=genbu-show-v1`, a `boards` list that includes `crown`, and a non-empty version;
 - the operator types exactly `ERASE`.
 
 The archived upstream v0.9.21 rootfs intentionally fails the Jarvis product-marker gate.  J22 therefore
@@ -245,7 +245,7 @@ mounts/checks the vendor modules once more and then enters the same upstream flo
 9. provisions the device name, encrypted Home Assistant API key, optional SSH public key and optional
    Wi-Fi credentials, plus whatever of Home Assistant access, DashCast and Music Assistant was given
    (see "Ready at first boot" below);
-10. writes `/data/misc/techo5/profile` as `jarvis-crown-v1` and boots slot A.
+10. writes `/data/misc/techo5/profile` as `genbu-crown-v1` and boots slot A.
 
 Jarvis Crown forces `--amazon-logo` on this internal handoff.  That is intentionally named after the
 upstream option: it means **do not patch the boot logo**, which keeps `expdb`/kaeru unchanged.  The J22

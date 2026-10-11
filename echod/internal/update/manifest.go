@@ -84,7 +84,7 @@ var deviceBoard = layout.Board
 
 // JarvisShowProduct is the signed product identity every Jarvis Show release carries. Exported so
 // release tooling can reject a typo before it signs and publishes a manifest devices would refuse.
-const JarvisShowProduct = "jarvis-show-v1"
+const JarvisShowProduct = "genbu-show-v1"
 
 // manifestTimeout bounds the fetch. Home Assistant asks for this on connect and after every selection
 // change, so it has to fail quickly rather than hold up a configuration reply.

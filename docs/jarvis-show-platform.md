@@ -11,7 +11,7 @@ The daemon, root filesystem, voice behavior, Home Assistant integration, Direct 
 
 ## Safety boundary
 
-A shared rootfs must carry `etc/jarvis-show-release.json` with `product=jarvis-show-v1` and an explicit `boards` list. The installer independently proves the fastboot product, Lineage board metadata, recovery board, backup product and boot-image digest.
+A shared rootfs must carry `etc/jarvis-show-release.json` with `product=genbu-show-v1` and an explicit `boards` list. The installer independently proves the fastboot product, Lineage board metadata, recovery board, backup product and boot-image digest.
 
 Crown destructive assets are pinned from the user's known-good archive. Checkers destructive installation remains deliberately blocked until trusted Checkers Amonet/TWRP/boot bytes are locally supplied and SHA-256 pinned. Synthetic tests may exercise the Checkers logic, but they do not authorize a real flash.
 

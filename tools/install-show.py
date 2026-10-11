@@ -502,7 +502,7 @@ def boot_image(rel, work, dev):
         # image also served the list. Releases made before the manifest covered boot images are passed
         # over here rather than trusted, which is why the search keeps going.
         earlier = Release(REPO, r['tag_name'], work,
-                          expected_product='jarvis-show-v1', expected_board=dev)
+                          expected_product='genbu-show-v1', expected_board=dev)
         if not earlier.signed(name):
             note('release %s has %s but does not name it in its signed manifest; looking further back'
                  % (r['tag_name'], name))
@@ -710,7 +710,7 @@ def main():
         note('%s boot image: wrapper-verified pinned local input %s' % (dev, boot))
     else:
         rel = Release(REPO, a.release, a.work,
-                      expected_product='jarvis-show-v1', expected_board=dev)
+                      expected_product='genbu-show-v1', expected_board=dev)
         version = rel.version
         if a.rootfs:
             rootfs = os.path.abspath(a.rootfs)
@@ -862,7 +862,7 @@ def main():
     prov = ("mkdir -p -m 700 /data/misc/techo5 && chmod 700 /data/misc/techo5 && printf '%%s\\n' %s > /data/misc/techo5/name && "
             "(umask 077; printf '%%s\\n' %s > /data/misc/techo5/psk)" % (quote(a.name), quote(psk)))
     if a.jarvis_show_prestaged:
-        prov += " && printf 'jarvis-%s-v1\\n' > /data/misc/techo5/profile" % a.jarvis_show_board
+        prov += " && printf 'genbu-%s-v1\\n' > /data/misc/techo5/profile" % a.jarvis_show_board
     # A running Show keeps its USB port shut unless USB debugging is on. This flag keeps it open for
     # the first boot only (boot.sh moves it to /run), which is watched over the serial console; the
     # end of the install closes it.
