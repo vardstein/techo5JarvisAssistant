@@ -2,7 +2,8 @@
 is how the main moves by hand; a second main is added in the integration's options.
 
 And for each Show, "Music plays on": where music asked for at that Show plays. Automatic is the room's
-speaker, else the Show itself, which is also where music goes while a speaker is offline (music.py). It
+speaker, else the Show itself, which is also where music goes while a speaker is offline (music.py); its
+label says which and why. It
 sits on the Show's small genbu device (coordinator.show_device)."""
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from __future__ import annotations
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import CHANGED, MAIN_SELECT
@@ -17,10 +19,15 @@ from .coordinator import show_device
 from .house import Show
 from .music import AUTO
 
+# Automatic says what it does: the speaker in the Show's room, else the Show itself, and why. Where the
+# music goes after that is the "Music falls back to" sensor's to say.
 AUTOMATIC = {"de": "Automatisch", "en": "Automatic"}
-# Automatic names the Show as the fallback, and says when the room's speaker is offline.
-ELSE = {"de": "{room}, sonst {own}", "en": "{room}, else {own}"}
-OFFLINE = {"de": "{own}, solange {room} offline ist", "en": "{own} while {room} is offline"}
+WHY = {
+    "de": {"room": "Lautsprecher im Raum {area} ({room})", "none": "kein Lautsprecher im Raum {area} ({own})",
+           "unset": "kein Raum gesetzt ({own})", "offline": "{room} ist offline ({own})"},
+    "en": {"room": "speaker in {area} ({room})", "none": "no speaker in {area} ({own})",
+           "unset": "no room set ({own})", "offline": "{room} is offline ({own})"},
+}
 # A player that is offline says so in the list: picking it then plays on the next one in line.
 GONE = {"de": "{name} (offline)", "en": "{name} (offline)"}
 
@@ -90,14 +97,19 @@ class MusicPlaysOn(SelectEntity):
 
     def _automatic(self, show) -> str:
         lang = self.hass.config.language[:2]
-        word = AUTOMATIC.get(lang, AUTOMATIC["en"])
+        word, why = AUTOMATIC.get(lang, AUTOMATIC["en"]), WHY.get(lang, WHY["en"])
         room, own = self.hub.automatic(show) if show else (None, None)
-        if room and own:
-            text = (ELSE if room.available else OFFLINE).get(lang, ELSE["en"] if room.available else OFFLINE["en"])
-            name = text.format(room=room.name, own=own.name)
+        where = ar.async_get(self.hass).async_get_area(show.area) if show and show.area else None
+        area = where.name if where else ""
+        if room and own and not room.available:
+            text = why["offline"]
+        elif room:
+            text = why["room"]
+        elif own:
+            text = why["none"] if area else why["unset"]
         else:
-            name = (room or own).name if room or own else ""
-        return f"{word} ({name})" if name else word
+            return word
+        return f"{word}: " + text.format(area=area, room=room.name if room else "", own=own.name if own else "")
 
     @callback
     def _changed(self) -> None:
