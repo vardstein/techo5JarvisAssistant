@@ -597,16 +597,31 @@ class RoomTests(unittest.TestCase):
 
 
 class FakeCalendarHA(FakeHA):
-    """FakeHA with Home Assistant's CalDAV form and the Show's calendar_sources action."""
+    """FakeHA with Home Assistant's CalDAV form and the Show's calendar_sources action. calendars come
+    from a CalDAV account it has (entry OLD), yaml_calendars from configuration.yaml (no registry entry);
+    caldav_brings are the new account's (entry CAL1)."""
 
-    def __init__(self, *, calendars=(), caldav_error=None, caldav_brings=("calendar.personal",), **kw):
+    def __init__(self, *, calendars=(), yaml_calendars=(), caldav_error=None, caldav_abort=None,
+                 caldav_brings=("calendar.personal",), **kw):
         super().__init__(**kw)
-        self.calendars = {c: c.split(".", 1)[1].title() for c in calendars}
+        self.calendars = {c: c.split(".", 1)[1].title() for c in (*calendars, *yaml_calendars)}
+        self.owner = {c: "OLD" for c in calendars}
+        self.caldav_entries = [{"entry_id": "OLD", "domain": "caldav", "title": "old-user"}] if calendars else []
         self.caldav_error = caldav_error
+        self.caldav_abort = caldav_abort
         self.caldav_brings = caldav_brings
         self.saved = []
 
     def request(self, method, path, body=None):
+        if method == "GET" and path == "/api/config/config_entries/entry?domain=caldav":
+            return list(self.caldav_entries)
+        if method == "DELETE" and path.startswith("/api/config/config_entries/entry/"):
+            self.calls.append((method, path, body))
+            gone = path.rsplit("/", 1)[1]
+            self.caldav_entries = [e for e in self.caldav_entries if e["entry_id"] != gone]
+            for c in [c for c, owner in self.owner.items() if owner == gone]:
+                del self.calendars[c], self.owner[c]
+            return {"require_restart": False}
         if method == "POST" and path == "/api/config/config_entries/flow" and body["handler"] == "caldav":
             self.calls.append((method, path, body))
             return {"type": "form", "flow_id": "C1", "step_id": "user", "errors": {}}
@@ -614,8 +629,12 @@ class FakeCalendarHA(FakeHA):
             self.calls.append((method, path, body))
             if self.caldav_error:
                 return {"type": "form", "flow_id": "C1", "step_id": "user", "errors": {"base": self.caldav_error}}
+            if self.caldav_abort:
+                return {"type": "abort", "reason": self.caldav_abort}
             for c in self.caldav_brings:  # a second calendar of one name is calendar.<name>_2, same name
                 self.calendars[c] = c.split(".", 1)[1].removesuffix("_2").title()
+                self.owner[c] = "CAL1"
+            self.caldav_entries.append({"entry_id": "CAL1", "domain": "caldav", "title": ACCOUNT.username})
             return {"type": "create_entry", "result": {"entry_id": "CAL1"}}
         if path == "/api/states" and method == "GET":
             return super().request(method, path, body) + [
@@ -629,6 +648,15 @@ class FakeCalendarHA(FakeHA):
     def ws(self, message):
         if message["type"] == "lovelace/config/save":
             self.saved.append(message)
+            return {}
+        if message["type"] == "config/entity_registry/list":
+            return super().ws(message) + [{"entity_id": c, "config_entry_id": owner} for c, owner in self.owner.items()]
+        if message["type"] == "config/entity_registry/update" and message["entity_id"] in self.owner:
+            was, now = message["entity_id"], message["new_entity_id"]
+            if now in self.calendars:
+                raise ha.HomeAssistantError(f"Entity with this ID is already registered: {now}")
+            self.calendars[now], self.owner[now] = self.calendars.pop(was), self.owner.pop(was)
+            self.ws_calls.append(message)
             return {}
         return super().ws(message)
 
@@ -674,20 +702,54 @@ class CalendarTests(unittest.TestCase):
             self.assertEqual(bool(fake.posted("/api/config/config_entries/flow/C1")), added)
             self.assertEqual(fake.sources(), [{"calendars": "calendar.personal"}] if added else [])
 
-    def test_an_account_it_may_have_already_is_said_before_and_after(self):
-        fake = FakeCalendarHA(calendars=("calendar.personal",), caldav_brings=("calendar.personal_2",))
+    def test_an_account_it_has_is_replaced_or_the_step_skipped(self):
         offered = {}
 
-        def choose(label, current, options, names=None):
-            offered[label] = names
-            return {"calendar account": "yes", "calendars": "calendar.personal"}.get(label)
-        _, log = run_deploy(fake, choose=choose, host="10.0.0.9", voice_extras=False, ask_caldav=lambda: ACCOUNT)
-        self.assertEqual(offered["calendar account"]["no"], "no, keep the 1 it has: Personal")
-        self.assertTrue(any(line.startswith("WARN: calendar.personal_2 has the name of a calendar") for line in log))
+        def chooser(answer):
+            def choose(label, current, options, names=None):
+                offered[label] = (options, names)
+                return {"calendar account": answer, "calendars": "all"}.get(label)
+            return choose
+        fake = FakeCalendarHA(calendars=("calendar.personal", "calendar.contact_birthdays"),
+                              caldav_brings=("calendar.personal_2", "calendar.contact_birthdays_2"))
+        _, log = run_deploy(fake, choose=chooser("skip"), host="10.0.0.9", voice_extras=False,
+                            ask_caldav=lambda: self.fail("asked for an account"))
+        options, names = offered["calendar account"]
+        self.assertEqual(options, ["replace", "skip"])
+        self.assertEqual(names["replace"], "replace the CalDAV account old-user with another one")
+        self.assertEqual(names["skip"], "skip, keep old-user and its calendars: Contact_Birthdays, Personal")
+        self.assertFalse(fake.posted("/api/config/config_entries/flow/C1"))
+        self.assertEqual(fake.sources(), [{"calendars": "calendar.contact_birthdays, calendar.personal"}])
 
-        fake = FakeCalendarHA(calendars=("calendar.familie",), caldav_brings=("calendar.personal",))
-        _, log = run_deploy(fake, choose=choose, host="10.0.0.9", voice_extras=False, ask_caldav=lambda: ACCOUNT)
-        self.assertFalse(any("Home Assistant had already" in line for line in log))
+        fake = FakeCalendarHA(calendars=("calendar.personal", "calendar.contact_birthdays"),
+                              caldav_brings=("calendar.personal_2", "calendar.contact_birthdays_2"))
+        _, log = run_deploy(fake, choose=chooser("replace"), host="10.0.0.9", voice_extras=False,
+                            ask_caldav=lambda: ACCOUNT)
+        self.assertIn(("DELETE", "/api/config/config_entries/entry/OLD", None), fake.calls)
+        self.assertEqual(sorted(fake.calendars), ["calendar.contact_birthdays", "calendar.personal"])
+        self.assertEqual(set(fake.owner.values()), {"CAL1"})
+        self.assertIn("calendar.personal_2 is calendar.personal again, the id the old account's calendar had", log)
+        self.assertEqual(fake.sources(), [{"calendars": "calendar.contact_birthdays, calendar.personal"}])
+        self.assertLess(log.index("CalDAV account jo added"), log.index("CalDAV account old-user removed from Home Assistant"))
+
+    def test_the_old_account_stays_when_the_new_one_is_refused_or_the_same(self):
+        for kw in ({"caldav_error": "invalid_auth"}, {"caldav_abort": "already_configured"}):
+            fake = FakeCalendarHA(calendars=("calendar.personal",), **kw)
+            _, log = run_deploy(fake, host="10.0.0.9", caldav=ACCOUNT, calendars="calendar.personal")
+            self.assertNotIn(("DELETE", "/api/config/config_entries/entry/OLD", None), fake.calls, kw)
+            self.assertEqual(fake.caldav_entries[0]["entry_id"], "OLD")
+            self.assertEqual(fake.sources(), [{"calendars": "calendar.personal"}])
+        self.assertIn("CalDAV account jo was in Home Assistant already, so it stays as it is", log)
+
+    def test_calendars_from_configuration_yaml_are_never_doubled(self):
+        fake = FakeCalendarHA(yaml_calendars=("calendar.personal",), caldav_brings=("calendar.personal_2",))
+        asked = []
+        _, log = run_deploy(fake, choose=lambda label, *_: asked.append(label) or None, host="10.0.0.9",
+                            voice_extras=False, ask_caldav=lambda: ACCOUNT)
+        self.assertNotIn("calendar account", asked)
+        self.assertFalse(fake.posted("/api/config/config_entries/flow/C1"))
+        self.assertTrue(any(line.startswith("Home Assistant has calendar.personal from configuration.yaml")
+                            for line in log))
 
     def test_the_calendars_offered_are_the_ones_there(self):
         fake = FakeCalendarHA(calendars=("calendar.familie", "calendar.arbeit"))

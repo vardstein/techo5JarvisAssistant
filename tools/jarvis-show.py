@@ -258,7 +258,8 @@ QUESTIONS = {  # label: (question, help, names for the options, the answers Ente
     "new name": ("The Show has a new name. Give its entities the new name too?",
                  "Its automations, scripts and dashboards follow, each saved first. The history stays.", {}, ()),
     "calendar account": ("Add a calendar account to Home Assistant?",
-                         "For the dashboard's calendar card and the Show's own calendar page. Home Assistant "
+                         "For the dashboard's calendar card and the Show's own calendar page. One it has already is "
+                         "replaced, never added twice. Home Assistant "
                          "keeps the password; the installer and the Show don't.", {}, ()),
     "calendars": ("Which calendars should the Show show?",
                   "On its calendar page, a tap on the date under the clock. More can be picked later on the "

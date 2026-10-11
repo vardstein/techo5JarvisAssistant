@@ -861,9 +861,9 @@ def _calendars(ha: HomeAssistant) -> dict[str, str]:
     return found
 
 
-def add_caldav(ha: HomeAssistant, account: CalDAVAccount) -> str:
+def add_caldav(ha: HomeAssistant, account: CalDAVAccount) -> tuple[str, bool]:
     """Adds the account through Home Assistant's CalDAV form, which tries it before it saves it.
-    Returns what happened; raises when Home Assistant refused it."""
+    Returns what happened, and whether the account is new; raises when Home Assistant refused it."""
     result = ha.request("POST", "/api/config/config_entries/flow", {"handler": "caldav", "show_advanced_options": False})
     flow_id = result.get("flow_id") if isinstance(result, dict) else None
     if not flow_id or result.get("type") != "form" or result.get("step_id") != "user":
@@ -875,9 +875,9 @@ def add_caldav(ha: HomeAssistant, account: CalDAVAccount) -> str:
         "verify_ssl": account.verify_ssl})
     kind = done.get("type") if isinstance(done, dict) else None
     if kind == "create_entry":
-        return f"CalDAV account {account.username} added"
+        return f"CalDAV account {account.username} added", True
     if kind == "abort" and done.get("reason") == "already_configured":
-        return f"CalDAV account {account.username} was in Home Assistant already"
+        return f"CalDAV account {account.username} was in Home Assistant already, so it stays as it is", False
     if kind == "form":
         _drop_flow(ha, flow_id)
     base = ((done.get("errors") or {}).get("base") if isinstance(done, dict) else None) or \
@@ -926,43 +926,87 @@ def _point_calendar_cards(ha: HomeAssistant, calendar: str, have: set[str],
     return changed
 
 
+def _caldav_entries(ha: HomeAssistant) -> list[dict]:
+    """The CalDAV accounts Home Assistant has in its UI (Settings -> Devices & services)."""
+    entries = ha.request("GET", "/api/config/config_entries/entry?domain=caldav") or []
+    return [e for e in entries if e.get("domain") == "caldav"]
+
+
+def _entities_of(ha: HomeAssistant, entry_ids: set[str]) -> set[str]:
+    return {str(e.get("entity_id")) for e in ha.ws({"type": "config/entity_registry/list"}) or []
+            if e.get("config_entry_id") in entry_ids}
+
+
+def _replace_caldav(ha: HomeAssistant, old: list[dict], progress: Callable[[str], None]) -> None:
+    """Removes the CalDAV accounts in old once the new one is in, and gives the new calendars the ids
+    the old ones had (calendar.personal_2 becomes calendar.personal again), so the dashboards and
+    Shows that use them keep working."""
+    gone = {c for c in _entities_of(ha, {str(e.get("entry_id")) for e in old}) if c.startswith("calendar.")}
+    for entry in old:
+        ha.request("DELETE", f"/api/config/config_entries/entry/{entry.get('entry_id')}")
+        progress(f"CalDAV account {entry.get('title') or entry.get('entry_id')} removed from Home Assistant")
+    have = _calendars(ha)
+    for calendar in sorted(have):
+        base = re.sub(r"_\d+$", "", calendar)
+        if base == calendar or base not in gone or base in have:
+            continue
+        try:
+            ha.ws({"type": "config/entity_registry/update", "entity_id": calendar, "new_entity_id": base})
+        except HomeAssistantError as exc:
+            progress(f"WARN: {calendar} keeps its id ({exc}); rename it in Settings -> Entities")
+            continue
+        progress(f"{calendar} is {base} again, the id the old account's calendar had")
+
+
 def _set_up_calendars(ha: HomeAssistant, prefix: str, opts: "DeployOptions", choose: Chooser | None,
                       progress: Callable[[str], None], sleep: Callable[[float], None],
                       clock: Callable[[], float]) -> None:
     """A CalDAV account for Home Assistant when one is given or wanted, then the calendars this Show
-    shows, and the dashboard's calendar card pointed at one that is there."""
+    shows, and the dashboard's calendar card pointed at one that is there. An account never comes in
+    next to one Home Assistant has: it replaces it, or the step is skipped."""
     have = _calendars(ha)
+    old = _caldav_entries(ha)
+    registered = {str(e.get("entity_id")) for e in ha.ws({"type": "config/entity_registry/list"}) or []}
+    in_yaml = sorted(c for c in have if c not in registered)  # configuration.yaml's have no registry entry
     account = opts.caldav
-    if account is None and opts.ask_caldav and choose and opts.calendars is None:
-        names = {"yes": "yes, a CalDAV account (Nextcloud, iCloud, mailbox.org ...)", "no": "no"}
-        if have:
-            # An account Home Assistant has already, in the UI or in configuration.yaml, would come in a
-            # second time with every calendar as calendar.<name>_2.
-            names = {"yes": "yes, another CalDAV account",
-                     "no": f"no, keep the {len(have)} it has: " + ", ".join(sorted(set(have.values())))}
-        if choose("calendar account", "", ["yes", "no"], names) == "yes":
+    asking = account is None and opts.ask_caldav and choose and opts.calendars is None
+    if in_yaml and not old and (account is not None or asking):
+        # Home Assistant can't drop those over its API, and a new account next to them would bring every
+        # calendar in twice, as calendar.<name>_2.
+        progress(f"Home Assistant has {', '.join(in_yaml)} from configuration.yaml, so no calendar account "
+                 "is added. To replace it, remove the calendar: block there, restart Home Assistant and run "
+                 "this again")
+        account = None
+    elif asking:
+        if old:
+            accounts = ", ".join(str(e.get("title") or e.get("entry_id")) for e in old)
+            its = "its" if len(old) == 1 else "their"
+            names = {"replace": f"replace the CalDAV account {accounts} with another one",
+                     "skip": f"skip, keep {accounts} and {its} calendars: " + ", ".join(sorted(set(have.values())))}
+            wanted = choose("calendar account", "", ["replace", "skip"], names) == "replace"
+        else:
+            names = {"yes": "yes, a CalDAV account (Nextcloud, iCloud, mailbox.org ...)", "no": "no"}
+            wanted = choose("calendar account", "", ["yes", "no"], names) == "yes"
+        if wanted:
             account = opts.ask_caldav()
     if account is not None:
         try:
-            progress(add_caldav(ha, account))
+            said, added = add_caldav(ha, account)
+            progress(said)
         except HomeAssistantError as exc:
             progress(f"WARN: {exc}; add it in Settings -> Devices & services -> CalDAV (docs/calendars.md)")
         else:
             until = clock() + 30
-            while not set(_calendars(ha)) - set(have) and clock() < until:
+            while added and not set(_calendars(ha)) - set(have) and clock() < until:
                 sleep(3)
             now = _calendars(ha)
             new = sorted(set(now) - set(have))
-            twice = [c for c in new if now[c] in set(have.values())]
-            have = now
             progress(f"its calendars in Home Assistant: {', '.join(new)}" if new else
                      "the account has no calendar Home Assistant can see yet")
-            if twice:
-                same = "has the name of a calendar" if len(twice) == 1 else "have the names of calendars"
-                progress(f"WARN: {', '.join(twice)} {same} Home Assistant had already, so this may be the "
-                         "same account twice; then pick only one of each, and remove the "
-                         "account you don't want in Settings -> Devices & services -> CalDAV (or "
-                         "configuration.yaml)")
+            if old and added:
+                _replace_caldav(ha, old, progress)
+                now = _calendars(ha)
+            have = now
     if not have:
         progress("Home Assistant has no calendar, so the Show shows none; docs/calendars.md says how to add one")
         return

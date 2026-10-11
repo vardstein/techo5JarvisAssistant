@@ -475,11 +475,16 @@ What happens with the answers:
      "Jarvis Show 5", not an admin, with a random password nobody keeps) and gives the Show a token
      for it, replacing the one made last time. See [Lyrics](lyrics.md);
   9. sets up the calendars ([Calendars](calendars.md)). When there's someone at the terminal, it
-     first asks whether to add a calendar account to Home Assistant. When Home Assistant has calendars
-     already, the question names them, because an account it has already (in the UI or in
-     `configuration.yaml`) would come in a second time as `calendar.<name>_2`. If new calendars have
-     the names of ones it had, the tool warns that it may be the same account twice. Yes asks for the CalDAV
-     server's address, the user name and the password (an app password where the server has them).
+     first asks whether to add a calendar account to Home Assistant. An account never comes in next
+     to one Home Assistant has (its calendars would all turn up twice, as `calendar.<name>_2`). When
+     there's a CalDAV account already, the question is replace or skip. Replace adds the new account,
+     and only once Home Assistant has taken it does it remove the old one and give the new calendars
+     the ids the old ones had, so dashboards and Shows that use `calendar.personal` keep working. A
+     refused password, or the same account again, leaves the old one as it is. Calendars from a
+     `calendar:` block in `configuration.yaml` can't be removed over the API, so then no account is
+     added at all; the tool says to remove the block, restart Home Assistant and run it again. Yes or
+     replace asks for the CalDAV server's address, the user name and the password (an app password
+     where the server has them).
      It fills these into Home Assistant's own CalDAV form, which tries them before saving. The
      password goes to Home Assistant only. The installer doesn't write it anywhere, and the Show
      never gets it. Then it lists the calendars Home Assistant has and asks which one the Show
@@ -488,7 +493,7 @@ What happens with the answers:
      dashboard that points at a calendar Home Assistant doesn't have (the dashboard ships with
      `calendar.personal` as a placeholder) is pointed at the first one picked. Its old configuration is
      saved in `backups/home-assistant/` first. A card on a calendar that is there is left alone.
-     `--caldav-url`, `--caldav-user` and `--caldav-password-file` add an account without asking,
+     `--caldav-url`, `--caldav-user` and `--caldav-password-file` add (or replace) an account without asking,
      `--calendars` says which calendars ahead of time, and `--calendars ''` leaves them alone. A
      server with a self-signed certificate has to be added by hand, with **Verify SSL** off.
 
@@ -636,7 +641,7 @@ uses the Home Assistant, DashCast, Music Assistant and choice switches.
 | `--voice-extras`, `--no-voice-extras` | Set up the voice extras in Home Assistant (step 6 above), or don't. Asked otherwise. |
 | `--rename-entities`, `--no-rename-entities` | For a Show renamed since it was installed: give its entities, and what uses them, the new name too, or don't. Asked otherwise. |
 | `--calendars LIST` | The calendars the Show shows, like `calendar.personal, calendar.familie` (step 9 above). `''` leaves them alone. Asked otherwise. |
-| `--caldav-url URL`, `--caldav-user NAME`, `--caldav-password-file FILE` | Add this CalDAV account to Home Assistant. The password goes to Home Assistant's form and is kept nowhere here. |
+| `--caldav-url URL`, `--caldav-user NAME`, `--caldav-password-file FILE` | Add this CalDAV account to Home Assistant, in place of the one it has. The password goes to Home Assistant's form and is kept nowhere here. |
 | `--no-questions` | Asks nothing. Only switches and the keyring count. `TECHO5_NO_PROMPT=1`, or running without a terminal, does the same. |
 
 Secrets only ever come from files, the keyring or a hidden question, never from a switch's value
