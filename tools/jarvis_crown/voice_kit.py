@@ -31,7 +31,7 @@ from typing import Any, Callable
 from .home_assistant import Chooser, HomeAssistant, HomeAssistantError, NotFound, service_prefix, slug_key
 
 BLUEPRINT_FOLDER = "techo5"
-BLUEPRINT_SOURCE = "https://github.com/vardstein/techo5JarvisAssistant/blob/jarvis-crown-v1/blueprints/automation/"
+BLUEPRINT_SOURCE = "https://github.com/vardstein/techo5JarvisAssistant/blob/genbuShowCrown/blueprints/automation/"
 BLUEPRINT_DIR = Path(__file__).resolve().parents[2] / "blueprints" / "automation"
 TURN_ROOM_DOWN = "turn-room-down.yaml"
 VOLUME = "volume-where-the-music-is.yaml"

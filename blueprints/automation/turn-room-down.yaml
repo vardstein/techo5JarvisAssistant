@@ -15,7 +15,7 @@ blueprint:
     wake word, so the second try isn't up against the music. Nobody trying again within a few
     seconds brings them back up.
   domain: automation
-  source_url: https://github.com/vardstein/techo5JarvisAssistant/blob/jarvis-crown-v1/blueprints/automation/turn-room-down.yaml
+  source_url: https://github.com/vardstein/techo5JarvisAssistant/blob/genbuShowCrown/blueprints/automation/turn-room-down.yaml
   input:
     satellite:
       name: Voice assistant

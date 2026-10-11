@@ -4,7 +4,7 @@
   "codeowners": [],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/vardstein/techo5JarvisAssistant/blob/jarvis-crown-v1/docs/recipes.md",
+  "documentation": "https://github.com/vardstein/techo5JarvisAssistant/blob/genbuShowCrown/docs/recipes.md",
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "requirements": [],
