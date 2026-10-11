@@ -63,6 +63,7 @@ When something on stable is broken and cannot wait for the next release:
 | Step | What has to pass first |
 |---|---|
 | Commit on a task or fix branch | The checks for what it touches, run by hand: `python3 -m unittest discover -s tests -p 'test_*.py'`, `(cd echod && go test ./...)`, and for `ha/` the Home Assistant harness ([update-leader.md](update-leader.md#tests)). |
+| Push of any branch | `python3 tools/secret_scan.py --here`: no secrets, and nothing only this machine knows (its addresses, home directory, our SSH keys). The repo is public. CI runs the same scan without `--here`. |
 | Task or fix → feature | The above, plus CI (`build.yml` runs on every push to `feature/**`, `task/**` and `fix/**`). |
 | Feature → `dev` | Everything in the feature's Plane item done; its human test steps written in the item; CI green. |
 | `dev` → `staging` | The dev release installed and committed on the dev test Show (slot trial passed); the human test steps done there; nothing open in Plane for those features. |
@@ -122,6 +123,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
 - Areas are the part of the repo: `echod`, `installer`, `ha`, `rootfs`, `boot-logo`, `dashcast`, `ci`,
   `docs`, `release`, or a feature inside echod (`music`, `display`, `firmware`).
+- The format starts with the commits on `genbuShowCrown` from 2026-10-11. Older history stays as it
+  is; the work before that is in Plane, backfilled as features with their tasks.
 - One logical change per commit. Commits are authored as `vard <vard@openjade.de>`.
 - No pull requests are needed: merges happen locally with `--no-ff`. History that is already on `dev`,
   `staging` or `stable` is never rewritten: release tags and the Shows' manifests point at it.
