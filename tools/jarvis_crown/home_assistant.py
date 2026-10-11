@@ -13,7 +13,7 @@ already has only fills in what is missing. No secret is ever put in an error mes
 from __future__ import annotations
 
 import base64
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import hashlib
 import ipaddress
 import json
@@ -1153,8 +1153,41 @@ class DeployOptions:
     ask_caldav: Callable[[], CalDAVAccount | None] | None = None  # asks for one, once choose says yes
     # Saves an automation or script config before voice_kit replaces it: (what, config) -> where it went.
     keep_replaced: Callable[[str, Any], str] | None = None
+    # A Show renamed since it was installed: move its entity ids and what uses them to the new name
+    # (rename.follow); None: ask through choose, and leave them without it. renamed hears the new name.
+    rename_entities: bool | None = None
+    renamed: Callable[[str], None] | None = None
     settings: DeviceSettings = DeviceSettings()
     wait_seconds: float = 300.0
+
+
+def _follow_rename(ha: HomeAssistant, entry_id: str, opts: DeployOptions, node: str,
+                   progress: Callable[[str], None], choose: Chooser | None) -> str | None:
+    """Moves the Show's entities and what uses them to its new name, when opts or choose say so; returns
+    the new name then. The name is the one its device has in Home Assistant, as the room sees it."""
+    from . import rename
+    devices = ha.ws({"type": "config/device_registry/list"}) or []
+    entities = ha.ws({"type": "config/entity_registry/list"}) or []
+    own = rename.show_devices(devices, entities, entry_id)
+    name = rename.device_name(own[0]) if own else ""
+    if rename.slugify(name) != rename.slugify(node):
+        name = node
+    wanted = opts.rename_entities
+    if wanted is None and choose:
+        was, now = rename.slugify(opts.name), rename.slugify(name)
+        wanted = choose("new name", "", ["yes", "no"], {"yes": f"yes, {was}_... becomes {now}_...",
+                                                         "no": f"no, keep {was}_..."}) == "yes"
+    if not wanted:
+        progress(f"its entities keep the name {opts.name!r}")
+        return None
+    try:
+        rename.follow(ha, entry_id, opts.name, name, keep=opts.keep_replaced, progress=progress)
+    except HomeAssistantError as exc:
+        progress(f"WARN: the move to the new name stopped part way: {exc}")
+        return None
+    if opts.renamed:
+        opts.renamed(name)
+    return name
 
 
 def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], None] = print,
@@ -1184,6 +1217,9 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
     node = node_name(ha, entry_id)
     if node and service_prefix(node) != service_prefix(opts.name):
         progress(f"Home Assistant knows the Show as {node!r} (renamed since it was installed as {opts.name!r})")
+        new_name = _follow_rename(ha, entry_id, opts, node, progress, choose)
+        if new_name:
+            opts = replace(opts, name=new_name)
     prefix = service_prefix(node or opts.name)
     wanted = []
     s = opts.settings

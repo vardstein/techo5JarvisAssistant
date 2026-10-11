@@ -494,6 +494,22 @@ What happens with the answers:
   reached, and says so ("Home Assistant knows the Show as 'kitchen-show'"). While it waits for the
   Show to come online, it says what it waits for and for how much longer.
 
+  The entity ids of a renamed Show keep the name it had on the first day
+  (`select.jarvis_show_5_wake_word` on a device now called genbuShow5), and entities added later get
+  the room in front (`switch.living_room_genbushow5_ssh`). So the tool asks whether its entities should
+  take the new name too. Yes renames the Show's entities, and Music Assistant's player for it when
+  that still has the old name, to `genbushow5_...`. Home Assistant keeps their history. Then it points
+  every automation, script and dashboard that used an old id, or one of the Show's old actions, at
+  the new one. Each is saved in `backups/home-assistant/` before it changes. Only whole ids are
+  swapped, so `select.jarvis_show_5_wake_word_2` stays put when only the first one moves. An automation
+  saved this way is reloaded by Home Assistant right away. Afterwards Home Assistant checks its
+  configuration, the ESPHome entry and the Show's user (`show_genbushow5`) take the new name, and the
+  installer records it in `show.json`, so the next run is `--name genbuShow5`. An id that is
+  taken already keeps its old name and is listed with `!`. Renaming the user needs Home Assistant's
+  owner; with another admin it keeps its old name. The rest of the run goes by the new name.
+  `--rename-entities` says yes ahead of time, `--no-rename-entities` no; Enter or nobody at the
+  terminal is no.
+
   The admin sign-ins are used for this and ended when the run ends. Each step looks first at what is already
   there, so running it again changes only what is missing. The last line says it's done, or done
   with how many things to look at, each marked `!` above.
@@ -615,6 +631,7 @@ uses the Home Assistant, DashCast, Music Assistant and choice switches.
 | `--room NAME` | The Home Assistant area it stands in, by name or id. `''` leaves it alone. |
 | `--room-dashboard`, `--no-room-dashboard` | Make a small dashboard for its room when the room has none, or never. Asked otherwise. |
 | `--voice-extras`, `--no-voice-extras` | Set up the voice extras in Home Assistant (step 6 above), or don't. Asked otherwise. |
+| `--rename-entities`, `--no-rename-entities` | For a Show renamed since it was installed: give its entities, and what uses them, the new name too, or don't. Asked otherwise. |
 | `--calendars LIST` | The calendars the Show shows, like `calendar.personal, calendar.familie` (step 9 above). `''` leaves them alone. Asked otherwise. |
 | `--caldav-url URL`, `--caldav-user NAME`, `--caldav-password-file FILE` | Add this CalDAV account to Home Assistant. The password goes to Home Assistant's form and is kept nowhere here. |
 | `--no-questions` | Asks nothing. Only switches and the keyring count. `TECHO5_NO_PROMPT=1`, or running without a terminal, does the same. |

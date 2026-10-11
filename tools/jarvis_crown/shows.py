@@ -37,6 +37,23 @@ def record_show(folder: Path, *, name: str, board: str) -> None:
     tmp.replace(folder / RECORD)
 
 
+def rename_show(folder: Path, name: str) -> bool:
+    """Gives the Show recorded in folder its new name, keeping the rest of its record. False when there
+    is no record there."""
+    record = folder / RECORD
+    try:
+        data = json.loads(record.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    data["name"] = name
+    tmp = folder / (RECORD + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(record)
+    return True
+
+
 def known_shows(backups: Path) -> list[Show]:
     shows = []
     for record in sorted(backups.glob(f"*/{RECORD}")):

@@ -24,7 +24,7 @@ from jarvis_crown.flow import FlowError, InstallInputs, run_install_flow  # noqa
 from jarvis_crown import home_assistant as ha_api  # noqa: E402
 from jarvis_crown import ui  # noqa: E402
 from jarvis_crown import music_assistant as ma_api  # noqa: E402
-from jarvis_crown.shows import known_shows, show_named  # noqa: E402
+from jarvis_crown.shows import known_shows, rename_show, show_named  # noqa: E402
 from jarvis_crown.settings import RUN, Asker, Settings, SettingsError, gather, read_secret_file, save_defaults, secret_files  # noqa: E402
 from jarvis_crown.preflight import SERIAL_GROUPS, _group_names, preflight_ok, print_checks, run_preflight  # noqa: E402
 from jarvis_crown.recovery import RecoveryError, adb_recovery_serials, identify_recovery_show  # noqa: E402
@@ -103,6 +103,10 @@ def parse_args() -> argparse.Namespace:
                        help="set up the Home Assistant pieces around the Shows: the room going quiet while a "
                             "Show listens, and with a German assistant local answers (room, temperature, "
                             "forecast, volume) and music by voice (default: ask; Enter is no)")
+    setup.add_argument("--rename-entities", action=argparse.BooleanOptionalAction, default=None,
+                       help="for a Show renamed since it was installed: give its entities the new name too, "
+                            "and the automations and dashboards that use them (each saved first) "
+                            "(default: ask; Enter is no)")
     setup.add_argument("--calendars",
                        help="the Home Assistant calendars the Show shows, like 'calendar.personal, calendar.family' "
                             "(default: ask; '' leaves them alone)")
@@ -251,6 +255,8 @@ QUESTIONS = {  # label: (question, help, names for the options, the answers Ente
                      "The room's music goes quiet while the Show listens. With a German assistant it also "
                      "answers about the room, the temperature, the weather and the volume, and plays music by "
                      "voice. Anything you made yourself is only replaced if you say so.", {}, ()),
+    "new name": ("The Show has a new name. Give its entities the new name too?",
+                 "Its automations, scripts and dashboards follow, each saved first. The history stays.", {}, ()),
     "calendar account": ("Add a calendar account to Home Assistant?",
                          "For the dashboard's calendar card and the Show's own calendar page. Home Assistant "
                          "keeps the password; the installer and the Show don't.", {}, ()),
@@ -268,7 +274,7 @@ def _chooser(args):
         return None
     given = {"assistant": args.assistant, "wake word": args.wake_word, "room": args.room,
              "room dashboard": args.room_dashboard, "voice extras": args.voice_extras,
-             "calendars": args.calendars}
+             "calendars": args.calendars, "new name": getattr(args, "rename_entities", None)}
 
     def choose(label: str, current: str, options: list[str], shown: dict[str, str] | None = None) -> str | None:
         if given.get(label) is not None:
@@ -337,11 +343,18 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
     except (SettingsError, ValueError) as exc:
         ui.out.fail(f"{exc}")
         return 1
+    now_called = [name]
+
+    def renamed(new: str) -> None:
+        now_called[0] = new
+        if rename_show(key_file.parent, new):
+            ui.out.progress(f"the installer knows it as {new!r} from now on")
+
     opts = ha_api.DeployOptions(
         name=name, psk=psk, host=host, wake_word=args.wake_word or None, assistant=args.assistant or None,
         room=args.room or None, room_dashboard=args.room_dashboard, voice_extras=args.voice_extras,
         keep_replaced=_keeper(backups), calendars=args.calendars, caldav=caldav,
-        ask_caldav=_caldav_asker(args),
+        ask_caldav=_caldav_asker(args), rename_entities=getattr(args, "rename_entities", None), renamed=renamed,
         settings=ha_api.DeviceSettings(dashcast=settings.dashcast, dashcast_key=settings.dashcast_key,
                                        ha_url=settings.ha_url, ha_token=settings.ha_token,
                                        music_assistant=settings.music_assistant, own_user=settings.own_ha_user,
@@ -355,7 +368,7 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
     except ha_api.HomeAssistantError as exc:
         ui.out.fail(f"Home Assistant: {exc}")
         return 5
-    ui.out.finish(f"{name} is in Home Assistant and set up")
+    ui.out.finish(f"{now_called[0]} is in Home Assistant and set up")
     return 0
 
 

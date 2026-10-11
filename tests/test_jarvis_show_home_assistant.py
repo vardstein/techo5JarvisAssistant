@@ -257,6 +257,25 @@ class DeployTests(unittest.TestCase):
         self.assertTrue(any("knows the Show as 'genbushow5'" in line for line in log))
         self.assertFalse(any(line.startswith("WARN") for line in log))
 
+    def test_a_renamed_show_keeps_its_old_entity_ids_unless_told(self):
+        fake = FakeHA()
+        fake.node = "genbushow5"
+        with mock.patch("jarvis_crown.rename.follow") as follow:
+            _, log = run_deploy(fake, host="10.0.0.9")
+        follow.assert_not_called()
+        self.assertIn("its entities keep the name 'Jarvis Show 5'", log)
+
+    def test_a_renamed_show_can_take_its_entities_to_the_new_name(self):
+        fake, renamed = FakeHA(), []
+        fake.node = "genbushow5"
+        with mock.patch("jarvis_crown.rename.follow", return_value=3) as follow, \
+                mock.patch("jarvis_crown.voice_kit.set_up") as voice:
+            run_deploy(fake, host="10.0.0.9", rename_entities=True, renamed=renamed.append, voice_extras=True)
+        follow.assert_called_once()
+        self.assertEqual(follow.call_args.args[1:], ("E1", "Jarvis Show 5", "genbushow5"))
+        self.assertEqual(renamed, ["genbushow5"])
+        self.assertEqual(voice.call_args.args[1], "genbushow5")  # the rest of the run goes by the new name
+
     def test_without_diagnostics_the_installed_name_is_used(self):
         fake = FakeHA()
         fake.node = None
@@ -359,6 +378,17 @@ class DeployTests(unittest.TestCase):
                                                 {"Jarvis": "Jarvis (default)"})
         self.assertEqual(picked, "Jarvis")
         self.assertIn("  │   2  Jarvis (default)", said)
+
+    def test_the_rename_switch_answers_the_new_name_question(self):
+        with mock.patch.object(sys, "argv", ["jarvis-show.py", "home-assistant", "--name", "Jarvis Show 5",
+                                             "--rename-entities"]):
+            args = show_cli.parse_args()
+        self.assertIs(args.rename_entities, True)
+        with mock.patch.object(sys, "argv", ["jarvis-show.py", "home-assistant", "--name", "x"]):
+            self.assertIsNone(show_cli.parse_args().rename_entities)
+        asker = Asker(interactive=True, ask=lambda _: self.fail("asked"), say=lambda _: None)
+        with mock.patch.object(show_cli, "_asker", return_value=asker):
+            self.assertIsNone(show_cli._chooser(args)("new name", "", ["yes", "no"], {}))
 
     def test_known_show_is_only_brought_up_to_date(self):
         fake = FakeHA(entry=True, allowed=True)
