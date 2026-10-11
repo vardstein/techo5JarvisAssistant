@@ -15,6 +15,7 @@ python3 -m unittest \
   tests.test_jarvis_crown_recovery \
   tests.test_jarvis_show_flow \
   tests.test_release_contract \
+  tests.test_secret_scan \
   tests.test_supply_chain \
   tests.test_slotctl_ab
 
