@@ -113,6 +113,11 @@
       "music_plays_on": {
         "name": "Musik spielt auf"
       }
+    },
+    "sensor": {
+      "music_falls_back_to": {
+        "name": "Musik weicht aus auf"
+      }
     }
   }
 }

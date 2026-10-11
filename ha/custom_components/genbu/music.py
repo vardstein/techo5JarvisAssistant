@@ -55,10 +55,29 @@ def room_player(area: str, players: list[Player]) -> str:
     return here[0][1] if here else ""
 
 
+def _line(chosen: str, area: str, names: list[str], players: list[Player]) -> list[str]:
+    """The players this Show's music may go to, in order: the picked one, the room's, the Show's own."""
+    picked = chosen if chosen and chosen != AUTO and chosen in {p.entity for p in players} else ""
+    line: list[str] = []
+    for e in (picked, room_player(area, players), own_player(names, players)):
+        if e and e not in line:
+            line.append(e)
+    return line
+
+
 def plays_on(chosen: str, area: str, names: list[str], players: list[Player]) -> str:
     """Where this Show's music goes: the picked player, else the room's speaker, else the Show itself,
     the first of them that is not offline. When all of them are, the first; empty when there is none."""
-    by = {p.entity: p for p in players}
-    picked = chosen if chosen and chosen != AUTO and chosen in by else ""
-    line = [e for e in (picked, room_player(area, players), own_player(names, players)) if e]
-    return next((e for e in line if by[e].available), line[0] if line else "")
+    up = {p.entity for p in players if p.available}
+    line = _line(chosen, area, names, players)
+    return next((e for e in line if e in up), line[0] if line else "")
+
+
+def falls_back_to(chosen: str, area: str, names: list[str], players: list[Player]) -> str:
+    """Where the music goes when the player it plays on now goes offline: the next one in line that is
+    up, else the Show itself, which is the end of the line. Empty when the Show has no player."""
+    up = {p.entity for p in players if p.available}
+    line = _line(chosen, area, names, players)
+    now = plays_on(chosen, area, names, players)
+    after = line[line.index(now) + 1:] if now in line else []
+    return next((e for e in after if e in up), own_player(names, players))

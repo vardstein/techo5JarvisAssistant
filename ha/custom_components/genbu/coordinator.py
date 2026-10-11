@@ -18,6 +18,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.debounce import Debouncer
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
@@ -26,7 +27,7 @@ from homeassistant.util import dt as dt_util
 from .const import (CHANGED, CONF_MAIN, CONF_NOTIFY, DOMAIN, ISSUE_MISSING, ISSUE_NO_MAIN, ISSUE_PICKED,
                     MAIN_SELECT, MANUFACTURERS, PUSH, STORE_KEY, STORE_VERSION)
 from .house import ASK, PICK, House, Show, recommend
-from .music import Player, own_player, plays_on, room_player
+from .music import Player, falls_back_to, own_player, plays_on, room_player
 
 LOGGER = logging.getLogger(__name__)
 LOOK_EVERY = timedelta(minutes=1)
@@ -92,6 +93,13 @@ def _offline(state) -> bool:
     return state is None or state.state == STATE_UNAVAILABLE
 
 
+def show_device(show: Show) -> DeviceInfo:
+    """The small genbu device a Show's settings sit on. Home Assistant lets a device belong to one
+    integration only, so it is a device of its own, connected via the Show's ESPHome device."""
+    return DeviceInfo(identifiers={(DOMAIN, show.device)}, name=show.name, model="Genbu Show settings",
+                      via_device_id=show.device)
+
+
 class GenbuHouse:
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.hass, self.entry = hass, entry
@@ -100,6 +108,7 @@ class GenbuHouse:
         self.shows: list[Show] = []
         self.players: list[Player] = []
         self.music: dict[str, str] = {}  # where each Show's music plays, by device id
+        self.fallback: dict[str, str] = {}  # where it goes when that player is offline, by device id
         self._watched: set[str] = set()
         self._player_ids: set[str] = set()
         self._stops: list = []
@@ -210,6 +219,8 @@ class GenbuHouse:
         self.players = find_players(self.hass)
         self.music = {s.device: plays_on(self.house.music_choice(s.device), s.area, [s.name, s.node], self.players)
                       for s in self.shows if s.device}
+        self.fallback = {s.device: falls_back_to(self.house.music_choice(s.device), s.area, [s.name, s.node],
+                                                 self.players) for s in self.shows if s.device}
         self._watched = {e for s in self.shows for e in s.watch if e}
         self._player_ids = {p.entity for p in self.players}
         changed = self._tidy()
