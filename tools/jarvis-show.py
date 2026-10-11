@@ -25,6 +25,7 @@ from jarvis_crown import home_assistant as ha_api  # noqa: E402
 from jarvis_crown import ui  # noqa: E402
 from jarvis_crown import music_assistant as ma_api  # noqa: E402
 from jarvis_crown.shows import known_shows, rename_show, show_named  # noqa: E402
+from jarvis_crown.show_ssh import identity_for  # noqa: E402
 from jarvis_crown.settings import RUN, Asker, Settings, SettingsError, gather, read_secret_file, save_defaults, secret_files  # noqa: E402
 from jarvis_crown.preflight import SERIAL_GROUPS, _group_names, preflight_ok, print_checks, run_preflight  # noqa: E402
 from jarvis_crown.recovery import RecoveryError, adb_recovery_serials, identify_recovery_show  # noqa: E402
@@ -120,6 +121,8 @@ def parse_args() -> argparse.Namespace:
     hass = parser.add_argument_group("home-assistant: add an installed Show to Home Assistant")
     hass.add_argument("--host", help="the Show's address, when Home Assistant has not discovered it; install and "
                                      "unlock reboot a Show running Jarvis there into fastboot over SSH")
+    hass.add_argument("--ssh-identity", type=Path, help="the private key that logs in to the Show over SSH "
+                                                        "(default ~/.ssh/genbu_<name> when it is there)")
     hass.add_argument("--key-file", type=Path, help="its encryption key (default backups/<serial>/home-assistant.key)")
     logo = parser.add_argument_group("boot-logo: the OpenJade logo at boot on an installed Show (--name, --host)")
     logo.add_argument("--amazon-logo", action="store_true", help="put Amazon's logo back instead")
@@ -545,7 +548,7 @@ def boot_logo_command(args, backups: Path) -> int:
             return ""
 
     try:
-        done = put_logo(SshClient(host), show.board, saved_expdb=saved, amazon=args.amazon_logo,
+        done = put_logo(SshClient(host, identity_for(show.name, args.ssh_identity)), show.board, saved_expdb=saved, amazon=args.amazon_logo,
                         confirm=confirm, progress=ui.out.progress)
     except BootLogoError as exc:
         ui.out.fail(f"boot-logo stopped: {exc}")
@@ -620,7 +623,7 @@ def _main() -> int:
         try:
             bring_to_fastboot(name=args.name, backups=backups, host=args.host, find_host=_find_host,
                               keep_recovery=args.command == "install" and args.board is not None,
-                              say=ui.out.step)
+                              say=ui.out.step, identity=identity_for(args.name, args.ssh_identity))
         except ToFastbootError as exc:
             ui.out.fail(f"{exc}")
             return 2

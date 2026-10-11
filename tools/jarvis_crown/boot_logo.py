@@ -20,6 +20,8 @@ import shlex
 import subprocess
 from typing import Callable, Protocol
 
+from jarvis_crown.show_ssh import ssh_options
+
 SLOT_SIZE = 6105
 LOGO_FILE = Path(__file__).resolve().parents[1] / "boot-logo" / "openjade-wordmark.bin"
 LOGO_SLOT_SHA256 = "c02f0d8180ed97bae4281c1bd9be4649903866b6e6c9025edb9145ad539dd5db"
@@ -53,14 +55,16 @@ class Client(Protocol):
 
 
 class SshClient:
-    """root on the Show over SSH, with the key the install wrote; never asks for a password."""
+    """root on the Show over SSH, with the Show's own key (show_ssh.py); never asks for a password."""
 
-    def __init__(self, host: str):
+    def __init__(self, host: str, identity: Path | None = None):
         self.host = host
+        self.identity = identity
 
     def shell(self, command: str, data: bytes | None = None) -> str:
         try:
-            r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", f"root@{self.host}", command],
+            r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", *ssh_options(self.identity),
+                                f"root@{self.host}", command],
                                input=data, capture_output=True, timeout=120, check=False)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise BootLogoError(f"ssh to {self.host}: {exc}") from exc

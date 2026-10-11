@@ -600,6 +600,7 @@ has the default given here.
 | `--board crown\|checkers` | all | Cross-checks the board. Normally it is detected; `amonet-upgrade` needs it, and `install` needs it to carry on from TWRP. |
 | `--serial SERIAL` | wifi, home-assistant | Which unit. `wifi` talks to that Show on USB (not needed when only one is attached); `home-assistant` takes its key from `backups/<serial>/`. |
 | `--host ADDRESS` | home-assistant, boot-logo, install, unlock | The Show's address, when `backups/<serial>/address`, mDNS and Home Assistant cannot find it (a Show on another VLAN, say). For `install` and `unlock`, where a Show running Jarvis is reached over SSH to send it to fastboot. |
+| `--ssh-identity FILE` | boot-logo, install, unlock | The private key that logs in to the Show over SSH. Default `~/.ssh/genbu_<name>` when it is there: each Show has a key of its own, which no other Show lets in. Without either, ssh picks a key the usual way. |
 | `--key-file FILE` | home-assistant | The Show's ESPHome encryption key. Default `backups/<serial>/home-assistant.key`. |
 | `--lineage-zip ZIP` | install, amonet-upgrade, preflight | LineageOS 18.1 for this board. Default the cached one, which `install` downloads and checks when it isn't there yet. |
 | `--boot-image FILE` | install | The board's boot image. Default fetched and checked the same way. |

@@ -17,6 +17,7 @@ from typing import Callable
 
 from jarvis_crown.device_gate import DeviceGateError, fastboot_serials
 from jarvis_crown.shows import show_named
+from jarvis_crown.show_ssh import ssh_options
 from jarvis_crown.timing import COMMAND_TIMEOUT_SECONDS, FASTBOOT_REENUM_TIMEOUT_SECONDS, POLL_SECONDS
 
 REBOOTTO = "/usr/local/bin/rebootto"
@@ -41,10 +42,11 @@ def _adb_devices(run: Callable) -> list[tuple[str, str]]:
     return found
 
 
-def _ssh(host: str, command: str, *, run: Callable, timeout: float = 30) -> subprocess.CompletedProcess:
-    # BatchMode: the key the install wrote or nothing, never a password question.
+def _ssh(host: str, command: str, *, run: Callable, timeout: float = 30,
+         identity: Path | None = None) -> subprocess.CompletedProcess:
+    # BatchMode: the Show's own key or nothing, never a password question.
     return run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=3",
-                "-o", "ServerAliveCountMax=2", f"root@{host}", command],
+                "-o", "ServerAliveCountMax=2", *ssh_options(identity), f"root@{host}", command],
                capture_output=True, text=True, timeout=timeout, check=False)
 
 
@@ -84,10 +86,12 @@ def _wait(say: Callable, *, run: Callable, sleep: Callable, clock: Callable, tim
 def bring_to_fastboot(*, name: str | None, backups: Path, host: str | None = None, keep_recovery: bool = False,
                       find_host: Callable | None = None, run: Callable = subprocess.run,
                       sleep: Callable = time.sleep, clock: Callable = time.monotonic,
-                      timeout: float = FASTBOOT_REENUM_TIMEOUT_SECONDS, say: Callable = print) -> str:
+                      timeout: float = FASTBOOT_REENUM_TIMEOUT_SECONDS, say: Callable = print,
+                      identity: Path | None = None) -> str:
     """Leaves the Show on fastboot, rebooting it there when needed; returns what was done ('' for nothing).
 
     keep_recovery: a Show in TWRP stays there (an install with --board carries on from TWRP).
+    identity: the key that logs in to a Show running Jarvis (show_ssh.py); None lets ssh choose.
     """
     try:
         if fastboot_serials(run=run):
@@ -118,7 +122,7 @@ def bring_to_fastboot(*, name: str | None, backups: Path, host: str | None = Non
 
     host, expected = _address(name, backups, host, find_host)
     try:
-        probe = _ssh(host, f"test -x {REBOOTTO} && echo rebootto; {SERIAL_PROBE}", run=run)
+        probe = _ssh(host, f"test -x {REBOOTTO} && echo rebootto; {SERIAL_PROBE}", run=run, identity=identity)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ToFastbootError(f"no Show on fastboot or adb, and SSH to {host} failed ({exc}); "
                               "put it into fastboot") from None
@@ -135,7 +139,7 @@ def bring_to_fastboot(*, name: str | None, backups: Path, host: str | None = Non
     say(f"the Show at {host} (serial ending {(serial or '????')[-4:]}) runs Jarvis; rebooting it into fastboot")
     try:
         # The connection drops with the reboot, so how ssh ends says nothing; fastboot showing up does.
-        _ssh(host, f"{shlex.quote(REBOOTTO)} bootloader", run=run, timeout=COMMAND_TIMEOUT_SECONDS)
+        _ssh(host, f"{shlex.quote(REBOOTTO)} bootloader", run=run, timeout=COMMAND_TIMEOUT_SECONDS, identity=identity)
     except (OSError, subprocess.TimeoutExpired):
         pass
     _wait(say, run=run, sleep=sleep, clock=clock, timeout=timeout, after="it was told to reboot into fastboot")

@@ -117,6 +117,16 @@ class BringToFastbootTests(unittest.TestCase):
                 self.assertTrue(show.ran("root@10.0.0.40", "rebootto bootloader"))
                 self.assertEqual(show.state, "fastboot")
 
+    def test_the_shows_own_key_is_the_one_ssh_offers(self):
+        installed(self.backups, "crownShow", "crown", BOARDS["crown"])
+        show = FakeShow("jarvis", BOARDS["crown"])
+        key = pathlib.Path("/keys/genbu_crownShow")
+        self.assertEqual(bring(show, self.backups, name="crownShow", identity=key), "ssh")
+        for argv in (a for a in show.commands if a[0] == "ssh"):
+            self.assertIn("-i", argv)
+            self.assertEqual(argv[argv.index("-i") + 1], str(key))
+            self.assertIn("IdentitiesOnly=yes", argv)
+
     def test_a_different_show_at_the_recorded_address_is_not_rebooted(self):
         installed(self.backups, "livingRoom", "crown", BOARDS["crown"])
         show = FakeShow("jarvis", BOARDS["checkers"])
