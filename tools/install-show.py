@@ -637,7 +637,7 @@ def main():
             fail('Jarvis Show recovery backup is not complete/valid before Lineage staging: %s' % e)
         step('LineageOS, for its drivers')
         prepare_lineage_vendor(adb, lineage_zip=a.lineage_zip, fastboot=fastboot)
-        print('\nDone. LineageOS vendor tree for %s is staged and ABI-verified; boot/system slot-store conversion has not run.' % dev)
+        note('LineageOS drivers for %s are in place and checked; the Genbu Show system goes on next' % dev)
         return
 
     wifi = None
@@ -723,9 +723,11 @@ def main():
         else:
             boot = boot_image(rel, a.work, dev)
             note('boot image %s checked' % os.path.basename(boot))
+    # What the unit runs once installed, for the lines that name it.
+    product = 'Genbu Show' if a.jarvis_show_prestaged else 'TECHO5'
     if a.dry_run:
         where = rel.dir if not a.jarvis_show_prestaged else os.path.dirname(rootfs)
-        print('\nDry run: TECHO5 %s checked in %s; nothing written to the unit.' % (version, where))
+        print('\nDry run: %s %s checked in %s; nothing written to the unit.' % (product, version, where))
         return
 
     if twrp:
@@ -928,7 +930,7 @@ def main():
                 '{ (sleep 1; /usr/local/sbin/techo5-usb off) >/dev/null 2>&1 & }; echo USB-CLOSING', 4)
     note('USB closed; Settings -> Privacy & Security -> USB debugging opens the serial console again')
 
-    print("\nDone. '%s' runs TECHO5 %s from slot a; the slot commits itself after five healthy minutes." % (a.name, version))
+    print("\nDone. '%s' runs %s %s from slot a; the slot commits itself after five healthy minutes." % (a.name, product, version))
     print('Home Assistant finds it as an ESPHome device. When it asks for the encryption key, paste:\n\n    %s\n\n(kept in %s)' % (psk, key_file))
     if settings:
         print('Ready for: %s.' % ', '.join(describe_settings(False, settings) + (['Home Assistant at %s' % settings['ha_url']] if settings.get('ha_url') else [])))

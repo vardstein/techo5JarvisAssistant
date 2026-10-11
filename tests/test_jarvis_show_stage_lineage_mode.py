@@ -107,8 +107,12 @@ class StageLineageModeTests(unittest.TestCase):
                  mock.patch.object(module, "prepare_lineage_vendor", side_effect=lambda adb, lineage_zip=None, prestaged=False, fastboot=None: calls.append((lineage_zip, prestaged))), \
                  mock.patch.object(module, "Release", side_effect=AssertionError("release lookup must never run")), \
                  mock.patch.object(module, "check_serial_access", side_effect=AssertionError("stage-only returned too late")):
-                module.main()
+                out = io.StringIO()
+                with mock.patch.object(sys, "stdout", out):
+                    module.main()
             self.assertEqual(calls, [(str(lineage), False)])
+            self.assertIn(f"LineageOS drivers for {board} are in place", out.getvalue())
+            self.assertNotIn("Done.", out.getvalue())
 
     def test_crown_stage_only_returns_before_release_flash_store(self):
         self.exercise("crown", "CROWN")

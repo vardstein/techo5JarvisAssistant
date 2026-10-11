@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 import json
 from pathlib import Path
 import re
+import shlex
 from typing import Any, Callable
 
 from .home_assistant import Chooser, HomeAssistant, HomeAssistantError, NotFound, service_prefix, slug_key
@@ -724,7 +725,8 @@ def _duck_existing(run: _Run, satellite: str) -> tuple[str, dict] | None:
 def _per_show(run: _Run, house: House, show: str, entities: list[str]) -> None:
     satellites = sorted(e for e in entities if e.startswith("assist_satellite."))
     if not satellites:
-        run.progress("the Show has no voice assistant entity yet, so no turn-the-room-down automation")
+        run.progress("the Show has no voice assistant in Home Assistant yet, so no turn-the-room-down "
+                     f"automation. Once it has one, run {_rerun(show)}")
         return
     satellite = satellites[0]
     near_miss = next((e for e in sorted(entities) if e.startswith("event.") and e.endswith("_wake_word_near_miss")),
@@ -742,11 +744,21 @@ def _per_show(run: _Run, house: House, show: str, entities: list[str]) -> None:
         return
     area, speakers = show_speakers(house, satellite)
     if not speakers:
-        where = house.areas.get(area, area) if area else "no room"
-        run.progress(f"no speakers to turn down in {where}, so no turn-the-room-down automation")
+        if area:
+            where = house.areas.get(area, area)
+            run.progress(f"no speaker besides the Show in {where}, so no turn-the-room-down automation. "
+                         f"Put the room's speaker in {where} in Home Assistant, then run {_rerun(show)}")
+        else:
+            run.progress("the Show is in no room in Home Assistant, so no turn-the-room-down automation. "
+                         f"Give it the room its speaker is in, then run {_rerun(show)}")
         return
     run.put("automation", f"techo5_turn_room_down_{service_prefix(show)}",
             turn_room_down(show, satellite, speakers, near_miss))
+
+
+def _rerun(show: str) -> str:
+    """The command that runs this part again for the Show, once Home Assistant has what was missing."""
+    return f"python3 tools/jarvis-show.py home-assistant --name {shlex.quote(show)}"
 
 
 def set_up(ha: HomeAssistant, show: str, entities: list[str], *, choose: Chooser | None = None,

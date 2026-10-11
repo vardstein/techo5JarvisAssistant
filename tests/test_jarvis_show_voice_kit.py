@@ -275,7 +275,18 @@ class SetUpTests(unittest.TestCase):
         fake.devices[0]["area_id"] = None
         log = run(fake)
         self.assertNotIn(("automation", "techo5_turn_room_down_jarvis_show_5"), fake.configs)
-        self.assertIn("no speakers to turn down in no room, so no turn-the-room-down automation", log)
+        self.assertIn("the Show is in no room in Home Assistant, so no turn-the-room-down automation. Give it the "
+                      "room its speaker is in, then run python3 tools/jarvis-show.py home-assistant --name "
+                      "'Jarvis Show 5'", log)
+
+    def test_a_room_without_another_speaker_says_how_to_get_the_turn_down(self):
+        fake = FakeHA()
+        fake.devices[0]["area_id"] = "kitchen"
+        log = run(fake)
+        self.assertNotIn(("automation", "techo5_turn_room_down_jarvis_show_5"), fake.configs)
+        self.assertIn("no speaker besides the Show in Küche, so no turn-the-room-down automation. Put the room's "
+                      "speaker in Küche in Home Assistant, then run python3 tools/jarvis-show.py home-assistant "
+                      "--name 'Jarvis Show 5'", log)
 
 
 class WeckerTests(unittest.TestCase):
