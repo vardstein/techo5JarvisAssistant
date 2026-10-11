@@ -181,3 +181,38 @@ func TestLostNudgesThenReloads(t *testing.T) {
 		t.Fatal("a reconnect did not start the count again")
 	}
 }
+
+// A touch on a still page has the frame Chrome is waiting on go at once, not after the idle second,
+// and the frames after it at the busy pace.
+func TestATouchWakesAStillPage(t *testing.T) {
+	d := &differ{}
+	for i := 0; i < 20; i++ {
+		d.pace(false)
+	}
+	done := make(chan time.Duration)
+	go func() {
+		start := time.Now()
+		d.wait(false)
+		done <- time.Since(start)
+	}()
+	time.Sleep(50 * time.Millisecond)
+	d.touched()
+	select {
+	case took := <-done:
+		if took > idlePace/2 {
+			t.Errorf("the wait after a touch took %v", took)
+		}
+	case <-time.After(2 * idlePace):
+		t.Fatal("a touch did not end the wait")
+	}
+	if got := d.pace(false); got != busyPace<<1 {
+		t.Errorf("after a touch the next still frame waits %v, want %v", got, busyPace<<1)
+	}
+	// A touch with no frame waiting is not lost: the next wait is short.
+	d.touched()
+	start := time.Now()
+	d.wait(false)
+	if took := time.Since(start); took > idlePace/2 {
+		t.Errorf("a wait after an earlier touch took %v", took)
+	}
+}

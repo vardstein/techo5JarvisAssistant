@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,10 +22,20 @@ import (
 // sends one frame and then nothing, and not even a reload brings the frames back. A Show picked
 // up that way kept the picture from the moment it reconnected, clock and all.
 
-const (
-	warmFor   = 5 * time.Minute
-	warmCount = 4 // tabs parked at once, the oldest closed to make room
-)
+// warmFor is how long a parked tab waits, DASHCAST_WARM to change it. Half an hour, so a dashboard
+// looked at again after a while - the room's, Music Assistant's - is still there rather than a
+// load of Home Assistant from nothing. What it costs is bounded by warmCount, not by the time.
+var warmFor = 30 * time.Minute
+
+const warmCount = 4 // tabs parked at once, the oldest closed to make room
+
+// warmFrom is warmFor as DASHCAST_WARM says: a duration (45m, 2h), or the default for anything else.
+func warmFrom(v string) time.Duration {
+	if d, err := time.ParseDuration(strings.TrimSpace(v)); err == nil && d > 0 {
+		return d
+	}
+	return 30 * time.Minute
+}
 
 // warmTab is a tab and whoever is watching its frames: the session using it, or nobody while it is
 // parked. A tab's frames arrive through one listener for its whole life, since a listener cannot be

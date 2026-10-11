@@ -33,7 +33,7 @@ docker build -q -t "$image" "$dir/src/dashcast"
 # folder.
 umask 077
 docker inspect "$name" --format '{{range .Config.Env}}{{println .}}{{end}}' |
-	grep -E '^(HA_URL|HA_TOKEN|DASHCAST_KEY|LISTEN|CHROME|LANG|JARVIS_SHOW_BOARD|JARVIS_SHOW_UI_GENERATION|JARVIS_CROWN_UI_GENERATION)=' >"$dir/env"
+	grep -E '^(HA_URL|HA_TOKEN|DASHCAST_KEY|LISTEN|CHROME|DASHCAST_WARM|LANG|JARVIS_SHOW_BOARD|JARVIS_SHOW_UI_GENERATION|JARVIS_CROWN_UI_GENERATION)=' >"$dir/env"
 
 # The one before the last update goes; the one running now stays, stopped, for going back.
 docker rm -f "$name-previous" >/dev/null 2>&1 || true

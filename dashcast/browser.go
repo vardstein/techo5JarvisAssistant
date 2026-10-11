@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -24,7 +25,22 @@ type browser struct {
 	cfg    config
 	ctx    context.Context // the browser's own; a tab is a child of it
 	cancel func()
+
+	mu    sync.Mutex
+	users map[string]*profile // the Shows' own users' profiles, by tokenID
 }
+
+// profile is a browser context of one Show user's, and how many of its tabs are open. One that has
+// none left is kept, with its cache, for that user's next tab: loading Home Assistant's page into an
+// empty profile is most of what a first open costs. idleProfiles of them are kept, the oldest thrown
+// away beyond that.
+type profile struct {
+	id   cdp.BrowserContextID
+	tabs int
+	idle time.Time
+}
+
+const idleProfiles = 4
 
 func newBrowser(parent context.Context, cfg config) (*browser, error) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
@@ -214,7 +230,7 @@ func (b *browser) open(ctx context.Context, token, path string, w, h int, allowe
 	if token == "" {
 		token = b.cfg.token
 	} else {
-		id, d, err := b.ownTab()
+		id, d, err := b.ownTab(tokenID(token))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -263,34 +279,78 @@ func (b *browser) open(ctx context.Context, token, path string, w, h int, allowe
 	return tab, func() { stop(); cancel() }, nil
 }
 
-// ownTab is a new tab in a profile of its own, and what throws the profile away. chromedp's
-// WithNewBrowserContext asks for the tab without a window, which the headless shell allows and a
-// full Chrome refuses ("no browser is open": it has no window for a profile it has just made), so
-// the tab is asked for in a new window of its own.
-func (b *browser) ownTab() (target.ID, func(), error) {
+// ownTab is a new tab in the profile of the Show user user (a tokenID), made the first time, and
+// what lets go of it. chromedp's WithNewBrowserContext asks for the tab without a window, which the
+// headless shell allows and a full Chrome refuses ("no browser is open": it has no window for a
+// profile it has just made), so the tab is asked for in a new window of its own.
+func (b *browser) ownTab(user string) (target.ID, func(), error) {
 	c := chromedp.FromContext(b.ctx)
 	if c == nil || c.Browser == nil {
 		return "", nil, fmt.Errorf("the browser is not running")
 	}
-	profile, err := target.CreateBrowserContext().Do(cdp.WithExecutor(b.ctx, c.Browser))
-	if err != nil {
-		return "", nil, err
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	p := b.users[user]
+	if p == nil {
+		id, err := target.CreateBrowserContext().Do(cdp.WithExecutor(b.ctx, c.Browser))
+		if err != nil {
+			return "", nil, err
+		}
+		p = &profile{id: id}
+		if b.users == nil {
+			b.users = map[string]*profile{}
+		}
+		b.users[user] = p
 	}
-	drop := func() {
-		// The tab's context may have ended already, so the profile is thrown away on one of its own.
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		_ = target.DisposeBrowserContext(profile).Do(cdp.WithExecutor(ctx, c.Browser))
-	}
+	p.tabs++
+	release := sync.OnceFunc(func() {
+		b.mu.Lock()
+		p.tabs--
+		if p.tabs == 0 {
+			p.idle = time.Now()
+		}
+		gone := b.pruneLocked()
+		b.mu.Unlock()
+		for _, id := range gone {
+			// The tab's context may have ended already, so the profile is thrown away on one of its own.
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			_ = target.DisposeBrowserContext(id).Do(cdp.WithExecutor(ctx, c.Browser))
+			cancel()
+		}
+	})
 	id, err := target.CreateTarget("about:blank").
-		WithBrowserContextID(profile).
+		WithBrowserContextID(p.id).
 		WithNewWindow(true).
 		Do(cdp.WithExecutor(b.ctx, c.Browser))
 	if err != nil {
-		drop()
+		p.tabs--
+		if p.tabs == 0 {
+			p.idle = time.Now()
+		}
 		return "", nil, err
 	}
-	return id, drop, nil
+	return id, release, nil
+}
+
+// pruneLocked takes the oldest profiles with no tab open out of users, beyond idleProfiles, and
+// returns them to be thrown away. b.mu is held.
+func (b *browser) pruneLocked() []cdp.BrowserContextID {
+	var idle []string
+	for user, p := range b.users {
+		if p.tabs == 0 {
+			idle = append(idle, user)
+		}
+	}
+	if len(idle) <= idleProfiles {
+		return nil
+	}
+	sort.Slice(idle, func(i, j int) bool { return b.users[idle[i]].idle.Before(b.users[idle[j]].idle) })
+	var gone []cdp.BrowserContextID
+	for _, user := range idle[:len(idle)-idleProfiles] {
+		gone = append(gone, b.users[user].id)
+		delete(b.users, user)
+	}
+	return gone
 }
 
 // haOrigin is Home Assistant's address as a page sees its own origin: the scheme and host in lower

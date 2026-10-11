@@ -12,6 +12,7 @@
 //	DASHCAST_KEY  what a device has to present before it is shown anything
 //	LISTEN        where devices connect (default :9555)
 //	CHROME        the browser to run (default: found on the PATH, or the headless-shell image's)
+//	DASHCAST_WARM how long a screen's tab is kept after it goes, for it to come back to (default 30m)
 package main
 
 import (
@@ -50,6 +51,9 @@ func main() {
 	}
 	if cfg.board != "" && cfg.generation == "" {
 		cfg.generation = "1"
+	}
+	if v := os.Getenv("DASHCAST_WARM"); v != "" {
+		warmFor = warmFrom(v)
 	}
 	if cfg.listen == "" {
 		cfg.listen = ":9555"

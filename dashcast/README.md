@@ -34,6 +34,10 @@ Set `HA_URL` in `docker-compose.yml` to Home Assistant's address as seen from th
 About 150 to 250 MB of memory per screen showing a dashboard, and very little CPU once a page has
 loaded: nothing is sent while nothing changes.
 
+A screen that goes away leaves its tab open for half an hour, at most four of them, so opening the
+same dashboard again is quick instead of a full load of Home Assistant's page. `DASHCAST_WARM` changes
+the half hour (`2h`, `10m`); a smaller machine may want it shorter.
+
 ### Updating a container you started by hand
 
 If dashcast runs as a plain `docker run` container rather than from the compose file,

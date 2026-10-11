@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -304,6 +305,7 @@ func TestMusicWaysToTheSettingsAreHidden(t *testing.T) {
 
 // A Show signed in as its own user has a profile of its own: the sign-in lives in local storage,
 // and in one shared profile the last tab opened would sign every other tab in as its user.
+// The profile outlives the tab, so the user's next tab loads from its cache.
 func TestEachShowUserHasItsOwnSignIn(t *testing.T) {
 	if chromePath("") == "" {
 		if os.Getenv("DASHCAST_REQUIRE_BROWSER") != "" {
@@ -350,7 +352,8 @@ func TestEachShowUserHasItsOwnSignIn(t *testing.T) {
 		}
 	}
 
-	// A closed Show's profile goes with its tab.
+	// A closed Show's profile stays, with its cache, for the same user's next tab; the oldest of
+	// those left with no tab go beyond idleProfiles.
 	profiles := func() int {
 		t.Helper()
 		c := chromedp.FromContext(b.ctx)
@@ -369,7 +372,84 @@ func TestEachShowUserHasItsOwnSignIn(t *testing.T) {
 		t.Errorf("%d profiles with a Show's tab open, want %d", got, before+1)
 	}
 	closeTab()
-	if got := profiles(); got != before {
-		t.Errorf("%d profiles after its tab closed, want %d", got, before)
+	if got := profiles(); got != before+1 {
+		t.Errorf("%d profiles after its tab closed, want %d: it is kept for the next", got, before+1)
+	}
+	again, closeAgain, err := b.open(ctx, "show-c", "/lovelace/0", 480, 480, allowed, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := profiles(); got != before+1 {
+		t.Errorf("%d profiles with the same Show's tab open again, want %d", got, before+1)
+	}
+	if got := signedIn(again); got != "show-c" {
+		t.Errorf("the tab opened again is signed in with %q", got)
+	}
+	closeAgain()
+	for _, token := range []string{"show-d", "show-e", "show-f", "show-g"} {
+		_, closeTab, err := b.open(ctx, token, "/lovelace/0", 480, 480, allowed, true, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		closeTab()
+	}
+	// show-a and show-b still have their tabs; of the five without, show-c is the oldest and gone.
+	if got := profiles(); got != before+idleProfiles {
+		t.Errorf("%d profiles after five Shows' tabs closed, want %d", got, before+idleProfiles)
+	}
+	b.mu.Lock()
+	_, kept := b.users[tokenID("show-c")]
+	b.mu.Unlock()
+	if kept {
+		t.Error("the oldest profile with no tab was kept")
+	}
+}
+
+// A Show's tab opened again after the last one closed gets Home Assistant's scripts from its
+// profile's cache rather than from Home Assistant: most of what a first open costs.
+func TestAShowsNextTabLoadsFromCache(t *testing.T) {
+	if chromePath("") == "" {
+		if os.Getenv("DASHCAST_REQUIRE_BROWSER") != "" {
+			t.Fatal("no Chrome or headless-shell to run")
+		}
+		t.Skip("no Chrome or headless-shell to run")
+	}
+	var scripts atomic.Int32
+	ha := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/app.js" {
+			scripts.Add(1)
+			w.Header().Set("Content-Type", "text/javascript")
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			_, _ = w.Write([]byte("window.loaded = true;"))
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<!doctype html><title>dashboard</title><script src="/app.js"></script>`))
+	}))
+	defer ha.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	b, err := newBrowser(ctx, config{ha: ha.URL, token: "dashcast-token"})
+	if err != nil {
+		if os.Getenv("DASHCAST_REQUIRE_BROWSER") != "" {
+			t.Fatal(err)
+		}
+		t.Skipf("the browser did not start: %v", err)
+	}
+	defer b.close()
+	allowed := map[string]bool{"lovelace": true}
+	for i := range 2 {
+		tab, closeTab, err := b.open(ctx, "show-a", "/lovelace/0", 480, 480, allowed, true, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var loaded bool
+		if err := chromedp.Run(tab, chromedp.Poll(`window.loaded === true`, &loaded, chromedp.WithPollingTimeout(10*time.Second))); err != nil {
+			t.Fatalf("open %d: %v", i+1, err)
+		}
+		closeTab()
+	}
+	if n := scripts.Load(); n != 1 {
+		t.Errorf("the script was fetched %d times over two opens, want 1", n)
 	}
 }

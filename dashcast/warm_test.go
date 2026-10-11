@@ -83,3 +83,14 @@ func TestATakenBackTabKeepsDrawing(t *testing.T) {
 		t.Errorf("the tab taken back sent %d frames in 2s", n)
 	}
 }
+
+func TestWarmFrom(t *testing.T) {
+	for v, want := range map[string]time.Duration{
+		"2h": 2 * time.Hour, " 10m ": 10 * time.Minute, "": 30 * time.Minute,
+		"soon": 30 * time.Minute, "-5m": 30 * time.Minute, "0": 30 * time.Minute,
+	} {
+		if got := warmFrom(v); got != want {
+			t.Errorf("warmFrom(%q) = %v, want %v", v, got, want)
+		}
+	}
+}

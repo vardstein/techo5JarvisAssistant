@@ -270,10 +270,11 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 		go func() {
 			// Acknowledged once handled, which is what paces Chrome: it sends the next frame only
 			// after this one is acknowledged, so a slow device holds frames back rather than queuing
-			// them - and the acknowledgment waits longer the longer nothing has changed (idle).
+			// them - and the acknowledgment waits longer the longer nothing has changed (idle),
+			// unless the screen is touched.
 			changed := false
 			defer func() {
-				time.Sleep(d.pace(changed))
+				d.wait(changed)
 				_ = chromedp.Run(tab, page.ScreencastFrameAck(f.SessionID))
 			}()
 			raw, err := base64.StdEncoding.DecodeString(f.Data)
@@ -331,6 +332,7 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 		if err := chromedp.Run(tab, chromedp.ActionFunc(func(ctx context.Context) error { return touch(ctx, t) })); err != nil {
 			slog.Warn("touch", "err", err)
 		}
+		d.touched()
 	}
 }
 
@@ -433,6 +435,10 @@ type differ struct {
 	// will send it once the screen settles.
 	blurred []image.Rectangle
 	sharpen *time.Timer
+
+	// poke cuts the wait before the next frame short: a touch wants its answer on the screen now,
+	// not after a still page's second.
+	poke chan struct{}
 }
 
 // Pacing: after a frame that changed something, the next is asked for almost at once, so a page
@@ -454,6 +460,39 @@ func (d *differ) pace(changed bool) time.Duration {
 	}
 	d.still = min(d.still+1, 16)
 	return min(busyPace<<d.still, idlePace)
+}
+
+// wait is pace's wait, cut short by a touch (touched).
+func (d *differ) wait(changed bool) {
+	pause := d.pace(changed)
+	d.mu.Lock()
+	if d.poke == nil {
+		d.poke = make(chan struct{}, 1)
+	}
+	poke := d.poke
+	d.mu.Unlock()
+	t := time.NewTimer(pause)
+	defer t.Stop()
+	select {
+	case <-t.C:
+	case <-poke:
+	}
+}
+
+// touched is a touch on the page: the frame waiting goes at once, and the ones after it at the busy
+// pace, so what the touch does shows as it happens.
+func (d *differ) touched() {
+	d.mu.Lock()
+	d.still = 0
+	if d.poke == nil {
+		d.poke = make(chan struct{}, 1)
+	}
+	poke := d.poke
+	d.mu.Unlock()
+	select {
+	case poke <- struct{}{}:
+	default:
+	}
 }
 
 // same is whether a frame is the last one again, byte for byte, keeping it for the next if not.
