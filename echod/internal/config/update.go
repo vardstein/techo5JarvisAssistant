@@ -20,6 +20,15 @@ type Update struct {
 	// says it again every few hours until the update is installed.
 	Told   string    `json:"told,omitempty"`
 	ToldAt time.Time `json:"told_at,omitzero"`
+
+	// Following the house's version (docs/update-leader.md). HouseSeen is the house version last seen
+	// while following, empty for a Show that has never followed one. HouseAsked and HouseAskedAt are the
+	// last time it asked whether to move to the house version after being off. HouseFailed is a house
+	// version that would not install here or was rolled back, which it does not try again by itself.
+	HouseSeen    string    `json:"house_seen,omitempty"`
+	HouseAsked   string    `json:"house_asked,omitempty"`
+	HouseAskedAt time.Time `json:"house_asked_at,omitzero"`
+	HouseFailed  string    `json:"house_failed,omitempty"`
 }
 
 const DefaultChannel = "stable"
@@ -44,4 +53,16 @@ func (w UpdateWriter) Told(v string, at time.Time) error {
 
 func (w UpdateWriter) LastVersion(v string) error {
 	return w.st.Update(func(c *Config) { c.Update.LastVersion = v })
+}
+
+func (w UpdateWriter) HouseSeen(v string) error {
+	return w.st.Update(func(c *Config) { c.Update.HouseSeen = v })
+}
+
+func (w UpdateWriter) HouseAsked(v string, at time.Time) error {
+	return w.st.Update(func(c *Config) { c.Update.HouseAsked, c.Update.HouseAskedAt = v, at })
+}
+
+func (w UpdateWriter) HouseFailed(v string) error {
+	return w.st.Update(func(c *Config) { c.Update.HouseFailed = v })
 }

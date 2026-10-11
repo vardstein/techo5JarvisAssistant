@@ -58,6 +58,10 @@ type Manifest struct {
 	// between: they are named files an installer asks for, and the name is what it has to go on.
 	Assets map[string]Binary `json:"assets,omitempty"`
 
+	// MinAlign is the oldest release a device running this one may be taken back to by its house
+	// (align.go). mkmanifest writes AlignFloor here, so the installer can read the floor too.
+	MinAlign string `json:"min_align,omitempty"`
+
 	Title      string `json:"title,omitempty"`
 	Notes      string `json:"notes,omitempty"`
 	ReleaseURL string `json:"release_url,omitempty"`
@@ -103,11 +107,14 @@ const maxManifest = 64 << 10
 // that has not been set, which is how a device that just booted would otherwise meet certificates:
 // the clock is first asked of the manifest's host (clock.go), and the check waits only when that fails.
 func Fetch(ctx context.Context, c Channel) (Manifest, error) {
+	return fetch(ctx, channelURL(c))
+}
+
+func fetch(ctx context.Context, url string) (Manifest, error) {
 	var m Manifest
 	ctx, cancel := context.WithTimeout(ctx, manifestTimeout)
 	defer cancel()
 
-	url := channelURL(c)
 	if !clockSet() {
 		if err := clockFromServer(ctx, url); err != nil {
 			return m, fmt.Errorf("%w (%v)", ErrClock, err)

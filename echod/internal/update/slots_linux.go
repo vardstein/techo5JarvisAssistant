@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 )
 
@@ -29,6 +30,28 @@ const (
 	// rootfsDir is where tarballs land: the data partition survives slot changes.
 	rootfsDir = "/data/techo5-linux"
 )
+
+// slotStates is where slotctl keeps each slot's state (good, trial N or bad).
+var slotStates = "/store/slots"
+
+// Committed reports whether the running build has passed its trial: on a slot system the booted slot
+// is good, otherwise no update is waiting to be believed.
+func Committed() bool {
+	if !slotSystem() {
+		return !OnTrial()
+	}
+	return slotGood(slotFile, slotStates)
+}
+
+func slotGood(slotFile, states string) bool {
+	s, err := os.ReadFile(slotFile)
+	slot := strings.TrimSpace(string(s))
+	if err != nil || slot == "" || strings.ContainsAny(slot, "/.") {
+		return false
+	}
+	st, err := os.ReadFile(filepath.Join(states, slot+".state"))
+	return err == nil && strings.TrimSpace(string(st)) == "good"
+}
 
 // slotSystem reports whether this daemon runs from a rootfs slot.
 func slotSystem() bool {

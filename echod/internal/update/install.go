@@ -48,6 +48,12 @@ func Installing() bool {
 }
 
 func Install(ctx context.Context, m Manifest, progress func(float32)) error {
+	return install(ctx, m, progress, notOlder)
+}
+
+// install is Install with the version rule passed in: newer only for the channel, the house's
+// version above the floor for Align.
+func install(ctx context.Context, m Manifest, progress func(float32), allowed func(offered, running string) error) error {
 	if !installing.TryLock() {
 		return ErrInstalling
 	}
@@ -59,7 +65,7 @@ func Install(ctx context.Context, m Manifest, progress func(float32)) error {
 	if err := m.ValidFor(JarvisShowProduct, deviceBoard); err != nil {
 		return err
 	}
-	if err := notOlder(m.Version, layout.Version); err != nil {
+	if err := allowed(m.Version, layout.Version); err != nil {
 		return err
 	}
 	if slotSystem() {

@@ -1,6 +1,7 @@
 # One update point per house (job 51)
 
-Status: design agreed with Jade on 2026-10-11, not built yet.
+Status: design agreed with Jade on 2026-10-11. The Show side (echod) is built; the HA integration and the
+installer are next.
 
 Today every Genbu Show checks GitHub on its own every 10 minutes, and each one speaks up about an update every
 4 hours. With several Shows in one house you hear the same question from every room, and the Shows drift
@@ -35,28 +36,34 @@ echod reports for the Show today. It keys them by HA device id, so renaming a Sh
 
 | Entity | What it is |
 |---|---|
-| `sensor.genbu_house_version` | The house version, e.g. `v1.0.3-stable.52`. Attributes: `main_shows` (ESPHome node names), `since`, `shows` (each Show's version and whether it is online). |
+| `sensor.genbu_house_version` | The house version, e.g. `v1.0.3-stable.52`. Attributes: `main_shows` (ESPHome node names), `main_missing_since` (ISO time since HA has seen the main Show unavailable, empty while it is there), `since`, `shows` (each Show's version and whether it is online). |
 | `select.genbu_main_update_show` | The main update Show, picked from the Genbu Shows. A second main is added in the integration's options, with the warning. |
 
-**Where the house version comes from.** Each Show already reports its running version through its ESPHome
-`firmware` update entity (`installed_version`). The house version is the newest `installed_version` among
-the main Shows. It only counts after that Show's update has committed. The Show reports the new version only
-after its 5-minute trial, so the main Show is also the canary: a release that breaks it rolls back, and the
-house never moves.
+**Where the house version comes from.** Each Show reports the version it runs once its update has
+committed, in the diagnostic text sensor `committed_version`. That is set only after the slot trial says
+`good` (5 minutes up), so it lags `installed_version` on the `firmware` update entity. The house version is
+the newest `committed_version` among the main Shows. So the main Show is also the canary: a release that
+breaks it rolls back, and the house never moves.
 
 **What it never does.** It never downloads anything and never tells a Show *what* to install beyond a tag.
 Each Show fetches that tag's signed manifest from GitHub and checks it itself.
 
 ## On the Show
 
-A Show reads two values over its existing ESPHome link (hastate), the same way it gets the weather: the
-state of `sensor.genbu_house_version` and its `main_shows` attribute. **No HA token is needed.**
+A Show reads three values over its existing ESPHome link (hastate), the same way it gets the weather: the
+state of `sensor.genbu_house_version` and its `main_shows` and `main_missing_since` attributes. **No HA token
+is needed.**
 
 - If its own node name is in `main_shows`, it is a main update Show.
 - If the integration is there and its name is not in `main_shows`, it is a following Show. Its
-  `update_channel` select shows **House** and does not offer Stable, Staging or Dev.
-- If the integration is not there (the sensor does not exist), it is a free Show on its channel, as today.
-  Nothing changes for a house without the integration.
+  `update_channel` select stays, but it is not read while the Show follows. The update card's title says
+  "follows <main>" instead of the channel.
+- If HA has sent nothing about the sensor 30 seconds after connecting (HA sends nothing for an entity that
+  does not exist), it is a free Show on its channel, as today. Nothing changes for a house without the
+  integration. A Show that has not reached HA at all is free after 10 minutes, so a Show without HA still
+  installs overnight.
+- Until then, or while the sensor's state is not a version (`unavailable`), the Show stays where it is and
+  says nothing about updates.
 
 ### When a following Show moves
 
@@ -91,7 +98,7 @@ take over by itself if nobody answers. One decider (HA) makes that safe.
 | After | What happens |
 |---|---|
 | **0–1 h** | Nothing. Restarts and updates take minutes. |
-| **1 h** | Following Shows keep their version. `update_status` on each says "Main update Show <name> not reachable since 14:02". Nothing is spoken. |
+| **1 h** | Following Shows keep their version. `update_status` on each says "Main update Show <name> not reachable since 14:02", from `main_missing_since`. Nothing is spoken. |
 | **24 h** | HA asks you. The integration opens a **Repairs** issue: "<name> has been offline since … Pick a new main update Show". The fix flow lists the Shows that are online, with their versions. It recommends the one already on the house version that was online most recently. Other choices are "keep waiting 7 more days" and "this Show is gone for good" (it is removed from the main list). If you set a phone in the integration options, the same goes there as a push notification with a link. |
 | **7 days, no answer** | HA picks the recommended Show itself. The house version stays, and the Repairs issue says what it did and how to change it. |
 | **Old main Show comes back** | It sees it is no longer in `main_shows` and is a following Show from then on. If you want it back as main, pick it in the select. |
@@ -133,16 +140,16 @@ After the HA sign-in (job 40):
 
 - **`ha/custom_components/genbu`** (new):
   - device discovery (manufacturer OpenJade);
-  - the house version sensor and the main select;
+  - the house version sensor (from each main's `committed_version`) and the main select;
   - options flow for more mains, with the warning;
   - Repairs issue and fix flow;
   - the 7-day auto-pick;
   - optional push target;
   - tests with HA's test harness if it is available, otherwise pure logic tests.
-- **echod `feature/firmware`:**
-  - follow the two values via hastate;
+- **echod `feature/firmware`** (built, `house.go`):
+  - follow the three values via hastate;
+  - the `committed_version` sensor;
   - role from `main_shows`;
-  - the House channel;
   - the following loop (align, boot ask, idle follow);
   - `update.FetchTag`;
   - going back allowed only on the align path;

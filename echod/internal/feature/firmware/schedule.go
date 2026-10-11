@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/HuskerMinion/techo5/echod/internal/layout"
 	"github.com/HuskerMinion/techo5/echod/internal/update"
 )
 
@@ -43,6 +44,8 @@ const checkSettle = 5 * time.Minute
 // Run looks for a newer build on its own schedule, and keeps the one this process is running.
 func (f *Firmware) Run(ctx context.Context) error {
 	go f.autoLoop(ctx)
+	go f.houseLoop(ctx)
+	go f.showCommitted(ctx)
 	first := time.NewTimer(checkSettle)
 	defer first.Stop()
 
@@ -64,6 +67,24 @@ func (f *Firmware) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			t.Stop()
 			return nil
+		case <-t.C:
+		}
+	}
+}
+
+// showCommitted publishes the running version as committed once its trial is over, which on a slot
+// system is the boot script's word, five minutes after the daemon came up.
+func (f *Firmware) showCommitted(ctx context.Context) {
+	t := time.NewTicker(30 * time.Second)
+	defer t.Stop()
+	for {
+		if update.Committed() {
+			f.committed.Set(layout.Version)
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
 		case <-t.C:
 		}
 	}

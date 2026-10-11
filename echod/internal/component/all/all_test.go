@@ -40,6 +40,7 @@ var registered = []string{
 	"camera_sound",
 	"camera_web_access",
 	"check_for_updates",
+	"committed_version",
 	"cpu_cores",
 	"cpu_cores_online",
 	"cpu_temperature",

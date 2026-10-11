@@ -37,7 +37,7 @@ const (
 	answerWithin = time.Minute
 )
 
-func (u *Firmware) tell() { u.tellOf(u.Offered(), time.Now()) }
+func (u *Firmware) tell() { u.tellOf(u.channelOffered(), time.Now()) }
 
 // tellOf says that v is ready, if it is due and can be said now.
 func (u *Firmware) tellOf(v string, now time.Time) {

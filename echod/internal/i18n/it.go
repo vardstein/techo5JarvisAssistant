@@ -560,6 +560,7 @@ var it = lang{
 		"An update for this Show is ready, version {version}. It installs by itself tonight.":                 "C'è un aggiornamento pronto per questo Show, versione {version}. Si installa da solo stanotte.",
 		"An update for this Show is ready, version {version}. You can install it in Settings, under Updates.": "C'è un aggiornamento pronto per questo Show, versione {version}. Puoi installarlo in Impostazioni, sotto Aggiornamenti.",
 		"An update for this Show is ready, version {version}. Want me to install it now?":                     "C'è un aggiornamento pronto per questo Show, versione {version}. Vuoi che lo installi adesso?",
+		"This Show is on version {running}, the rest of the house runs {house}. Want me to switch to it now?": "Questo Show ha la versione {running}, il resto della casa usa la {house}. Vuoi che passi a quella adesso?",
 		"Okay, installing it now.":              "Va bene, lo installo adesso.",
 		"Okay, I'll remind you later.":          "Va bene, te lo ricordo più tardi.",
 		"and {count} more today":                "e altri {count} oggi",

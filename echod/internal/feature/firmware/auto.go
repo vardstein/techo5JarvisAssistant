@@ -72,7 +72,7 @@ func (u *Firmware) autoLoop(ctx context.Context) {
 		}
 		tried = now.Format("2006-01-02")
 		u.Check(ctx)
-		if v := u.Offered(); v != "" {
+		if v := u.channelOffered(); v != "" {
 			slog.Info("installing an update by itself, overnight", "version", v)
 			u.Install(ctx)
 		}

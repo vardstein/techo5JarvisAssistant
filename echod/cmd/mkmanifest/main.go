@@ -55,6 +55,10 @@ func main() {
 	flag.Parse()
 	m.Product = *product
 	m.Boards = append([]string(nil), boards...)
+	if m.Product == update.JarvisShowProduct {
+		// The floor is in the code this release was built from, so the manifest cannot disagree with it.
+		m.MinAlign = update.AlignFloor
+	}
 
 	builds := map[string]string{"arm64": *arm64, "arm": *arm, "arm-dot": *armDot, "arm-spot": *armSpot}
 	rootfses := map[string]string{"arm": *rootfs, "arm-dot": *rootfsDot, "arm-spot": *rootfsSpot}

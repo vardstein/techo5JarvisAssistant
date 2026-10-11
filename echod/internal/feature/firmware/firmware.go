@@ -44,6 +44,11 @@ type Firmware struct {
 	status  *esphome.TextSensor
 	events  *esphome.Event
 	auto    *esphome.Switch
+	// committed is the version this Show runs once its trial is over: what Home Assistant makes the
+	// house version from, so a main Show's update that rolls back never moves the house.
+	committed *esphome.TextSensor
+
+	house house
 
 	mu           sync.Mutex
 	found        update.Manifest
@@ -196,6 +201,19 @@ func build() *Firmware {
 	// What the boot hook took out, if anything. Read once: it describes this boot, and reading clears
 	// the property.
 	u.rolledBack = update.RolledBack()
+	u.rolledBackFromHouse()
+
+	u.committed = &esphome.TextSensor{
+		Base: esphome.Base{
+			ObjectID: "committed_version",
+			Name:     "Committed version",
+			Icon:     "mdi:check-decagram",
+			Category: esphome.CategoryDiagnostic,
+		},
+	}
+
+	// Before the check below hooks the connection, so the first check already knows when it connected.
+	u.followHouse()
 
 	// Off the hook's goroutine, which is the connection's read loop. The check goes out with the
 	// announce: Home Assistant reads the versions the moment it connects, and nothing else refreshes
@@ -244,8 +262,32 @@ func (u *Firmware) Settled(event, status string) {
 	u.events.Trigger(event)
 }
 
-// Offered is the version the last check found to install, or "" when there is nothing newer.
+// Offered is the version to install: for a following Show the house version, newer or older, and
+// otherwise what the last check found newer on the channel. "" when there is nothing, and while the Show
+// cannot tell yet whether it follows.
 func (u *Firmware) Offered() string {
+	switch u.role(time.Now()) {
+	case roleFollower:
+		if v := lookHouse().version; v != layout.Version {
+			return v
+		}
+		return ""
+	case roleUnknown:
+		return ""
+	}
+	return u.foundOffer()
+}
+
+// channelOffered is the channel's offer, only for a Show that speaks for itself. Telling about it and
+// installing it overnight use this, so a following Show never does either.
+func (u *Firmware) channelOffered() string {
+	if !u.speaksForItself() {
+		return ""
+	}
+	return u.foundOffer()
+}
+
+func (u *Firmware) foundOffer() string {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	if u.found.Version == "" || u.found.Version == layout.Version || !u.found.Serves() ||
@@ -274,6 +316,12 @@ func (u *Firmware) Channel() update.Channel {
 // keeps reporting what it knew rather than blanking the card. The error is what LastCheck reports, and
 // what the schedule uses to decide when to look again.
 func (u *Firmware) Check(ctx context.Context) error {
+	// A following Show has no channel to read: Home Assistant says where the house is.
+	if u.role(time.Now()) == roleFollower {
+		u.recordCheck(nil)
+		u.houseStep(ctx, time.Now())
+		return nil
+	}
 	channel := u.Channel()
 
 	found, err := update.Fetch(ctx, channel)
@@ -336,6 +384,16 @@ func (u *Firmware) command(cmd esphome.UpdateCommand) {
 // Nothing is installed that was not offered: the version comes from the manifest this device fetched,
 // not from Home Assistant, which has no way to name one.
 func (u *Firmware) Install(ctx context.Context) {
+	// On a following Show, Install is "go to the house version", even one that failed here before:
+	// somebody asked for it.
+	if v := u.houseVersion(); v != "" {
+		if v == layout.Version {
+			slog.Warn("an install was asked for on a Show already on the house version", "house", v)
+			return
+		}
+		u.alignTo(ctx, v)
+		return
+	}
 	u.busy.Add(1)
 	defer u.busy.Add(-1)
 	channel := u.Channel()
@@ -365,6 +423,12 @@ func (u *Firmware) Install(ctx context.Context) {
 		return
 	}
 
+	u.put(ctx, found, update.Install)
+}
+
+// put installs found the way how does and restarts into it, with the ring and the update card showing
+// it as it goes. The error is why it did not install.
+func (u *Firmware) put(ctx context.Context, found update.Manifest, how func(context.Context, update.Manifest, func(float32)) error) error {
 	// The ring says it is working for the whole of it, which then hands over to the still frame the
 	// restart leaves behind — so the device is never silently busy from the moment somebody presses
 	// install to the moment the new binary is up.
@@ -372,13 +436,13 @@ func (u *Firmware) Install(ctx context.Context) {
 	// would put Home Assistant's bar back to empty halfway through the download already running.
 	if update.Installing() {
 		slog.Info("install already running; the second request was ignored", "version", found.Version)
-		return
+		return update.ErrInstalling
 	}
 	working := led.Get().Busy().Start(led.WorkUpdate)
 	defer working.Done()
 
 	u.progress(found, 0)
-	err = update.Install(ctx, found, func(at float32) { u.progress(found, at) })
+	err := how(ctx, found, func(at float32) { u.progress(found, at) })
 
 	// Home Assistant learns nothing from the command it sent — the update entity has no way to say an
 	// install failed, and the card just goes back to offering it. So the failure has to arrive as state,
@@ -390,7 +454,7 @@ func (u *Firmware) Install(ctx context.Context) {
 	// downloading perfectly well.
 	if errors.Is(err, update.ErrInstalling) {
 		slog.Info("install already running; the second request was ignored", "version", found.Version)
-		return
+		return update.ErrInstalling
 	}
 	if err != nil {
 		slog.Error("installing an update failed", "version", found.Version, "err", err)
@@ -400,9 +464,10 @@ func (u *Firmware) Install(ctx context.Context) {
 		u.publish(found)
 		u.Settled(EventFailed, "installing "+found.Version+" failed: "+err.Error())
 		feedback.Failure()
-		return
+		return err
 	}
 	update.Restart("update to " + found.Version)
+	return nil
 }
 
 // progress republishes the state with how far the download has got. The version fields go out with it
@@ -432,14 +497,22 @@ func (u *Firmware) state(found update.Manifest) esphome.UpdateState {
 	return esphome.UpdateState{
 		CurrentVersion: layout.Version,
 		LatestVersion:  latest,
-		Title:          layout.System + " (" + u.Channel().Label() + " channel)",
+		Title:          u.title(),
 		ReleaseSummary: found.Notes,
 		ReleaseURL:     found.ReleaseURL,
 	}
 }
 
+// title names what the Show follows: its channel, or the main update Show it follows.
+func (u *Firmware) title() string {
+	if u.role(time.Now()) == roleFollower {
+		return layout.System + " (follows " + u.mainName() + ")"
+	}
+	return layout.System + " (" + u.Channel().Label() + " channel)"
+}
+
 func (u *Firmware) Name() string { return "firmware" }
 
 func (u *Firmware) Entities() []esphome.Entity {
-	return []esphome.Entity{u.entity, u.channel, u.look, u.status, u.events, u.auto}
+	return []esphome.Entity{u.entity, u.channel, u.look, u.status, u.events, u.auto, u.committed}
 }
