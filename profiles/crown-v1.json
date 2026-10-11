@@ -8,8 +8,8 @@
     "width": 1280,
     "height": 800
   },
-  "install_confirmation": "ERASE LINEAGE INSTALL JARVIS CROWN",
-  "unlock_confirmation": "UNLOCK CROWN",
+  "install_confirmation": "ERASE",
+  "unlock_confirmation": "UNLOCK",
   "music": {
     "routing": "music-assistant",
     "room_primary_fallback": true,

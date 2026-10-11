@@ -131,8 +131,8 @@ all stop the installer before J19 can invoke Amonet.
 ## J19 — pinned Amonet Crown unlock wrapper
 
 `unlock` first executes J17 and J18. If the proven Crown already reports
-`unlock_status=true`, Amonet is skipped entirely. A locked Crown requires the exact interactive phrase
-`UNLOCK CROWN` before any exploit is executed.
+`unlock_status=true`, Amonet is skipped entirely. A locked Show needs `UNLOCK` typed in
+before any exploit runs.
 
 Before execution, Jarvis Crown SHA-256 verifies the exact known-good archived bytes for:
 

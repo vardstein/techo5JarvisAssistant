@@ -13,7 +13,7 @@ from jarvis_crown.boards import profile_for_board, profile_for_product
 from jarvis_crown.device_gate import DeviceGateError, DeviceIdentity, identify_crown, identify_show
 from jarvis_crown.timing import POLL_SECONDS, POST_AMONET_FASTBOOT_TIMEOUT_SECONDS
 
-CONFIRM_PHRASE = "UNLOCK CROWN"  # Crown compatibility alias
+CONFIRM_PHRASE = "UNLOCK"
 FASTBRICK_TIMEOUT_SECONDS = 600
 VERIFY_INTERVAL_SECONDS = POLL_SECONDS
 VERIFY_ATTEMPTS = int(POST_AMONET_FASTBOOT_TIMEOUT_SECONDS / VERIFY_INTERVAL_SECONDS)

@@ -124,6 +124,7 @@ class MultiBoardTests(unittest.TestCase):
         self.assertEqual((checkers.fastboot_product, checkers.display_width, checkers.display_height), ("CHECKERS", 960, 480))
         self.assertEqual(profile_for_product("CHECKERS"), checkers)
         self.assertEqual((crown.install_confirmation, checkers.install_confirmation), ("ERASE", "ERASE"))
+        self.assertEqual((crown.unlock_confirmation, checkers.unlock_confirmation), ("UNLOCK", "UNLOCK"))
 
     def test_generic_identity_accepts_both_and_cross_target_fails(self):
         self.assertEqual(identify_show(run=self.runner("CROWN")).product, "CROWN")
@@ -165,20 +166,20 @@ class MultiBoardTests(unittest.TestCase):
                 )
             self.assertFalse(preflight.preflight_ok(checks))
 
-    def test_checkers_unlock_is_pin_gated_and_uses_checkers_confirmation(self):
+    def test_checkers_unlock_is_pin_gated_and_needs_the_exact_confirmation(self):
         identity = DeviceIdentity("CHK123", "CHECKERS", False, "lk")
         with tempfile.TemporaryDirectory() as td_s:
             td = pathlib.Path(td_s)
             amonet, hashes = make_amonet(td, "checkers")
             run = mock.Mock(return_value=cp(["bash", "fastbrick.sh"]))
             with self.assertRaisesRegex(unlock.UnlockError, "not been cryptographically pinned"):
-                unlock.unlock_show(identity, amonet, confirmation="UNLOCK CHECKERS", run=run)
+                unlock.unlock_show(identity, amonet, confirmation="UNLOCK", run=run)
             run.assert_not_called()
             with self.assertRaisesRegex(unlock.UnlockError, "exact confirmation"):
-                unlock.unlock_show(identity, amonet, confirmation="UNLOCK CROWN", run=run, expected_hashes=hashes)
+                unlock.unlock_show(identity, amonet, confirmation="UNLOCK NOW", run=run, expected_hashes=hashes)
             run.assert_not_called()
             result = unlock.unlock_show(
-                identity, amonet, confirmation="UNLOCK CHECKERS",
+                identity, amonet, confirmation="UNLOCK",
                 run=run, expected_hashes=hashes,
                 identify=lambda: DeviceIdentity("CHK123", "CHECKERS", True, "lk"),
                 sleep=lambda _: None,

@@ -8,8 +8,8 @@
     "width": 960,
     "height": 480
   },
-  "install_confirmation": "ERASE LINEAGE INSTALL JARVIS CHECKERS",
-  "unlock_confirmation": "UNLOCK CHECKERS",
+  "install_confirmation": "ERASE",
+  "unlock_confirmation": "UNLOCK",
   "destructive_assets": {
     "status": "boot-and-twrp-pinned",
     "boot": {

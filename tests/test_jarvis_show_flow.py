@@ -302,7 +302,7 @@ class FlowAcceptanceTests(unittest.TestCase):
             with self.assertRaisesRegex(FlowError, "device changed after auto-detection"):
                 run_install_flow(
                     data,
-                    confirm_unlock=lambda _p: "UNLOCK CROWN",
+                    confirm_unlock=lambda _p: "UNLOCK",
                     confirm_install=lambda _p: "ERASE",
                     deps=h.deps(),
                 )

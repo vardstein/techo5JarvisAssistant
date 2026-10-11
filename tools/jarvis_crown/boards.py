@@ -33,7 +33,7 @@ PROFILES = {
         display_height=800,
         amonet_dir_name="amonet-crown-v2.0.1",
         amonet_kaeru_name="crown-kaeru.bin",
-        unlock_confirmation="UNLOCK CROWN",
+        unlock_confirmation="UNLOCK",
         install_confirmation="ERASE",
     ),
     "checkers": BoardProfile(
@@ -45,7 +45,7 @@ PROFILES = {
         display_height=480,
         amonet_dir_name="amonet-checkers-v2.0.1",
         amonet_kaeru_name="checkers-kaeru.bin",
-        unlock_confirmation="UNLOCK CHECKERS",
+        unlock_confirmation="UNLOCK",
         install_confirmation="ERASE",
     ),
 }

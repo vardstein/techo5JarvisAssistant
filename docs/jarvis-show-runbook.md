@@ -96,7 +96,7 @@ python3 tools/jarvis-show.py install --name kitchenShow --channel dev \
 
 The installer repeats its host and identity checks, then fetches the files above. Before writing
 anything it makes a verified off-device recovery backup in `../backups/<serial>/`. A locked Show also
-needs `UNLOCK <BOARD>` typed in. The last step before erasing needs `ERASE` typed in.
+needs `UNLOCK` typed in. The last step before erasing needs `ERASE` typed in.
 
 Don't pull power or USB while it runs. If it stops, don't just run it again: run `identify` first and
 use the recovery and rollback path.
