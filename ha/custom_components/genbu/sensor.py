@@ -1,6 +1,9 @@
 """sensor.genbu_house_version: the version the house runs, the one every following Show moves to. The
 Shows read it and two of its attributes over their ESPHome link: main_shows (am I a main update Show?)
-and main_missing_since (for the line on their update page)."""
+and main_missing_since (for the line on their update page).
+
+music_players is where music asked for at each Show plays, by the Show's device id and by its
+assist_satellite, for the music automation and scripts the installer makes."""
 
 from __future__ import annotations
 
@@ -20,7 +23,7 @@ class HouseVersion(SensorEntity):
     _attr_icon = "mdi:home-import-outline"
     _attr_name = "Genbu house version"
     _attr_should_poll = False
-    _unrecorded_attributes = frozenset({"shows"})
+    _unrecorded_attributes = frozenset({"shows", "music_players"})
 
     def __init__(self, entry: ConfigEntry) -> None:
         self.entity_id = HOUSE_ENTITY
@@ -42,5 +45,8 @@ class HouseVersion(SensorEntity):
             "since": house.since,
             "shows": {s.node: {"name": s.name, "installed": s.installed, "committed": s.committed,
                                "online": s.online} for s in self.hub.shows},
+            "music_players": {key: player for s in self.hub.shows
+                              if (player := self.hub.music.get(s.device))
+                              for key in (s.device, s.satellite) if key},
         }
         self.async_write_ha_state()

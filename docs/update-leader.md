@@ -49,7 +49,7 @@ The installer does steps 2 and 3 itself once the folder is in place.
 
 ### Tests
 
-`tests/test_genbu_house.py` tests the logic without Home Assistant and runs in CI. `ha/tests` runs the
+`tests/test_genbu_house.py` and `tests/test_genbu_music.py` test the logic without Home Assistant and run in CI. `ha/tests` runs the
 integration in a real Home Assistant through `pytest-homeassistant-custom-component`, by hand. That needs
 the Python version current Home Assistant needs (3.14 for 2026.10):
 
@@ -64,6 +64,11 @@ cd ha && /tmp/havenv/bin/python -m pytest
 |---|---|
 | `sensor.genbu_house_version` | The house version, e.g. `v1.0.3-stable.52`. Attributes: `main_shows` (ESPHome node names), `main_missing_since` (ISO time since HA has seen the main Show unavailable, empty while it is there), `since`, `shows` (each Show's version and whether it is online). |
 | `select.genbu_main_update_show` | The main update Show, picked from the Genbu Shows. A second main is added in the integration's options, with the warning. |
+| `select.<show>_music_plays_on` | Per Show: where music asked for at that Show plays. "Automatic" is a Music Assistant player in the Show's room that is not a Show, else the Show's own player; never another room's. Or pick any player. It sits on a small genbu device named like the Show and connected via its ESPHome device, since Home Assistant lets a device belong to one integration only; that device goes when the Show's own device is removed. |
+
+`sensor.genbu_house_version` also has `music_players`: where each Show's music plays, by its device id and
+by its assist satellite. The installer's music scripts and sentences read it, so music asked for in the
+bedroom plays in the bedroom, and a Show moved to another room plays there from the next look on.
 
 **Where the house version comes from.** Each Show reports the version it runs once its update has
 committed, in the diagnostic text sensor `committed_version`. That is set only after the slot trial says

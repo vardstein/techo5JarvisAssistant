@@ -6,6 +6,9 @@ blueprint:
     hears and you can hear the answer. They stay down for the whole conversation, follow-up
     questions included, and come back up once it has been quiet for a few seconds.
 
+    Pick no speakers and it turns down the speakers in whatever room the assistant is in when it
+    starts listening, so a Show moved to another room needs nothing changed here.
+
     A speaker that isn't playing is left alone. One stepped up or down during the turn ("lauter",
     "leiser") comes back to its old volume plus that step, and one set outright ("Lautstärke auf
     30", a slider) keeps what it was set to. The Show turns down what it plays itself, so don't pick
@@ -24,10 +27,12 @@ blueprint:
           filter:
             - domain: assist_satellite
     speakers:
-      name: Speakers to turn down
+      name: Speakers to turn down (optional)
       description: >-
-        The room's speakers. When Music Assistant and the speaker's own integration both have an entity
+        Leave empty for the speakers in the assistant's room, worked out each time. Or pick them
+        yourself; then, when Music Assistant and the speaker's own integration both have an entity
         for the same speaker, pick only one, or it is turned down twice.
+      default: []
       selector:
         entity:
           multiple: true
@@ -87,7 +92,25 @@ triggers:
 
 variables:
   satellite: !input satellite
-  speakers: !input speakers
+  picked: !input speakers
+  # The picked ones, or the room's media players now: less any on a device with a voice assistant
+  # and any Show's own Music Assistant player (the Shows turn down what they play themselves), and a
+  # speaker both Music Assistant and its own integration have an entity for only through its own one.
+  speakers: >-
+    {% set picked = [picked] if picked is string else (picked or []) | list %}
+    {% if picked | count > 0 %}{{ picked }}{% else %}
+    {% set a = area_id(satellite) %}
+    {% set ns = namespace(out=[]) %}
+    {% for e in (area_entities(a) if a else []) | select('match', 'media_player[.]')
+       if not is_state(e, 'unavailable') %}
+      {% set d = device_id(e) %}
+      {% if not d or (device_entities(d) | select('match', 'assist_satellite[.]') | list | count == 0
+                      and device_attr(d, 'manufacturer') not in ['OpenJade', 'TECHO5']) %}
+        {% set ns.out = ns.out + [e] %}
+      {% endif %}
+    {% endfor %}
+    {% set native = ns.out | reject('in', integration_entities('music_assistant')) | list %}
+    {{ native if native else ns.out }}{% endif %}
   part: !input part
   quiet: !input quiet
   was: >-

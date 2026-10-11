@@ -119,6 +119,8 @@ class Show:
     online: bool = False
     watch: tuple = ()  # the entity ids Home Assistant reads these from
     device: str = ""  # Home Assistant's device id, which stays when the Show is renamed
+    area: str = ""  # the room Home Assistant has it in
+    satellite: str = ""  # its assist_satellite entity
 
 
 def _iso(t: datetime | None) -> str:
@@ -180,12 +182,13 @@ class House:
     wait_until     a later pick, from "keep waiting"
     told           the missing spells already pushed to a phone
     devices        each Show's node name by device id, to notice a rename
+    music          the player picked in each Show's "Music plays on", by device id
     house, since   the house version and when it last changed
     """
 
     def __init__(self, data: dict | None = None) -> None:
         self.data = data if data is not None else {}
-        for k in ("committed", "missing_since", "wait_until", "told", "devices"):
+        for k in ("committed", "missing_since", "wait_until", "told", "devices", "music"):
             self.data.setdefault(k, {})
         self.data.setdefault("mains", [])
         self.data.setdefault("house", "")
@@ -311,6 +314,16 @@ class House:
         self.data["mains"] = mains
         self._forget_old()
         self._settle(now)
+
+    def music_choice(self, device: str) -> str:
+        return self.data["music"].get(device, "")
+
+    def choose_music(self, device: str, player: str) -> None:
+        """The Show's "Music plays on": a player, or "auto" (music.AUTO) to go back to the usual one."""
+        if player and player != "auto":
+            self.data["music"][device] = player
+        else:
+            self.data["music"].pop(device, None)
 
     def wait_more(self, node: str, now: datetime) -> None:
         self.data["wait_until"][node] = _iso(now + WAIT_MORE)

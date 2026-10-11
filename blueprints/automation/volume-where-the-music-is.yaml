@@ -90,7 +90,7 @@ variables:
   by: "{{ num | int if level | int < 0 and mal | int == 0 and times | int == 1 and num | int > 0 else 10 }}"
   own: >-
     {{ (device_entities(trigger.device_id) if trigger.device_id else [])
-       | select('match', 'media_player\.') | reject('in', integration_entities('music_assistant'))
+       | select('match', 'media_player[.]') | reject('in', integration_entities('music_assistant'))
        | first | default('') }}
   named_area: >-
     {% set w = wert | string %}
@@ -104,10 +104,10 @@ variables:
   # is only set through its own one.
   speakers: >-
     {% set ns = namespace(out=[]) %}
-    {% for e in (area_entities(area | trim) if area | trim else []) | select('match', 'media_player\.')
+    {% for e in (area_entities(area | trim) if area | trim else []) | select('match', 'media_player[.]')
        if not is_state(e, 'unavailable') %}
       {% set d = device_id(e) %}
-      {% if not d or device_entities(d) | select('match', 'assist_satellite\.') | list | count == 0 %}
+      {% if not d or device_entities(d) | select('match', 'assist_satellite[.]') | list | count == 0 %}
         {% set ns.out = ns.out + [e] %}
       {% endif %}
     {% endfor %}
@@ -115,7 +115,7 @@ variables:
     {{ native if native else ns.out }}
   # What plays in the room, the asking Show's own speaker left out (another Show playing music counts).
   music: >-
-    {% set p = (area_entities(area | trim) if area | trim else []) | select('match', 'media_player\.')
+    {% set p = (area_entities(area | trim) if area | trim else []) | select('match', 'media_player[.]')
                | reject('in', device_entities(trigger.device_id) if trigger.device_id else [])
                | select('is_state', 'playing') | list %}
     {% set native = p | reject('in', integration_entities('music_assistant')) | list %}

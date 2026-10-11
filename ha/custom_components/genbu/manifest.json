@@ -1,7 +1,10 @@
 {
   "domain": "genbu",
   "name": "Genbu",
-  "after_dependencies": ["esphome"],
+  "after_dependencies": [
+    "esphome",
+    "music_assistant"
+  ],
   "codeowners": [],
   "config_flow": true,
   "dependencies": [],
