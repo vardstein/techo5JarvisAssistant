@@ -442,6 +442,9 @@ MOOD_PLAN = r"""{% set stop = ['spiel', 'spiele', 'viel', 'biele', 'doch', 'mal'
 {% elif t %}{{ {'kind': 'any', 'terms': [t]} }}
 {% else %}{{ {'kind': 'random', 'terms': []} }}{% endif %}"""
 
+# Spoken titles drop "(Remastered 2011)" or "[Live]" parts until the music pipeline cleans the tags itself.
+SPOKEN = r"regex_replace(' *[(][^)]*[)]| *\\[[^]]*\\]', '') | trim"
+
 MOOD_PICK = r"""{% set ns = namespace(pl=[], ar=[], tr=[], p=none, a=none) %}
 {% for r in [s1, s2, s3] %}
   {% set ns.pl = ns.pl + r.get('playlists', []) %}
@@ -461,7 +464,7 @@ MOOD_PICK = r"""{% set ns = namespace(pl=[], ar=[], tr=[], p=none, a=none) %}
 {% endfor %}
 {% set k = plan.kind %}
 {% if k in ['playlist', 'any'] and ns.p %}
-  {{ {'media_type': 'playlist', 'uri': ns.p.uri, 'title': ns.p.name, 'artist': '', 'radio': false, 'shuffle': true, 'fallback': false} }}
+  {{ {'media_type': 'playlist', 'uri': ns.p.uri, 'title': (ns.p.name | regex_replace(' *[(][^)]*[)]| *\\[[^]]*\\]', '') | trim) or ns.p.name, 'artist': '', 'radio': false, 'shuffle': true, 'fallback': false} }}
 {% elif k in ['artist', 'any'] and ns.a %}
   {{ {'media_type': 'artist', 'uri': ns.a.uri, 'title': '', 'artist': ns.a.name, 'radio': false, 'shuffle': true, 'fallback': false} }}
 {% else %}
@@ -470,7 +473,7 @@ MOOD_PICK = r"""{% set ns = namespace(pl=[], ar=[], tr=[], p=none, a=none) %}
   {% if pool %}
     {% set t = pool | random %}
     {% set ar = t.artists | default([]) %}
-    {{ {'media_type': 'track', 'uri': t.uri, 'title': t.name, 'artist': (ar[0].name if ar and ar[0] is mapping else ar[0] if ar else ''), 'radio': true, 'shuffle': false, 'fallback': fb and k != 'random'} }}
+    {{ {'media_type': 'track', 'uri': t.uri, 'title': (t.name | regex_replace(' *[(][^)]*[)]| *\\[[^]]*\\]', '') | trim) or t.name, 'artist': (ar[0].name if ar and ar[0] is mapping else ar[0] if ar else ''), 'radio': true, 'shuffle': false, 'fallback': fb and k != 'random'} }}
   {% else %}
     {{ {'media_type': 'none'} }}
   {% endif %}
@@ -547,7 +550,7 @@ def play_random(house: House) -> dict:
                       {"response_variable": "result", "stop": "Keine Musik verfügbar."}]},
             _start("{{ " + first + ".uri }}", "track", radio=True, enqueue="play"),
             {"variables": {
-                "title": "{{ " + first + ".name }}",
+                "title": "{{ (" + first + ".name | " + SPOKEN + ") or " + first + ".name }}",
                 "artist": "{% set ar = " + first + ".artists | default([]) %}{{ ar[0].name if ar and ar[0] is "
                           "mapping else ar[0] if ar else '' }}",
                 "result": {"message": "Spiele {{ title }}{{ ' von ' ~ artist if artist }} und ähnliche Lieder.",
