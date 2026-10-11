@@ -63,8 +63,8 @@ type Screen struct {
 	NightOverride   string `json:"night_override,omitempty"`
 	NightOverrideAt int64  `json:"night_override_at,omitempty"`
 
-	// TurnStyle is how a voice turn is drawn: empty for the classic title and words, "equalizer" for
-	// bars moving with the voice.
+	// TurnStyle is how a voice turn is drawn: "classic" for the title and words, "glow", "wave" or
+	// "equalizer" for a picture moving with the voice. Empty is the display's default (Glow).
 	TurnStyle string `json:"turn_style,omitempty"`
 
 	// CallButton puts a Call button on the home screen, which opens the list of devices in the house

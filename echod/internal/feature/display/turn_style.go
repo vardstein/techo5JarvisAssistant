@@ -12,14 +12,19 @@ import (
 
 // What a voice turn looks like on the screen: Classic, the title and the words, or a picture moving
 // with the voice being heard and the answer being spoken: Glow, a bar of light, Wave, a weave of lines,
-// or Bars, an LED equalizer. Classic until somebody chooses.
+// or Bars, an LED equalizer. Glow until somebody chooses: a freshly installed Show still showed the
+// plain Classic page on 2026-10-11, after Glow had been built to be the one people see.
 
-// turnStyles are the choices, with what the config keeps for each; Classic is kept as nothing.
+// defaultTurnStyle is what nothing saved reads as. Classic used to be kept as nothing, so a Show that
+// had picked it before 2026-10-11 now gets Glow, once, until it is picked again.
+const defaultTurnStyle = "glow"
+
+// turnStyles are the choices, with what the config keeps for each.
 var turnStyles = []struct {
 	label string
 	value string
 }{
-	{"Classic", ""},
+	{"Classic", "classic"},
 	{"Glow", "glow"},
 	{"Wave", "wave"},
 	{"Bars", "equalizer"},
@@ -33,9 +38,13 @@ func turnStyleOptions() []string {
 	return out
 }
 
-// turnStyleIndex is the saved choice's place in turnStyles; a value no choice has reads as Classic.
+// turnStyleIndex is the saved choice's place in turnStyles; nothing saved reads as the default, and a
+// value no choice has as Classic.
 func turnStyleIndex() int {
 	v := config.Get().Screen.TurnStyle
+	if v == "" {
+		v = defaultTurnStyle
+	}
 	for i, t := range turnStyles {
 		if t.value == v {
 			return i

@@ -108,8 +108,9 @@ All of these are on the Show, under Settings → **Display**, and are entities i
 - **Clock format**, **Clock position** (center, or a smaller clock in a bottom corner so a photo
   stays in view) and **Date color**.
 - **Theme**, **Answer time** and **Now playing** (the full page, or a strip over the clock).
-- **Turn screen**: how a voice request looks. **Classic** is the words, **Wave** is glowing lines and
-  **Bars** is an LED-style equalizer, both moving with the voice. This one is on the Spot too.
+- **Turn screen**: how a voice request looks. **Glow** (the default) is a bar of light that rises with
+  the voice, **Wave** is glowing lines and **Bars** is an LED-style equalizer, all moving with the
+  voice. **Classic** is just the words. This one is on the Spot too.
 
 ## 7. Voice
 
