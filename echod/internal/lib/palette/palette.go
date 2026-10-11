@@ -12,13 +12,14 @@ type Preset struct {
 	Ground, Accent, Text, Dim, Rules uint32
 }
 
-// Presets are the themes offered, in the order the screen lists them. Jarvis Show intentionally
-// exposes only the four JODS visual-system palettes so the native framebuffer and the browser Setup
-// surface share one coherent design language. A saved legacy preset name falls back to the first
-// preset (White Jade); user-defined Custom colors remain supported separately by the screen config.
+// Presets are the themes offered, in the order the screen lists them. Jarvis Show exposes only the
+// JODS palettes, so the screen and the setup page look like one device. The first, Obsidian Jade,
+// is the default: Genbu's own black and serpent teal. A saved name that is no longer here falls back
+// to it; Custom colors are kept separately by the screen config.
 var Presets = []Preset{
-	// JODS canonical palettes. These five native-display roles are the solid equivalents of the
-	// richer JODS shell tokens (canvas, accent, primary text, muted text, soft borders).
+	{"Obsidian Jade", 0x0f171d, 0x4fa89d, 0xdce8ec, 0x7d98a2, 0x22323c},
+	// The light JODS palettes. Their five roles are the solid equivalents of the richer JODS shell
+	// tokens (canvas, accent, primary text, muted text, soft borders).
 	{"White Jade", 0xeeeff2, 0x86909d, 0x20242a, 0x7c8794, 0xd8dade},
 	{"Leaf Jade", 0xedf6f1, 0x3d9a61, 0x1f3127, 0x698474, 0xd2e1d8},
 	{"Sakura Jade", 0xf8edf3, 0xd66f99, 0x302128, 0x8b7480, 0xe5d9df},

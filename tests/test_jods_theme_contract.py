@@ -16,12 +16,13 @@ class JodsThemeContractTests(unittest.TestCase):
         cls.settings = (ROOT / "echod/internal/feature/display/settings.go").read_text(encoding="utf-8")
         cls.acceptance = (ROOT / "docs/final-acceptance.md").read_text(encoding="utf-8")
 
-    def test_fresh_jarvis_defaults_to_white_jade(self):
-        self.assertIn('const DefaultTheme = "White Jade"', self.screen)
-        self.assertIn('{"White Jade", 0xeeeff2, 0x86909d, 0x20242a, 0x7c8794, 0xd8dade}', self.palette)
+    def test_fresh_jarvis_defaults_to_obsidian_jade(self):
+        self.assertIn('const DefaultTheme = "Obsidian Jade"', self.screen)
+        self.assertIn('{"Obsidian Jade", 0x0f171d, 0x4fa89d, 0xdce8ec, 0x7d98a2, 0x22323c}', self.palette)
 
     def test_canonical_jods_palette_family_is_available(self):
         for row in (
+            '{"Obsidian Jade", 0x0f171d, 0x4fa89d, 0xdce8ec, 0x7d98a2, 0x22323c}',
             '{"White Jade", 0xeeeff2, 0x86909d, 0x20242a, 0x7c8794, 0xd8dade}',
             '{"Leaf Jade", 0xedf6f1, 0x3d9a61, 0x1f3127, 0x698474, 0xd2e1d8}',
             '{"Sakura Jade", 0xf8edf3, 0xd66f99, 0x302128, 0x8b7480, 0xe5d9df}',
@@ -35,7 +36,7 @@ class JodsThemeContractTests(unittest.TestCase):
             "Mint", "Lavender", "Graphite", "Cherry", "Paper", "Linen",
         ):
             self.assertNotIn('{"' + name + '",', self.palette)
-        self.assertIn('Named("Walnut").Name != "White Jade"', (ROOT / "echod/internal/lib/palette/palette_test.go").read_text(encoding="utf-8"))
+        self.assertIn('Named("Walnut").Name != "Obsidian Jade"', (ROOT / "echod/internal/lib/palette/palette_test.go").read_text(encoding="utf-8"))
 
     def test_setup_surface_uses_jods_shape_and_layering(self):
         self.assertIn("<title>Jarvis Show setup</title>", self.setup)

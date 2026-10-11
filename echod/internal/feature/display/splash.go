@@ -95,13 +95,17 @@ func wordmark() (mark, sub string) {
 
 // drawSplash paints the splash elapsed into coming up, at the given step.
 func (r *renderer) drawSplash(s *splash, elapsed time.Duration, step bootStep) {
-	draw.Draw(r.dst, r.dst.Rect, image.NewUniform(walnut), image.Point{}, draw.Src)
 	mark, sub := wordmark()
 	if s == nil {
+		draw.Draw(r.dst, r.dst.Rect, image.NewUniform(walnut), image.Point{}, draw.Src)
 		r.text(r.title, mark, (r.w-r.width(r.title, mark))/2, r.h/2, cream)
 		return
 	}
-	r.drawMark(s)
+	seated := s.markRect(r).Min.Y >= 0
+	draw.Draw(r.dst, r.dst.Rect, r.splashScene(s, seated), image.Point{}, draw.Src)
+	if seated {
+		r.drawMark(s)
+	}
 	r.text(r.title, mark, (r.w-r.width(r.title, mark))/2, s.titleY, cream)
 	r.text(r.small, sub, (r.w-r.width(r.small, sub))/2, s.subY, amber)
 

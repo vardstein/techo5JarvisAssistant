@@ -38,18 +38,32 @@ func TestSplashBarFillsStepByStep(t *testing.T) {
 	}
 }
 
+// The hint is the only thing drawn under the step line once waiting has gone on, so what changes
+// there between before and after is the hint, and it has to stay off the panel's edges.
 func TestSplashHintStaysOnThePanel(t *testing.T) {
-	img := image.NewRGBA(image.Rect(0, 0, 960, 480))
-	r := newRenderer(img)
+	before := image.NewRGBA(image.Rect(0, 0, 960, 480))
+	after := image.NewRGBA(before.Rect)
+	r := newRenderer(after)
 	s := newSplash(r)
 	settle(r, s, stepHomeAssistant, 0, waitingAfter+time.Second)
+	rb := newRenderer(before)
+	settle(rb, newSplash(rb), stepHomeAssistant, 0, waitingAfter-time.Second)
 	edge := r.s(textEdge)
-	for y := 0; y < img.Rect.Dy(); y++ {
-		for _, x := range []int{0, edge - 2, r.w - edge + 1, r.w - 1} {
-			if img.RGBAAt(x, y) != walnut {
-				t.Fatalf("the splash drew into the panel edge at %d,%d", x, y)
+	from := s.barRect(r).Max.Y + r.s(44) + r.s(12)
+	drawn := false
+	for y := from; y < r.h; y++ {
+		for x := range r.w {
+			if before.RGBAAt(x, y) == after.RGBAAt(x, y) {
+				continue
+			}
+			drawn = true
+			if x < edge || x >= r.w-edge {
+				t.Fatalf("the hint drew into the panel edge at %d,%d", x, y)
 			}
 		}
+	}
+	if !drawn {
+		t.Error("no hint was drawn")
 	}
 	if bar := s.barRect(r); bar.Max.Y+r.s(44)+r.s(44) >= r.h {
 		t.Error("the hint line is below the panel")

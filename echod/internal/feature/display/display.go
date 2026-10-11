@@ -1650,7 +1650,7 @@ func (d *Display) frame() time.Duration {
 
 	// Apply the configured palette before any page can draw. Fresh devices show the welcome page
 	// before ordinary idle rendering, so doing this later would briefly (or indefinitely, until the
-	// welcome is dismissed) expose the old compiled-in TECHO5 palette instead of Jarvis White Jade.
+	// welcome is dismissed) expose the old compiled-in TECHO5 palette instead of the default, Obsidian Jade.
 	t := current()
 	applyTheme(t)
 	d.syncThemeSelect(t.name)
