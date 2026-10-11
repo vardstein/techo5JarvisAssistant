@@ -450,7 +450,11 @@ boot is the real test: `fastboot continue` resumes the kaeru already in RAM and 
 Shows (Crown and Checkers on amonet 2.0.1) take the OpenJade lockup into the same slot, after the install
 and only when asked: `tools/jarvis-show.py boot-logo --name <name>` writes it in place over SSH, only over
 the pinned kaeru (Checkers' slot is at offset 335308), reads kaeru back from the flash and puts the old
-slot back if it reads wrong (`tools/boot-logo/README.md`). `swdl` (p11) holds an Android boot image (Amazon's recovery/download
+slot back if it reads wrong (`tools/boot-logo/README.md`). On Crown it writes a 477×255 picture instead,
+along with the box kaeru draws it in, which is four instruction immediates in the drawing function
+(`0x4bd0f5f8`, file offsets 63490–63518): kaeru unpacks into the third 2 MB page of its video memory and
+checks the unpacked size against the box, so a bigger box with the old picture skips the logo rather
+than drawing garbage. `swdl` (p11) holds an Android boot image (Amazon's recovery/download
 image).
 
 ## Factory data (`/proc/idme`)
