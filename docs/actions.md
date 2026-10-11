@@ -1064,6 +1064,16 @@ actions:
       - action: esphome.office_dashboard_hide
 ```
 
+## Show the recipe
+
+In YAML, refer to this action as `esphome.<node>_recipe_show`.
+
+Puts the recipe page up: the `jarvis-rezept` dashboard in Home Assistant, streamed, so it needs a
+dashcast server. It stays up until a finger takes it away, and a swipe up brings it back (see
+[The recipe page](dashboards.md#the-recipe-page)). The `jarvis_recipe` integration calls it on the Show
+that asked for a recipe, after it filled the page. The action fails when Home Assistant has no
+`jarvis-rezept` dashboard or the Show has no dashcast server.
+
 ## Choose the weather shown on the idle screen
 
 In YAML, refer to this action as `esphome.<node>_home_weather`.

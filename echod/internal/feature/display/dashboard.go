@@ -35,6 +35,7 @@ const (
 	edgeLeft
 	edgeTop
 	edgeRight
+	edgeBottom
 )
 
 // openDashboard puts the dashboard up, if there is one to put up.
@@ -82,16 +83,18 @@ func (d *Display) closeDashboard() {
 }
 
 // back is the tab at the left edge and the swipe in from it. With the dashboard standing in for the
-// clock it goes between the Show's own dashboard and the room's when the house has one
-// (dashboard.RoomPath), and never to the clock: that is only for when there is no dashboard to show.
-// Otherwise it goes round: the clock, the Show's dashboard, the room's, and the clock again. Over
-// Music Assistant's pages it is the Show's own dashboard, when it has one, rather than the page the
-// library was opened from.
+// clock it goes round the Show's own dashboard, the room's when the house has one
+// (dashboard.RoomPath) and the recipe page when there is one (dashboard.RecipePath), and never to the
+// clock: that is only for when there is no dashboard to show. Otherwise it goes round the clock, the
+// Show's dashboard, the room's, the recipe and the clock again. Over Music Assistant's pages it is the
+// Show's own dashboard, when it has one, rather than the page the library was opened from.
 func (d *Display) back() {
 	room := dashboard.Get().RoomPath()
+	recipe := dashboard.Get().RecipePath()
 	home := dashboard.Get().Idle()
 	d.mu.Lock()
 	page := d.dashPage
+	next := ""
 	switch {
 	case page == dashboard.PageMusic && dashboard.Get().Mode() != config.DashboardOff:
 		d.dashPage, d.dashTouched, d.dashEdge = "", time.Now(), edgeNone
@@ -100,23 +103,49 @@ func (d *Display) back() {
 		d.wake()
 		return
 	case page == "" && room != "":
-		d.dash, d.dashPage, d.dashTouched, d.dashEdge = true, room, time.Now(), edgeNone
+		next = room
+	case (page == "" || page == room) && recipe != "" && page != recipe:
+		next = recipe
+	}
+	if next != "" {
+		// The recipe stays up until it is swiped on, like a dashboard Home Assistant put up.
+		d.dash, d.dashPage, d.dashTouched, d.dashEdge = true, next, time.Now(), edgeNone
+		d.dashHeld = next == recipe
 		d.mu.Unlock()
-		slog.Info("dashboard: the room's", "path", room)
+		slog.Info("dashboard: next page", "path", next)
 		d.wake()
 		return
-	case home && page != "":
-		d.dash, d.dashPage, d.dashTouched, d.dashEdge = true, "", time.Now(), edgeNone
+	}
+	if home && page != "" {
+		d.dash, d.dashHeld, d.dashPage, d.dashTouched, d.dashEdge = true, false, "", time.Now(), edgeNone
 		d.mu.Unlock()
 		slog.Info("dashboard: the Show's own")
 		d.wake()
 		return
-	case home:
+	}
+	if home {
 		d.mu.Unlock()
 		return
 	}
 	d.mu.Unlock()
 	d.closeDashboard()
+}
+
+// openRecipe puts the recipe page up, held, from a swipe up or from Home Assistant (recipe_show).
+// The settings or the drawer, if they are open, stay over it until they are put away, as with
+// dashboard_show.
+func (d *Display) openRecipe() bool {
+	recipe := dashboard.Get().RecipePath()
+	if recipe == "" {
+		return false
+	}
+	d.mu.Lock()
+	d.dash, d.dashHeld, d.dashTouched, d.dashAwayUntil, d.dashPage = true, true, time.Now(), time.Time{}, recipe
+	d.dashEdge = edgeNone
+	d.mu.Unlock()
+	slog.Info("recipe up")
+	d.wake()
+	return true
 }
 
 // dashboardAsked is Home Assistant's dashboard_show and dashboard_hide. Shown, it stays until it is
@@ -255,6 +284,8 @@ func (d *Display) dashGesture(g touch.Gesture) {
 		case g.Y < topEdge/3:
 			// A thinner band than the clock's: the top of a dashboard is where its own tabs are.
 			from = edgeTop
+		case g.Y >= d.r.h-topEdge/3:
+			from = edgeBottom
 		}
 		d.mu.Lock()
 		d.dashEdge, d.dashEdgeAt = from, image.Pt(g.X, g.Y)
@@ -303,6 +334,10 @@ func (d *Display) dashGesture(g touch.Gesture) {
 		case edgeTop:
 			if g.Y-start.Y > far {
 				d.showSheet(true)
+			}
+		case edgeBottom:
+			if start.Y-g.Y > far {
+				d.openRecipe()
 			}
 		}
 	}

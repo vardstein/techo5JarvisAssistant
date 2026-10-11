@@ -34,7 +34,7 @@ func TestResetComboErasesAfterTheHold(t *testing.T) {
 	held.Store(true)
 	d.resetCombo(buttons.Event{Name: buttons.VolumeDown, Kind: buttons.Tap})
 	d.resetCombo(buttons.Event{Name: buttons.VolumeDown, Kind: buttons.Repeat}) // no second count
-	d.r.resetCountdown(50 * time.Millisecond)                                  // draws without a panic
+	d.r.resetCountdown(50 * time.Millisecond)                                   // draws without a panic
 	deadline := time.Now().Add(2 * time.Second)
 	for resets.Load() == 0 && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)

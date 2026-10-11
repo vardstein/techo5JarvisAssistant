@@ -54,6 +54,8 @@ Each device has its own settings, so the kitchen and a bedroom can show differen
   clock, the Show's dashboard, the room's dashboard, clock. See [The room's dashboard](#the-rooms-dashboard).
 - The screen's own edges still work over it: down from the **top** is the settings, in from the
   **right** the drawer. A finger that starts on a tile always goes to the tile, even at an edge.
+- **Swipe up** on the clock, or up from the **bottom edge** of a streamed dashboard, for the recipe
+  page, when there is one. See [The recipe page](#the-recipe-page).
 
 **Echo Spot**
 
@@ -89,6 +91,20 @@ To pick one by hand, or to turn it off, use the `dashboard_room` action ([Action
 
 Keep it small. Things you can see from where you stand, like an open window, are a waste of the
 screen; a thermostat, the room's lights and its temperature are what it is for.
+
+### The recipe page
+
+When Jarvis looks up a recipe for you, Home Assistant's `jarvis_recipe` integration puts it on a
+dashboard at `jarvis-rezept`, and the Show that was asked brings it up. The page stays: it doesn't go
+back to the clock after 10 minutes, so it is still there with flour on your hands.
+
+- **Swipe up** on the clock, or up from the bottom edge of a streamed dashboard, to bring it back.
+- The swipe in from the left goes round through it: clock, the Show's dashboard, the room's
+  dashboard if there is one, the recipe, clock.
+
+Like the room's dashboard it is found by its address, never made by the Show, and it is always
+streamed, so it needs a [dashcast server](#setting-up-streamed). Without a `jarvis-rezept` dashboard
+the swipe up does nothing and the round skips it.
 
 ## What drawn mode draws
 

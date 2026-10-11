@@ -57,6 +57,10 @@ type Feature struct {
 	// false to take it down (dashboard_hide). The screen does the rest.
 	Asked hook.Hook[bool]
 
+	// RecipeAsked fires when Home Assistant asks for the recipe page (recipe_show), after Jarvis looked
+	// one up.
+	RecipeAsked hook.Hook[struct{}]
+
 	mode  *esphome.Select
 	idle  *esphome.Switch
 	kiosk *esphome.Switch
@@ -443,6 +447,19 @@ func (f *Feature) Actions() []*esphome.Action {
 				}
 				slog.Info("dashboard: shown by Home Assistant")
 				f.Asked.Emit(true)
+				return nil, nil
+			},
+		},
+		{
+			// The recipe page up (recipe.go), until a finger takes it away. jarvis_recipe calls it on
+			// the Show that asked for the recipe.
+			Name: "recipe_show",
+			Run: func(esphome.Call) (any, error) {
+				if f.RecipePath() == "" {
+					return nil, errors.New("no recipe dashboard: it needs a dashcast server and a dashboard at " + RecipeBoard)
+				}
+				slog.Info("dashboard: recipe shown by Home Assistant")
+				f.RecipeAsked.Emit(struct{}{})
 				return nil, nil
 			},
 		},

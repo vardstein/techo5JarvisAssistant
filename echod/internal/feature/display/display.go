@@ -394,6 +394,7 @@ func build() *Display {
 	home.Get().Changed.Listen(func(struct{}) { d.wake() })
 	dashboard.Get().Changed.Listen(func(struct{}) { d.wake() })
 	dashboard.Get().Asked.Listen(d.dashboardAsked)
+	dashboard.Get().RecipeAsked.Listen(func(struct{}) { d.openRecipe() })
 	assistant.SetScreen(d.showPage)
 	return d
 }
@@ -1006,9 +1007,12 @@ func (d *Display) gesture(g touch.Gesture) {
 			d.mu.Unlock()
 			d.openDrawer(tab)
 		}
+	case touch.SwipeUp:
+		// Up is the recipe Jarvis last looked up, when there is one (dashboard.RecipePath).
+		d.openRecipe()
 	case touch.SwipeDown:
-		// From the top edge it is the sheet. Anywhere else up and down do nothing: they used to be the
-		// volume, and a slanted swipe meant for the dashboard turned it instead.
+		// From the top edge it is the sheet. Anywhere else down does nothing: up and down used to be
+		// the volume, and a slanted swipe meant for the dashboard turned it instead.
 		if g.Y < topEdge {
 			d.mu.Lock()
 			d.openedBy = image.Pt(g.X, g.Y)
