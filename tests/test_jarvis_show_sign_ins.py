@@ -3,6 +3,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import pathlib
 import signal
 import stat
@@ -18,6 +19,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 from jarvis_crown import home_assistant as ha  # noqa: E402
 from jarvis_crown import music_assistant as ma  # noqa: E402
+from jarvis_crown import settings as settings_mod  # noqa: E402
 from jarvis_crown import ui  # noqa: E402
 from jarvis_crown.settings import Asker, Settings, SettingsError, gather  # noqa: E402
 from jarvis_crown.sign_ins import SignIns  # noqa: E402
@@ -299,6 +301,29 @@ class GatherSignInTests(unittest.TestCase):
         s, _ = self.gather(["-", "-", "10.0.0.6", "jade"], ["", "ma-long-lived-token"],
                            ma_login=lambda *a: self.fail("nobody signs in"))
         self.assertEqual(s.music_assistant_token, "ma-long-lived-token")
+
+
+class KeyringHintTests(unittest.TestCase):
+    def hint(self):
+        said = []
+        asker = Asker(True, ask=lambda _: "", ask_secret=lambda _: "", say=said.append,
+                      out=ui.Out(io.StringIO(), color=False, fancy=True, width=200))
+        settings_mod._keyring_hint(asker, "DashCast key", "secret dashcast-key")
+        return next(line for line in said if "store --label" in line)
+
+    def test_secret_tool_off_path_is_named_by_its_path(self):
+        home = os.path.expanduser("~")
+        with mock.patch.object(settings_mod, "secret_tool", return_value=home + "/.local/share/x/bin/secret-tool"), \
+                mock.patch.object(settings_mod.shutil, "which", return_value=None):
+            self.assertIn("~/.local/share/x/bin/secret-tool store --label='Jarvis Show: DashCast key'", self.hint())
+
+    def test_secret_tool_on_path_or_missing_is_just_its_name(self):
+        for found in ("/usr/bin/secret-tool", None):
+            with mock.patch.object(settings_mod, "secret_tool", return_value=found), \
+                    mock.patch.object(settings_mod.shutil, "which", return_value=found):
+                line = self.hint()
+                self.assertIn("secret-tool store", line)
+                self.assertNotIn("/", line.split("secret-tool store")[0])
 
 
 class MusicAssistantSignInTests(unittest.TestCase):
