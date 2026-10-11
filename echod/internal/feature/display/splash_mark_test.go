@@ -16,7 +16,7 @@ func TestSplashMarkPerPalette(t *testing.T) {
 		applyTheme(th)
 		img := image.NewRGBA(image.Rect(0, 0, 960, 480))
 		r := newRenderer(img)
-		s := newSplash(960, 480)
+		s := newSplash(r)
 		r.drawSplash(s, time.Second, stepStarting)
 		at := s.markRect(r)
 		if at.Min.Y < 0 || at.Max.Y >= s.titleY-r.s(35) {

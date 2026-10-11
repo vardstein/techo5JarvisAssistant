@@ -1579,7 +1579,7 @@ func (d *Display) Start(context.Context) error {
 	d.mu.Lock()
 	d.wide = w > 1000 || h > 1000
 	d.mu.Unlock()
-	d.logo = newSplash(w, h)
+	d.logo = newSplash(d.r)
 	d.mu.Lock()
 	d.booting, d.started = true, time.Now()
 	d.mu.Unlock()

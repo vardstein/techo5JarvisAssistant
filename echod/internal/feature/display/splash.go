@@ -74,14 +74,16 @@ type splash struct {
 	at           time.Duration
 }
 
-func newSplash(w, h int) *splash {
+// newSplash places the wordmark on r's screen. Its offsets are in the Show 5's pixels like every
+// other size here, so on the Show 8 the two lines keep their room as the faces grow.
+func newSplash(r *renderer) *splash {
 	// Below the middle, leaving the top of the panel to the Genbu mark.
-	cy := float64(h)/2 + 18
+	cy := float64(r.h)/2 + float64(r.s(18))
 	return &splash{
-		cx:     float64(w) / 2,
+		cx:     float64(r.w) / 2,
 		cy:     cy,
-		titleY: int(cy) - 30,
-		subY:   int(cy) + 14,
+		titleY: int(cy) - r.s(30),
+		subY:   int(cy) + r.s(14),
 	}
 }
 
