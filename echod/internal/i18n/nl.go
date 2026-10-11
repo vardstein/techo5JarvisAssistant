@@ -457,6 +457,7 @@ var nl = lang{
 		"Alarms and timers always sound":                  "Wekkers en timers gaan altijd af",
 		"The device's own tones only; alarms still sound": "Alleen de eigen tonen van het apparaat; wekkers gaan nog af",
 		"A browser is asking: answer on this screen":      "Een browser vraagt iets: antwoord op dit scherm",
+		"Nothing reached %s yet. Same network? VPN off?":  "Er is nog niets bij %s aangekomen. Zelfde netwerk? VPN uit?",
 		"this device's address, port %d":                  "het adres van dit apparaat, poort %d",
 		"Theme":                                           "Thema",
 		"Custom colors":                                   "Eigen kleuren",

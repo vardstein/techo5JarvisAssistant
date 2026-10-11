@@ -60,6 +60,11 @@ const (
 	// a mistake or a machine, and both can wait.
 	tries   = 5
 	coolOff = 10 * time.Minute
+
+	// unreachedAfter is how long the page may be up with no browser asking for anything before the
+	// screen says so. Typing an address takes a few seconds; this long with nothing at all means the
+	// browser cannot get here, most often because it is on another network or behind a VPN.
+	unreachedAfter = 45 * time.Second
 )
 
 type Feature struct {
@@ -70,6 +75,10 @@ type Feature struct {
 	// the hour it may stay open at the very most.
 	openUntil time.Time
 	openedAt  time.Time
+
+	// reached is whether anything has asked the page for anything since it was opened, so that a
+	// page nobody can get to says so instead of waiting in silence.
+	reached bool
 
 	// heldOpen is whether the press being made right now is what opened the page, so that a press that
 	// goes on to mean something else can take it back down (button).
@@ -162,8 +171,10 @@ func (f *Feature) Open() {
 	now := time.Now()
 	f.mu.Lock()
 	if !f.on(now) {
-		f.openedAt = now
+		f.openedAt, f.reached = now, false
 		slog.Info("setup page open", "idle", idle, "at most", life)
+		opened := now
+		time.AfterFunc(unreachedAfter, func() { f.checkReached(opened) })
 	}
 	f.openUntil = now.Add(idle)
 	f.mu.Unlock()

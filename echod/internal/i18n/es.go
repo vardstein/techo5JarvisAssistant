@@ -470,6 +470,7 @@ var es = lang{
 		"Alarms and timers always sound":                  "Las alarmas y temporizadores siempre suenan",
 		"The device's own tones only; alarms still sound": "Solo los tonos del dispositivo; las alarmas siguen sonando",
 		"A browser is asking: answer on this screen":      "Un navegador pide permiso: responde en esta pantalla",
+		"Nothing reached %s yet. Same network? VPN off?":  "Aún no ha llegado nada a %s. ¿Misma red? ¿VPN apagada?",
 		"this device's address, port %d":                  "la dirección de este dispositivo, puerto %d",
 		"Theme":                                           "Tema",
 		"Custom colors":                                   "Colores personalizados",

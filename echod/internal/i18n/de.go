@@ -461,6 +461,7 @@ var de = lang{
 		"Alarms and timers always sound":                  "Wecker und Timer klingeln immer",
 		"The device's own tones only; alarms still sound": "Nur die Töne des Geräts; Wecker klingeln trotzdem",
 		"A browser is asking: answer on this screen":      "Ein Browser fragt: Antworte auf diesem Bildschirm",
+		"Nothing reached %s yet. Same network? VPN off?":  "Bei %s ist noch nichts angekommen. Gleiches Netz? VPN aus?",
 		"this device's address, port %d":                  "Adresse dieses Geräts, Port %d",
 		"Theme":                                           "Design",
 		"Custom colors":                                   "Eigene Farben",

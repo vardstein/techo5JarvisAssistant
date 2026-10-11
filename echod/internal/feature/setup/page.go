@@ -54,6 +54,7 @@ func (f *Feature) Run(ctx context.Context) error {
 }
 
 func (f *Feature) serve(w http.ResponseWriter, r *http.Request) {
+	f.arrived()
 	// Only a browser that has been let in keeps the page open. Anything else on the network can ask
 	// for this path as often as it likes, and the idle time is there to close the page when the
 	// person who opened it has walked away — a scanner or a stale tab must not hold it open for them.

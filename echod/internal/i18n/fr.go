@@ -463,6 +463,7 @@ var fr = lang{
 		"Alarms and timers always sound":                  "Alarmes et minuteurs sonnent toujours",
 		"The device's own tones only; alarms still sound": "Seulement les sons de l'appareil ; les alarmes sonnent quand même",
 		"A browser is asking: answer on this screen":      "Un navigateur demande : répondez sur cet écran",
+		"Nothing reached %s yet. Same network? VPN off?":  "Rien n'est encore arrivé sur %s. Même réseau ? VPN coupé ?",
 		"this device's address, port %d":                  "l'adresse de cet appareil, port %d",
 		"Theme":                                           "Thème",
 		"Custom colors":                                   "Couleurs personnalisées",

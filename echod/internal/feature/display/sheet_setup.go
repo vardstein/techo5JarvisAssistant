@@ -21,6 +21,10 @@ func setupRow(demo bool) settingRow {
 	switch {
 	case s.Waiting():
 		row.sub, row.on = "A browser is asking: answer on this screen", true
+	case s.Unreached() && !demo:
+		// Up for a while with not one request: the browser can't get here, and the screen is the only
+		// place that can say so.
+		row.sub, row.on = i18n.Sprintf("Nothing reached %s yet. Same network? VPN off?", setupURL()), true
 	case s.On():
 		row.sub, row.on = "Open "+setupURL(), true
 		if demo {
