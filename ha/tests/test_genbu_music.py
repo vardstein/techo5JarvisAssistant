@@ -235,3 +235,25 @@ async def test_the_turn_down_follows_the_room(hass: HomeAssistant):
     assert Template(speakers, hass).async_render({"satellite": sat, "picked": ["media_player.x"]}) == ["media_player.x"]
     _, nowhere = show(hass, "attic", None)
     assert Template(speakers, hass).async_render({"satellite": nowhere, "picked": []}) == []
+
+
+async def test_spoken_titles_leave_out_the_brackets(hass: HomeAssistant):
+    track = {"name": "Viva Colonia (Da simmer dabei, dat is prima!) [Live]", "uri": "library://track/1",
+             "artists": [{"name": "Höhner"}]}
+    pick = Template(voice_kit.MOOD_PICK, hass).async_render({
+        "plan": {"kind": "any", "terms": ["viva"]}, "s1": {"tracks": [track]}, "s2": {}, "s3": {}, "rnd": {}})
+    assert pick["title"] == "Viva Colonia"
+    assert pick["uri"] == "library://track/1"  # the track itself stays the one that was found
+    said = render(hass, voice_kit.MOOD_MESSAGE, pick=pick, plan={"kind": "any", "terms": ["viva"]})
+    assert said == "Spiele Viva Colonia von Höhner und ähnliche Lieder."
+
+    # Nothing but brackets: better the whole name than nothing.
+    pick = Template(voice_kit.MOOD_PICK, hass).async_render({
+        "plan": {"kind": "playlist", "terms": ["intro"]}, "s1": {"playlists": [{"name": "(Intro)", "uri": "p"}]},
+        "s2": {}, "s3": {}, "rnd": {}})
+    assert pick["title"] == "(Intro)"
+
+    # The random track the plain "play music" script starts.
+    steps = voice_kit.play_random(voice_kit.House(music_entry="ma"))["sequence"]
+    title = next(s["variables"]["title"] for s in steps if "title" in s.get("variables", {}))
+    assert render(hass, title, random_track={"items": [track]}) == "Viva Colonia"
