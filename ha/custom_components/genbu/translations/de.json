@@ -1,0 +1,111 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Genbu",
+        "description": "Genbu gibt deinem Haus einen Update-Punkt. Ein Genbu Show, der Haupt-Update-Show, sucht nach Updates und fragt nach; die anderen Shows folgen seiner Version. Gefundene Shows: {count}.",
+        "data": {
+          "main_show": "Haupt-Update-Show"
+        },
+        "data_description": {
+          "main_show": "Leer lassen, um später in select.genbu_main_update_show zu wählen."
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Genbu ist schon eingerichtet",
+      "single_instance_allowed": "Genbu ist schon eingerichtet"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Genbu",
+        "description": "{main} ist der Haupt-Update-Show. Ändern kannst du das in select.genbu_main_update_show.",
+        "data": {
+          "extra_mains": "Weitere Haupt-Update-Shows",
+          "notify_service": "Handy für Hinweise"
+        },
+        "data_description": {
+          "extra_mains": "Die meisten Häuser brauchen einen. Mit mehreren folgt das Haus dem, der die neueste Version hat.",
+          "notify_service": "Ein Notify-Dienst, z. B. mobile_app_mein_handy. Er bekommt eine Nachricht, wenn ein Haupt-Update-Show einen Tag offline ist."
+        }
+      },
+      "second": {
+        "title": "Ein zweiter Haupt-Update-Show?",
+        "description": "{main} ist schon der Haupt-Update-Show. Mit zwei folgt das Haus dem, der neuer ist. Sie kommen sich nicht in die Quere, aber dann fragen zwei Shows nach Updates.",
+        "menu_options": {
+          "second_no": "Nein, bei einem bleiben",
+          "second_yes": "Ja, hinzufügen"
+        }
+      }
+    }
+  },
+  "issues": {
+    "main_missing": {
+      "title": "Haupt-Update-Show {name} ist offline",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "{name} ist offline",
+            "description": "Home Assistant hat {name} seit {since} nicht gesehen. Die anderen Shows bleiben auf ihrer Version, bis es wieder einen Haupt-Update-Show gibt. Wenn niemand antwortet, macht das Haus am {pick_at} {pick} zum Haupt-Update-Show.",
+            "menu_options": {
+              "pick": "Neuen Haupt-Update-Show wählen",
+              "wait": "Noch 7 Tage warten",
+              "gone": "{name} kommt nicht wieder"
+            }
+          },
+          "pick": {
+            "title": "Neuer Haupt-Update-Show",
+            "description": "Das Haus läuft auf {house}. Der empfohlene Show ist online und am nächsten dran.",
+            "data": {
+              "show": "Show"
+            }
+          }
+        },
+        "abort": {
+          "none_online": "Gerade ist kein Genbu Show online. Versuch es wieder, wenn einer da ist."
+        }
+      }
+    },
+    "no_main": {
+      "title": "Kein Haupt-Update-Show",
+      "fix_flow": {
+        "step": {
+          "pick": {
+            "title": "Neuer Haupt-Update-Show",
+            "description": "Das Haus läuft auf {house}. Der empfohlene Show ist online und am nächsten dran.",
+            "data": {
+              "show": "Show"
+            }
+          }
+        },
+        "abort": {
+          "none_online": "Gerade ist kein Genbu Show online. Versuch es wieder, wenn einer da ist."
+        }
+      }
+    },
+    "main_picked": {
+      "title": "{new} ist jetzt der Haupt-Update-Show",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "{new} ist jetzt der Haupt-Update-Show",
+            "description": "{gone} war 7 Tage offline und niemand hat geantwortet, also hat das Haus {new} zum Haupt-Update-Show gemacht. Die Hausversion bleibt gleich. Ändern kannst du das in {select}."
+          }
+        }
+      }
+    },
+    "main_dropped": {
+      "title": "{gone} ist kein Haupt-Update-Show mehr",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "{gone} ist kein Haupt-Update-Show mehr",
+            "description": "{gone} war 7 Tage offline und niemand hat geantwortet. Der andere Haupt-Update-Show macht weiter. Ändern kannst du das in {select}."
+          }
+        }
+      }
+    }
+  }
+}

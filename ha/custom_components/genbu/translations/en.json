@@ -1,0 +1,111 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Genbu",
+        "description": "Genbu gives your house one update point. One Genbu Show, the main update Show, looks for updates and asks about them; the other Shows follow the version it runs. Found Shows: {count}.",
+        "data": {
+          "main_show": "Main update Show"
+        },
+        "data_description": {
+          "main_show": "Leave it empty to pick later in select.genbu_main_update_show."
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Genbu is set up already",
+      "single_instance_allowed": "Genbu is set up already"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Genbu",
+        "description": "{main} is the main update Show. Change it in select.genbu_main_update_show.",
+        "data": {
+          "extra_mains": "More main update Shows",
+          "notify_service": "Phone to tell"
+        },
+        "data_description": {
+          "extra_mains": "Most houses need one. With more, the house follows whichever of them runs the newest version.",
+          "notify_service": "A notify service, like mobile_app_my_phone. It gets a push when a main update Show has been offline for a day."
+        }
+      },
+      "second": {
+        "title": "A second main update Show?",
+        "description": "{main} is already the main update Show. With two, the house follows whichever of them is newest. They cannot fight, but you get two Shows that ask about updates.",
+        "menu_options": {
+          "second_no": "No, keep one",
+          "second_yes": "Yes, add it"
+        }
+      }
+    }
+  },
+  "issues": {
+    "main_missing": {
+      "title": "Main update Show {name} is offline",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "{name} is offline",
+            "description": "Home Assistant has not seen {name} since {since}. The other Shows stay on their version until there is a main update Show again. If nobody answers, the house makes {pick} the main update Show on {pick_at}.",
+            "menu_options": {
+              "pick": "Pick a new main update Show",
+              "wait": "Keep waiting 7 more days",
+              "gone": "{name} is gone for good"
+            }
+          },
+          "pick": {
+            "title": "New main update Show",
+            "description": "The house runs {house}. The recommended Show is online and closest to it.",
+            "data": {
+              "show": "Show"
+            }
+          }
+        },
+        "abort": {
+          "none_online": "No Genbu Show is online right now. Try again when one is."
+        }
+      }
+    },
+    "no_main": {
+      "title": "No main update Show",
+      "fix_flow": {
+        "step": {
+          "pick": {
+            "title": "New main update Show",
+            "description": "The house runs {house}. The recommended Show is online and closest to it.",
+            "data": {
+              "show": "Show"
+            }
+          }
+        },
+        "abort": {
+          "none_online": "No Genbu Show is online right now. Try again when one is."
+        }
+      }
+    },
+    "main_picked": {
+      "title": "{new} is now the main update Show",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "{new} is now the main update Show",
+            "description": "{gone} was offline for 7 days and nobody answered, so the house made {new} the main update Show. The house version did not change. To change it, use {select}."
+          }
+        }
+      }
+    },
+    "main_dropped": {
+      "title": "{gone} is no main update Show any more",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "{gone} is no main update Show any more",
+            "description": "{gone} was offline for 7 days and nobody answered. The other main update Show carries on. To change it, use {select}."
+          }
+        }
+      }
+    }
+  }
+}

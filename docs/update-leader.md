@@ -1,7 +1,7 @@
 # One update point per house (job 51)
 
-Status: design agreed with Jade on 2026-10-11. The Show side (echod) is built; the HA integration and the
-installer are next.
+Status: design agreed with Jade on 2026-10-11. The Show side (echod) and the HA integration
+(`ha/custom_components/genbu`) are built; the installer is next.
 
 Today every Genbu Show checks GitHub on its own every 10 minutes, and each one speaks up about an update every
 4 hours. With several Shows in one house you hear the same question from every room, and the Shows drift
@@ -30,7 +30,33 @@ This is a small custom integration, `genbu`, of the same kind as `jarvis_recipe`
 two into one Genbu integration later.*
 
 **What it finds.** Every device from the ESPHome integration whose manufacturer is `OpenJade`. That is what
-echod reports for the Show today. It keys them by HA device id, so renaming a Show (job 41) changes nothing.
+echod reports for the Show today. It names them by ESPHome node name, because that is what a Show looks
+for in `main_shows`. It also remembers each Show's HA device id, so a main Show that is renamed (job 41)
+comes back under its new node name and stays main.
+
+### Setting it up
+
+1. Copy `ha/custom_components/genbu/` to `/config/custom_components/genbu/` on Home Assistant (the File
+   editor or Samba add-on will do), and restart Home Assistant.
+2. **Settings → Devices & services → Add integration → Genbu.** It lists the Shows it found, with their
+   versions. Pick the main update Show, or leave it empty and pick it later in
+   `select.genbu_main_update_show`. Until a main is picked, the Shows stay where they are, and Repairs
+   says so.
+3. Optional, under the integration's **Configure**: more main update Shows (after the warning), and a
+   `notify` service, for example `notify.mobile_app_phone`, for the push when a main Show is gone for a day.
+
+The installer does steps 2 and 3 itself once the folder is in place.
+
+### Tests
+
+`tests/test_genbu_house.py` tests the logic without Home Assistant and runs in CI. `ha/tests` runs the
+integration in a real Home Assistant through `pytest-homeassistant-custom-component`, by hand. That needs
+the Python version current Home Assistant needs (3.14 for 2026.10):
+
+```sh
+python3.14 -m venv /tmp/havenv && /tmp/havenv/bin/pip install pytest-homeassistant-custom-component
+cd ha && /tmp/havenv/bin/python -m pytest
+```
 
 **What it holds,** under fixed entity ids so a Show never has to be told where to look:
 
@@ -145,7 +171,7 @@ After the HA sign-in (job 40):
   - Repairs issue and fix flow;
   - the 7-day auto-pick;
   - optional push target;
-  - tests with HA's test harness if it is available, otherwise pure logic tests.
+  - tests: the logic in CI (`tests/test_genbu_house.py`), the integration in HA's test harness (`ha/tests`).
 - **echod `feature/firmware`** (built, `house.go`):
   - follow the three values via hastate;
   - the `committed_version` sensor;
