@@ -31,6 +31,7 @@ class DeviceGateTests(unittest.TestCase):
                 "product": product,
                 "unlock_status": unlock,
                 "lk_build_desc": lk,
+                "serialno": serial,
             }
             return completed(argv, stderr=f"{name}: {values[name]}\nFinished. Total time: 0.001s\n")
         return run
@@ -69,6 +70,43 @@ class DeviceGateTests(unittest.TestCase):
     def test_unknown_unlock_status_fails_closed(self):
         with self.assertRaisesRegex(gate.DeviceGateError, "unrecognized unlock_status"):
             gate.identify_crown(run=self.runner(unlock="unknown"))
+
+    def test_answers_out_of_step_fail_closed(self):
+        # What a crown did after an interrupted run: each answer belonged to the question before.
+        asked, answers = [], {"product": "CROWN", "unlock_status": "true", "lk_build_desc": "lk", "serialno": "ABC123"}
+
+        def run(argv, **kwargs):
+            if argv == ["fastboot", "devices"]:
+                return completed(argv, stdout="ABC123\tfastboot\n")
+            name = argv[-1]
+            said = answers[asked[-1]] if asked else ""
+            asked.append(name)
+            return completed(argv, stderr=f"{name}: {said}\nFinished. Total time: 0.001s\n")
+        with self.assertRaisesRegex(gate.DeviceGateError, "out of step.*nothing was written.*reboot-bootloader"):
+            gate.identify_crown(run=run)
+        self.assertEqual(asked, ["serialno"], "nothing else is asked once it is out of step")
+
+    def test_falling_out_of_step_halfway_fails_closed(self):
+        base, seen = self.runner(), []
+
+        def run(argv, **kwargs):
+            if argv[-1:] == ["serialno"]:
+                seen.append(1)
+                if len(seen) == 2:
+                    return completed(argv, stderr="serialno: lk-crown\n")
+            return base(argv, **kwargs)
+        with self.assertRaisesRegex(gate.DeviceGateError, "out of step"):
+            gate.identify_crown(run=run)
+
+    def test_no_serial_number_answer_fails_closed(self):
+        base = self.runner()
+
+        def run(argv, **kwargs):
+            if argv[-1:] == ["serialno"]:
+                return completed(argv, stderr="FAILED (remote: unknown variable)\n", returncode=1)
+            return base(argv, **kwargs)
+        with self.assertRaisesRegex(gate.DeviceGateError, "out of step.*unknown variable"):
+            gate.identify_crown(run=run)
 
     def test_missing_lk_build_description_is_nonfatal(self):
         base = self.runner()

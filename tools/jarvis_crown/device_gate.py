@@ -91,6 +91,30 @@ def _getvar(serial: str, name: str, *, run: Callable = subprocess.run) -> str:
     raise DeviceGateError(f"fastboot getvar {name} returned no parseable {name}: value")
 
 
+def _check_in_step(serial: str, *, run: Callable = subprocess.run) -> None:
+    """Refuses a fastboot that answers out of step.
+
+    A Show whose fastboot was cut off mid-command (seen on a crown after an interrupted run) can
+    answer every question with the answer to the one before: product says "true", unlock_status
+    says "CROWN". Nothing it says can be trusted then, and a flash over it would go wrong. Its
+    serial number is the one answer known beforehand, so it is asked before and after the rest.
+    """
+    try:
+        said = _getvar(serial, "serialno", run=run)
+    except DeviceGateError as exc:
+        said = None
+        reason = str(exc)
+    else:
+        reason = "its answer was meant for an earlier question"
+    if said != serial:
+        raise DeviceGateError(
+            "the Show's fastboot is answering out of step (asked for its serial number, "
+            f"{reason}), so nothing it says can be trusted and nothing was written. Restart it into "
+            "fastboot (fastboot reboot-bootloader, or unplug it and start it in fastboot again) and "
+            "run this again"
+        )
+
+
 def identify_show(*, expected_board: str | None = None, run: Callable = subprocess.run) -> DeviceIdentity:
     """Prove exactly one connected fastboot device is a supported Jarvis Show.
 
@@ -106,6 +130,7 @@ def identify_show(*, expected_board: str | None = None, run: Callable = subproce
         )
 
     serial = serials[0]
+    _check_in_step(serial, run=run)
     product = _getvar(serial, "product", run=run).upper()
     try:
         detected = profile_for_product(product)
@@ -133,6 +158,7 @@ def identify_show(*, expected_board: str | None = None, run: Callable = subproce
         # bootloader build to be readable before invoking the destructive Amonet
         # exploit, even though the pinned Crown bundle has a default payload.
         lk_build_desc = None
+    _check_in_step(serial, run=run)
 
     return DeviceIdentity(
         serial=serial,

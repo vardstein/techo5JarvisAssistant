@@ -112,6 +112,7 @@ class MultiBoardTests(unittest.TestCase):
                 "product": product,
                 "unlock_status": unlock_status,
                 "lk_build_desc": f"lk-{product.lower()}",
+                "serialno": serial,
             }
             return cp(argv, stderr=f"{name}: {values[name]}\n")
         return run
