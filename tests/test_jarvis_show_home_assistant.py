@@ -18,7 +18,9 @@ sys.path.insert(0, str(TOOLS))
 from jarvis_crown import home_assistant as ha  # noqa: E402
 from jarvis_crown import music_assistant as ma  # noqa: E402
 from jarvis_crown import ui  # noqa: E402
+from jarvis_crown import settings as settings_mod  # noqa: E402
 from jarvis_crown.settings import Asker, Settings, SettingsError, gather, load_defaults, save_defaults, secret_files  # noqa: E402
+from jarvis_crown.sign_ins import SignIns  # noqa: E402
 from jarvis_crown.shows import record_show, show_named  # noqa: E402
 from techo5lib import Fail  # noqa: E402
 
@@ -29,6 +31,16 @@ SPEC.loader.exec_module(install)
 PSK = "c2VjcmV0LWtleS1mb3ItdGVzdHMtb25seS0zMmJ5dGVzIQ=="
 TOKEN = "a.b.c-token"
 DASH_KEY = "0123456789abcdef0123"
+
+_RUN_DIR = tempfile.TemporaryDirectory()
+
+
+def setUpModule():
+    # No test signs in anywhere or writes next to the real sign-ins of this computer.
+    patcher = mock.patch.object(settings_mod, "RUN", SignIns(lambda: pathlib.Path(_RUN_DIR.name) / "sign-ins.json"))
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
+    unittest.addModuleCleanup(_RUN_DIR.cleanup)
 
 
 class AddressTests(unittest.TestCase):
@@ -554,6 +566,23 @@ class RoomTests(unittest.TestCase):
         self.assertNotIn(TOKEN, str(cm.exception))
 
 
+class FakeSignedIn:
+    """What settings needs of a home_assistant.SignedIn."""
+
+    def __init__(self, sign_in_id="S-now"):
+        self.id, self.out, self.ended = sign_in_id, False, []
+
+    def sign_in_id(self):
+        return self.id
+
+    def end_other(self, sign_in_id):
+        self.ended.append(sign_in_id)
+        return True
+
+    def sign_out(self):
+        self.out = True
+
+
 def args(**kw):
     base = dict(wifi=None, wifi_passphrase_file=None, ha_url=None, ha_token_file=None, ha_admin_token_file=None,
                 dashcast=None, dashcast_key_file=None, music_assistant=None, root_password_file=None)
@@ -607,15 +636,32 @@ class GatherTests(unittest.TestCase):
         self.assertIn("      1  the usual  ← now", said)
 
     def test_everything_asked(self):
-        asker, _ = self.asker(["Home", "http://ha:8123/", "10.0.0.5", "10.0.0.6"],
-                              ["wifi-pass", "wifi-pass", TOKEN, "admin-token", DASH_KEY, "ma-admin"])
-        s = gather(args(), asker, defaults={}, lookup=lambda *a, **k: None, nearby=lambda: [])
+        asker, _ = self.asker(["Home", "http://ha:8123/", "jade", "10.0.0.5", "10.0.0.6", "jade"],
+                              ["wifi-pass", "wifi-pass", "ha-pass", DASH_KEY, "ma-pass"])
+        signed = FakeSignedIn()
+        logins = []
+
+        def ha_login(url, user, password, code=None):
+            logins.append(("ha", url, user, password))
+            return signed
+
+        def ma_login(host, user, password):
+            logins.append(("ma", host, user, password))
+            return "ma-session", "ma-id"
+        with tempfile.TemporaryDirectory() as td:
+            run = SignIns(lambda: pathlib.Path(td) / "sign-ins.json")
+            s = gather(args(), asker, defaults={}, lookup=lambda *a, **k: None, nearby=lambda: [],
+                       ha_login=ha_login, ma_login=ma_login, ma_logout=lambda *a: None, run=run)
+            self.assertTrue(run.active)
         self.assertEqual(s, Settings(wifi="Home", wifi_passphrase="wifi-pass", ha_url="http://ha:8123",
-                                     ha_token=TOKEN, dashcast="10.0.0.5:9555", dashcast_key=DASH_KEY,
-                                     music_assistant="10.0.0.6", ha_admin_token="admin-token",
-                                     music_assistant_token="ma-admin"))
+                                     dashcast="10.0.0.5:9555", dashcast_key=DASH_KEY, music_assistant="10.0.0.6",
+                                     music_assistant_token="ma-session", own_ha_user=True, ha_user="jade",
+                                     music_assistant_user="jade"))
+        self.assertIs(s.ha_sign_in, signed)
+        self.assertEqual(logins, [("ha", "http://ha:8123", "jade", "ha-pass"), ("ma", "10.0.0.6", "jade", "ma-pass")])
+        self.assertIn("added to Home Assistant automatically, signed in as jade until the run ends", s.summary())
         for line in s.summary():
-            for secret in ("wifi-pass", TOKEN, "admin-token", DASH_KEY, "ma-admin"):
+            for secret in ("wifi-pass", "ha-pass", DASH_KEY, "ma-pass", "ma-session"):
                 self.assertNotIn(secret, line)
 
     def test_enter_takes_the_remembered_addresses_and_the_keyring(self):
@@ -628,10 +674,12 @@ class GatherTests(unittest.TestCase):
         self.assertEqual((s.wifi, s.ha_url, s.dashcast, s.music_assistant),
                          ("Home", "http://ha:8123", "10.0.0.5:9555", "10.0.0.6"))
         self.assertEqual((s.wifi_passphrase, s.ha_token, s.dashcast_key, s.music_assistant_token),
-                         ("wifi-pass", TOKEN, DASH_KEY, "ma-admin"))
+                         ("wifi-pass", None, DASH_KEY, "ma-admin"))
+        self.assertEqual((s.ha_admin_token, s.own_ha_user), ("admin-token", True),
+                         "with an admin the Show gets a user of its own, not the hand-made token")
 
     def test_wifi_picked_from_what_is_nearby(self):
-        asker, said = self.asker(["4", "2", "-", "-"], ["short", "  spaced pass ", "typo here", "  spaced pass ", "  spaced pass ", ""])
+        asker, said = self.asker(["4", "2", "-", "-", "-"], ["short", "  spaced pass ", "typo here", "  spaced pass ", "  spaced pass ", ""])
         s = gather(args(music_assistant="10.0.0.6"), asker, defaults={}, lookup=lambda *a, **k: None,
                    nearby=lambda: ["Upstairs", "Garden IoT", "Neighbour"], want_wifi=True)
         self.assertEqual(s.wifi, "Garden IoT")
@@ -656,7 +704,8 @@ class GatherTests(unittest.TestCase):
         self.assertEqual(s.summary()[0], "Wi-Fi: picked on the Show's screen")
 
     def test_bad_answer_is_asked_again(self):
-        asker, said = self.asker(["-", "ftp://ha.example", "http://ha.example", "-", "nope.example", "10.0.0.6"], ["", "", ""])
+        asker, said = self.asker(["-", "ftp://ha.example", "http://ha.example", "-", "-", "nope.example", "10.0.0.6", "-"],
+                                 ["", ""])
         s = gather(args(), asker, defaults={}, lookup=lambda *a, **k: None, nearby=lambda: [],
                    resolve=lambda h: (_ for _ in ()).throw(OSError("no such host")))
         self.assertEqual((s.wifi, s.ha_url, s.ha_token, s.dashcast, s.music_assistant),
@@ -665,7 +714,7 @@ class GatherTests(unittest.TestCase):
         self.assertTrue(any("cannot look up" in line for line in said))
 
     def test_dashcast_without_key_is_dropped(self):
-        asker, said = self.asker(["-", "-", "10.0.0.5"], ["", ""])
+        asker, said = self.asker(["-", "-", "10.0.0.5", "-"], ["", ""])
         s = gather(args(music_assistant="10.0.0.6"), asker, defaults={}, lookup=lambda *a, **k: None)
         self.assertIsNone(s.dashcast)
         self.assertEqual(s.music_assistant, "10.0.0.6")
@@ -1095,7 +1144,7 @@ class OwnUserTests(unittest.TestCase):
         fake = OwnUserHA()
         fake.passwords = mock.MagicMock()
         fake.passwords.get.return_value = "never"
-        with self.assertRaisesRegex(ha.HomeAssistantError, "invalid_auth") as cm:
+        with self.assertRaisesRegex(ha.HomeAssistantError, "wrong username or password") as cm:
             ha.make_show_user(fake, "Jarvis Show 5", progress=lambda _l: None)
         self.assertNotIn(fake.passwords.__setitem__.call_args[0][1], str(cm.exception))
 
@@ -1127,6 +1176,18 @@ class OwnUserTests(unittest.TestCase):
                    lookup=lambda secret, **attrs: keyring.get(secret))
         self.assertEqual((s.ha_token, s.ha_admin_token, s.own_ha_user), (None, "admin-token", True))
         self.assertIn("Home Assistant: http://ha:8123, as a user of its own", s.summary())
-        with self.assertRaisesRegex(SettingsError, "admin token"):
+        with self.assertRaisesRegex(SettingsError, "needs an admin"):
             gather(args(ha_url="http://ha:8123", own_ha_user=True), Asker(False), defaults={},
                    lookup=lambda secret, **attrs: None)
+
+    def test_a_hand_made_token_file_wins_over_the_own_user(self):
+        with tempfile.TemporaryDirectory() as td:
+            token = pathlib.Path(td) / "t"
+            token.write_text(TOKEN + "\n")
+            keyring = {"ha-admin-token": "admin-token"}
+            s = gather(args(ha_url="http://ha:8123", ha_token_file=token), Asker(False), defaults={},
+                       lookup=lambda secret, **attrs: keyring.get(secret))
+            self.assertEqual((s.ha_token, s.ha_admin_token, s.own_ha_user), (TOKEN, "admin-token", False))
+            with self.assertRaisesRegex(SettingsError, "two different"):
+                gather(args(ha_url="http://ha:8123", ha_token_file=token, own_ha_user=True), Asker(False),
+                       defaults={}, lookup=lambda secret, **attrs: keyring.get(secret))

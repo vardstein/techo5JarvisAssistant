@@ -2,9 +2,14 @@
 
 Wi-Fi, Home Assistant, the DashCast server and the Music Assistant server: each comes from its switch
 first, then (secrets only) from the desktop keyring, then from a question at the terminal. The
-addresses are remembered in ~/.config/jarvis-show/defaults.json, so the second Show is mostly Enter.
-Secrets are never remembered by this tool, never put in an argument list, and reach the installer
-only as files readable by the owner, in a folder that is gone when the install ends.
+addresses, and the usernames signed in with, are remembered in ~/.config/jarvis-show/defaults.json,
+so the second Show is mostly Enter. Secrets are never remembered by this tool, never put in an
+argument list, and reach the installer only as files readable by the owner, in a folder that is gone
+when the install ends.
+
+For Home Assistant and Music Assistant the installer signs in as an admin for the run, with a
+username and password (sign_ins.py), and signs out when the run ends. An admin's long-lived token,
+from a file or the keyring, does the same job for runs nobody answers questions in.
 
 Keyring entries are looked up with secret-tool (or $JARVIS_SHOW_SECRET_TOOL) under
     application jarvis-show secret <ha-token | ha-admin-token | dashcast-key | music-assistant-token>
@@ -25,11 +30,14 @@ import subprocess
 import tempfile
 from typing import Callable, Iterator
 
+from jarvis_crown import home_assistant as ha_api
+from jarvis_crown import music_assistant as ma_api
 from jarvis_crown import ui
+from jarvis_crown.sign_ins import SignIns
 from jarvis_crown.home_assistant import (check_dashcast_key, check_token, normalize_dashcast,
                                          normalize_ha_url, normalize_music_assistant)
 
-REMEMBERED = ("wifi", "ha_url", "dashcast", "music_assistant")
+REMEMBERED = ("wifi", "ha_url", "dashcast", "music_assistant", "ha_user", "music_assistant_user")
 
 
 class SettingsError(ValueError):
@@ -53,9 +61,19 @@ class Settings:
     music_assistant_local_metadata: bool = False
     # Root's password, which the Show's USB console asks for. Only its hash reaches the Show.
     root_password: str | None = None
-    # --own-ha-user: no ha_token; the Show is made a Home Assistant user of its own when it is added,
-    # and gets that user's token then.
+    # No ha_token: the Show is made a Home Assistant user of its own when it is added, and gets that
+    # user's token then. So it is whenever there is an admin, unless --ha-token-file says otherwise.
     own_ha_user: bool = False
+    # The admins signed in as for this run (sign_ins.py); the usernames are remembered, nothing else.
+    ha_user: str | None = None
+    music_assistant_user: str | None = None
+    # That Home Assistant sign-in, a home_assistant.SignedIn, which the run ends.
+    ha_sign_in: object | None = field(default=None, compare=False, repr=False)
+
+    @property
+    def ha_admin(self) -> bool:
+        """Whether the Show can be added to Home Assistant by this run."""
+        return bool(self.ha_url and (self.ha_sign_in or self.ha_admin_token))
 
     def summary(self) -> list[str]:
         """What will be set, without a single secret in it."""
@@ -71,14 +89,21 @@ class Settings:
             out.append("Music Assistant: the Show gets a user of its own there, for lyrics")
             if self.music_assistant_local_metadata:
                 out.append("Music Assistant: online metadata lookups switched off")
-        out.append("added to Home Assistant automatically" if self.ha_admin_token and self.ha_url
-                   else "added to Home Assistant: by hand (no admin token)")
+        if self.ha_admin:
+            out.append("added to Home Assistant automatically" +
+                       (f", signed in as {self.ha_user} until the run ends" if self.ha_sign_in else ""))
+        else:
+            out.append("added to Home Assistant: by hand (no admin sign-in)")
         return out
 
 
 def config_dir() -> Path:
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
     return Path(base) / "jarvis-show"
+
+
+# The sign-ins of the run that is going on; the installer ends them all when it stops.
+RUN = SignIns(lambda: config_dir() / "sign-ins.json")
 
 
 def load_defaults(path: Path | None = None) -> dict[str, str]:
@@ -91,7 +116,7 @@ def load_defaults(path: Path | None = None) -> dict[str, str]:
 
 
 def save_defaults(settings: Settings, path: Path | None = None) -> None:
-    """Keeps the addresses (never a secret) as the next run's defaults."""
+    """Keeps the addresses and usernames (never a secret) as the next run's defaults."""
     path = path or config_dir() / "defaults.json"
     data = {k: getattr(settings, k) for k in REMEMBERED if getattr(settings, k)}
     try:
@@ -371,9 +396,14 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
            lookup: Callable[..., str | None] = keyring_lookup,
            resolve: Callable[[str], str] = _resolve, want_wifi: bool = True,
            want_root_password: bool = False,
-           nearby: Callable[[], list[str]] = nearby_networks) -> Settings:
+           nearby: Callable[[], list[str]] = nearby_networks,
+           ha_login: Callable[..., "ha_api.SignedIn"] = ha_api.sign_in,
+           ma_login: Callable[..., tuple[str, str]] = ma_api.sign_in,
+           ma_logout: Callable[..., None] = ma_api.sign_out,
+           run: SignIns | None = None) -> Settings:
     """Everything the Show is set up with: switches first, then the keyring, then the terminal."""
     d = defaults if defaults is not None else load_defaults()
+    run = run if run is not None else RUN
 
     def ma(value: str) -> str:
         return normalize_music_assistant(value, resolve)
@@ -435,27 +465,28 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
     ha_url = _checked(getattr(args, "ha_url", None), normalize_ha_url) or \
         asker.text("address, as the Show reaches it", d.get("ha_url"), normalize_ha_url,
                    help="Like http://homeassistant.local:8123. Leave it empty to skip Home Assistant for now.")
-    token = admin = None
-    own = bool(getattr(args, "own_ha_user", False))
-    if ha_url and not own:
-        token = from_file("ha_token_file", "Home Assistant token", ha_token) or \
-            _checked(lookup("ha-token"), ha_token) or \
-            asker.secret("the Show's own long-lived token", ha_token,
-                         help="For photos, weather and cameras. Make it as the user the Show should be (profile, "
-                              "Security, Long-lived access tokens). It goes onto the Show only; this computer "
-                              "keeps no copy.")
+    token = admin = signed = user = None
+    want_own = bool(getattr(args, "own_ha_user", False))
     if ha_url:
+        token = from_file("ha_token_file", "Home Assistant token", ha_token)
         admin = from_file("ha_admin_token_file", "Home Assistant admin token", ha_token) or \
-            _checked(lookup("ha-admin-token"), ha_token) or \
-            asker.secret("an admin's long-lived token", ha_token,
-                         help="Used for this run only, to add the Show to Home Assistant and set up its room, "
-                              "dashboard and voice. It is dropped when the run ends and never stored anywhere, "
-                              "not even encrypted. Enter skips it, and you add the Show in Home Assistant by hand.")
-    if ha_url and own:
+            _checked(lookup("ha-admin-token"), ha_token)
         if not admin:
-            raise SettingsError("--own-ha-user needs the admin token, which makes the Show's user")
+            signed, user = _ha_sign_in(asker, ha_url, d.get("ha_user"), ha_login, run)
+    own = bool(ha_url and (admin or signed) and not token)
+    if want_own and not own:
+        raise SettingsError("--own-ha-user needs an admin, who makes the Show's user"
+                            if not token else "--own-ha-user and --ha-token-file are two different Show users")
+    if ha_url and own:
         asker.note("The Show becomes a Home Assistant user of its own when it is added, and gets its token then.")
-    s = replace(s, ha_url=ha_url, ha_token=token, ha_admin_token=admin, own_ha_user=own and bool(ha_url))
+    elif ha_url and not token:
+        token = _checked(lookup("ha-token"), ha_token) or \
+            asker.secret("a long-lived token for the Show", ha_token,
+                         help="Without an admin, the Show needs a token made by hand, as the user it should be "
+                              "(that user's profile, Security, Long-lived access tokens), and you add the Show in "
+                              "Home Assistant yourself. It goes onto the Show only; this computer keeps no copy.")
+    s = replace(s, ha_url=ha_url, ha_token=token, ha_admin_token=admin, own_ha_user=own,
+                ha_user=user, ha_sign_in=signed)
 
     asker.heading("DashCast", "The dashboard, streamed to the Show.")
     dashcast = _checked(getattr(args, "dashcast", None), normalize_dashcast) or \
@@ -474,25 +505,133 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
     asker.heading("Music Assistant", "The Show plays through it as a Sendspin player.")
     music = _checked(getattr(args, "music_assistant", None), ma) or \
         asker.text("server IP or name", d.get("music_assistant"), ma)
-    ma_token = None
+    ma_token = ma_user = None
     if music:
         local = getattr(args, "music_assistant_local_metadata", False)
         ma_token = from_file("music_assistant_token_file", "Music Assistant token", ma_check_token) or \
-            _checked(lookup("music-assistant-token"), ma_check_token) or \
-            asker.secret("a Music Assistant admin's token (optional)", ma_check_token,
-                         help="Used once, for this run only: it makes the Show a plain Music Assistant user of "
-                              "its own, which the lyrics need" +
-                              (", and switches Music Assistant's online lookups off" if local else "") +
-                              ". Your token is dropped when the run ends and never stored anywhere, not even "
-                              "encrypted; the Show only keeps the token of its own user. Make one in Music "
-                              "Assistant under Settings, your profile, Long-lived tokens. Enter skips it, but "
-                              "then lyrics won't work on the Show.")
+            _checked(lookup("music-assistant-token"), ma_check_token)
         if ma_token is None:
-            asker.note("No token: music plays, but lyrics won't work on the Show" +
+            ma_token, ma_user = _ma_sign_in(asker, music, d.get("music_assistant_user"), ma_login, ma_logout,
+                                            run, local)
+        if ma_token is None and ma_user is None:
+            ma_token = asker.secret("a Music Assistant admin's token instead (optional)", ma_check_token,
+                                    help="Used for this run only, like the sign-in, and never stored anywhere. "
+                                         "Make one in Music Assistant under Settings, your profile, Long-lived "
+                                         "tokens. Enter skips it, but then lyrics won't work on the Show.")
+        if ma_token is None:
+            asker.note("No Music Assistant admin: music plays, but lyrics won't work on the Show" +
                        ("; Music Assistant keeps looking metadata up online." if local else "."))
-    s = replace(s, music_assistant=music, music_assistant_token=ma_token,
+    s = replace(s, music_assistant=music, music_assistant_token=ma_token, music_assistant_user=ma_user,
                 music_assistant_local_metadata=bool(music and getattr(args, "music_assistant_local_metadata", False)))
     return s
+
+
+def check_username(value: str) -> str:
+    if any(ord(ch) < 32 for ch in value):
+        raise ValueError("a username has no control characters")
+    return value
+
+
+def check_password(value: str) -> str:
+    if any(ch in "\r\n" for ch in value):
+        raise ValueError("a password is one line")
+    return value
+
+
+def check_code(value: str) -> str:
+    code = value.replace(" ", "")
+    if not code.isdigit() or not 4 <= len(code) <= 10:
+        raise ValueError("the code is the digits your authenticator shows")
+    return code
+
+
+SIGN_IN_TRIES = 3
+
+
+def _password(asker: Asker, user: str, help: str) -> str | None:
+    return asker.secret(f"{user}'s password", check_password, strip=False, help=help)
+
+
+def _ha_sign_in(asker: Asker, url: str, remembered: str | None, login: Callable[..., "ha_api.SignedIn"],
+                run: SignIns) -> tuple["ha_api.SignedIn | None", str | None]:
+    """An admin signed in for this run, or (None, None) when nobody is asked or they skip it."""
+    user = asker.text("an admin's username", remembered, check_username,
+                      skip="Enter: no admin, the Show is then added by hand",
+                      help="The installer signs in as them to add the Show to Home Assistant, give it a user "
+                           "of its own, and set up its room, dashboard and voice. It signs out again when the "
+                           "run ends, failed or Ctrl-C too, and keeps neither the password nor the sign-in.")
+    if not user:
+        return None, None
+
+    def code(again: bool) -> str | None:
+        if again:
+            asker.warn("that code was wrong")
+        return asker.text("two-factor code", None, check_code, skip="Enter gives up signing in",
+                          help="From the authenticator app you set up for Home Assistant.")
+
+    for _ in range(SIGN_IN_TRIES):
+        password = _password(asker, user, "Only for this sign-in; it is dropped right after.")
+        if password is None:
+            return None, None
+        try:
+            signed = login(url, user, password, code=code)
+        except ha_api.NotSignedIn as exc:
+            asker.warn(f"could not sign in: {exc}")
+            continue
+        except ha_api.HomeAssistantError as exc:
+            raise SettingsError(f"Home Assistant: {exc}") from None
+        try:
+            sign_in_id = signed.sign_in_id()
+        except ha_api.HomeAssistantError:
+            sign_in_id = None
+        ended = run.opened("Home Assistant", url, user, sign_in_id, end=signed.sign_out,
+                           end_other=signed.end_other)
+        if ended:
+            asker.note(f"Ended {ended} sign-in{'s' if ended > 1 else ''} an earlier run had left open.")
+        return signed, user
+    asker.warn(f"{SIGN_IN_TRIES} tries; going on without an admin")
+    return None, None
+
+
+def _ma_sign_in(asker: Asker, host: str, remembered: str | None, login: Callable[..., tuple[str, str]],
+                logout: Callable[..., None], run: SignIns, local: bool) -> tuple[str | None, str | None]:
+    """A Music Assistant admin's token for this run and their username; (None, None) when skipped,
+    (None, user) when the sign-in did not work out."""
+    user = asker.text("a Music Assistant admin's username", remembered, check_username,
+                      skip="Enter: no sign-in (a token is asked next)",
+                      help="The installer signs in as them to make the Show a plain Music Assistant user of its "
+                           "own, which the lyrics need" +
+                           (", and to switch Music Assistant's online lookups off" if local else "") +
+                           ". It signs out when the run ends and keeps neither the password nor the sign-in.")
+    if not user:
+        return None, None
+    for _ in range(SIGN_IN_TRIES):
+        password = _password(asker, user, "Only for this sign-in; it is dropped right after.")
+        if password is None:
+            return None, user
+        try:
+            token, token_id = login(host, user, password)
+        except ma_api.NotSignedIn as exc:
+            asker.warn(f"could not sign in: {exc}")
+            continue
+        except ma_api.MusicAssistantError as exc:
+            asker.warn(f"Music Assistant: {exc}")
+            return None, user
+
+        def end_other(other: str, token: str = token) -> bool:
+            try:
+                logout(host, token, other)
+            except ma_api.MusicAssistantError:
+                return False
+            return True
+
+        ended = run.opened("Music Assistant", host, user, token_id,
+                           end=lambda: logout(host, token, token_id), end_other=end_other)
+        if ended:
+            asker.note(f"Ended {ended} sign-in{'s' if ended > 1 else ''} an earlier run had left open.")
+        return token, user
+    asker.warn(f"{SIGN_IN_TRIES} tries; going on without a Music Assistant admin")
+    return None, user
 
 
 def _keyring_hint(asker: Asker, label: str, attrs: str) -> None:

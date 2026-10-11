@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -24,7 +25,7 @@ from jarvis_crown import home_assistant as ha_api  # noqa: E402
 from jarvis_crown import ui  # noqa: E402
 from jarvis_crown import music_assistant as ma_api  # noqa: E402
 from jarvis_crown.shows import known_shows, show_named  # noqa: E402
-from jarvis_crown.settings import Asker, Settings, SettingsError, gather, save_defaults, secret_files  # noqa: E402
+from jarvis_crown.settings import RUN, Asker, Settings, SettingsError, gather, save_defaults, secret_files  # noqa: E402
 from jarvis_crown.preflight import preflight_ok, print_checks, run_preflight  # noqa: E402
 from jarvis_crown.recovery import RecoveryError, adb_recovery_serials, identify_recovery_show  # noqa: E402
 from jarvis_crown.unlock import UnlockError, unlock_show  # noqa: E402
@@ -68,12 +69,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ssh-key", type=Path, help="install: an SSH public key root accepts from the first boot (SSH is switched on)")
     setup = parser.add_argument_group("what the Show is ready with (asked for when left out)")
     setup.add_argument("--ha-url", help="Home Assistant's address as the Show reaches it")
-    setup.add_argument("--ha-token-file", type=Path, help="a file holding the Show's own long-lived Home Assistant token")
-    setup.add_argument("--ha-admin-token-file", type=Path, help="a file holding an admin token, used once to add the Show to Home Assistant")
+    setup.add_argument("--ha-token-file", type=Path,
+                       help="a file holding a long-lived Home Assistant token made by hand for the Show; without "
+                            "it the Show gets a user of its own when an admin adds it")
+    setup.add_argument("--ha-admin-token-file", type=Path,
+                       help="a file holding an admin token, used for this run instead of signing in as an admin")
     setup.add_argument("--own-ha-user", action="store_true",
-                       help="make the Show a Home Assistant user of its own (not an admin) and give it that "
-                            "user's token instead of --ha-token-file; its streamed dashboard is then shown as "
-                            "that user. Needs the admin token")
+                       help="insist on the Show getting a Home Assistant user of its own (not an admin), which "
+                            "it does anyway when there is an admin; fails without one")
     setup.add_argument("--dashcast", help="the DashCast server, host[:port]")
     setup.add_argument("--dashcast-key-file", type=Path, help="a file holding the DashCast key; default the keyring, then ask")
     setup.add_argument("--music-assistant", help="the Music Assistant server's IP address or name")
@@ -252,11 +255,11 @@ def _keeper(backups: Path):
 def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: Path, host: str | None,
                              wait_seconds: float, backups: Path) -> int:
     """Adds the Show to Home Assistant and hands it its settings through its own actions."""
-    if not (settings.ha_url and settings.ha_admin_token):
+    if not settings.ha_admin:
         ui.out.heading("Home Assistant")
-        ui.out.same("no admin token, so the Show is added by hand:")
+        ui.out.same("no admin signed in, so the Show is added by hand:")
         ui.out.note(f"Settings → Devices & services → ESPHome, with the key in {key_file}")
-        ui.out.note("or later, with an admin token at hand:")
+        ui.out.note("or later, signing in as an admin:")
         ui.out.command(f"python3 tools/jarvis-show.py home-assistant --name {shlex.quote(name)}")
         return 0
     try:
@@ -279,7 +282,7 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
         wait_seconds=wait_seconds)
     ui.out.heading(f"Adding it to Home Assistant at {settings.ha_url}")
     try:
-        ha_api.deploy(ha_api.HomeAssistant(settings.ha_url, settings.ha_admin_token), opts,
+        ha_api.deploy(settings.ha_sign_in or ha_api.HomeAssistant(settings.ha_url, settings.ha_admin_token), opts,
                       progress=ui.out.progress, find_host=_find_host(name),
                       choose=_chooser(args))
     except ha_api.HomeAssistantError as exc:
@@ -337,9 +340,9 @@ def home_assistant_command(args, backups: Path) -> int:
         return 1
     save_defaults(settings)
     music_assistant_metadata(settings)
-    if not settings.ha_admin_token:
-        ui.out.fail("adding the Show needs a Home Assistant admin token "
-                    "(--ha-admin-token-file, the keyring, or the question)")
+    if not settings.ha_admin:
+        ui.out.fail("adding the Show needs a Home Assistant admin: sign in as one when asked, "
+                    "or give a token (--ha-admin-token-file or the keyring)")
         return 1
     return deploy_to_home_assistant(settings, args, name=args.name, key_file=key_file, host=args.host,
                                     wait_seconds=120, backups=backups)
@@ -428,7 +431,24 @@ def boot_logo_command(args, backups: Path) -> int:
     return 0
 
 
+def _stop(signum, _frame) -> None:
+    # A closed terminal or a kill ends the run like Ctrl-C does, through main's finally, so the
+    # installer still signs out of what it signed in to.
+    raise SystemExit(128 + signum)
+
+
 def main() -> int:
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, _stop)
+    try:
+        return _main()
+    finally:
+        if RUN.active:
+            ui.out.heading("Signing out")
+            RUN.end_all(ui.out.progress)
+
+
+def _main() -> int:
     args = parse_args()
     root = Path(__file__).resolve().parents[1]
     project = root.parent

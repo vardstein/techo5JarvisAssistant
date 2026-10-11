@@ -281,17 +281,22 @@ the moment it boots:
     Like http://homeassistant.local:8123. Leave it empty to skip Home Assistant
     for now.
     › http://10.0.0.2:8123
-  ? the Show's own long-lived token
-    For photos, weather and cameras. Make it as the user the Show should be
-    (profile, Security, Long-lived access tokens). It goes onto the Show only;
-    this computer keeps no copy.
+  ? an admin's username
+    Enter: no admin, the Show is then added by hand
+    The installer signs in as them to add the Show to Home Assistant, give it
+    a user of its own, and set up its room, dashboard and voice. It signs out
+    again when the run ends, failed or Ctrl-C too, and keeps neither the
+    password nor the sign-in.
+    › jade
+  ? jade's password
+    Only for this sign-in; it is dropped right after.
     › hidden as you type, Enter to skip
-  ? an admin's long-lived token
-    Used for this run only, to add the Show to Home Assistant and set up its
-    room, dashboard and voice. It is dropped when the run ends and never
-    stored anywhere, not even encrypted. Enter skips it, and you add the Show
-    in Home Assistant by hand.
-    › hidden as you type, Enter to skip
+  ? two-factor code
+    Enter gives up signing in
+    From the authenticator app you set up for Home Assistant.
+    › 123456
+    The Show becomes a Home Assistant user of its own when it is added, and
+    gets its token then.
 
 ── DashCast ──────────────────────────────────────────────────────────────────
   The dashboard, streamed to the Show.
@@ -307,16 +312,40 @@ the moment it boots:
   ? server IP or name
     Enter to skip
     › 10.0.0.2
-  ? a Music Assistant admin's token (optional)
-    Used once, for this run only: it makes the Show a plain Music Assistant
-    user of its own, which the lyrics need. Your token is dropped when the run
-    ends and never stored anywhere, not even encrypted; the Show only keeps
-    the token of its own user. Make one in Music Assistant under Settings,
-    your profile, Long-lived tokens. Enter skips it, but then lyrics won't
-    work on the Show.
+  ? a Music Assistant admin's username
+    Enter: no sign-in (a token is asked next)
+    The installer signs in as them to make the Show a plain Music Assistant
+    user of its own, which the lyrics need. It signs out when the run ends and
+    keeps neither the password nor the sign-in.
+    › jade
+  ? jade's password
+    Only for this sign-in; it is dropped right after.
     › hidden as you type, Enter to skip
-    No token: music plays, but lyrics won't work on the Show.
 ```
+
+### Signing in for the run
+
+For Home Assistant and Music Assistant the installer signs in as an admin, with a username and
+password, the way a browser does, and works with that sign-in for the rest of the run. Home
+Assistant's two-factor code is asked for when the account has one. A wrong password is said so and
+asked again, three times at most; after that, or with Enter at the username, the run goes on without
+an admin and the Show is added by hand later. An account that is not an admin is signed out again
+right away and refused.
+
+When the run ends it signs out of both again: done, stopped by an error, Ctrl-C, or the terminal
+closed. The password is used for the sign-in and dropped, and the sign-in itself is never written
+anywhere, not even encrypted. All that is kept while the run lasts is the sign-in's id in
+`~/.config/jarvis-show/sign-ins.json` (owner-only), which is no secret: it only says which sign-in
+to end. A run killed outright (`kill -9`, a power cut) leaves it behind, and the next run that signs
+in as the same user at the same place ends that old sign-in first and says so. The usernames are
+remembered with the addresses, so next time the username is already filled in.
+
+With an admin signed in, the Show becomes a Home Assistant user of its own by default (see
+`--own-ha-user` below) and gets that user's token, so you make no token for it by hand. Without an
+admin you're asked for the Show's own long-lived token instead (made as the user the Show should be:
+profile, Security, Long-lived access tokens). Enter at the Music Assistant username asks for an
+admin's Music Assistant token instead; Enter there too means music plays, but lyrics won't work on
+the Show.
 
 The Wi-Fi network is picked by number from the ones this computer sees (NetworkManager's list, when
 there is one) or typed by name. The passphrase is asked twice, since nobody sees it, and checked
@@ -350,15 +379,17 @@ secret-tool store --label="Jarvis Show: Wi-Fi" application jarvis-show secret wi
 secret-tool store --label="Jarvis Show: Music Assistant token" application jarvis-show secret music-assistant-token
 ```
 
-The admin tokens are better not kept at all: make one for the install, give it at the question, and
-delete it afterwards. What the Show needs it gets a token of its own for.
+An admin token from a file or the keyring stands in for the sign-in, for runs nobody answers
+questions in (`--no-questions`). Better not keep them at all: answer the sign-in questions instead.
+What the Show needs it gets a token of its own for. The Show's own Home Assistant token (`ha-token`,
+`--ha-token-file`) is only for a Show that should use a user you made by hand; given, it wins over
+the user of its own.
 
-The Music Assistant token is optional and asked for whenever there is a Music Assistant server. It is
-an admin's, used for this run only: to make the Show a plain Music Assistant user of its own for the
-lyrics on the now-playing page ([Lyrics](lyrics.md)), and with `--music-assistant-local-metadata`
-(below) to switch the online lookups off. It is dropped when the run ends and never stored anywhere,
-not even encrypted; the Show keeps only the token of its own user. Enter skips it: music plays as
-before, but lyrics won't work on the Show.
+The Music Assistant admin, signed in or by token, is optional and asked for whenever there is a Music
+Assistant server. It is used for this run only: to make the Show a plain Music Assistant user of its
+own for the lyrics on the now-playing page ([Lyrics](lyrics.md)), and with
+`--music-assistant-local-metadata` (below) to switch the online lookups off. The Show keeps only the
+token of its own user.
 
 The addresses have switches too (`--ha-url`, `--dashcast`, `--music-assistant`), and
 `--no-questions` (or `TECHO5_NO_PROMPT=1`, or no terminal) asks nothing at all.
@@ -370,8 +401,8 @@ What happens with the answers:
   writes `/data/misc/techo5/hass.json` (address and token) and a small first `state.json` with only
   the DashCast server and key and the Music Assistant address (Sendspin on). The daemon fills in
   every other default itself. A `state.json` that is already there is kept as it is.
-- **In Home Assistant, right after.** With an admin token and Wi-Fi, the tool waits up to five
-  minutes for the Show to come up, then over Home Assistant's REST API:
+- **In Home Assistant, right after.** With an admin signed in (or an admin token) and Wi-Fi, the
+  tool waits up to five minutes for the Show to come up, then over Home Assistant's REST API:
   1. adds it as an ESPHome device with its encryption key, by its address or else by its `.local`
      name (REST cannot see the discoveries Home Assistant has open, so it starts its own flow; an
      open discovery for the same unit closes by itself once the device is added);
@@ -424,7 +455,7 @@ What happens with the answers:
      reach them;
   7. hands it the DashCast server, Home Assistant access and Music Assistant address again through
      its own actions, and turns its Sendspin switch on;
-  8. with a Music Assistant token, makes the Show's own Music Assistant user (`jarvis-show-5` for
+  8. with a Music Assistant admin, makes the Show's own Music Assistant user (`jarvis-show-5` for
      "Jarvis Show 5", not an admin, with a random password nobody keeps) and gives the Show a token
      for it, replacing the one made last time. See [Lyrics](lyrics.md).
 
@@ -433,7 +464,7 @@ What happens with the answers:
   reached, and says so ("Home Assistant knows the Show as 'kitchen-show'"). While it waits for the
   Show to come online, it says what it waits for and for how much longer.
 
-  The admin tokens are used for this and kept nowhere. Each step looks first at what is already
+  The admin sign-ins are used for this and ended when the run ends. Each step looks first at what is already
   there, so running it again changes only what is missing. The last line says it's done, or done
   with how many things to look at, each marked `!` above.
 - **In Music Assistant, only when asked.** Music Assistant looks songs, albums and artists up on the
@@ -449,7 +480,7 @@ What happens with the answers:
   `home-assistant --name NAME --music-assistant-local-metadata`. Both are ordinary Music Assistant
   settings, switched back on in its own settings pages.
 
-Without Wi-Fi at install (it is picked on the Show's screen instead) or without an admin token, the
+Without Wi-Fi at install (it is picked on the Show's screen instead) or without an admin, the
 tool says how to finish later. The same steps run on their own for a Show that is already installed:
 
 ```
@@ -540,14 +571,14 @@ uses the Home Assistant, DashCast, Music Assistant and choice switches.
 | `--wifi SSID` | The network it joins on first boot. Left out: asked, and Enter leaves it to the Show's screen. |
 | `--wifi-passphrase-file FILE` | A file holding its passphrase. Default the keyring, then a hidden question. |
 | `--ha-url URL` | Home Assistant's address, as the Show reaches it. |
-| `--ha-token-file FILE` | A file holding the Show's own long-lived token. |
-| `--ha-admin-token-file FILE` | A file holding an admin token, used once to add the Show and kept nowhere. |
-| `--own-ha-user` | The Show gets a Home Assistant user of its own (`show_<name>`, not an admin, local network only) and that user's token, in place of `--ha-token-file`. Its streamed dashboard then shows what that user may see. Needs the admin token. Running it again gives the user a new password and token and ends the old token; if the admin token isn't the owner's, the user is made again with a new id. |
+| `--ha-token-file FILE` | A file holding a long-lived token made by hand for the Show. Without it the Show gets a user of its own. |
+| `--ha-admin-token-file FILE` | A file holding an admin token, used for this run instead of signing in as an admin, and kept nowhere. |
+| `--own-ha-user` | Insist on the Show getting a Home Assistant user of its own (`show_<name>`, not an admin, local network only) and that user's token. This is what happens anyway with an admin and no `--ha-token-file`; given, a missing admin stops the run instead of falling back to a token made by hand. Its streamed dashboard then shows what that user may see. Running it again gives the user a new password and token and ends the old token; if the admin isn't the owner, the user is made again with a new id. |
 | `--dashcast HOST[:PORT]` | The DashCast server. |
 | `--dashcast-key-file FILE` | A file holding the DashCast key. |
 | `--music-assistant HOST` | The Music Assistant server. |
 | `--music-assistant-local-metadata` | Music Assistant stops looking metadata up online and keeps to the library's own tags. Off unless given. |
-| `--music-assistant-token-file FILE` | A file holding a Music Assistant admin's long-lived token, used once for the Show's own user there (lyrics) and the switch above. |
+| `--music-assistant-token-file FILE` | A file holding a Music Assistant admin's long-lived token, used instead of signing in, once for the Show's own user there (lyrics) and the switch above. |
 | `--assistant NAME` | The Assist pipeline it talks to, or `preferred`. `''` leaves it alone. |
 | `--wake-word NAME` | One of the wake words the Show offers. `''` leaves it alone. |
 | `--room NAME` | The Home Assistant area it stands in, by name or id. `''` leaves it alone. |

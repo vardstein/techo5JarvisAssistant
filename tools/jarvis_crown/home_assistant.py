@@ -3,8 +3,9 @@
 Once the installer is done, a Show still has to be taken in by Home Assistant. By hand that means
 five screens per unit: add the ESPHome device with its encryption key, allow it to perform Home
 Assistant actions, pick the assistant and the wake word, and give it the DashCast server and its own
-Home Assistant access, and put it in its room. Here that is one call with an admin token, used for
-this and kept nowhere.
+Home Assistant access, and put it in its room. Here that is one call as an admin: signed in for
+the run with a username and password (sign_in, SignedIn), or with an admin's long-lived token. Both
+are used for this and kept nowhere.
 
 Every step looks first at what is already there, so running it again on a unit Home Assistant
 already has only fills in what is missing. No secret is ever put in an error message.
@@ -41,6 +42,14 @@ class HomeAssistantError(RuntimeError):
 
 class NotFound(HomeAssistantError):
     """Home Assistant answered 404: what was asked for is not there."""
+
+
+class Unauthorized(HomeAssistantError):
+    """Home Assistant answered 401: it did not take the token."""
+
+
+class NotSignedIn(HomeAssistantError):
+    """Home Assistant turned a sign-in down: a wrong password or code, or not an admin."""
 
 
 # ------------------------------------------------------------------------------- addresses and names
@@ -207,7 +216,7 @@ class HomeAssistant:
             data = json.dumps(body).encode("utf-8")
         req = urllib.request.Request(self.url + path, data=data, method=method)
         if auth:
-            req.add_header("Authorization", "Bearer " + self._token)
+            req.add_header("Authorization", "Bearer " + self._bearer())
         if data is not None:
             req.add_header("Content-Type", "application/x-www-form-urlencoded" if form else "application/json")
         try:
@@ -220,7 +229,7 @@ class HomeAssistant:
             except OSError:
                 pass
             if exc.code == 401:
-                raise HomeAssistantError(f"{method} {path}: Home Assistant did not accept the token (401)") from None
+                raise Unauthorized(f"{method} {path}: Home Assistant did not accept the token (401)") from None
             if exc.code == 404:
                 raise NotFound(f"{method} {path}: HTTP 404 {detail}".rstrip()) from None
             raise HomeAssistantError(f"{method} {path}: HTTP {exc.code} {detail}".rstrip()) from None
@@ -233,6 +242,9 @@ class HomeAssistant:
             return json.loads(raw)
         except json.JSONDecodeError:
             return raw.decode("utf-8", "replace")
+
+    def _bearer(self) -> str:
+        return self._token
 
     def as_user(self, token: str) -> "HomeAssistant":
         """The same Home Assistant, signed in with another token."""
@@ -251,11 +263,83 @@ class HomeAssistant:
         try:
             if u.scheme == "https":
                 sock = ssl.create_default_context().wrap_socket(sock, server_hostname=u.hostname)
-            return _ws_exchange(sock, u.netloc, self._token, message)
+            return _ws_exchange(sock, u.netloc, self._bearer(), message)
         except (OSError, ValueError) as exc:
             raise HomeAssistantError(f"{what}: {exc}") from None
         finally:
             sock.close()
+
+
+class SignedIn(HomeAssistant):
+    """An admin signed in for one run, the way a browser signs in (sign_in). It holds the refresh token
+    and a short-lived access token, renews the access token from the refresh token when it runs out,
+    and sign_out ends the sign-in in Home Assistant, which makes both worthless."""
+
+    def __init__(self, url: str, tokens: dict, *, timeout: float = 20.0,
+                 opener: Callable[..., Any] | None = None, clock: Callable[[], float] = time.monotonic) -> None:
+        super().__init__(url, tokens["access_token"], timeout=timeout, opener=opener)
+        self._refresh: str | None = tokens.get("refresh_token") or None
+        self._clock = clock
+        self._until = 0.0
+        self._lasts(tokens)
+
+    def _lasts(self, tokens: dict) -> None:
+        # A minute early, so a token never runs out halfway through a step.
+        self._until = self._clock() + float(tokens.get("expires_in") or 1800) - 60
+
+    def _renew(self) -> None:
+        tokens = super().request("POST", "/auth/token", {"grant_type": "refresh_token", "client_id": self.url + "/",
+                                                        "refresh_token": self._refresh}, auth=False, form=True)
+        if not isinstance(tokens, dict) or not tokens.get("access_token"):
+            raise HomeAssistantError("Home Assistant ended the installer's sign-in before the run was done")
+        self._token = tokens["access_token"]
+        self._lasts(tokens)
+
+    def _bearer(self) -> str:
+        if not self._refresh:
+            raise HomeAssistantError("the installer has signed out of Home Assistant already")
+        if self._clock() >= self._until:
+            self._renew()
+        return self._token
+
+    def request(self, method: str, path: str, body: Any = None, *, auth: bool = True,
+                form: bool = False) -> Any:
+        try:
+            return super().request(method, path, body, auth=auth, form=form)
+        except Unauthorized:
+            if not (auth and self._refresh):
+                raise
+            self._renew()
+            return super().request(method, path, body, auth=auth, form=form)
+
+    @property
+    def signed_in(self) -> bool:
+        return self._refresh is not None
+
+    def sign_in_id(self) -> str | None:
+        """The id Home Assistant knows this sign-in by. It is no secret: it only says which sign-in
+        to end, and only the user it belongs to may end it."""
+        for token in self.ws({"type": "auth/refresh_tokens"}) or []:
+            if token.get("is_current"):
+                return token.get("id")
+        return None
+
+    def end_other(self, sign_in_id: str) -> bool:
+        """Ends another sign-in of the same user, one an earlier run left behind; False when Home
+        Assistant has no such sign-in any more."""
+        try:
+            self.ws({"type": "auth/delete_refresh_token", "refresh_token_id": sign_in_id})
+        except HomeAssistantError:
+            return False
+        return True
+
+    def sign_out(self) -> None:
+        """Ends the sign-in. Once it has, nothing can use it again, the installer included."""
+        if not self._refresh:
+            return
+        HomeAssistant.request(self, "POST", "/auth/revoke", {"token": self._refresh}, auth=False, form=True)
+        self._refresh = None
+        self._token = ""
 
 
 class _Frames:
@@ -749,21 +833,76 @@ def show_username(name: str) -> str:
     return "show_" + service_prefix(name)
 
 
-def _sign_in(ha: HomeAssistant, username: str, password: str) -> dict:
-    """Home Assistant's own login, as a browser does it; returns its access and refresh tokens."""
+# What Home Assistant's login flow says when it turns a sign-in down, in words.
+_LOGIN_ERRORS = {"invalid_auth": "wrong username or password", "invalid_code": "wrong code",
+                 "too_many_retry": "too many wrong codes", "login_expired": "it took too long",
+                 "user_not_allowed": "that user may not sign in from here"}
+
+
+def _login_flow(ha: HomeAssistant, username: str, password: str,
+                code: Callable[[bool], str | None] | None = None) -> dict:
+    """Home Assistant's own login, as a browser does it; returns its access and refresh tokens.
+    code is asked for the two-factor code when the user has two-factor sign-in on (with True after a
+    wrong one); None from it, or no code at all, gives up."""
     client = ha.url + "/"
     flow = ha.request("POST", "/auth/login_flow", {"client_id": client, "handler": ["homeassistant", None],
                                                    "redirect_uri": client}, auth=False) or {}
-    done = ha.request("POST", f"/auth/login_flow/{flow.get('flow_id')}",
+    flow_id = flow.get("flow_id")
+    step = ha.request("POST", f"/auth/login_flow/{flow_id}",
                       {"client_id": client, "username": username, "password": password}, auth=False) or {}
-    if done.get("type") != "create_entry":
-        why = ", ".join(f"{v}" for v in (done.get("errors") or {}).values()) or done.get("type") or "no answer"
-        raise HomeAssistantError(f"the Show's user {username!r} could not sign in ({why})")
-    tokens = ha.request("POST", "/auth/token", {"grant_type": "authorization_code", "code": done.get("result"),
+    asked = False
+    while step.get("type") == "form" and step.get("step_id") in ("select_mfa_module", "mfa"):
+        if step["step_id"] == "select_mfa_module":
+            options = next((f.get("options") for f in step.get("data_schema") or []
+                            if f.get("name") == "multi_factor_auth_module"), None) or {}
+            first = next(iter(options), None)
+            module = first[0] if isinstance(first, (list, tuple)) else first
+            if not module:
+                raise NotSignedIn("Home Assistant asked for a two-factor method but offered none")
+            body = {"client_id": client, "multi_factor_auth_module": module}
+        else:
+            answer = code(asked) if code else None
+            if not answer:
+                raise NotSignedIn("no two-factor code")
+            asked = True
+            body = {"client_id": client, "code": answer}
+        step = ha.request("POST", f"/auth/login_flow/{step.get('flow_id') or flow_id}", body, auth=False) or {}
+    if step.get("type") != "create_entry":
+        reasons = list((step.get("errors") or {}).values()) or [step.get("reason") or step.get("type") or "no answer"]
+        raise NotSignedIn(", ".join(_LOGIN_ERRORS.get(str(r), str(r)) for r in reasons))
+    tokens = ha.request("POST", "/auth/token", {"grant_type": "authorization_code", "code": step.get("result"),
                                                 "client_id": client}, auth=False, form=True)
     if not isinstance(tokens, dict) or not tokens.get("access_token"):
-        raise HomeAssistantError(f"the Show's user {username!r} signed in but got no token")
+        raise HomeAssistantError(f"{username!r} signed in but Home Assistant gave no token")
     return tokens
+
+
+def sign_in(url: str, username: str, password: str, *, code: Callable[[bool], str | None] | None = None,
+            timeout: float = 20.0, opener: Callable[..., Any] | None = None,
+            clock: Callable[[], float] = time.monotonic) -> SignedIn:
+    """An admin signed in for this run. Raises NotSignedIn for a wrong password or code, and for a
+    user who is not an admin (whose sign-in is ended again right away)."""
+    tokens = _login_flow(HomeAssistant(url, "", timeout=timeout, opener=opener), username, password, code)
+    signed = SignedIn(url, tokens, timeout=timeout, opener=opener, clock=clock)
+    try:
+        me = signed.ws({"type": "auth/current_user"}) or {}
+        if not me.get("is_admin"):
+            raise NotSignedIn(f"{username!r} is not an admin in Home Assistant, and adding the Show needs one")
+    except BaseException:
+        try:
+            signed.sign_out()
+        except HomeAssistantError:
+            pass
+        raise
+    return signed
+
+
+def _sign_in(ha: HomeAssistant, username: str, password: str) -> dict:
+    """The Show's own user signing in once, to make its token."""
+    try:
+        return _login_flow(ha, username, password)
+    except NotSignedIn as exc:
+        raise HomeAssistantError(f"the Show's user {username!r} could not sign in ({exc})") from None
 
 
 def make_show_user(ha: HomeAssistant, name: str, *, progress: Callable[[str], None] = print) -> str:

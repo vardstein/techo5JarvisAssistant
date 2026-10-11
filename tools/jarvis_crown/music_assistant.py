@@ -16,6 +16,10 @@ The same token also gives the Show a Music Assistant user of its own (show_token
 the song playing, which Home Assistant's integration does not pass on. The user is a plain one, not
 an admin; its password is random and thrown away, so only its token, on the Show, ever signs in. The
 installer's token is used for that and kept nowhere.
+
+That token is either an admin's long-lived one, or one the installer gets by signing in as an admin
+with a username and password (sign_in, Music Assistant's own auth/login). A sign-in's token is
+revoked again when the run ends (sign_out).
 """
 from __future__ import annotations
 
@@ -36,6 +40,10 @@ ONLINE_PROVIDERS = ("lrclib", "fanarttv", "theaudiodb", "coverartarchive", "wiki
 
 class MusicAssistantError(RuntimeError):
     """Music Assistant could not be reached, did not take the token, or refused a setting."""
+
+
+class NotSignedIn(MusicAssistantError):
+    """Music Assistant turned a sign-in down: a wrong password, or not an admin."""
 
 
 class _Session:
@@ -140,3 +148,53 @@ def show_token(host: str, token: str, name: str, *, timeout: float = 20.0,
     """A token for the Show's own Music Assistant user, made when it is not there yet; returns it
     and whether the user was new."""
     return _connected(host, timeout, connect, lambda sock, peer: show_exchange(sock, peer, token, name))
+
+
+def sign_in_exchange(sock: Any, host: str, username: str, password: str, *, name: str,
+                     key: str | None = None) -> tuple[str, str]:
+    """Signs in on a connected socket; returns the sign-in's token and the id it is revoked by."""
+    frames = ws_open(sock, host, "/ws", key=key, peer="Music Assistant")
+    if "server_version" not in frames.recv():
+        raise MusicAssistantError("that is not a Music Assistant server")
+    session = _Session(frames)
+    got = session.call("auth/login", username=username, password=password, device_name=name)
+    if not isinstance(got, dict) or not got.get("success") or not got.get("access_token"):
+        why = (got or {}).get("error") if isinstance(got, dict) else None
+        raise NotSignedIn(f"Music Assistant did not let {username!r} sign in ({why or 'no answer'})")
+    token = got["access_token"]
+    session.call("auth", token=token)
+    token_id = next((t.get("token_id") for t in session.call("auth/tokens") or [] if t.get("name") == name), None)
+    if not token_id or (got.get("user") or {}).get("role") != "admin":
+        if token_id:
+            _revoke(session, token_id)
+        raise NotSignedIn(f"{username!r} is not a Music Assistant admin, and making the Show's user needs one"
+                          if token_id else "Music Assistant does not list the sign-in it just made")
+    return token, token_id
+
+
+def _revoke(session: _Session, token_id: str) -> None:
+    try:
+        session.call("auth/token/revoke", token_id=token_id)
+    except ValueError as exc:
+        # Music Assistant closes the connections that use a token as it revokes it, which may be
+        # before its answer is sent.
+        if "closed" not in str(exc):
+            raise
+
+
+def revoke_exchange(sock: Any, host: str, token: str, token_id: str, *, key: str | None = None) -> None:
+    _revoke(_login(sock, host, token, key=key), token_id)
+
+
+def sign_in(host: str, username: str, password: str, *, timeout: float = 20.0,
+            connect: Callable[..., Any] = socket.create_connection) -> tuple[str, str]:
+    """An admin signed in for this run: a token, and its id for sign_out."""
+    name = f"Jarvis Show installer {secrets.token_hex(3)}"
+    return _connected(host, timeout, connect,
+                      lambda sock, peer: sign_in_exchange(sock, peer, username, password, name=name))
+
+
+def sign_out(host: str, token: str, token_id: str, *, timeout: float = 20.0,
+             connect: Callable[..., Any] = socket.create_connection) -> None:
+    """Revokes a token, the sign-in's own (token_id is its id) or an earlier one of the same user."""
+    _connected(host, timeout, connect, lambda sock, peer: revoke_exchange(sock, peer, token, token_id))
