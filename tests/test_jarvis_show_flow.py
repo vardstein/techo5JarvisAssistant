@@ -303,7 +303,7 @@ class FlowAcceptanceTests(unittest.TestCase):
                 run_install_flow(
                     data,
                     confirm_unlock=lambda _p: "UNLOCK CROWN",
-                    confirm_install=lambda _p: "ERASE LINEAGE INSTALL JARVIS CROWN",
+                    confirm_install=lambda _p: "ERASE CROWN",
                     deps=h.deps(),
                 )
             self.assertNotIn("recovery", h.calls)

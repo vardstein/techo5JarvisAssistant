@@ -34,7 +34,7 @@ PROFILES = {
         amonet_dir_name="amonet-crown-v2.0.1",
         amonet_kaeru_name="crown-kaeru.bin",
         unlock_confirmation="UNLOCK CROWN",
-        install_confirmation="ERASE LINEAGE INSTALL JARVIS CROWN",
+        install_confirmation="ERASE CROWN",
     ),
     "checkers": BoardProfile(
         board="checkers",
@@ -46,7 +46,7 @@ PROFILES = {
         amonet_dir_name="amonet-checkers-v2.0.1",
         amonet_kaeru_name="checkers-kaeru.bin",
         unlock_confirmation="UNLOCK CHECKERS",
-        install_confirmation="ERASE LINEAGE INSTALL JARVIS CHECKERS",
+        install_confirmation="ERASE CHECKERS",
     ),
 }
 

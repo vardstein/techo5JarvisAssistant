@@ -31,7 +31,7 @@ ROOTFS_MARKER = "etc/jarvis-show-release.json"
 LEGACY_CROWN_ROOTFS_MARKER = "etc/jarvis-crown-release.json"
 PROFILE_ID = "jarvis-show-v1"
 SUPPORTED_BOARDS = ("crown", "checkers")
-FINAL_CONFIRM_PHRASE = "ERASE LINEAGE INSTALL JARVIS CROWN"  # compatibility alias
+FINAL_CONFIRM_PHRASE = "ERASE CROWN"  # compatibility alias
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 

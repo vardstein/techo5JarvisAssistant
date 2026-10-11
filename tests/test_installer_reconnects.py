@@ -99,6 +99,26 @@ class ReconnectTimingTests(unittest.TestCase):
                 install.wait_for = old_wait
             self.assertEqual(seen["seconds"], timing.TWRP_DATA_REBOOT_TIMEOUT_SECONDS)
 
+    def test_stuck_in_fastboot_after_the_format_is_sent_on_to_twrp(self):
+        class StuckFastboot:
+            def __init__(self):
+                self.ran, self.there = [], True
+
+            def present(self):
+                return self.there
+
+            def run(self, *args):
+                self.ran.append(args)
+                self.there = False
+                return 0, "OKAY"
+
+        fastboot = StuckFastboot()
+        test = install.back_to_twrp(fastboot)
+        self.assertFalse(test(), "TWRP being ready is what ends the wait, not the reboot")
+        self.assertFalse(test())
+        self.assertEqual(fastboot.ran, [("reboot", "recovery")], "sent on once, not again once it left")
+        self.assertFalse(install.back_to_twrp(None)())
+
     def test_fastboot_presence_probe_times_out_instead_of_hanging(self):
         fb = Fastboot("SERIAL")
         old_run = subprocess.run

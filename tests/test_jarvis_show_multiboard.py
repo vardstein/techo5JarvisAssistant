@@ -276,20 +276,20 @@ class MultiBoardTests(unittest.TestCase):
                     repo_root=ROOT, adb_serial="CHK-ADB", name="Kitchen",
                     backup_root=backup, work_dir=td / "work", boot_image=boot,
                     rootfs=rootfs, rootfs_sha256=digest(rootfs), board="checkers",
-                    confirmation="ERASE LINEAGE INSTALL JARVIS CHECKERS",
+                    confirmation="ERASE CHECKERS",
                 )
             with self.assertRaisesRegex(InstallError, "final confirmation"):
                 make_install_plan(
                     repo_root=ROOT, adb_serial="CHK-ADB", name="Kitchen",
                     backup_root=backup, work_dir=td / "work", boot_image=boot,
                     boot_sha256=digest(boot), rootfs=rootfs, rootfs_sha256=digest(rootfs),
-                    board="checkers", confirmation="ERASE LINEAGE INSTALL JARVIS CROWN",
+                    board="checkers", confirmation="ERASE CROWN",
                 )
             plan = make_install_plan(
                 repo_root=ROOT, adb_serial="CHK-ADB", name="Kitchen",
                 backup_root=backup, work_dir=td / "work", boot_image=boot,
                 boot_sha256=digest(boot), rootfs=rootfs, rootfs_sha256=digest(rootfs),
-                board="checkers", confirmation="ERASE LINEAGE INSTALL JARVIS CHECKERS",
+                board="checkers", confirmation="ERASE CHECKERS",
             )
             argv = list(plan.argv)
             self.assertEqual(plan.board, "checkers")

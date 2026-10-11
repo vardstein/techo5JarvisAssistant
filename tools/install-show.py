@@ -371,7 +371,23 @@ def twrp_data_ready(adb, previous_boot_id):
     return adb.sh('touch /data/.jarvis-crown-write-test && rm -f /data/.jarvis-crown-write-test && echo OK') == 'OK'
 
 
-def install_lineage(adb, zip_path):
+def back_to_twrp(fastboot):
+    """A test for wait_for that sends the unit on to TWRP when it stops in fastboot instead.
+
+    A crown told to restart into TWRP after formatting userdata has come back in fastboot and stayed
+    there (2026-10-11); `fastboot reboot recovery` from there brought TWRP up. Always False: the
+    wait goes on until TWRP itself is ready."""
+    def test():
+        if fastboot is not None and fastboot.present():
+            note('the unit came back in fastboot, not TWRP; sending it on to TWRP')
+            code, out = fastboot.run('reboot', 'recovery')
+            if code != 0:
+                note('fastboot reboot recovery did not work: %s' % out)
+        return False
+    return test
+
+
+def install_lineage(adb, zip_path, fastboot=None):
     """Format userdata and install the LineageOS zip from TWRP, without ever starting LineageOS: its
     system partition is where this unit's drivers come from. Fire OS's userdata is encrypted, so it is
     formatted first, and TWRP is restarted for /data to be usable again."""
@@ -382,8 +398,9 @@ def install_lineage(adb, zip_path):
     if not boot_id:
         fail('TWRP did not report its boot id, so its restart after formatting userdata cannot be proven')
     adb.sh('twrp reboot recovery')
+    stuck_in_fastboot = back_to_twrp(fastboot)
     wait_for('TWRP after formatting userdata', TWRP_DATA_REBOOT_TIMEOUT_SECONDS,
-             lambda: twrp_data_ready(adb, boot_id), 3)
+             lambda: twrp_data_ready(adb, boot_id) or stuck_in_fastboot(), 3)
     note('userdata formatted; /data mounted and writable after TWRP reboot')
     adb.push(zip_path, '/data/lineage.zip')
     with open(zip_path, 'rb') as f:
@@ -418,14 +435,14 @@ def check_lineage_driver(adb):
              % (', '.join(bad), want))
     note('Wi-Fi and Bluetooth drivers built for kernel %s' % KERNEL_RELEASE)
 
-def prepare_lineage_vendor(adb, lineage_zip=None, prestaged=False):
+def prepare_lineage_vendor(adb, lineage_zip=None, prestaged=False, fastboot=None):
     """Stage Lineage once, or consume J21's already-staged Crown vendor tree without rewriting it."""
     if prestaged:
         check_lineage_driver(adb)
         return
     if not lineage_zip:
         fail('a LineageOS zip is required unless Jarvis Crown J21 already staged it')
-    install_lineage(adb, lineage_zip)
+    install_lineage(adb, lineage_zip, fastboot)
     check_lineage_driver(adb)
 
 
@@ -609,7 +626,7 @@ def main():
         except Exception as e:
             fail('Jarvis Show recovery backup is not complete/valid before Lineage staging: %s' % e)
         step('LineageOS, for its drivers')
-        prepare_lineage_vendor(adb, lineage_zip=a.lineage_zip)
+        prepare_lineage_vendor(adb, lineage_zip=a.lineage_zip, fastboot=fastboot)
         print('\nDone. LineageOS vendor tree for %s is staged and ABI-verified; boot/system slot-store conversion has not run.' % dev)
         return
 
@@ -716,7 +733,7 @@ def main():
                 "flashes TECHO5's boot image, then erases the system partition (mmcblk0p12) to make the slot store.",
             ])
             step('LineageOS, for its drivers')
-            prepare_lineage_vendor(adb, lineage_zip=a.lineage_zip)
+            prepare_lineage_vendor(adb, lineage_zip=a.lineage_zip, fastboot=fastboot)
         if not os.path.exists(los_boot):
             # Through a .partial kept only when whole, as on the LineageOS path: this is the image the way
             # back flashes, and a short one kept for good would be skipped on every later run.

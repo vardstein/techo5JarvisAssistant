@@ -104,7 +104,7 @@ class StageLineageModeTests(unittest.TestCase):
                  mock.patch.object(module, "Adb", side_effect=fake_adb), \
                  mock.patch.object(module, "Fastboot", return_value=mock.Mock()), \
                  mock.patch.object(module, "Console", return_value=mock.Mock()), \
-                 mock.patch.object(module, "prepare_lineage_vendor", side_effect=lambda adb, lineage_zip=None, prestaged=False: calls.append((lineage_zip, prestaged))), \
+                 mock.patch.object(module, "prepare_lineage_vendor", side_effect=lambda adb, lineage_zip=None, prestaged=False, fastboot=None: calls.append((lineage_zip, prestaged))), \
                  mock.patch.object(module, "Release", side_effect=AssertionError("release lookup must never run")), \
                  mock.patch.object(module, "check_serial_access", side_effect=AssertionError("stage-only returned too late")):
                 module.main()
