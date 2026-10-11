@@ -46,21 +46,22 @@ class SettingsError(ValueError):
 
 @dataclass(frozen=True)
 class Settings:
+    # The secrets stay out of repr(), so a traceback or a debug print of the settings shows none of them.
     wifi: str | None = None
-    wifi_passphrase: str | None = None
+    wifi_passphrase: str | None = field(default=None, repr=False)
     ha_url: str | None = None
-    ha_token: str | None = None
+    ha_token: str | None = field(default=None, repr=False)
     dashcast: str | None = None
-    dashcast_key: str | None = None
+    dashcast_key: str | None = field(default=None, repr=False)
     music_assistant: str | None = None
-    ha_admin_token: str | None = None
+    ha_admin_token: str | None = field(default=None, repr=False)
     # A Music Assistant admin's token, used once to make the Show a Music Assistant user of its own (for
     # lyrics) and, with --music-assistant-local-metadata, to switch its online lookups off
     # (music_assistant.py). It is kept nowhere.
-    music_assistant_token: str | None = None
+    music_assistant_token: str | None = field(default=None, repr=False)
     music_assistant_local_metadata: bool = False
     # Root's password, which the Show's USB console asks for. Only its hash reaches the Show.
-    root_password: str | None = None
+    root_password: str | None = field(default=None, repr=False)
     # No ha_token: the Show is made a Home Assistant user of its own when it is added, and gets that
     # user's token then. So it is whenever there is an admin, unless --ha-token-file says otherwise.
     own_ha_user: bool = False

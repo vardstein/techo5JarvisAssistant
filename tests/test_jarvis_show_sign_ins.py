@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 from jarvis_crown import home_assistant as ha  # noqa: E402
 from jarvis_crown import music_assistant as ma  # noqa: E402
 from jarvis_crown import ui  # noqa: E402
-from jarvis_crown.settings import Asker, SettingsError, gather  # noqa: E402
+from jarvis_crown.settings import Asker, Settings, SettingsError, gather  # noqa: E402
 from jarvis_crown.sign_ins import SignIns  # noqa: E402
 
 
@@ -370,6 +370,17 @@ class RunEndsSignedOutTests(unittest.TestCase):
         self.ended.clear()
         self.assertEqual(self.main(lambda: 0), 0)
         self.assertNotIn("Signing out", self.out)
+
+
+class SettingsReprTests(unittest.TestCase):
+    def test_no_secret_in_repr(self):
+        s = Settings(wifi="Home", wifi_passphrase="wifi-pass", ha_url="http://ha:8123", ha_token="ha-tok",
+                     dashcast="10.0.0.3", dashcast_key="dash-key", ha_admin_token="admin-tok",
+                     music_assistant_token="ma-tok", root_password="root-pw", ha_sign_in=object())
+        shown = repr(s)
+        for secret in ("wifi-pass", "ha-tok", "dash-key", "admin-tok", "ma-tok", "root-pw"):
+            self.assertNotIn(secret, shown)
+        self.assertIn("http://ha:8123", shown)
 
 
 if __name__ == "__main__":
