@@ -2,7 +2,7 @@
 is how the main moves by hand; a second main is added in the integration's options.
 
 And for each Show, "Music plays on": where music asked for at that Show plays. Automatic is the room's
-speaker, else the Show itself (music.py). Home Assistant lets a device belong to one integration only,
+speaker, else the Show itself, which is also where music goes while a speaker is offline (music.py). Home Assistant lets a device belong to one integration only,
 so it sits on a small genbu device of the Show's name, connected via the Show's ESPHome device."""
 
 from __future__ import annotations
@@ -18,6 +18,9 @@ from .house import Show
 from .music import AUTO
 
 AUTOMATIC = {"de": "Automatisch", "en": "Automatic"}
+# Automatic names the Show as the fallback, and says when the room's speaker is offline.
+ELSE = {"de": "{room}, sonst {own}", "en": "{room}, else {own}"}
+OFFLINE = {"de": "{own}, solange {room} offline ist", "en": "{own} while {room} is offline"}
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add) -> None:
@@ -85,9 +88,14 @@ class MusicPlaysOn(SelectEntity):
         self._changed()
 
     def _automatic(self, show) -> str:
-        word = AUTOMATIC.get(self.hass.config.language[:2], AUTOMATIC["en"])
-        usual = self.hub.usual_player(show) if show else ""
-        name = next((p.name for p in self.hub.players if p.entity == usual), "")
+        lang = self.hass.config.language[:2]
+        word = AUTOMATIC.get(lang, AUTOMATIC["en"])
+        room, own = self.hub.automatic(show) if show else (None, None)
+        if room and own:
+            text = (ELSE if room.available else OFFLINE).get(lang, ELSE["en"] if room.available else OFFLINE["en"])
+            name = text.format(room=room.name, own=own.name)
+        else:
+            name = (room or own).name if room or own else ""
         return f"{word} ({name})" if name else word
 
     @callback

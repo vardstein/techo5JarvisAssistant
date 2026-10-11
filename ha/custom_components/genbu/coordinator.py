@@ -26,7 +26,7 @@ from homeassistant.util import dt as dt_util
 from .const import (CHANGED, CONF_MAIN, CONF_NOTIFY, DOMAIN, ISSUE_MISSING, ISSUE_NO_MAIN, ISSUE_PICKED,
                     MAIN_SELECT, MANUFACTURERS, PUSH, STORE_KEY, STORE_VERSION)
 from .house import ASK, PICK, House, Show, recommend
-from .music import Player, plays_on
+from .music import Player, own_player, plays_on, room_player
 
 LOGGER = logging.getLogger(__name__)
 LOOK_EVERY = timedelta(minutes=1)
@@ -88,6 +88,10 @@ def find_players(hass: HomeAssistant) -> list[Player]:
     return sorted(players, key=lambda p: p.entity)
 
 
+def _offline(state) -> bool:
+    return state is None or state.state == STATE_UNAVAILABLE
+
+
 class GenbuHouse:
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.hass, self.entry = hass, entry
@@ -97,6 +101,7 @@ class GenbuHouse:
         self.players: list[Player] = []
         self.music: dict[str, str] = {}  # where each Show's music plays, by device id
         self._watched: set[str] = set()
+        self._player_ids: set[str] = set()
         self._stops: list = []
         self._debounce = Debouncer(hass, LOGGER, cooldown=2, immediate=True, function=self.async_refresh)
 
@@ -127,7 +132,10 @@ class GenbuHouse:
 
     @callback
     def _watching(self, data) -> bool:
-        return data["entity_id"] in self._watched
+        if data["entity_id"] in self._watched:
+            return True
+        # A speaker going offline or coming back moves the music at once, not on the next look.
+        return data["entity_id"] in self._player_ids and _offline(data["old_state"]) != _offline(data["new_state"])
 
     @callback
     def _not_ours(self, data) -> bool:
@@ -185,6 +193,11 @@ class GenbuHouse:
         """Where the Show's music goes when nothing is picked for it."""
         return plays_on("", show.area, [show.name, show.node], self.players)
 
+    def automatic(self, show: Show) -> tuple[Player | None, Player | None]:
+        """What Automatic is made of for this Show: the room's speaker and the Show's own player."""
+        by = {p.entity: p for p in self.players}
+        return by.get(room_player(show.area, self.players)), by.get(own_player([show.name, show.node], self.players))
+
     async def _changed_by_hand(self) -> None:
         for node in self.house.mains:
             ir.async_delete_issue(self.hass, DOMAIN, ISSUE_PICKED + node)
@@ -198,6 +211,7 @@ class GenbuHouse:
         self.music = {s.device: plays_on(self.house.music_choice(s.device), s.area, [s.name, s.node], self.players)
                       for s in self.shows if s.device}
         self._watched = {e for s in self.shows for e in s.watch if e}
+        self._player_ids = {p.entity for p in self.players}
         changed = self._tidy()
         changed = self.house.see(self.shows, now) or changed
         for node, step in self.house.missing(now).items():

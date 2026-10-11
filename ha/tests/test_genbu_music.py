@@ -3,6 +3,7 @@ house version sensor, a Show moving rooms, and the templates the installer's scr
 use reading that map."""
 
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 from homeassistant.core import HomeAssistant
@@ -11,7 +12,8 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import entity_sources
 from homeassistant.helpers.template import Template
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 from tests.test_genbu_ha import DOMAIN, add_show, setup
 
@@ -69,6 +71,14 @@ async def look(hass: HomeAssistant) -> None:
     await hass.async_block_till_done()
 
 
+async def flip(hass: HomeAssistant, entity: str, state: str, name: str) -> None:
+    """A player goes offline or comes back, after the 2 s the looks are held back by."""
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=3))
+    await hass.async_block_till_done()
+    hass.states.async_set(entity, state, {"friendly_name": name})
+    await hass.async_block_till_done()
+
+
 async def test_a_show_plays_in_its_own_room(hass: HomeAssistant):
     living = player(hass, "livingroom", "Wohnzimmer", "Living Room")
     own = player(hass, "bedroomecho8", "bedroomEcho8", maker="TECHO5")
@@ -114,6 +124,31 @@ async def test_picked_by_hand_and_back_to_automatic(hass: HomeAssistant):
         "entity_id": "select.hall_music_plays_on", "option": "Automatic (Küche)"}, blocking=True)
     await hass.async_block_till_done()
     assert music(hass)[sat] == kitchen
+
+
+async def test_an_offline_speaker_falls_back_to_the_show_at_once(hass: HomeAssistant):
+    living = player(hass, "livingroom", "Wohnzimmer", "Living Room")
+    own = player(hass, "genbushow5", "Jarvis Show 5", maker="OpenJade")
+    _, sat = show(hass, "genbushow5", "Living Room")
+    await setup(hass, main="genbushow5")
+    select = "select.genbushow5_music_plays_on"
+    assert music(hass)[sat] == living
+    assert hass.states.get(select).state == "Automatic (Wohnzimmer, else Jarvis Show 5)"
+
+    # No look in between: the speaker going offline is enough.
+    await flip(hass, living, "unavailable", "Wohnzimmer")
+    assert music(hass)[sat] == own
+    assert hass.states.get(select).state == "Automatic (Jarvis Show 5 while Wohnzimmer is offline)"
+
+    await flip(hass, living, "idle", "Wohnzimmer")
+    assert music(hass)[sat] == living
+
+    # A pick that goes offline falls back the same way.
+    await hass.services.async_call("select", "select_option", {"entity_id": select, "option": "Wohnzimmer"},
+                                   blocking=True)
+    await flip(hass, living, "unavailable", "Wohnzimmer")
+    assert music(hass)[sat] == own
+    assert hass.states.get(select).state == "Wohnzimmer"
 
 
 async def test_the_select_follows_the_show(hass: HomeAssistant):
