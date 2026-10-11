@@ -21,6 +21,8 @@ AUTOMATIC = {"de": "Automatisch", "en": "Automatic"}
 # Automatic names the Show as the fallback, and says when the room's speaker is offline.
 ELSE = {"de": "{room}, sonst {own}", "en": "{room}, else {own}"}
 OFFLINE = {"de": "{own}, solange {room} offline ist", "en": "{own} while {room} is offline"}
+# A player that is offline says so in the list: picking it then plays on the next one in line.
+GONE = {"de": "{name} (offline)", "en": "{name} (offline)"}
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add) -> None:
@@ -102,10 +104,11 @@ class MusicPlaysOn(SelectEntity):
         show = next((s for s in self.hub.shows if s.device == self.device), None)
         self._attr_available = show is not None
         names = [p.name for p in self.hub.players]
+        gone = GONE.get(self.hass.config.language[:2], GONE["en"])
         labels = {self._automatic(show): AUTO}
         for p in self.hub.players:
             label = p.name if names.count(p.name) == 1 else f"{p.name} ({p.entity})"
-            labels.setdefault(label, p.entity)
+            labels.setdefault(label if p.available else gone.format(name=label), p.entity)
         self._labels = labels
         self._attr_options = list(labels)
         chosen = self.hub.house.music_choice(self.device)

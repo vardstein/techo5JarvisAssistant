@@ -152,6 +152,9 @@ async def test_an_offline_speaker_falls_back_to_the_show_at_once(hass: HomeAssis
     assert hass.states.get(fallback).state == "Jarvis Show 5"  # the room's speaker is not counted twice
     await flip(hass, living, "unavailable", "Wohnzimmer")
     assert music(hass)[sat] == own
+    assert hass.states.get(select).state == "Wohnzimmer (offline)"
+    assert "Wohnzimmer" not in hass.states.get(select).attributes["options"]
+    await flip(hass, living, "idle", "Wohnzimmer")
     assert hass.states.get(select).state == "Wohnzimmer"
 
 
