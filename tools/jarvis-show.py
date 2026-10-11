@@ -475,7 +475,7 @@ def amonet_upgrade(args, backups: Path) -> int:
         ui.out.caution("this rewrites the bootloader chain: preloader, lk, tee1, tee2, expdb, recovery and swdl.")
         ui.out.caution("keep the Show on mains power and the USB cable in until it says it is done.")
         try:
-            return input(f"Type {phrase} to continue: ").strip()
+            return ui.out.typed(phrase)
         except EOFError:  # no terminal (piped or closed stdin) is a no, not a crash
             print()
             return ""
@@ -525,7 +525,7 @@ def boot_logo_command(args, backups: Path) -> int:
         ui.out.caution("this rewrites the logo inside the bootloader (kaeru, in expdb); nothing else is written.")
         ui.out.caution("keep the Show on power until it says it is done. A broken kaeru does not start at all.")
         try:
-            return input(f"Type {phrase} to continue: ").strip()
+            return ui.out.typed(phrase)
         except EOFError:  # no terminal (piped or closed stdin) is a no, not a crash
             print()
             return ""
@@ -683,12 +683,12 @@ def _main() -> int:
             ui.out.caution(f"unlocking {p.model} runs the board-specific Amonet exploit.")
             ui.out.caution(f"detected LK build: {build or 'UNREADABLE'}")
             ui.out.caution("bootloader exploits inherently carry brick risk; keep mains power connected and do not interrupt writes.")
-            return input(f"Type {p.unlock_confirmation} to continue: ").strip()
+            return ui.out.typed(p.unlock_confirmation)
 
         def confirm_install(p):
             ui.out.caution("the next stage formats userdata for Lineage vendor staging, then converts system into the A/B slot store.")
             ui.out.caution("the verified recovery backup already exists; do not disconnect power/USB during these writes.")
-            return input(f"Type {p.install_confirmation} to continue: ").strip()
+            return ui.out.typed(p.install_confirmation)
 
         with secret_files(settings) as files:
             inputs = InstallInputs(
@@ -767,7 +767,7 @@ def _main() -> int:
     ui.out.caution(f"the next stage intentionally runs Amonet for {profile.board}.")
     ui.out.caution(f"detected LK build: {identity.lk_build_desc or 'UNREADABLE'}")
     ui.out.caution("bootloader exploits inherently carry brick risk; keep mains power connected and do not interrupt writes.")
-    confirmation = input(f"Type {profile.unlock_confirmation} to continue: ").strip()
+    confirmation = ui.out.typed(profile.unlock_confirmation)
     try:
         result = unlock_show(
             identity,

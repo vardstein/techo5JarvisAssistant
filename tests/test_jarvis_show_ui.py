@@ -1,7 +1,9 @@
 import io
+import os
 import pathlib
 import sys
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -67,6 +69,62 @@ class OutTests(unittest.TestCase):
         out, _ = plain()
         out.caution("it erases the Show")
         self.assertEqual(out.warnings, [])
+
+
+class QuestionBoxTests(unittest.TestCase):
+    def asker(self, answers, *, fancy=True):
+        from jarvis_crown.settings import Asker
+        said, prompts = [], []
+
+        def ask(prompt):
+            prompts.append(prompt)
+            return answers.pop(0)
+        out = ui.Out(io.StringIO(), color=False, fancy=fancy, width=60)
+        return Asker(True, ask=ask, say=said.append, out=out), said, prompts
+
+    def test_a_question_is_boxed_with_a_blank_line_before_it(self):
+        asker, said, prompts = self.asker(["kitchen"])
+        self.assertEqual(asker.text("Show name", None, str, help="what Home Assistant calls it"), "kitchen")
+        self.assertEqual(said[0], "")
+        self.assertTrue(said[1].startswith("  ╭─ Show name ─"))
+        self.assertEqual(len(said[1]), 60)
+        self.assertEqual(said[2:], ["  │  Enter to skip", "  │  what Home Assistant calls it"])
+        self.assertEqual(prompts, ["  ╰─› "])
+
+    def test_choices_sit_in_the_box_and_the_plain_box_is_ascii(self):
+        asker, said, prompts = self.asker(["2"], fancy=False)
+        self.assertEqual(asker.pick("wake word", "Okay Nabu", ["Okay Nabu", "Hey Jarvis"]), "Hey Jarvis")
+        self.assertTrue(said[1].startswith("  +- wake word -"))
+        self.assertEqual(said[2:], ["  |   1  Okay Nabu  (now)", "  |   2  Hey Jarvis"])
+        self.assertEqual(prompts, ["  +-> number or name (Enter leaves it as it is) "])
+
+    def test_a_long_question_wraps_down_the_side(self):
+        asker, said, _ = self.asker(["x"])
+        asker.text("word " * 20, None, str)
+        self.assertTrue(all(len(line) <= 60 for line in said))
+        self.assertTrue(said[2].startswith("  │  word"))
+
+    def test_the_typed_phrase_gets_its_own_box(self):
+        stream = io.StringIO()
+        out = ui.Out(stream, stream, color=False, fancy=True, width=60)
+        self.assertEqual(out.typed("ERASE", ask=lambda prompt: " ERASE \n"), "ERASE")
+        self.assertTrue(stream.getvalue().splitlines()[1].startswith("  ╭─ Type ERASE to continue ─"))
+
+
+class PaletteTests(unittest.TestCase):
+    def test_openjade_colours_at_each_depth(self):
+        out = ui.Out(io.StringIO(), color=True, fancy=True, width=60)
+        for env, code in (({"COLORTERM": "truecolor"}, "38;2;208;132;84"), ({"TERM": "xterm-256color"}, "38;5;173"),
+                          ({"TERM": "xterm"}, "33")):
+            with self.subTest(env=env), mock.patch.dict(os.environ, env, clear=True):
+                self.assertIn(f"\033[{code}m", out.lines("warn", "look", paint="33")[0])
+
+    def test_a_question_prompt_tells_readline_the_codes_take_no_room(self):
+        out = ui.Out(io.StringIO(), color=True, fancy=True, width=60)
+        with mock.patch.dict(sys.modules, {"readline": object()}):
+            prompt = out.box_prompt()
+        self.assertIn("\001", prompt)
+        self.assertEqual(ui.visible(prompt), "  ╰─› ")
 
 
 if __name__ == "__main__":

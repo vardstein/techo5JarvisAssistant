@@ -186,11 +186,12 @@ def _readline():
 class Asker:
     """The terminal, or nothing when nobody is at it (then every answer has to come from a switch).
 
-    A question reads
+    A question has a blank line before it and sits in OpenJade's box (ui.box_top):
 
-          ? the question                     Enter: what Enter does
-            a dim line or two of help
-            › the answer
+          ╭─ the question ─────────────────────────
+          │  what Enter does
+          │  a dim line or two of help
+          ╰─› the answer
 
     and goes through say, so a test sees the same lines a person does."""
 
@@ -223,14 +224,14 @@ class Asker:
             self.say(line)
 
     def _question(self, label: str, enter: str, help: str) -> None:
-        self._say(self.out.lines("ask", label, paint="1"))
+        self._say(self.out.box_top(label))
         if enter:
-            self._say(self.out.note_lines(enter))
+            self._say(self.out.box_side(enter))
         if help:
-            self._say(self.out.note_lines(help))
+            self._say(self.out.box_side(help))
 
     def _prompt(self, text: str = "") -> str:
-        return "    " + self.out.mark("prompt", prompt=True) + " " + (self.out.dim(text, prompt=True) + " " if text else "")
+        return self.out.box_prompt(text)
 
     def _filled(self, value: str) -> str:
         """input() with value already on the line, to keep, edit or clear."""
@@ -282,10 +283,10 @@ class Asker:
             half = (len(cells) + 1) // 2
             for left, right in zip(cells[:half], cells[half:] + [("", False)]):
                 shown = self._cell(left, now)
-                self.say(("      " + shown.ljust(column + self._hidden(shown)) + self._cell(right, now)).rstrip())
+                self.say(self.out.box_row(shown.ljust(column + self._hidden(shown)) + self._cell(right, now)).rstrip())
             return
         for cell in cells:
-            self.say("      " + self._cell(cell, now))
+            self.say(self.out.box_row(self._cell(cell, now)))
 
     @staticmethod
     def _cell(cell: tuple[str, bool], now: str) -> str:

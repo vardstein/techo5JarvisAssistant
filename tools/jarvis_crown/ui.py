@@ -9,6 +9,16 @@
 the symbols only where the terminal shows them; NO_COLOR, TERM=dumb and a pipe get plain text with
 the same layout, so a saved log still reads.
 
+The colours are OpenJade's, from the website: slate grey for the frame, jade green for done, the
+warm orange for anything to look at. A terminal with full colour gets them exactly, one with 256
+colours the nearest, and an older one the plain ANSI colours.
+
+The question being asked sits in a box open on the right, its answer typed on the bottom corner:
+
+    ╭─ Wi-Fi network ──────────────────────────────
+    │  Enter keeps what is there
+    ╰─› kitchen
+
 The steps underneath report with a plain progress(text). A text starting "# " is a heading and one
 starting "WARN: " a warning; the rest are sorted into done and already-so by how they read.
 """
@@ -28,6 +38,22 @@ _CODES = re.compile(r"\033\[[0-9;]*m|[\001\002]")
 # What a line says when nothing had to change.
 _SAME = re.compile(r"\balready\b|\bleft (alone|as it is|at)\b|\bwas kept\b|\bwere kept\b|\bwas there\b|"
                    r"\bkept\b|\bunchanged\b|\bleft in\b|\bleft out\b|^no |, so no ")
+
+
+# role: (full colour, 256-colour, plain ANSI). Mid tones, so they read on a dark and a light terminal.
+_PALETTE = {
+    "frame": ("139;150;164", "38;5;247", "2"),    # slate, --accent on the site
+    "done": ("111;165;138", "38;5;72", "32"),     # jade
+    "warn": ("208;132;84", "38;5;173", "33"),     # the site's orange (--warn)
+    "fail": ("200;97;90", "38;5;167", "31"),
+}
+
+
+def _depth() -> int:
+    """How many colours the terminal says it has: 3 (full), 2 (256) or 1 (the plain eight)."""
+    if os.environ.get("COLORTERM", "").lower() in ("truecolor", "24bit"):
+        return 3
+    return 2 if "256" in os.environ.get("TERM", "") else 1
 
 
 def visible(text: str) -> str:
@@ -82,6 +108,12 @@ class Out:
             start, end = f"\001{start}\002", f"\001{end}\002"
         return start + text + end
 
+    def tone(self, role: str, text: str, *, bold: bool = False, prompt: bool = False) -> str:
+        """text in one of OpenJade's colours (_PALETTE)."""
+        full, c256, basic = _PALETTE[role]
+        code = {3: "38;2;" + full, 2: c256}.get(_depth(), basic)
+        return self.paint(("1;" if bold else "") + code, text, prompt=prompt)
+
     def bold(self, text: str, *, prompt: bool = False) -> str:
         return self.paint("1", text, prompt=prompt)
 
@@ -89,10 +121,18 @@ class Out:
         return self.paint("2", text, prompt=prompt)
 
     def mark(self, kind: str, *, prompt: bool = False) -> str:
-        fancy, plain, code = {"done": ("✓", "+", "32"), "same": ("·", "-", "2"), "warn": ("!", "!", "33"),
-                              "fail": ("✗", "x", "31"), "ask": ("?", "?", "36"), "prompt": ("›", ">", "36"),
-                              "step": ("▸", ">", "36"), "caution": ("▲", "!", "33")}[kind]
-        return self.paint("1;" + code if kind != "same" else code, fancy if self.fancy else plain, prompt=prompt)
+        fancy, plain, role = {"done": ("✓", "+", "done"), "same": ("·", "-", None), "warn": ("!", "!", "warn"),
+                              "fail": ("✗", "x", "fail"), "ask": ("?", "?", "frame"), "prompt": ("›", ">", "frame"),
+                              "step": ("▸", ">", "frame"), "caution": ("▲", "!", "warn")}[kind]
+        sign = fancy if self.fancy else plain
+        if role is None:
+            return self.dim(sign, prompt=prompt)
+        return self.tone(role, sign, bold=True, prompt=prompt)
+
+    def _painted(self, paint: str, text: str) -> str:
+        """The old ANSI codes the callers pass, in OpenJade's colours where it has one for them."""
+        role = {"33": "warn", "31": "fail", "32": "done"}.get(paint)
+        return self.tone(role, text) if role else self.paint(paint, text)
 
     def _wrap(self, text: str, first: str, rest: str, width: int) -> list[str]:
         return textwrap.wrap(text, width=width, initial_indent=first, subsequent_indent=rest,
@@ -105,13 +145,52 @@ class Out:
     def lines(self, kind: str, text: str, *, paint: str | None = None) -> list[str]:
         """text after its mark, wrapped under itself. The mark is one column wide whatever it looks like."""
         wrapped = self._wrap(text, "", "", self.width - 4)
-        return [("  " + self.mark(kind) + " " if i == 0 else "    ") + (self.paint(paint, w) if paint else w)
+        return [("  " + self.mark(kind) + " " if i == 0 else "    ") + (self._painted(paint, w) if paint else w)
                 for i, w in enumerate(wrapped)]
 
     def heading_lines(self, text: str) -> list[str]:
         rule = "─" if self.fancy else "-"
         head = f"{rule * 2} {text} "
-        return ["", self.paint("1;36", head) + self.dim(rule * max(3, self.width - len(head)))]
+        return ["", self.tone("frame", rule * 2 + " ") + self.bold(f"{text} ") +
+                self.tone("frame", rule * max(3, self.width - len(head)))]
+
+    # ------------------------------------------------------------------------------ the question box
+
+    def _corners(self) -> tuple[str, str, str, str]:
+        """top, side, bottom and the rule along the top, in the terminal's characters."""
+        return ("╭─", "│", "╰─", "─") if self.fancy else ("+-", "|", "+-", "-")
+
+    def box_top(self, title: str, *, role: str = "frame") -> list[str]:
+        """A blank line, then the box's top with title in it; a long title wraps down its side."""
+        top, side, _, rule = self._corners()
+        words = self._wrap(title, "", "", self.width - 7)
+        tail = rule * max(3, self.width - 6 - len(words[-1])) if len(words) == 1 else ""
+        first = "  " + self.tone(role, top + " ") + self.bold(words[0]) + (" " + self.tone(role, tail) if tail else "")
+        return ["", first] + ["  " + self.tone(role, side) + "  " + self.bold(w) for w in words[1:]]
+
+    def box_side(self, text: str, *, role: str = "frame", dim: bool = True) -> list[str]:
+        """text down the box's side, wrapped under itself."""
+        _, side, _, _ = self._corners()
+        return ["  " + self.tone(role, side) + "  " + (self.dim(w) if dim else w)
+                for w in self._wrap(text, "", "", self.width - 5)]
+
+    def box_row(self, text: str, *, role: str = "frame") -> str:
+        """A line in the box kept as it is, like a numbered choice. Six columns in, as before the box."""
+        _, side, _, _ = self._corners()
+        return "  " + self.tone(role, side) + "   " + text
+
+    def box_prompt(self, text: str = "", *, role: str = "frame") -> str:
+        """The box's bottom corner, where the answer goes. Its codes are marked for input()."""
+        _, _, bottom, _ = self._corners()
+        sign = "›" if self.fancy else ">"
+        return ("  " + self.tone(role, bottom + sign, bold=True, prompt=True) + " " +
+                (self.dim(text, prompt=True) + " " if text else ""))
+
+    def typed(self, phrase: str, *, ask=None) -> str:
+        """The last word before something that can't be undone: the phrase typed in, in an orange box."""
+        for line in self.box_top(f"Type {phrase} to continue", role="warn"):
+            print(line, file=self.stream, flush=True)
+        return (ask or input)(self.box_prompt(role="warn")).strip()
 
     def note_lines(self, text: str, *, indent: int = 4) -> list[str]:
         pad = " " * indent
@@ -177,7 +256,7 @@ class Out:
         if self.warnings:
             n = len(self.warnings)
             print("  " + self.mark("warn") + " " + self.bold(ok_text) +
-                  self.paint("33", f", with {n} thing{'s' if n != 1 else ''} to look at (marked ! above)"),
+                  self.tone("warn", f", with {n} thing{'s' if n != 1 else ''} to look at (marked ! above)"),
                   file=self.stream, flush=True)
         else:
             print("  " + self.mark("done") + " " + self.bold(ok_text), file=self.stream, flush=True)

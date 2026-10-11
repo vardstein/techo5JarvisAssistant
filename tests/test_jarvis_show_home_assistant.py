@@ -358,7 +358,7 @@ class DeployTests(unittest.TestCase):
             picked = show_cli._chooser(args)("assistant", "preferred", ["preferred", "Jarvis", "Basic"],
                                                 {"Jarvis": "Jarvis (default)"})
         self.assertEqual(picked, "Jarvis")
-        self.assertIn("      2  Jarvis (default)", said)
+        self.assertIn("  │   2  Jarvis (default)", said)
 
     def test_known_show_is_only_brought_up_to_date(self):
         fake = FakeHA(entry=True, allowed=True)
@@ -796,7 +796,7 @@ class GatherTests(unittest.TestCase):
         asker, said = self.asker(["1"], [])
         self.assertEqual(asker.pick("q", "preferred", ["preferred", "Jarvis"], names={"preferred": "the usual"}),
                          "preferred")
-        self.assertIn("      1  the usual  ← now", said)
+        self.assertIn("  │   1  the usual  ← now", said)
 
     def test_everything_asked(self):
         asker, _ = self.asker(["Home", "http://ha:8123/", "jade", "10.0.0.5", "10.0.0.6", "jade"],
