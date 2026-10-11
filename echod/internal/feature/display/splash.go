@@ -7,13 +7,15 @@ import (
 	"image"
 	"image/draw"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/HuskerMinion/techo5/echod/internal/feature/voice"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/metrics"
+	"github.com/HuskerMinion/techo5/echod/internal/layout"
 )
 
-// The Jarvis Show mark, drawn while the device comes up: the Genbu mark (splash_mark.go) over the
+// The Genbu Show mark, drawn while the device comes up: the Genbu mark (splash_mark.go) over the
 // wordmark, both in the active screen palette rather than an upstream TECHO5 bitmap, so a fresh White
 // Jade device has one visual identity from the first daemon-rendered frame onward. Under the mark a bar fills through the
 // steps of coming up, the same way JODS shows its setup, with one line saying which step it is on.
@@ -83,18 +85,22 @@ func newSplash(w, h int) *splash {
 	}
 }
 
+// wordmark is the product name as the splash draws it: "Genbu Show" is GENBU over a smaller SHOW.
+func wordmark() (mark, sub string) {
+	mark, sub, _ = strings.Cut(strings.ToUpper(layout.System), " ")
+	return mark, sub
+}
+
 // drawSplash paints the splash elapsed into coming up, at the given step.
 func (r *renderer) drawSplash(s *splash, elapsed time.Duration, step bootStep) {
 	draw.Draw(r.dst, r.dst.Rect, image.NewUniform(walnut), image.Point{}, draw.Src)
+	mark, sub := wordmark()
 	if s == nil {
-		mark := "JARVIS"
 		r.text(r.title, mark, (r.w-r.width(r.title, mark))/2, r.h/2, cream)
 		return
 	}
 	r.drawMark(s)
-	mark := "JARVIS"
 	r.text(r.title, mark, (r.w-r.width(r.title, mark))/2, s.titleY, cream)
-	sub := "SHOW"
 	r.text(r.small, sub, (r.w-r.width(r.small, sub))/2, s.subY, amber)
 
 	// The fill eases toward the steps done, so the bar never jumps.

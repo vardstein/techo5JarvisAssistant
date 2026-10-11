@@ -52,3 +52,9 @@ func TestSplashHintStaysOnThePanel(t *testing.T) {
 		t.Error("the hint line is below the panel")
 	}
 }
+
+func TestSplashWordmarkIsTheProductName(t *testing.T) {
+	if mark, sub := wordmark(); mark != "GENBU" || sub != "SHOW" {
+		t.Errorf("wordmark = %q over %q, want GENBU over SHOW", mark, sub)
+	}
+}

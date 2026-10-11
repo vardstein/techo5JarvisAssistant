@@ -1,2 +1,2 @@
-Jarvis Show — first-generation Echo Show on Linux. Root is read-only; state is on /data,
+Genbu Show — first-generation Echo Show on Linux. Root is read-only; state is on /data,
 the slot store on /store (slotctl status). Daemon log: /data/techo5-linux/techo5.log

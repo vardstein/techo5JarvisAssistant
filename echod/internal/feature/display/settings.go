@@ -36,7 +36,7 @@ func (d *Display) gather(s scene, restartArm time.Time) settings {
 	c := config.Get()
 	st.name = c.Device.Name
 	if st.name == "" {
-		st.name = "Jarvis Show"
+		st.name = layout.System
 	}
 	st.wakeWord = strings.ReplaceAll(c.Wake.Slot(0).ID, "_", " ")
 	if m, ok := wake.Find(wake.Lib().Ours(), c.Wake.Slot(0).ID); ok && m.Phrase != "" {

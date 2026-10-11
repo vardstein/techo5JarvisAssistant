@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
+	"github.com/HuskerMinion/techo5/echod/internal/layout"
 )
 
 // welcome is the first-run card: what to say, where the settings are, and that a tap begins.
@@ -15,7 +16,7 @@ import (
 func (r *renderer) welcome(s scene) {
 	name := config.Get().Device.Name
 	if name == "" {
-		name = "Jarvis Show"
+		name = layout.System
 	}
 	r.bevel(image.Rect(r.margin, 40, r.w-r.margin, r.h-40), shift(walnut, 10), true)
 	r.text(r.title, "Hello", r.margin+40, 118, amber)

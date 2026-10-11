@@ -54,12 +54,16 @@ class JodsThemeContractTests(unittest.TestCase):
         frame = self.display[self.display.index("func (d *Display) frame() time.Duration") :]
         self.assertLess(frame.index("applyTheme(t)"), frame.index("if !config.Get().Screen.Welcomed"))
 
-    def test_runtime_branding_is_jarvis_show_not_techo5(self):
-        self.assertIn('mark := "JARVIS"', self.splash)
-        self.assertIn('sub := "SHOW"', self.splash)
-        self.assertNotIn('"TECHO5"', self.splash)
-        self.assertIn('name = "Jarvis Show"', self.welcome)
-        self.assertIn('st.name = "Jarvis Show"', self.settings)
+    def test_runtime_branding_is_the_product_name_not_techo5(self):
+        layout = (ROOT / "echod/internal/layout/device_cronos.go").read_text(encoding="utf-8")
+        self.assertIn('System       = "Genbu Show"', layout)
+        self.assertIn("strings.ToUpper(layout.System)", self.splash)
+        for source in (self.splash, self.welcome, self.settings):
+            self.assertNotIn('"TECHO5"', source)
+            self.assertNotIn('"JARVIS"', source)
+            self.assertNotIn('"Jarvis Show"', source)
+        self.assertIn('name = layout.System', self.welcome)
+        self.assertIn('st.name = layout.System', self.settings)
 
     def test_live_display_and_klar_checks_are_post_install_e2e(self):
         self.assertIn(
