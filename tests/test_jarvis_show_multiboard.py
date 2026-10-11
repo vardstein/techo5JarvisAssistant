@@ -123,7 +123,7 @@ class MultiBoardTests(unittest.TestCase):
         self.assertEqual((crown.fastboot_product, crown.display_width, crown.display_height), ("CROWN", 1280, 800))
         self.assertEqual((checkers.fastboot_product, checkers.display_width, checkers.display_height), ("CHECKERS", 960, 480))
         self.assertEqual(profile_for_product("CHECKERS"), checkers)
-        self.assertNotEqual(crown.install_confirmation, checkers.install_confirmation)
+        self.assertEqual((crown.install_confirmation, checkers.install_confirmation), ("ERASE", "ERASE"))
 
     def test_generic_identity_accepts_both_and_cross_target_fails(self):
         self.assertEqual(identify_show(run=self.runner("CROWN")).product, "CROWN")
@@ -276,7 +276,7 @@ class MultiBoardTests(unittest.TestCase):
                     repo_root=ROOT, adb_serial="CHK-ADB", name="Kitchen",
                     backup_root=backup, work_dir=td / "work", boot_image=boot,
                     rootfs=rootfs, rootfs_sha256=digest(rootfs), board="checkers",
-                    confirmation="ERASE CHECKERS",
+                    confirmation="ERASE",
                 )
             with self.assertRaisesRegex(InstallError, "final confirmation"):
                 make_install_plan(
@@ -289,7 +289,7 @@ class MultiBoardTests(unittest.TestCase):
                 repo_root=ROOT, adb_serial="CHK-ADB", name="Kitchen",
                 backup_root=backup, work_dir=td / "work", boot_image=boot,
                 boot_sha256=digest(boot), rootfs=rootfs, rootfs_sha256=digest(rootfs),
-                board="checkers", confirmation="ERASE CHECKERS",
+                board="checkers", confirmation="ERASE",
             )
             argv = list(plan.argv)
             self.assertEqual(plan.board, "checkers")

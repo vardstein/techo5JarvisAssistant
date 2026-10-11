@@ -153,7 +153,7 @@ class UpdateChannelTests(unittest.TestCase):
         return make_install_plan(
             repo_root=ROOT, adb_serial=f"{board}-ADB", name="Kitchen", backup_root=backup,
             work_dir=td / "work", boot_image=boot, boot_sha256=digest(boot), rootfs=rootfs,
-            rootfs_sha256=digest(rootfs), board=board, confirmation=f"ERASE {board.upper()}", **kw)
+            rootfs_sha256=digest(rootfs), board=board, confirmation="ERASE", **kw)
 
     def test_the_channel_reaches_the_slot_store_installer_for_each_board(self):
         for board in BOARDS:

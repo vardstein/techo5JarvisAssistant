@@ -32,7 +32,7 @@ LEGACY_CROWN_ROOTFS_MARKER = "etc/jarvis-crown-release.json"
 PROFILE_ID = "jarvis-show-v1"
 SUPPORTED_BOARDS = ("crown", "checkers")
 UPDATE_CHANNELS = ("stable", "staging", "dev")  # echod/internal/update/channel.go
-FINAL_CONFIRM_PHRASE = "ERASE CROWN"  # compatibility alias
+FINAL_CONFIRM_PHRASE = "ERASE"  # compatibility alias
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 

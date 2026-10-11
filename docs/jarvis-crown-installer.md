@@ -224,7 +224,7 @@ The wrapper will not construct an install plan until all of these are true:
 - the rootfs matches the exact SHA-256 supplied by the future signed Jarvis Crown release metadata;
 - the rootfs contains a regular `etc/jarvis-crown-release.json` marker naming
   `product=jarvis-crown-v1`, `board=crown`, and a non-empty version;
-- the operator types exactly `ERASE CROWN`.
+- the operator types exactly `ERASE`.
 
 The archived upstream v0.9.21 rootfs intentionally fails the Jarvis product-marker gate.  J22 therefore
 cannot accidentally install an old generic TECHO5 userspace while presenting it as Jarvis Crown.  The

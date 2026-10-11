@@ -2,10 +2,10 @@
 
 This runbook installs Jarvis Show on any Echo Show this repository supports:
 
-| Board | Device | Erase phrase |
-| --- | --- | --- |
-| `crown` | Echo Show 8, first generation | `ERASE CROWN` |
-| `checkers` | Echo Show 5, first generation | `ERASE CHECKERS` |
+| Board | Device |
+| --- | --- |
+| `crown` | Echo Show 8, first generation |
+| `checkers` | Echo Show 5, first generation |
 
 It uses the supported installer only. Don't use manual `fastboot` writes, `dd`, or raw partition
 commands. Details of each step are in [jarvis-crown-installer.md](jarvis-crown-installer.md).
@@ -96,8 +96,7 @@ python3 tools/jarvis-show.py install --name kitchenShow --channel dev \
 
 The installer repeats its host and identity checks, then fetches the files above. Before writing
 anything it makes a verified off-device recovery backup in `../backups/<serial>/`. A locked Show also
-needs `UNLOCK <BOARD>` typed in. The last step before erasing needs the board's erase phrase from the
-table at the top.
+needs `UNLOCK <BOARD>` typed in. The last step before erasing needs `ERASE` typed in.
 
 Don't pull power or USB while it runs. If it stops, don't just run it again: run `identify` first and
 use the recovery and rollback path.
