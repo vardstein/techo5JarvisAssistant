@@ -4,9 +4,15 @@ Each Show has a key pair of its own on this computer, ~/.ssh/genbu_<name>, made 
 let in by no other. The tools that log in to a Show (boot-logo, the reboot into fastboot) look for it
 by the Show's name, and --ssh-identity names another file. With neither, ssh picks a key the way it
 always does, which is how a Show installed before its own key existed is still reached.
+
+The Show's host key is pinned the same way, in ~/.ssh/genbu_<name>.known_hosts: the install reads it
+over the USB console, which nobody on the network can stand in for, so ssh never has to take the
+first answer on trust. A Show installed before that is trusted on first contact instead and checked
+from then on.
 """
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from collections.abc import Callable
@@ -33,12 +39,57 @@ def identity_for(name: str | None, given: Path | None = None, key_dir: Path | No
     return None
 
 
-def ssh_options(identity: Path | None) -> list[str]:
-    """ssh's switches for that key. IdentitiesOnly, so the agent or ~/.ssh/config can't offer a
-    different key first and use up the Show's login attempts."""
-    if identity is None:
+def ssh_options(identity: Path | None, name: str | None = None, key_dir: Path | None = None) -> list[str]:
+    """ssh's switches for that key, and for the Show's pinned host key when its name is known.
+    IdentitiesOnly, so the agent or ~/.ssh/config can't offer a different key first and use up the
+    Show's login attempts."""
+    options = [] if identity is None else ["-i", str(identity), "-o", "IdentitiesOnly=yes"]
+    return options + host_options(name, key_dir)
+
+
+def known_hosts_path(name: str, key_dir: Path | None = None) -> Path:
+    """Where the Show's pinned host key lives, next to its key pair."""
+    path = key_path(name, key_dir)
+    return path.with_name(path.name + ".known_hosts")
+
+
+def host_alias(name: str) -> str:
+    """The name the pin is filed under. Not the address: that changes with DHCP, the Show doesn't.
+    Lower case, as ssh files it."""
+    return "genbu-" + key_path(name, Path(".")).name[len("genbu_"):].lower()
+
+
+def host_options(name: str | None, key_dir: Path | None = None) -> list[str]:
+    """ssh's switches that check the Show is the one installed: its own known_hosts file under its own
+    alias, so a key pinned for one Show never vouches for another and nothing in ~/.ssh/known_hosts
+    gets in the way. Pinned, a different key stops ssh; not pinned yet (installed before pinning),
+    the first key seen is kept and checked from then on."""
+    if not name:
         return []
-    return ["-i", str(identity), "-o", "IdentitiesOnly=yes"]
+    pins = known_hosts_path(name, key_dir)
+    strict = "yes" if pins.is_file() else "accept-new"
+    return ["-o", f"HostKeyAlias={host_alias(name)}", "-o", f"UserKnownHostsFile={pins}",
+            "-o", f"StrictHostKeyChecking={strict}"]
+
+
+_HOST_KEY = re.compile(r"(ssh-ed25519) (AAAAC3NzaC1lZDI1NTE5[A-Za-z0-9+/]+={0,2})")
+
+
+def pin_host_key(name: str, text: str, key_dir: Path | None = None) -> Path | None:
+    """Pins the ed25519 host key found in text (dropbearkey -y's output) for the Show called name,
+    replacing an older pin: the install is the one moment the key comes over a trusted line. None when
+    text holds no such key, and nothing is changed then."""
+    found = _HOST_KEY.search(text or "")
+    if not found:
+        return None
+    pins = known_hosts_path(name, key_dir)
+    pins.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fresh = pins.with_name(pins.name + ".new")
+    fd = os.open(fresh, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(f"{host_alias(name)} {found.group(1)} {found.group(2)}\n")
+    os.replace(fresh, pins)
+    return pins
 
 
 class ShowKeyError(RuntimeError):

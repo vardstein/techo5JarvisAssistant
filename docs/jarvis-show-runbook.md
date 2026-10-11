@@ -97,6 +97,13 @@ of the same Show. No other Show lets that key in. Log in with
 `ssh -i ~/.ssh/genbu_kitchenShow root@<address>`. `--ssh-key <file.pub>` takes a public key of your
 own instead (refused when it is another Show's), and `--no-ssh` leaves SSH off.
 
+At the end of the install the Show's host key is read over USB and pinned in
+`~/.ssh/genbu_kitchenShow.known_hosts`. `boot-logo` and the reboot into fastboot check it, so a
+different machine answering on the Show's address is refused, not trusted. A reinstall pins the new
+key. A Show installed before pinning gets its key kept on the first login and checked after that. To
+check the pin by hand: `ssh -i ~/.ssh/genbu_kitchenShow -o HostKeyAlias=genbu-kitchenshow -o
+UserKnownHostsFile=~/.ssh/genbu_kitchenShow.known_hosts root@<address>`.
+
 It also asks for a root password for the USB console. Pick it yourself, in a password manager or
 however you like: the installer never makes one up. It asks you to confirm you have saved it, keeps
 no copy, and the Show keeps only its hash. Lost, `techo5-passwd` over SSH sets a new one.

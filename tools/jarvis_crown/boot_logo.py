@@ -57,13 +57,14 @@ class Client(Protocol):
 class SshClient:
     """root on the Show over SSH, with the Show's own key (show_ssh.py); never asks for a password."""
 
-    def __init__(self, host: str, identity: Path | None = None):
+    def __init__(self, host: str, identity: Path | None = None, name: str | None = None):
         self.host = host
         self.identity = identity
+        self.name = name  # the Show's name, whose pinned host key ssh checks
 
     def shell(self, command: str, data: bytes | None = None) -> str:
         try:
-            r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", *ssh_options(self.identity),
+            r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", *ssh_options(self.identity, self.name),
                                 f"root@{self.host}", command],
                                input=data, capture_output=True, timeout=120, check=False)
         except (OSError, subprocess.TimeoutExpired) as exc:

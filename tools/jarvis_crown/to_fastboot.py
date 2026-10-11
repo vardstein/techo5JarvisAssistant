@@ -43,10 +43,10 @@ def _adb_devices(run: Callable) -> list[tuple[str, str]]:
 
 
 def _ssh(host: str, command: str, *, run: Callable, timeout: float = 30,
-         identity: Path | None = None) -> subprocess.CompletedProcess:
+         identity: Path | None = None, name: str | None = None) -> subprocess.CompletedProcess:
     # BatchMode: the Show's own key or nothing, never a password question.
     return run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=3",
-                "-o", "ServerAliveCountMax=2", *ssh_options(identity), f"root@{host}", command],
+                "-o", "ServerAliveCountMax=2", *ssh_options(identity, name), f"root@{host}", command],
                capture_output=True, text=True, timeout=timeout, check=False)
 
 
@@ -122,7 +122,8 @@ def bring_to_fastboot(*, name: str | None, backups: Path, host: str | None = Non
 
     host, expected = _address(name, backups, host, find_host)
     try:
-        probe = _ssh(host, f"test -x {REBOOTTO} && echo rebootto; {SERIAL_PROBE}", run=run, identity=identity)
+        probe = _ssh(host, f"test -x {REBOOTTO} && echo rebootto; {SERIAL_PROBE}", run=run, identity=identity,
+                     name=name)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ToFastbootError(f"no Show on fastboot or adb, and SSH to {host} failed ({exc}); "
                               "put it into fastboot") from None
@@ -139,7 +140,8 @@ def bring_to_fastboot(*, name: str | None, backups: Path, host: str | None = Non
     say(f"the Show at {host} (serial ending {(serial or '????')[-4:]}) runs Jarvis; rebooting it into fastboot")
     try:
         # The connection drops with the reboot, so how ssh ends says nothing; fastboot showing up does.
-        _ssh(host, f"{shlex.quote(REBOOTTO)} bootloader", run=run, timeout=COMMAND_TIMEOUT_SECONDS, identity=identity)
+        _ssh(host, f"{shlex.quote(REBOOTTO)} bootloader", run=run, timeout=COMMAND_TIMEOUT_SECONDS,
+             identity=identity, name=name)
     except (OSError, subprocess.TimeoutExpired):
         pass
     _wait(say, run=run, sleep=sleep, clock=clock, timeout=timeout, after="it was told to reboot into fastboot")

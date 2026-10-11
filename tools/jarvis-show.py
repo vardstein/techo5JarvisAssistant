@@ -578,7 +578,7 @@ def boot_logo_command(args, backups: Path) -> int:
             return ""
 
     try:
-        done = put_logo(SshClient(host, identity_for(show.name, args.ssh_identity)), show.board, saved_expdb=saved, amazon=args.amazon_logo,
+        done = put_logo(SshClient(host, identity_for(show.name, args.ssh_identity), show.name), show.board, saved_expdb=saved, amazon=args.amazon_logo,
                         confirm=confirm, progress=ui.out.progress)
     except BootLogoError as exc:
         ui.out.fail(f"boot-logo stopped: {exc}")

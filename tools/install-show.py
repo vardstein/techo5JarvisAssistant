@@ -56,6 +56,7 @@ from techo5lib import (CONSOLE_TECHO5, Adb, Console, Fastboot, Release, ask_name
                        check_serial_access, confirm, console_hint, default_dir, fail, fetch_json, md5, need,
                        new_api_key, note, pick_unit, run_main, sha512_crypt, step, valid_api_key, wait_for,
                        wifi_conf, write_private)
+from jarvis_crown.show_ssh import pin_host_key  # noqa: E402
 from jarvis_crown.timing import (FASTBOOT_REENUM_TIMEOUT_SECONDS, FIRST_BOOT_TIMEOUT_SECONDS,
                                   RESCUE_CONSOLE_TIMEOUT_SECONDS, TWRP_DATA_REBOOT_TIMEOUT_SECONDS)  # noqa: E402
 
@@ -924,6 +925,18 @@ def main():
     if re.fullmatch(r'\d{1,3}(\.\d{1,3}){3}', addr):
         with open(os.path.join(backup, 'address'), 'w') as f:
             f.write(addr + '\n')
+    # The host key, read over USB where nobody on the network can answer in the Show's place, and
+    # pinned for it (show_ssh.py), so the tools never have to trust its first answer over SSH. dropbear
+    # makes its keys on the first connection; this makes the ed25519 one now if it isn't there yet.
+    k = '/data/techo5-linux/dropbear/dropbear_ed25519_host_key'
+    o = console.run('mkdir -p -m 700 %s; [ -e %s ] || dropbearkey -t ed25519 -f %s >/dev/null 2>&1; '
+                    'echo HOSTKEY $(dropbearkey -y -f %s 2>/dev/null | grep "^ssh-ed25519 ")'
+                    % (os.path.dirname(k), k, k, k), 8) or ''
+    pins = pin_host_key(a.name, o)
+    if pins:
+        note('host key pinned in %s' % pins)
+    else:
+        note('host key not read; the first SSH login keeps the one the Show offers and checks it from then on')
 
     # Closed from the unit's side a moment after it answers, so the console isn't cut mid-line.
     console.run('rm -f /data/misc/techo5/usb_debug /run/techo5/usb_install; sync; [ -x /usr/local/sbin/techo5-usb ] && '

@@ -14,8 +14,12 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 from jarvis_crown import boot_logo as bl  # noqa: E402
 from jarvis_crown import show_ssh  # noqa: E402
-from jarvis_crown.show_ssh import (ShowKeyError, identity_for, key_path, make_key, owner_of,  # noqa: E402
-                                   public_key, ssh_options)
+from jarvis_crown import to_fastboot  # noqa: E402
+from jarvis_crown.show_ssh import (ShowKeyError, host_alias, host_options, identity_for, key_path,  # noqa: E402
+                                   known_hosts_path, make_key, owner_of, pin_host_key, public_key,
+                                   ssh_options)
+
+HOST_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGQ0ZbW0Rk8bJxXyC6m7d1rS1aRlv3gQm2yH6K9b8sZx"
 
 
 class ShowKeyTests(unittest.TestCase):
@@ -142,6 +146,81 @@ class ShowKeyTests(unittest.TestCase):
         self.assertEqual(seen[0][-2:], ["root@10.0.0.40", "true"])
         self.assertIn("IdentitiesOnly=yes", seen[0])
         self.assertEqual(seen[0][seen[0].index("-i") + 1], "/k/genbu_x")
+
+
+class HostKeyPinTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.keys = pathlib.Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def option(self, argv, key):
+        return next(argv[i + 1].split("=", 1)[1] for i, a in enumerate(argv)
+                    if a == "-o" and argv[i + 1].startswith(key + "="))
+
+    def test_the_console_output_is_pinned_under_the_shows_alias(self):
+        # What the console hands back: the command echoed, then the marked key line.
+        said = "echo HOSTKEY $(dropbearkey -y ...)\r\nHOSTKEY " + HOST_KEY + " root@kitchen\r\n"
+        pins = pin_host_key("kitchenShow", said, self.keys)
+        self.assertEqual(pins, self.keys / "genbu_kitchenShow.known_hosts")
+        self.assertEqual(pins.read_text(encoding="utf-8"), "genbu-kitchenshow " + HOST_KEY + "\n")
+        self.assertEqual(pins.stat().st_mode & 0o777, 0o600)
+
+    def test_a_new_install_replaces_the_pin(self):
+        known_hosts_path("kitchenShow", self.keys).write_text("genbu-kitchenshow ssh-ed25519 OLD\n", encoding="utf-8")
+        pin_host_key("kitchenShow", "HOSTKEY " + HOST_KEY, self.keys)
+        self.assertNotIn("OLD", known_hosts_path("kitchenShow", self.keys).read_text(encoding="utf-8"))
+
+    def test_nothing_readable_changes_nothing(self):
+        for said in ("", "HOSTKEY", "HOSTKEY ssh-rsa AAAAB3NzaC1yc2E", "dropbearkey: not found"):
+            with self.subTest(said=said):
+                self.assertIsNone(pin_host_key("kitchenShow", said, self.keys))
+        self.assertEqual(list(self.keys.iterdir()), [])
+
+    def test_pinned_means_checked(self):
+        pin_host_key("kitchenShow", HOST_KEY, self.keys)
+        argv = host_options("kitchenShow", self.keys)
+        self.assertEqual(self.option(argv, "HostKeyAlias"), "genbu-kitchenshow")
+        self.assertEqual(self.option(argv, "UserKnownHostsFile"), str(self.keys / "genbu_kitchenShow.known_hosts"))
+        self.assertEqual(self.option(argv, "StrictHostKeyChecking"), "yes")
+
+    def test_not_pinned_yet_keeps_the_first_key_in_the_shows_own_file(self):
+        argv = host_options("bedroomShow", self.keys)
+        self.assertEqual(self.option(argv, "StrictHostKeyChecking"), "accept-new")
+        self.assertEqual(self.option(argv, "UserKnownHostsFile"), str(self.keys / "genbu_bedroomShow.known_hosts"))
+
+    def test_two_shows_never_share_a_pin(self):
+        self.assertNotEqual(host_alias("kitchenShow"), host_alias("bedroomShow"))
+        self.assertNotEqual(known_hosts_path("kitchenShow", self.keys), known_hosts_path("bedroomShow", self.keys))
+        self.assertRegex(host_alias("../x y"), r"^genbu-[A-Za-z0-9._-]+$")
+        self.assertEqual(known_hosts_path("../x", self.keys).parent, self.keys)
+
+    def test_without_a_name_ssh_behaves_as_before(self):
+        self.assertEqual(host_options(None), [])
+        self.assertEqual(ssh_options(None, None), [])
+
+    def test_a_pin_is_not_a_login_key(self):
+        # The pin sits next to the key pairs; the check that one key opens one Show must not read it.
+        pin_host_key("bedroomShow", HOST_KEY, self.keys)
+        self.assertIsNone(owner_of(HOST_KEY, "kitchenShow", self.keys))
+
+    def test_both_ssh_callers_check_the_pin(self):
+        pin_host_key("kitchenShow", HOST_KEY, self.keys)
+        seen = []
+
+        def run(argv, **kw):
+            seen.append(argv)
+            return bl.subprocess.CompletedProcess(argv, 0, b"ok", b"")
+
+        with mock.patch.object(show_ssh, "KEY_DIR", self.keys), mock.patch.object(bl.subprocess, "run", run):
+            bl.SshClient("10.0.0.40", None, "kitchenShow").shell("true")
+            to_fastboot._ssh("10.0.0.40", "true", run=run, name="kitchenShow")
+        for argv in seen:
+            self.assertEqual(self.option(argv, "HostKeyAlias"), "genbu-kitchenshow")
+            self.assertEqual(self.option(argv, "StrictHostKeyChecking"), "yes")
+            self.assertEqual(argv[-2:], ["root@10.0.0.40", "true"])
 
 
 if __name__ == "__main__":
