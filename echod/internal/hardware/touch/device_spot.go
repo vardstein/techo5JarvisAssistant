@@ -24,6 +24,9 @@ const (
 	// counts: on this panel 40 turned the volume from a tap's drift.
 	notch        = 60
 	verticalOnly = true
+
+	// sidewaysAfterNotches: a volume drag that drifts sideways at the end stays a volume drag.
+	sidewaysAfterNotches = false
 )
 
 func toFrame(rawW, rawH, rx, ry int) (x, y int) {

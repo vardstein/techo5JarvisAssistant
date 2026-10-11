@@ -12,9 +12,9 @@ const (
 	buttonWideBase = 124
 	buttonGapBase  = 10
 
-	// topEdge is how far from the top a swipe down has to start to be the sheet rather than the volume.
+	// topEdge is how far from the top a swipe down has to start to be the sheet.
 	// A quarter of the panel: a finger reaching for the top lands 60-100 px down more often than on
-	// the bezel (a swipe from y=81 was a volume step on 2026-09-16), and volume swipes start lower.
+	// the bezel (a swipe from y=81 missed the sheet on 2026-09-16).
 	topEdge = 120
 )
 

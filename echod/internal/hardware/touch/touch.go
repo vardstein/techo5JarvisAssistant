@@ -451,7 +451,7 @@ func (s *Screen) lift(f *finger) {
 	// ringing alarm — did nothing anywhere on the device.
 	case !f.swiped && abs(dx) <= tapMove && abs(dy) <= tapMove && (held <= tapHold || !holdGestures):
 		s.Gestures.Emit(Gesture{Kind: Tap, X: x0, Y: y0})
-	case !f.swiped && abs(dx) >= swipeMin && abs(dx) > 2*abs(dy):
+	case (!f.swiped || sidewaysAfterNotches) && abs(dx) >= swipeMin && abs(dx) > 2*abs(dy):
 		k := SwipeRight
 		if dx < 0 {
 			k = SwipeLeft

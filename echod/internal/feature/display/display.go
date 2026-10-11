@@ -9,8 +9,8 @@
 // (hardware/screen): no compositor, no browser, no Android.
 //
 // A tap does what the Dot's action button does: starts a turn, or ends the one running; on a dark
-// screen it only lights it. A vertical swipe is the volume, a notch per step, with the level shown
-// while it moves. The room's light dims the panel when auto-brightness is on; what Home Assistant
+// screen it only lights it. A swipe down from the top edge opens the settings; other up and down
+// swipes do nothing, since they kept getting in the way of the sideways ones. The room's light dims the panel when auto-brightness is on; what Home Assistant
 // sets is the ceiling.
 //
 // To Home Assistant the screen is a light with brightness only — on/off and how bright, which is
@@ -614,7 +614,7 @@ func (d *Display) volumeMoved(step int) {
 }
 
 // gesture is a finger on the panel. A dark screen only lights up; otherwise a tap is the action
-// button and a vertical swipe the volume.
+// button.
 func (d *Display) gesture(g touch.Gesture) {
 	d.mu.Lock()
 	on := d.on
@@ -766,10 +766,6 @@ func (d *Display) gesture(g touch.Gesture) {
 			case row >= 0 && row < len(st.Devices) && !st.Devices[row].Busy:
 				bt.Choose(st.Devices[row].Address)
 			}
-		case touch.SwipeUp:
-			media.Get().Adjust(+1)
-		case touch.SwipeDown:
-			media.Get().Adjust(-1)
 		case touch.SwipeRight:
 			bt.SetPairing(false)
 		}
@@ -995,18 +991,15 @@ func (d *Display) gesture(g touch.Gesture) {
 			d.mu.Unlock()
 			d.openDrawer(tab)
 		}
-	case touch.SwipeUp:
-		media.Get().Adjust(+1)
 	case touch.SwipeDown:
-		// From the top edge it is the sheet; anywhere else it is the volume.
+		// From the top edge it is the sheet. Anywhere else up and down do nothing: they used to be the
+		// volume, and a slanted swipe meant for the dashboard turned it instead.
 		if g.Y < topEdge {
 			d.mu.Lock()
 			d.openedBy = image.Pt(g.X, g.Y)
 			d.mu.Unlock()
 			d.showSheet(true)
-			return
 		}
-		media.Get().Adjust(-1)
 	case touch.SwipeRight:
 		// From the left edge it brings the dashboard up, the drawer's gesture mirrored.
 		if d.r != nil && g.X < d.r.drawerEdge() && d.openDashboard() {

@@ -42,8 +42,15 @@ const (
 	// holdGestures: the Show's screen has no use for holds; its taps and swipes stay as they were.
 	holdGestures = false
 
-	// verticalOnly would ignore a slanted drag. Neither Show wants that.
-	verticalOnly = false
+	// verticalOnly: a drag more sideways than up or down makes no notches. The Shows have no volume
+	// swipe any more, and a slanted swipe in from the left edge used to turn the volume instead of
+	// bringing the dashboard up.
+	verticalOnly = true
+
+	// sidewaysAfterNotches: a finger that made notches on the way can still end as a sideways swipe.
+	// Up and down only matter at the top edge here (the settings sheet), so a swipe that wandered
+	// before it went sideways is still the swipe it was meant to be.
+	sidewaysAfterNotches = true
 )
 
 // onCrown picks the Show 8's value over the Show 5's, which covers both Show 5 generations.

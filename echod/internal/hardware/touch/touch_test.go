@@ -118,3 +118,37 @@ func TestAShowHoldOnlyWhenAskedFor(t *testing.T) {
 		t.Errorf("a long press with holds gave %v, want hold, release", got)
 	}
 }
+
+// A swipe in from the left edge is rarely level. Drifting down on the way it makes no volume notches,
+// and one that dipped before it went sideways still ends as the sideways swipe it was meant to be.
+func TestASlantedSwipeFromTheEdgeStaysSideways(t *testing.T) {
+	defer func(w, h int) { Width, Height = w, h }(Width, Height)
+	swipe := func(path [][2]int32) []Kind {
+		abs := func(code uint16, v int32) input.Event { return input.Event{Type: input.EvAbs, Code: code, Value: v} }
+		syn := input.Event{Type: input.EvSyn, Code: synReport}
+		events := []input.Event{abs(absMTSlot, 0), abs(absMTTrackingID, 1)}
+		for _, p := range path { // panel x, panel y: landscape x runs along panel y
+			events = append(events, abs(absMTPositionX, p[0]), abs(absMTPositionY, p[1]), syn)
+		}
+		events = append(events, abs(absMTTrackingID, -1), syn)
+		s := &Screen{rawW: 800, rawH: 1280}
+		var got []Kind
+		s.Gestures.Listen(func(g Gesture) { got = append(got, g.Kind) })
+		read := func() (input.Event, error) {
+			if len(events) == 0 {
+				return input.Event{}, io.EOF
+			}
+			e := events[0]
+			events = events[1:]
+			return e, nil
+		}
+		_ = s.track(context.Background(), "test", read)
+		return got
+	}
+	if got := swipe([][2]int32{{400, 20}, {370, 150}, {340, 300}, {300, 500}}); len(got) != 1 || got[0] != SwipeRight {
+		t.Errorf("a slanted swipe from the edge gave %v, want only a swipe right", got)
+	}
+	if got := swipe([][2]int32{{400, 20}, {300, 40}, {290, 300}, {280, 500}}); len(got) == 0 || got[len(got)-1] != SwipeRight {
+		t.Errorf("a swipe that dipped first gave %v, want it to end as a swipe right", got)
+	}
+}
