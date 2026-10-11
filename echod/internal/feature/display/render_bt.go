@@ -3,8 +3,6 @@
 package display
 
 import (
-	"image"
-	"image/draw"
 	"slices"
 
 	"github.com/HuskerMinion/techo5/echod/internal/feature/btaudio"
@@ -15,23 +13,26 @@ import (
 // the devices as rows a finger can hit, and a bar at the bottom that ends it. The one connected and
 // the ones paired come first, then what the scan has found. Geometry is shared with the gesture
 // handler, which maps a tap back to a row.
-// The panel is 960 by 480 in landscape: title, hint, four rows, and the bar fit in 480.
+// The sizes are the Show 5's (960 by 480): title, hint, four rows, and the bar fit in 480. The Show 8
+// scales them like everything else.
 const (
-	btRowTop    = 112 // first row's top edge
-	btRowHeight = 58
-	btRows      = 4
-	btDoneBar   = 64 // the bottom bar's height
+	btRowTopBase    = 112 // first row's top edge
+	btRowHeightBase = 58
+	btRows          = 4
 )
+
+func (p *paint) btRowTop() int    { return p.s(btRowTopBase) }
+func (p *paint) btRowHeight() int { return p.s(btRowHeightBase) }
 
 // btRowAt maps a tap to the row it landed on, or -1; the bottom bar is btRows.
 func (r *renderer) btRowAt(y int) int {
-	if y >= r.h-btDoneBar {
+	if y >= r.h-r.s(pageBarH) {
 		return btRows
 	}
-	if y < btRowTop {
+	if y < r.btRowTop() {
 		return -1
 	}
-	row := (y - btRowTop) / btRowHeight
+	row := (y - r.btRowTop()) / r.btRowHeight()
 	if row >= btRows {
 		return -1
 	}
@@ -56,48 +57,41 @@ func btList(devices []btaudio.Device) []btaudio.Device {
 }
 
 func (r *renderer) pairingPage(s scene) {
-	r.text(r.body, "Bluetooth audio", r.margin, 52, amber)
-	t := clockHM(s.now)
-	r.text(r.small, t, r.w-r.margin-r.width(r.small, t), 52, dim)
 	hint := s.bt.Status
 	if hint == "" {
 		hint = "Put your earbuds in pairing mode"
 	}
-	r.text(r.tiny, hint, r.margin, 92, dim)
+	r.pageHead("Bluetooth audio", hint, s.now)
+	fc := r.faces()
+	rowTop, rowH := r.btRowTop(), r.btRowHeight()
 
 	if len(s.bt.Devices) == 0 {
 		// A dot that walks while the scan runs, so a still list reads as searching rather than stuck.
 		n := int(s.now.UnixMilli() / 400 % 4)
-		r.text(r.small, i18n.Sprintf("Searching%s", "..."[:n]), r.margin, btRowTop+38, dim)
+		r.text(fc.value, i18n.Sprintf("Searching%s", "..."[:n]), r.margin, rowTop+r.s(36), dim)
 	}
 	for i, d := range btList(s.bt.Devices) {
 		if i >= btRows {
 			break
 		}
-		top := btRowTop + i*btRowHeight
-		draw.Draw(r.dst, image.Rect(r.margin, top+btRowHeight-2, r.w-r.margin, top+btRowHeight), image.NewUniform(ember), image.Point{}, draw.Src)
-		c := cream
-		if d.Busy {
-			c = amber
-		}
-		r.text(r.small, d.Name, r.margin, top+40, c)
-		var right string
+		tile := r.pageTile(rowTop+i*rowH, rowH, d.Connected)
+		cy := (tile.Min.Y + tile.Max.Y) / 2
+		right, rc := "tap to pair", dim
 		switch {
 		case d.Busy:
-			right = "working…"
+			right, rc = "working…", amber
 		case d.Connected:
-			right = "connected · tap to disconnect"
+			right, rc = "connected · tap to disconnect", amber
 		case d.Paired:
 			right = "paired · tap to connect"
-		default:
-			right = "tap to pair"
 		}
-		r.text(r.tiny, right, r.w-r.margin-r.width(r.tiny, right), top+38, dim)
+		rw := r.width(fc.sub, right)
+		r.text(fc.sub, right, r.w-r.margin-rw, cy+r.s(7), rc)
+		face := fc.label
+		if d.Connected {
+			face = fc.labelBold
+		}
+		r.text(face, r.fit(face, d.Name, r.w-2*r.margin-rw-r.s(24)), r.margin, cy+r.s(10), cream)
 	}
-
-	// The bar that ends it.
-	top := r.h - btDoneBar
-	draw.Draw(r.dst, image.Rect(0, top, r.w, r.h), image.NewUniform(ember), image.Point{}, draw.Src)
-	label := "Done"
-	r.text(r.body, label, (r.w-r.width(r.body, label))/2, top+45, cream)
+	r.pageButton(r.w/2, r.s(300), "Done", btnSecondary)
 }

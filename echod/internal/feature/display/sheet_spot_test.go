@@ -14,7 +14,7 @@ import (
 func spotScene(cat category) roundScene {
 	now := time.Date(2026, 9, 18, 15, 0, 0, 0, time.Local)
 	st := settings{cat: cat, now: now, brightness: 75, volume: 5, name: "Kitchen", version: "v0.0.0",
-		slot: "a", address: "192.168.1.50", wifiName: "Connected", weather: "Home", night: defaultNight}
+		slot: "a", address: "10.0.0.50", wifiName: "Connected", weather: "Home", night: defaultNight}
 	sv := sheetView{st: st, now: now, snooze: 9}
 	sv.bt.Available, sv.bt.Remembered = true, "Speaker"
 	sv.security.SSHAvailable = true

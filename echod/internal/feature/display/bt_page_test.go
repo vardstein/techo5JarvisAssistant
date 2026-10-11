@@ -3,6 +3,7 @@
 package display
 
 import (
+	"image"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/btaudio"
 	"github.com/HuskerMinion/techo5/echod/internal/i18n"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/wifi"
 )
 
 // Bluetooth is one row in Connections on the Show, whatever the speaker is doing, and that row opens
@@ -60,7 +62,8 @@ func TestBluetoothListOrder(t *testing.T) {
 	}
 }
 
-// With SHOW_PREVIEW set, the page is written there in English and German.
+// With SHOW_PREVIEW set, the Bluetooth and Wi-Fi pages are written there, on both panels, in
+// English and German.
 func TestBluetoothPagePreview(t *testing.T) {
 	dir := os.Getenv("SHOW_PREVIEW")
 	if dir == "" {
@@ -68,18 +71,38 @@ func TestBluetoothPagePreview(t *testing.T) {
 	}
 	config.Use(filepath.Join(t.TempDir(), "state.json"))
 	t.Cleanup(i18n.Changed)
-	s := scene{now: time.Date(2026, 9, 18, 15, 0, 0, 0, time.Local), phase: "idle"}
-	s.bt = btaudio.State{Available: true, Pairing: true, Status: "Put your earbuds in pairing mode",
+	at := time.Date(2026, 9, 18, 15, 0, 0, 0, time.Local)
+	bt := btaudio.State{Available: true, Pairing: true, Status: "Put your earbuds in pairing mode",
 		Remembered: "Speaker", Connected: "Speaker", Devices: []btaudio.Device{
 			{Name: "Loud stranger", RSSI: -40},
-			{Name: "Old earbuds", Paired: true, RSSI: -60},
+			{Name: "Old earbuds", Paired: true, Busy: true, RSSI: -60},
 			{Name: "Speaker", Paired: true, Connected: true, RSSI: -70},
 		}}
+	nets := []wifi.Network{{SSID: "HomeWiFi", Signal: -48, Secured: true}, {SSID: "Neighbours", Signal: -66, Secured: true},
+		{SSID: "Cafe guest", Signal: -78}, {SSID: "Printer-3F", Signal: -84, Secured: true}}
+	home := wifi.Status{SSID: "HomeWiFi", Connected: true, Address: "10.0.0.50", State: "COMPLETED"}
+	scenes := map[string]scene{
+		"bluetooth-page":   {now: at, phase: "idle", bt: bt},
+		"bluetooth-empty":  {now: at, phase: "idle", bt: btaudio.State{Available: true, Pairing: true}},
+		"wifi-page":        {now: at, phase: "idle", showWifi: true, wifi: wifiState{status: home, nets: nets}},
+		"wifi-page-more":   {now: at, phase: "idle", showWifi: true, wifi: wifiState{status: home, nets: append(append([]wifi.Network{}, nets...), nets...)}},
+		"wifi-keyboard":    {now: at, phase: "idle", showWifi: true, wifi: wifiState{status: home, nets: nets, pick: &nets[1], text: "hunter2"}},
+		"wifi-keyboard-up": {now: at, phase: "idle", showWifi: true, wifi: wifiState{status: home, nets: nets, pick: &nets[1], shift: true, err: "wrong password"}},
+	}
 	for _, lang := range []string{"", "de"} {
 		if err := config.Set().Screen().Language(lang); err != nil {
 			t.Fatal(err)
 		}
 		i18n.Changed()
-		writePNG(t, filepath.Join(dir, "bluetooth-page"+map[string]string{"": "", "de": "-de"}[lang]+".png"), frame(s))
+		for name, s := range scenes {
+			for _, panel := range []struct {
+				name       string
+				wide, high int
+			}{{"", showWide, showHigh}, {"-show8", show8Wide, show8High}} {
+				img := image.NewRGBA(image.Rect(0, 0, panel.wide, panel.high))
+				newRenderer(img).draw(s)
+				writePNG(t, filepath.Join(dir, name+panel.name+map[string]string{"": "", "de": "-de"}[lang]+".png"), img)
+			}
+		}
 	}
 }

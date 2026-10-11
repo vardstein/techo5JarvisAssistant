@@ -53,7 +53,7 @@ func sheetScene(cat category) scene {
 	now := time.Date(2026, 9, 18, 15, 0, 0, 0, time.Local)
 	s := scene{now: now, snooze: 9}
 	s.sheet = settings{cat: cat, now: now, brightness: 75, volume: 5, name: "Kitchen", version: "v0.0.0",
-		slot: "a", address: "192.168.1.50", wifiName: "HomeWiFi", wifiOK: true, weather: "Home"}
+		slot: "a", address: "10.0.0.50", wifiName: "HomeWiFi", wifiOK: true, weather: "Home"}
 	s.bt.Available, s.bt.Remembered = true, "Speaker"
 	s.security.SSHAvailable, s.security.Encrypted = true, true
 	s.alarms.Local = []config.Alarm{{ID: "a", Hour: 6, Minute: 30, Days: config.DaysWeekdays, On: true}}

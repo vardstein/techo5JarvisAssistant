@@ -108,7 +108,13 @@ func (r *renderer) settingsBase(sel category, title, blurb string, actions []hea
 			fg, face = onAccent(), fc.navBold
 		}
 		r.icon(c, r.s(12+30), top+r.navH()/2, fg)
-		r.text(face, categoryNames[c], r.s(12+58), top+r.navH()/2+r.s(9), fg)
+		// A long name in bold runs into the raised one's end ("Verbindungen"): it keeps the regular
+		// weight then, and is cut only if even that is too wide.
+		room := pill.Max.X - r.s(14) - r.s(12+58)
+		if r.width(face, categoryNames[c]) > room {
+			face = fc.nav
+		}
+		r.text(face, r.fit(face, categoryNames[c], room), r.s(12+58), top+r.navH()/2+r.s(9), fg)
 	}
 	card := r.nextCard(r.w, r.h)
 	r.zoomed(func() {

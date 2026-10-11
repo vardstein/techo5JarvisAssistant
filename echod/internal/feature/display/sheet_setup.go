@@ -31,7 +31,7 @@ func setupRow(demo bool) settingRow {
 	case s.On():
 		row.sub, row.on = "Open "+setupURL(), true
 		if demo {
-			row.sub = i18n.Sprintf("Open http://192.168.1.50:%d", web.Port)
+			row.sub = i18n.Sprintf("Open http://10.0.0.50:%d", web.Port)
 		}
 	}
 	return row

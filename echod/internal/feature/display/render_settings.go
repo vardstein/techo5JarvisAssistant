@@ -7,11 +7,6 @@ import (
 )
 
 const (
-	// Buttons at the right of the Wi-Fi pages' rows. Lengths at the size this was drawn for; the
-	// accessors are paint.buttonWide and paint.buttonGap in render_wifi.go.
-	buttonWideBase = 124
-	buttonGapBase  = 10
-
 	// topEdge is how far from the top a swipe down has to start to be the sheet.
 	// A quarter of the panel: a finger reaching for the top lands 60-100 px down more often than on
 	// the bezel (a swipe from y=81 missed the sheet on 2026-09-16).

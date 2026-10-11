@@ -5,9 +5,10 @@ package display
 import (
 	"fmt"
 	"image"
-	"image/draw"
+	"math"
 	"strings"
 
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/wifi"
 )
 
@@ -36,7 +37,6 @@ const (
 	wifiRowTopBase    = 118
 	wifiRowHeightBase = 44
 	wifiRows          = 6
-	wifiDoneBarBase   = 64
 
 	keyTopBase    = 150
 	keyHBase      = 62
@@ -48,14 +48,11 @@ const (
 
 func (p *paint) wifiRowTop() int    { return p.s(wifiRowTopBase) }
 func (p *paint) wifiRowHeight() int { return p.s(wifiRowHeightBase) }
-func (p *paint) wifiDoneBar() int   { return p.s(wifiDoneBarBase) }
 func (p *paint) keyTop() int        { return p.s(keyTopBase) }
 func (p *paint) keyH() int          { return p.s(keyHBase) }
 func (p *paint) keyGap() int        { return p.s(keyGapBase) }
 func (p *paint) keyW() int          { return p.s(keyWBase) }
 func (p *paint) keyMargin() int     { return p.s(keyMarginBase) }
-func (p *paint) buttonWide() int    { return p.s(buttonWideBase) }
-func (p *paint) buttonGap() int     { return p.s(buttonGapBase) }
 
 var (
 	keyRowsLetters = []string{"qwertyuiop", "asdfghjkl", "zxcvbnm"}
@@ -73,7 +70,7 @@ func (r *renderer) wifiListHit(x, y int) wifiHit {
 	h := wifiHit{row: -1}
 	top, rowH := r.wifiRowTop(), r.wifiRowHeight()
 	switch {
-	case y >= r.h-r.wifiDoneBar():
+	case y >= r.h-r.s(pageBarH):
 		if x < r.w/2 {
 			h.rescan = true
 		} else {
@@ -141,12 +138,9 @@ func (r *renderer) wifiPage(s scene) {
 		r.keyboardPage(s)
 		return
 	}
-	r.text(r.body, "Wi-Fi", r.margin, r.s(52), amber)
-	t := clockHM(s.now)
-	r.text(r.small, t, r.w-r.margin-r.width(r.small, t), r.s(52), dim)
 	line := "Not connected"
 	if w.status.Connected {
-		line = "Connected to " + w.status.SSID
+		line = i18n.Sprintf("Connected to %s", w.status.SSID)
 		if w.status.Address != "" {
 			line += "  ·  " + w.status.Address
 		}
@@ -158,51 +152,89 @@ func (r *renderer) wifiPage(s scene) {
 	} else if w.err != "" {
 		line = w.err
 	}
-	r.text(r.tiny, line, r.margin, r.s(92), dim)
+	r.pageHead("Wi-Fi", line, s.now)
+	fc := r.faces()
 
+	rowTop, rowH := r.wifiRowTop(), r.wifiRowHeight()
 	if len(w.nets) == 0 {
 		msg := "No networks heard yet"
 		if w.scanning {
 			msg = "Scanning" + "..."[:int(s.now.UnixMilli()/400%4)]
 		}
-		r.text(r.small, msg, r.margin, r.wifiRowTop()+r.s(34), dim)
+		r.text(fc.value, msg, r.margin, rowTop+r.s(30), dim)
 	}
-	rowTop, rowH := r.wifiRowTop(), r.wifiRowHeight()
-	btnW, btnGap := r.buttonWide(), r.buttonGap()
+	// A whole row is the button: a tap on a locked network opens the keyboard, an open one is joined.
 	start, end, more := pageWith(len(w.nets), w.page, wifiRows)
 	for i, n := range w.nets[start:end] {
-		top := rowTop + i*rowH
-		draw.Draw(r.dst, image.Rect(r.margin, top+rowH-r.s(1), r.w-r.margin, top+rowH), image.NewUniform(ember), image.Point{}, draw.Src)
-		c := cream
-		if n.SSID == w.status.SSID && w.status.Connected {
-			c = amber
+		joined := n.SSID == w.status.SSID && w.status.Connected
+		tile := r.pageTile(rowTop+i*rowH, rowH, joined)
+		cy := (tile.Min.Y + tile.Max.Y) / 2
+		x := r.w - r.margin
+		if joined {
+			x -= r.width(fc.sub, "Joined")
+			r.text(fc.sub, "Joined", x, cy+r.s(7), amber)
+			x -= r.s(18)
 		}
-		r.text(r.small, n.SSID, r.margin, top+r.s(31), c)
-		info := bars(n.Signal)
+		x = r.signal(x, cy, signalLevel(n.Signal))
 		if n.Secured {
-			info += "  ·  locked"
+			x = r.lock(x-r.s(12), cy)
 		}
-		r.text(r.tiny, info, r.w-r.margin-btnW-btnGap-r.width(r.tiny, info), top+r.s(29), dim)
-		label := "Connect"
-		if n.SSID == w.status.SSID && w.status.Connected {
-			label = "Joined"
+		face := fc.value
+		if joined {
+			face = fc.labelBold
 		}
-		r.bevel(image.Rect(r.w-r.margin-btnW, top+r.s(7), r.w-r.margin, top+rowH-r.s(7)), shift(ember, 12), true)
-		r.text(r.tiny, label, r.w-r.margin-btnW+(btnW-r.width(r.tiny, label))/2, top+r.s(29), cream)
+		r.text(face, r.fit(face, n.SSID, x-r.margin-r.s(20)), r.margin, cy+r.s(9), cream)
 	}
 	if more {
-		top := rowTop + (wifiRows-1)*rowH
-		r.text(r.small, "More", r.margin, top+r.s(31), dim)
-		r.bevel(image.Rect(r.w-r.margin-btnW, top+r.s(7), r.w-r.margin, top+rowH-r.s(7)), shift(ember, 12), true)
-		r.text(r.tiny, "Next", r.w-r.margin-btnW+(btnW-r.width(r.tiny, "Next"))/2, top+r.s(29), cream)
+		tile := r.pageTile(rowTop+(wifiRows-1)*rowH, rowH, false)
+		cy := (tile.Min.Y + tile.Max.Y) / 2
+		r.text(fc.value, "More", r.margin, cy+r.s(9), dim)
+		r.chevron(r.w-r.margin-r.s(4), cy)
 	}
 
-	// The bar: rescan on the left, done on the right.
-	top := r.h - r.wifiDoneBar()
-	draw.Draw(r.dst, image.Rect(0, top, r.w, r.h), image.NewUniform(ember), image.Point{}, draw.Src)
-	draw.Draw(r.dst, image.Rect(r.w/2-r.s(1), top+r.s(10), r.w/2+r.s(1), r.h-r.s(10)), image.NewUniform(dim), image.Point{}, draw.Src)
-	r.text(r.body, "Rescan", (r.w/2-r.width(r.body, "Rescan"))/2, top+r.s(45), cream)
-	r.text(r.body, "Done", r.w/2+(r.w/2-r.width(r.body, "Done"))/2, top+r.s(45), cream)
+	// The bar: rescan on the left half, done on the right.
+	r.pageButton(r.w/4, r.s(300), "Rescan", btnSecondary)
+	r.pageButton(r.w*3/4, r.s(300), "Done", btnSecondary)
+}
+
+// signal draws a network's strength as four rising bars, level of them lit, ending at right, and
+// returns their left edge.
+func (r *renderer) signal(right, cy, level int) int {
+	bw, gap := r.s(5), r.s(3)
+	left := right - 4*bw - 3*gap
+	bottom := cy + r.s(9)
+	for i := range 4 {
+		c := lerp(surface(3), dim, 0.45)
+		if i < level {
+			c = cream
+		}
+		x := left + i*(bw+gap)
+		r.roundFill(image.Rect(x, bottom-r.s(6+4*i), x+bw, bottom), r.sf(2), c, c)
+	}
+	return left
+}
+
+// lock draws a small padlock ending at right, for a network that wants a password, and returns its
+// left edge.
+func (r *renderer) lock(right, cy int) int {
+	k := r.sf(100) / 100
+	body := image.Rect(right-r.s(14), cy-r.s(1), right, cy+r.s(10))
+	r.roundFill(body, 2.5*k, dim, dim)
+	r.aaRing(float64(body.Min.X+body.Max.X)/2, float64(body.Min.Y), 4.5*k, 2.2*k, math.Pi, 2*math.Pi, dim)
+	return body.Min.X
+}
+
+// signalLevel is a signal strength as bars out of four.
+func signalLevel(dbm int) int {
+	switch {
+	case dbm >= -55:
+		return 4
+	case dbm >= -70:
+		return 3
+	case dbm >= -80:
+		return 2
+	}
+	return 1
 }
 
 // pageWith is pageOf for a page of rows rows: the list's slice, and whether a More row is needed.
@@ -221,34 +253,26 @@ func pageWith(n, page, rows int) (start, end int, more bool) {
 	return start, end, true
 }
 
-// bars is a signal strength as a word.
-func bars(dbm int) string {
-	switch {
-	case dbm >= -55:
-		return "strong"
-	case dbm >= -70:
-		return "good"
-	case dbm >= -80:
-		return "weak"
-	}
-	return "faint"
-}
-
 func (r *renderer) keyboardPage(s scene) {
 	w := s.wifi
 	keyTop, keyH, keyGap, keyW, keyMargin := r.keyTop(), r.keyH(), r.keyGap(), r.keyW(), r.keyMargin()
-	title := "Password for " + w.pick.SSID
-	r.text(r.small, title, r.margin, r.s(46), amber)
-	// The field.
-	field := image.Rect(r.margin, r.s(66), r.w-r.margin, r.s(126))
-	r.bevel(field, shift(walnut, 8), false)
+	fc := r.faces()
+	r.vgradient(r.dst.Bounds(), shift(walnut, 7), shift(walnut, -3))
+	title := i18n.Sprintf("Password for %s", w.pick.SSID)
+	r.text(fc.header, r.fit(fc.header, title, r.w-2*r.margin), r.margin, r.s(46), cream)
+	// The field, sunk into the ground and ringed in the accent while it takes the keys.
+	field := image.Rect(r.margin-r.s(14), r.s(64), r.w-r.margin+r.s(14), r.s(128))
+	rad := r.sf(14)
+	r.roundFill(field, rad, surface(-1), surface(0))
+	ring := amber
 	shown := w.text
 	if w.busy != "" {
-		shown = w.busy
+		shown, ring = w.busy, ember
 	} else if w.err != "" {
-		shown = w.err
+		shown, ring = w.err, danger
 	}
-	for r.width(r.small, shown+"|") > field.Dx()-r.s(30) && len(shown) > 1 {
+	r.roundStroke(field, rad, r.sf(2), ring)
+	for r.width(r.small, shown+"|") > field.Dx()-r.s(44) && len(shown) > 1 {
 		shown = shown[1:]
 	}
 	c := cream
@@ -257,7 +281,7 @@ func (r *renderer) keyboardPage(s scene) {
 	} else {
 		shown += "|"
 	}
-	r.text(r.small, shown, field.Min.X+r.s(15), r.s(109), c)
+	r.text(r.small, shown, r.margin, r.s(108), c)
 
 	pitch := keyW + keyGap
 	for row := 0; row < 3; row++ {
@@ -292,14 +316,17 @@ func (r *renderer) keyboardPage(s scene) {
 	r.key(image.Rect(keyMargin+pitch*8, y0, r.w-keyMargin, y0+keyH), "Connect", true)
 }
 
-// key draws one key.
+// key draws one key: raised off the ground, or filled in the accent when lit.
 func (r *renderer) key(rect image.Rectangle, label string, lit bool) {
-	fill := shift(ember, 14)
+	rad := r.sf(10)
 	ink := cream
 	if lit {
-		fill, ink = amber, walnut
+		r.roundFill(rect, rad, shift(amber, 14), shift(amber, -14))
+		ink = onAccent()
+	} else {
+		r.roundFill(rect, rad, surface(5), surface(3))
 	}
-	r.bevel(rect, fill, true)
+	r.roundHighlight(rect, rad)
 	face := r.small
 	if r.width(face, label) > rect.Dx()-r.s(10) {
 		face = r.tiny

@@ -470,7 +470,7 @@ func (d *Display) sheetView(now time.Time) sheetView {
 	st.sendspin = sendspin.Get().Enabled()
 	st.btProxy = bluetooth.Get().Enabled()
 	if st.demo {
-		st.name, st.address, st.weather = "Kitchen", "192.168.1.50", "Home"
+		st.name, st.address, st.weather = "Kitchen", "10.0.0.50", "Home"
 	}
 	sv := sheetView{st: st, bt: btaudio.Get().State(), draft: draft, snooze: c.Alarms.Snooze(), now: now,
 		timers: timer.Get().List(now)}
