@@ -15,8 +15,8 @@ import (
 const installFrame = 100 * time.Millisecond
 
 // installPill is the install, over whatever page is up: a spinner, the line, and a bar under them that
-// fills with the download and then sweeps while the slot is written. It sits at the top, under the
-// microphone's pill when that is up, so the two never cover each other.
+// fills with the download and then sweeps while the slot is written. It floats near the top, clear of
+// the edge, and under the microphone's pill when that is up, so the two never cover each other.
 func (r *renderer) installPill(s scene) {
 	if s.install == "" {
 		return
@@ -26,9 +26,9 @@ func (r *renderer) installPill(s scene) {
 	pad := r.s(18)
 	w := 2*spin + gap + r.width(r.tiny, s.install)
 	x := (r.w - w) / 2
-	top := r.s(4)
+	top := r.s(18)
 	if s.muted && !s.showSheet {
-		top = r.s(38)
+		top = r.s(32) + r.s(14) // the microphone's pill ends at 32
 	}
 	b := image.Rect(x-pad, top, x+w+pad, top+r.s(50))
 	r.roundButton(b, float64(r.s(14)), walnut)
