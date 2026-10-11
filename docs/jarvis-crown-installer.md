@@ -618,7 +618,8 @@ has the default given here.
 | `--twrp-sha256 HASH` | install | The same for TWRP. |
 | `--work-dir DIR` | install, preflight | Scratch space. Default `../work` next to the repo. |
 | `--backup-dir DIR` | all | Each unit's backups, key, name and address. Default `../backups`. Keep it: `boot-logo` needs the saved expdb from here. |
-| `--ssh-key FILE` | install | An SSH public key root accepts from the first boot. SSH is switched on with it. |
+| `--ssh-key FILE` | install | An SSH public key root accepts from the first boot, instead of the key the installer makes for this Show (`~/.ssh/genbu_<name>`). Refused when it is another Show's key. |
+| `--no-ssh` | install | No key at all: SSH stays off, the USB console is the way in. |
 | `--amazon-logo` | boot-logo | Puts Amazon's logo back instead. |
 
 ### What the Show is ready with

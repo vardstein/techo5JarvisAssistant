@@ -88,11 +88,18 @@ back to fastboot.
 ## Install
 
 ```sh
-python3 tools/jarvis-show.py install --name kitchenShow --channel dev \
-  --ssh-key ~/.ssh/id_ed25519.pub
+python3 tools/jarvis-show.py install --name kitchenShow --channel dev
 ```
 
-`--ssh-key` is optional: it switches SSH on with that key from the first boot.
+SSH is on from the first boot with a key made for this Show alone, `~/.ssh/genbu_kitchenShow`. The
+installer says so before it makes it, and keeps a pair that is already there from an earlier install
+of the same Show. No other Show lets that key in. Log in with
+`ssh -i ~/.ssh/genbu_kitchenShow root@<address>`. `--ssh-key <file.pub>` takes a public key of your
+own instead (refused when it is another Show's), and `--no-ssh` leaves SSH off.
+
+It also asks for a root password for the USB console. Pick it yourself, in a password manager or
+however you like: the installer never makes one up. It asks you to confirm you have saved it, keeps
+no copy, and the Show keeps only its hash. Lost, `techo5-passwd` over SSH sets a new one.
 
 The installer repeats its host and identity checks, then fetches the files above. Before writing
 anything it makes a verified off-device recovery backup in `../backups/<serial>/`. A locked Show also

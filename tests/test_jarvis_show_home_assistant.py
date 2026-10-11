@@ -1058,6 +1058,25 @@ class GatherTests(unittest.TestCase):
                    lookup=lambda secret, **attrs: keyring.get(secret))
         self.assertIsNone(s.music_assistant_token)
 
+    def test_a_typed_root_password_has_to_be_saved(self):
+        # Nobody answers yes: the install stops rather than go on with a password nobody kept.
+        asker, said = self.asker(["no"], ["long enough", "long enough"])
+        answers = ["no"]
+
+        def ask(_):
+            if not answers:
+                raise EOFError
+            return answers.pop(0)
+        asker.ask = ask
+        with self.assertRaises(SettingsError):
+            gather(args(), asker, defaults={}, lookup=lambda *a, **k: None, want_wifi=False, want_root_password=True)
+        # One from the keyring is kept there already and is not asked about.
+        asker, said = self.asker(["-", "-", "-"], [])
+        s = gather(args(), asker, defaults={}, lookup=lambda secret, **a: {"root-password": "correct horse"}.get(secret),
+                   want_wifi=False, want_root_password=True)
+        self.assertEqual(s.root_password, "correct horse")
+        self.assertFalse(any("saved this password" in line for line in said))
+
     def test_root_password_only_for_an_install(self):
         keyring = {"root-password": "  not stripped"}
         s = gather(args(), Asker(False), defaults={}, lookup=lambda secret, **attrs: keyring.get(secret))
@@ -1073,9 +1092,12 @@ class GatherTests(unittest.TestCase):
                    want_root_password=True)
 
     def test_root_password_asked_twice_then_left_out(self):
-        asker, said = self.asker(["-", "-", "-"], ["short", "long enough", "long enough"])
+        asker, said = self.asker(["", "no", "yes", "-", "-", "-"], ["short", "long enough", "long enough"])
         s = gather(args(), asker, defaults={}, lookup=lambda *a, **k: None, want_wifi=False, want_root_password=True)
         self.assertEqual(s.root_password, "long enough")
+        self.assertTrue(any("saved this password yourself" in line for line in said))
+        self.assertTrue(any("type yes or no" in line for line in said))
+        self.assertTrue(any("Save it now" in line for line in said))
         self.assertTrue(any("8 to 128" in line for line in said))
         self.assertTrue(any("secret-tool store" in line and "root-password" in line for line in said))
         asker, said = self.asker(["-", "-", "-"], ["", ""])

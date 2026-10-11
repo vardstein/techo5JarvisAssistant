@@ -25,7 +25,7 @@ from jarvis_crown import home_assistant as ha_api  # noqa: E402
 from jarvis_crown import ui  # noqa: E402
 from jarvis_crown import music_assistant as ma_api  # noqa: E402
 from jarvis_crown.shows import known_shows, rename_show, show_named  # noqa: E402
-from jarvis_crown.show_ssh import identity_for  # noqa: E402
+from jarvis_crown.show_ssh import ShowKeyError, identity_for, key_path, make_key, owner_of, public_key  # noqa: E402
 from jarvis_crown.settings import RUN, Asker, Settings, SettingsError, gather, read_secret_file, save_defaults, secret_files  # noqa: E402
 from jarvis_crown.preflight import SERIAL_GROUPS, _group_names, preflight_ok, print_checks, run_preflight  # noqa: E402
 from jarvis_crown.recovery import RecoveryError, adb_recovery_serials, identify_recovery_show  # noqa: E402
@@ -72,7 +72,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wifi", help="install, wifi: the network (SSID) it joins; default: ask, or pick it on the Show's screen")
     parser.add_argument("--wifi-passphrase-file", type=Path, help="a file holding its passphrase; default the keyring, then ask")
     parser.add_argument("--serial", help="the unit's serial: wifi talks to that Show on USB (found when only one is attached); home-assistant takes its key from backups/<serial>")
-    parser.add_argument("--ssh-key", type=Path, help="install: an SSH public key root accepts from the first boot (SSH is switched on)")
+    parser.add_argument("--ssh-key", type=Path, help="install: an SSH public key root accepts from the first boot, instead of "
+                                                     "the one the installer makes for this Show (~/.ssh/genbu_<name>); "
+                                                     "refused when it is another Show's")
+    parser.add_argument("--no-ssh", action="store_true", help="install: no SSH key, so SSH stays off")
     setup = parser.add_argument_group("what the Show is ready with (asked for when left out)")
     setup.add_argument("--ha-url", help="Home Assistant's address as the Show reaches it")
     setup.add_argument("--ha-token-file", type=Path,
@@ -127,6 +130,33 @@ def parse_args() -> argparse.Namespace:
     logo = parser.add_argument_group("boot-logo: the OpenJade logo at boot on an installed Show (--name, --host)")
     logo.add_argument("--amazon-logo", action="store_true", help="put Amazon's logo back instead")
     return parser.parse_args()
+
+
+def _show_ssh_key(args) -> Path | None:
+    """The public key the Show lets root in with: the one given, else a pair made for this Show alone.
+    A key that already opens another Show is refused, so one key never opens two."""
+    if args.no_ssh:
+        ui.out.note("SSH stays off (--no-ssh); the USB console is the way in.", indent=2)
+        return None
+    if args.ssh_key:
+        pub = args.ssh_key.expanduser().resolve()
+        other = owner_of(public_key(pub), args.name)
+        if other:
+            raise ShowKeyError(f"{args.ssh_key} is the key of the Show {other!r}; each Show gets a key of its own")
+        return pub
+    ui.out.heading("SSH key for this Show")
+    path = key_path(args.name)
+    ui.out.note(f"The installer makes an SSH key for {args.name} and nothing else: {_home(path)}. "
+                "Only this Show lets it in, and it is never used for another one.", indent=2)
+    path, made = make_key(args.name)
+    ui.out.field("key", f"{_home(path)} ({'made now' if made else 'already there from an earlier install, kept'})", pad=16)
+    ui.out.note(f"Log in later with: ssh -i {_home(path)} root@<the Show's address>", indent=2)
+    return path.with_name(path.name + ".pub")
+
+
+def _home(path: Path) -> str:
+    home = str(Path.home())
+    return "~" + str(path)[len(home):] if str(path).startswith(home + "/") else str(path)
 
 
 def load_hash_manifest(path: Path | None) -> dict[str, str] | None:
@@ -695,6 +725,12 @@ def _main() -> int:
             else:
                 ui.out.note(line, indent=2)
 
+        try:
+            ssh_key = _show_ssh_key(args)
+        except (ShowKeyError, OSError) as exc:
+            ui.out.fail(f"{exc}")
+            return 1
+
         def confirm_unlock(p):
             build = identity.lk_build_desc if identity is not None else None
             ui.out.caution(f"unlocking {p.model} runs the board-specific Amonet exploit.")
@@ -732,7 +768,7 @@ def _main() -> int:
                 dashcast_key_file=files.get("dashcast_key") if settings.dashcast else None,
                 music_assistant=settings.music_assistant,
                 root_password_file=files.get("root_password"),
-                ssh_key=args.ssh_key.resolve() if args.ssh_key else None,
+                ssh_key=ssh_key,
                 expected_fastboot_serial=identity.serial if identity is not None else None,
             )
             try:

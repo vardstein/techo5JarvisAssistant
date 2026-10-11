@@ -345,6 +345,22 @@ class Asker:
             except ValueError as exc:
                 self._wrong(str(exc))
 
+    def yes(self, label: str, *, help: str = "") -> bool | None:
+        """A yes or no that has no default: Enter alone asks again. None when nobody can answer."""
+        if not self.interactive:
+            return None
+        self._question(label, "", help)
+        while True:
+            try:
+                raw = self.ask(self._prompt("yes or no")).strip().casefold()
+            except EOFError:
+                return None
+            if raw in ("y", "yes", "j", "ja"):
+                return True
+            if raw in ("n", "no", "nein"):
+                return False
+            self._wrong("type yes or no")
+
 
 def check_network(value: str) -> str:
     if not 1 <= len(value.encode("utf-8")) <= 32:
@@ -430,6 +446,7 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
                 asker.note("Enter again leaves it without; techo5-passwd on the Show sets one later.")
                 pw = asker.secret("a root password for the Show", check_root_password, strip=False, confirm=True)
             if pw:
+                _saved_it(asker)
                 _keyring_hint(asker, "root password", "secret root-password")
         s = replace(s, root_password=pw)
     if want_wifi:
@@ -641,6 +658,20 @@ def _ma_sign_in(asker: Asker, host: str, remembered: str | None, login: Callable
         return token, user
     asker.warn(f"{SIGN_IN_TRIES} tries; going on without a Music Assistant admin")
     return None, user
+
+
+def _saved_it(asker: Asker) -> None:
+    """The password was typed, not made up here, and nothing here keeps it: the one who typed it says
+    they have it saved before anything goes on, so nobody walks off thinking the installer has a copy."""
+    while True:
+        saved = asker.yes("Have you saved this password yourself?", help=(
+            "In a password manager or wherever you keep such things. The installer keeps no copy, and the "
+            "Show keeps only a hash that can't be turned back into it."))
+        if saved:
+            return
+        if saved is None:
+            raise SettingsError("the root password was not confirmed as saved; nothing was changed")
+        asker.warn("Save it now, then answer yes. Lost, only techo5-passwd over SSH sets another.")
 
 
 def _keyring_hint(asker: Asker, label: str, attrs: str) -> None:
