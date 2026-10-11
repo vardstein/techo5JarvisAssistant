@@ -82,7 +82,7 @@ func TestFollowingShowDecides(t *testing.T) {
 func TestHouseLine(t *testing.T) {
 	now := time.Date(2026, 10, 11, 18, 0, 0, 0, time.Local)
 	f := following{running: "v1.0.3", house: "v1.0.3", committed: true}
-	if got := houseLine(f, "hall_show", "", now); got != "Following hall_show · house version v1.0.3" {
+	if got := houseLine(f, "hall_show", "", now); got != "Following hall_show · version v1.0.3" {
 		t.Errorf("on the house version: %q", got)
 	}
 	gone := now.Add(-2 * time.Hour).Format(time.RFC3339)
@@ -93,7 +93,7 @@ func TestHouseLine(t *testing.T) {
 		t.Errorf("main gone a minute is not worth a word: %q", got)
 	}
 	f.running, f.failed = "v1.0.2", "v1.0.3"
-	if got := houseLine(f, "hall_show", "", now); got != "House version v1.0.3 did not install here; staying on v1.0.2" {
+	if got := houseLine(f, "hall_show", "", now); got != "Version v1.0.3 did not install here; staying on v1.0.2" {
 		t.Errorf("failed: %q", got)
 	}
 }
@@ -136,11 +136,15 @@ func TestFollowingShowOnlyOffersTheHouseVersion(t *testing.T) {
 	if u.speaksForItself() || u.channelOffered() != "" {
 		t.Error("a following Show speaks about its channel")
 	}
-	lookHouse = func() sighting { return sighting{version: layout.Version, haveVersion: true, mains: "['hall_show']", haveMains: true} }
+	lookHouse = func() sighting {
+		return sighting{version: layout.Version, haveVersion: true, mains: "['hall_show']", haveMains: true}
+	}
 	if got := u.Offered(); got != "" {
 		t.Errorf("offered %q on the house version", got)
 	}
-	lookHouse = func() sighting { return sighting{version: layout.Version, haveVersion: true, mains: "['kitchen_show']", haveMains: true} }
+	lookHouse = func() sighting {
+		return sighting{version: layout.Version, haveVersion: true, mains: "['kitchen_show']", haveMains: true}
+	}
 	if !u.speaksForItself() {
 		t.Error("the main update Show does not speak for itself")
 	}

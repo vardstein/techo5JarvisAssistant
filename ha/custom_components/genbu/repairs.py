@@ -59,7 +59,7 @@ class MainMissingFlow(RepairsFlow):
         return self.async_show_form(
             step_id="pick", data_schema=vol.Schema({vol.Required("show", default=best): vol.In(labels)}),
             description_placeholders={"name": hub.name(self.node) if self.node else "-",
-                                      "house": hub.house.version or "-"})
+                                      "version": hub.house.version or "-"})
 
     async def async_step_wait(self, user_input: dict[str, Any] | None = None):
         await self.hub.async_wait_more(self.node)

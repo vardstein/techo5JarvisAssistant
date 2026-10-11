@@ -20,8 +20,8 @@ ISSUE_NO_MAIN = "no_main"
 PUSH = {
     "en": ("Genbu: main update Show offline",
            "{name} has been offline since {since}. Pick a new main update Show in Home Assistant, "
-           "or the house picks {pick} on {pick_at}."),
+           "or Genbu picks {pick} on {pick_at}."),
     "de": ("Genbu: Haupt-Update-Show offline",
            "{name} ist seit {since} offline. Wähl in Home Assistant einen neuen Haupt-Update-Show, "
-           "sonst nimmt das Haus am {pick_at} {pick}."),
+           "sonst nimmt Genbu am {pick_at} {pick}."),
 }
