@@ -2,18 +2,18 @@
 is how the main moves by hand; a second main is added in the integration's options.
 
 And for each Show, "Music plays on": where music asked for at that Show plays. Automatic is the room's
-speaker, else the Show itself, which is also where music goes while a speaker is offline (music.py). Home Assistant lets a device belong to one integration only,
-so it sits on a small genbu device of the Show's name, connected via the Show's ESPHome device."""
+speaker, else the Show itself, which is also where music goes while a speaker is offline (music.py). It
+sits on the Show's small genbu device (coordinator.show_device)."""
 
 from __future__ import annotations
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from .const import CHANGED, DOMAIN, MAIN_SELECT
+from .const import CHANGED, MAIN_SELECT
+from .coordinator import show_device
 from .house import Show
 from .music import AUTO
 
@@ -78,8 +78,7 @@ class MusicPlaysOn(SelectEntity):
         self.hub = entry.runtime_data
         self.device = show.device
         self._attr_unique_id = f"{entry.entry_id}_music_{show.device}"
-        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, show.device)}, name=show.name,
-                                            model="Genbu Show settings", via_device_id=show.device)
+        self._attr_device_info = show_device(show)
         self._attr_options = []
         self._labels: dict[str, str] = {}  # option -> player, AUTO for automatic
 

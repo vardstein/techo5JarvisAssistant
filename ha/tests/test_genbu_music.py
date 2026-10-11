@@ -132,8 +132,11 @@ async def test_an_offline_speaker_falls_back_to_the_show_at_once(hass: HomeAssis
     _, sat = show(hass, "genbushow5", "Living Room")
     await setup(hass, main="genbushow5")
     select = "select.genbushow5_music_plays_on"
+    fallback = "sensor.genbushow5_music_falls_back_to"
     assert music(hass)[sat] == living
     assert hass.states.get(select).state == "Automatic (Wohnzimmer, else Jarvis Show 5)"
+    assert hass.states.get(fallback).state == "Jarvis Show 5"
+    assert hass.states.get(fallback).attributes["player"] == own
 
     # No look in between: the speaker going offline is enough.
     await flip(hass, living, "unavailable", "Wohnzimmer")
@@ -146,6 +149,7 @@ async def test_an_offline_speaker_falls_back_to_the_show_at_once(hass: HomeAssis
     # A pick that goes offline falls back the same way.
     await hass.services.async_call("select", "select_option", {"entity_id": select, "option": "Wohnzimmer"},
                                    blocking=True)
+    assert hass.states.get(fallback).state == "Jarvis Show 5"  # the room's speaker is not counted twice
     await flip(hass, living, "unavailable", "Wohnzimmer")
     assert music(hass)[sat] == own
     assert hass.states.get(select).state == "Wohnzimmer"
@@ -159,6 +163,8 @@ async def test_the_select_follows_the_show(hass: HomeAssistant):
     mine = devices.async_get_device_by_identifier((DOMAIN, device), hass.config_entries.async_entries(DOMAIN)[0].entry_id)
     assert mine.via_device_id == device
     assert mine.name == "Hall"
+    on_it = {e.entity_id for e in er.async_entries_for_device(er.async_get(hass), mine.id)}
+    assert on_it == {"select.hall_music_plays_on", "sensor.hall_music_falls_back_to"}
 
     devices.async_update_device(device, name_by_user="Flur")
     await look(hass)
@@ -170,6 +176,7 @@ async def test_the_select_follows_the_show(hass: HomeAssistant):
     await look(hass)
     assert devices.async_get(mine.id) is None
     assert hass.states.get("select.hall_music_plays_on") is None
+    assert hass.states.get("sensor.hall_music_falls_back_to") is None
     hub = hass.config_entries.async_entries(DOMAIN)[0].runtime_data
     assert hub.house.music_choice(device) == ""
 

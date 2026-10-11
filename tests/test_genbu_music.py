@@ -79,6 +79,32 @@ class PlaysOnTests(unittest.TestCase):
         self.assertEqual(music.plays_on("", "", ["x"], [LIVING]), "")
 
 
+class FallsBackToTests(unittest.TestCase):
+    def test_the_rooms_speaker_falls_back_to_the_show(self):
+        self.assertEqual(music.falls_back_to("", "living_room", ["Jarvis Show 5"], [LIVING, SHOW5]), SHOW5.entity)
+
+    def test_a_pick_falls_back_to_the_room_then_the_show(self):
+        kitchen = Player("media_player.kitchen", "Küche", area="kitchen")
+        self.assertEqual(music.falls_back_to(kitchen.entity, "living_room", ["Jarvis Show 5"],
+                                             [kitchen, LIVING, SHOW5]), LIVING.entity)
+        off = Player(LIVING.entity, LIVING.name, area="living_room", maker="Arylic", available=False)
+        self.assertEqual(music.falls_back_to(kitchen.entity, "living_room", ["Jarvis Show 5"],
+                                             [kitchen, off, SHOW5]), SHOW5.entity)
+
+    def test_the_show_is_the_end_of_the_line(self):
+        # Alone in its room, or while the room's speaker is offline: still the Show itself.
+        self.assertEqual(music.falls_back_to("", "bedroom", ["livingRoomEcho8"], [LIVING, OWN]), OWN.entity)
+        off = Player(LIVING.entity, LIVING.name, area="living_room", maker="Arylic", available=False)
+        self.assertEqual(music.falls_back_to("", "living_room", ["Jarvis Show 5"], [off, SHOW5]), SHOW5.entity)
+
+    def test_picking_the_rooms_speaker_is_not_counted_twice(self):
+        self.assertEqual(music.falls_back_to(LIVING.entity, "living_room", ["Jarvis Show 5"], [LIVING, SHOW5]),
+                         SHOW5.entity)
+
+    def test_no_own_player_is_nothing(self):
+        self.assertEqual(music.falls_back_to("", "living_room", ["x"], [LIVING]), "")
+
+
 class HouseMusicTests(unittest.TestCase):
     def test_a_pick_is_kept_and_automatic_forgets_it(self):
         h = house.House()
