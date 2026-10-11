@@ -1,3 +1,5 @@
+//go:build !dot
+
 package dashboard
 
 import (
