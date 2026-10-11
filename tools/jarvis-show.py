@@ -26,8 +26,9 @@ from jarvis_crown import ui  # noqa: E402
 from jarvis_crown import music_assistant as ma_api  # noqa: E402
 from jarvis_crown.shows import known_shows, show_named  # noqa: E402
 from jarvis_crown.settings import RUN, Asker, Settings, SettingsError, gather, save_defaults, secret_files  # noqa: E402
-from jarvis_crown.preflight import preflight_ok, print_checks, run_preflight  # noqa: E402
+from jarvis_crown.preflight import SERIAL_GROUPS, _group_names, preflight_ok, print_checks, run_preflight  # noqa: E402
 from jarvis_crown.recovery import RecoveryError, adb_recovery_serials, identify_recovery_show  # noqa: E402
+from jarvis_crown.to_fastboot import ToFastbootError, bring_to_fastboot  # noqa: E402
 from jarvis_crown.releases import CHANNELS, DEFAULT_CHANNEL, ReleaseError, fetch_rootfs  # noqa: E402
 from jarvis_crown.unlock import UnlockError, unlock_show  # noqa: E402
 
@@ -104,7 +105,8 @@ def parse_args() -> argparse.Namespace:
                             "forecast, volume) and music by voice (default: ask; Enter is no)")
     setup.add_argument("--no-questions", action="store_true", help="ask nothing; take switches and the keyring only")
     hass = parser.add_argument_group("home-assistant: add an installed Show to Home Assistant")
-    hass.add_argument("--host", help="the Show's address, when Home Assistant has not discovered it")
+    hass.add_argument("--host", help="the Show's address, when Home Assistant has not discovered it; install and "
+                                     "unlock reboot a Show running Jarvis there into fastboot over SSH")
     hass.add_argument("--key-file", type=Path, help="its encryption key (default backups/<serial>/home-assistant.key)")
     logo = parser.add_argument_group("boot-logo: the OpenJade logo at boot on an installed Show (--name, --host)")
     logo.add_argument("--amazon-logo", action="store_true", help="put Amazon's logo back instead")
@@ -528,6 +530,22 @@ def _main() -> int:
             ui.out.fail(f"device identity gate: {exc}")
             return 2
         return 0
+
+    # install and unlock start from fastboot; a Show that is on Android, TWRP or Jarvis is rebooted there
+    # first (only rebooted, nothing written), so nobody has to hold buttons.
+    if args.command in ("install", "unlock"):
+        if os.geteuid() != 0 and not _group_names() & SERIAL_GROUPS:
+            ui.out.fail("this login isn't in dialout (or uucp), which the install needs for the Show's rescue "
+                        "console; nothing was touched. Join it, then run this under it: "
+                        "sudo usermod -aG dialout \"$USER\", then sg dialout -c '<this command>'")
+            return 1
+        try:
+            bring_to_fastboot(name=args.name, backups=backups, host=args.host, find_host=_find_host,
+                              keep_recovery=args.command == "install" and args.board is not None,
+                              say=ui.out.step)
+        except ToFastbootError as exc:
+            ui.out.fail(f"{exc}")
+            return 2
 
     # Offline preflight may still be requested for a known board. Without --board it auto-detects the
     # attached first-generation Show, preserving the one-command installer experience.

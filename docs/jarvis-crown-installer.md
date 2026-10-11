@@ -546,8 +546,8 @@ has the default given here.
 | --- | --- | --- |
 | `preflight` (the default) | Checks this computer and the input files. Touches no Show. With a Show on fastboot it also says which board it is. | nothing |
 | `identify` | Reads the Show on fastboot, read-only: board, serial, whether it is unlocked. | a Show on fastboot |
-| `unlock` | Runs Amonet on the Show on fastboot, after you type the confirmation. Does nothing on a unit that is already unlocked. | a Show on fastboot |
-| `install` | The whole install: fetches what it needs, unlocks if needed, recovery backup, LineageOS's drivers, Jarvis, and then Home Assistant (below). Asks everything before it writes. | `--name` |
+| `unlock` | Runs Amonet on the Show on fastboot, after you type the confirmation. Does nothing on a unit that is already unlocked. Sends the Show to fastboot first, like `install`. | a Show on fastboot, adb or SSH |
+| `install` | The whole install: sends the Show to fastboot (from Android or TWRP with adb, from a running Jarvis over SSH), fetches what it needs, unlocks if needed, recovery backup, LineageOS's drivers, Jarvis, and then Home Assistant (below). Asks everything before it writes. | `--name` |
 | `amonet-upgrade` | Moves a unit that still has Amonet 1.x to 2.x, from TWRP ([Amonet 1.x units](#amonet-1x-units)). | `--board`, one Show in TWRP |
 | `wifi` | Puts an installed Show on a Wi-Fi network over its USB cable, for when it is offline. | `--wifi` |
 | `home-assistant` | Adds an installed Show to Home Assistant and sets it up: the steps above. Safe to run again. | `--name` |
@@ -560,7 +560,7 @@ has the default given here.
 | `--name NAME` | install, home-assistant, boot-logo | The Show's name, as Home Assistant shows it. The installer records it in `backups/<serial>/show.json`, and the other commands find the unit by it. |
 | `--board crown\|checkers` | all | Cross-checks the board. Normally it is detected; `amonet-upgrade` needs it, and `install` needs it to carry on from TWRP. |
 | `--serial SERIAL` | wifi, home-assistant | Which unit. `wifi` talks to that Show on USB (not needed when only one is attached); `home-assistant` takes its key from `backups/<serial>/`. |
-| `--host ADDRESS` | home-assistant, boot-logo | The Show's address, when `backups/<serial>/address`, mDNS and Home Assistant cannot find it (a Show on another VLAN, say). |
+| `--host ADDRESS` | home-assistant, boot-logo, install, unlock | The Show's address, when `backups/<serial>/address`, mDNS and Home Assistant cannot find it (a Show on another VLAN, say). For `install` and `unlock`, where a Show running Jarvis is reached over SSH to send it to fastboot. |
 | `--key-file FILE` | home-assistant | The Show's ESPHome encryption key. Default `backups/<serial>/home-assistant.key`. |
 | `--lineage-zip ZIP` | install, amonet-upgrade, preflight | LineageOS 18.1 for this board. Default the cached one, which `install` downloads and checks when it isn't there yet. |
 | `--boot-image FILE` | install | The board's boot image. Default fetched and checked the same way. |

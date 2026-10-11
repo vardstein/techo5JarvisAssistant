@@ -63,15 +63,27 @@ Preflight checks this computer and the input files. With `--board` it doesn't to
 python3 tools/jarvis-show.py preflight --board checkers     # or crown
 ```
 
-Put the Show into fastboot mode and run the read-only identity check:
+`install` and `unlock` send the Show to fastboot themselves, so there are no buttons to hold:
+
+- on Android or in TWRP, with `adb reboot bootloader`;
+- already running Jarvis, over SSH with its own `rebootto bootloader`. The address is the one saved
+  at its first install (or mDNS, or `--host`), and the Show has to report the serial its record was
+  saved under, or nothing is rebooted.
+
+When it doesn't come up on fastboot, the installer stops and says so. `fastboot continue` starts the
+Show normally again.
+
+`identify` is the read-only identity check. It doesn't move the Show, so run it only when the Show is
+already on fastboot:
 
 ```sh
 python3 tools/jarvis-show.py identify
 ```
 
 Carry on only when it reports exactly one device and the board you expect. Stop if the product,
-serial or board is a surprise. If an earlier install stopped while the same Show is in verified
-TWRP, `install --board <board>` carries on from there without going back to fastboot.
+serial or board is a surprise. `install` runs the same check again. If an earlier install stopped
+while the same Show is in verified TWRP, `install --board <board>` carries on from there without going
+back to fastboot.
 
 ## Install
 
@@ -93,8 +105,8 @@ use the recovery and rollback path.
 ## Reinstalling a Show
 
 A Show running a build from before the release key change can't update itself and needs a
-reinstall. Use the same steps and the same `--name`. The
-backup from the first install stays where it is, and the new run makes a fresh one.
+reinstall. Use the same steps and the same `--name`, with the Show still running and on
+the network, so the installer can send it to fastboot over SSH. The backup from the first install stays where it is, and the new run makes a fresh one.
 
 ## After first boot
 
