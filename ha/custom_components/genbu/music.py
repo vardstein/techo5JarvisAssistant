@@ -1,6 +1,7 @@
 """Where a Show's music plays, without Home Assistant. Each Show has its own answer, so music asked for
 in the bedroom plays in the bedroom: what was picked for it in its "Music plays on" select, else the
-room's own speaker, else the Show itself. Never a speaker in another room unless it was picked.
+room's own speaker, else the Show itself. Never a speaker in another room unless it was picked. One
+that is offline is passed over, so the Show itself is always there to fall back on while it is up.
 
 The glue in coordinator.py feeds it the Music Assistant players and the Shows as Home Assistant has
 them now, so a Show moved to another room plays there from the next look on."""
@@ -55,9 +56,9 @@ def room_player(area: str, players: list[Player]) -> str:
 
 
 def plays_on(chosen: str, area: str, names: list[str], players: list[Player]) -> str:
-    """Where this Show's music goes: the picked player while it still exists, else the room's
-    speaker, else the Show itself; empty when there is none of them."""
-    known = {p.entity for p in players}
-    if chosen and chosen != AUTO and chosen in known:
-        return chosen
-    return room_player(area, players) or own_player(names, players)
+    """Where this Show's music goes: the picked player, else the room's speaker, else the Show itself,
+    the first of them that is not offline. When all of them are, the first; empty when there is none."""
+    by = {p.entity: p for p in players}
+    picked = chosen if chosen and chosen != AUTO and chosen in by else ""
+    line = [e for e in (picked, room_player(area, players), own_player(names, players)) if e]
+    return next((e for e in line if by[e].available), line[0] if line else "")

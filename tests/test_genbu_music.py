@@ -59,6 +59,22 @@ class PlaysOnTests(unittest.TestCase):
                          OWN.entity)
         self.assertEqual(music.plays_on(music.AUTO, "living_room", [], [LIVING]), LIVING.entity)
 
+    def test_an_offline_room_speaker_falls_back_to_the_show(self):
+        off = Player(LIVING.entity, LIVING.name, area="living_room", maker="Arylic", available=False)
+        self.assertEqual(music.plays_on("", "living_room", ["Jarvis Show 5"], [off, SHOW5]), SHOW5.entity)
+
+    def test_an_offline_pick_falls_back_to_the_room_then_the_show(self):
+        off = Player("media_player.kitchen", "Küche", area="kitchen", available=False)
+        self.assertEqual(music.plays_on(off.entity, "living_room", ["Jarvis Show 5"], [off, LIVING, SHOW5]),
+                         LIVING.entity)
+        self.assertEqual(music.plays_on(off.entity, "bedroom", ["livingRoomEcho8"], [off, LIVING, OWN]),
+                         OWN.entity)
+
+    def test_all_offline_is_still_the_first_of_them(self):
+        off = Player(LIVING.entity, area="living_room", available=False)
+        own = Player(SHOW5.entity, maker="OpenJade", device_name="Jarvis Show 5", available=False)
+        self.assertEqual(music.plays_on("", "living_room", ["Jarvis Show 5"], [off, own]), off.entity)
+
     def test_no_room_and_no_own_player_is_nothing(self):
         self.assertEqual(music.plays_on("", "", ["x"], [LIVING]), "")
 

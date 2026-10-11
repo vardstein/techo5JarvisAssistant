@@ -458,7 +458,7 @@ What happens with the answers:
      - with Music Assistant in Home Assistant as well, music by voice without the model: "Spiel
        Musik", "Spiel was Ruhiges", "Musik von Queen", "Hör Radio FFH". It plays where the Show that
        was asked plays music (its "Music plays on" in the Genbu integration: the room's speaker, else
-       the Show itself, never another room's), and says so when there is nowhere. The scripts behind it (`play_random_music`, `jarvis_play_mood`,
+       the Show itself, never another room's; the Show itself too while that speaker is offline), and says so when there is nowhere. The scripts behind it (`play_random_music`, `jarvis_play_mood`,
        `jarvis_play_radio`) are there for the model too. Moods find playlists by words in their
        names, so "laute Musik" plays a playlist with "metal" or "rock" in its name if there is one.
 
