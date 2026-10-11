@@ -39,7 +39,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add) -> Non
 
 class HouseVersion(SensorEntity):
     _attr_icon = "mdi:home-import-outline"
-    _attr_name = "Genbu house version"
+    _attr_name = "Genbu Show version"
     _attr_should_poll = False
     _unrecorded_attributes = frozenset({"shows", "music_players"})
 

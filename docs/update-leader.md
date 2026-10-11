@@ -10,6 +10,11 @@ apart: one says yes, another is off for a week, a third was installed from a new
 This design gives a house one place that decides the version: Home Assistant. One Show in the house, the main
 update Show, looks for updates and asks about them. The other Shows follow.
 
+"House" and "house version" are words for this doc and the code only. What you see and hear says
+"your Shows", "your other Shows" or "Genbu", the way Home Assistant talks: "Your Shows are on 1.0.3",
+not "The house runs 1.0.3". The sensor keeps its id, `sensor.genbu_house_version`, because the Shows
+read it; only its name changed, to "Genbu Show version".
+
 ## Who decides what
 
 | Who | Job |
@@ -102,7 +107,7 @@ is needed.**
 | Situation | What happens |
 |---|---|
 | Fresh install, its version differs from the house (older **or newer**) | It moves to the house version without asking. The installer has already said so. |
-| It was off and boots on a different version than the house | It asks once by voice and on screen: "The house runs 1.0.3. Update now?" "Yes" installs. "No" asks again on the next boot or in 24 hours, never during quiet hours. |
+| It was off and boots on a different version than the house | It asks once by voice and on screen: "This Show is on version 1.0.2, your other Shows are on 1.0.3. Want me to switch to it now?" "Yes" installs. "No" asks again on the next boot or in 24 hours, never during quiet hours. |
 | It is running when the house version changes | It follows straight away once nobody is using it: no music, call, or timer or alarm due soon. It does not ask, because your "yes" on the main Show counts for the house (Jade's choice). |
 | The house version is not installable here | It stays and says so in `update_status`, for example when the release has no manifest for its product or board. |
 | The main Show is missing | It stays where it is. See below. |
@@ -145,7 +150,7 @@ Why this cannot race:
   connection to HA does not count time at all.
 
 The Show screens stay quiet by default, with HA as the one place to look. The update page on each Show shows
-one line: "Following <main> · house version 1.0.3", or "Main update Show <name> not reachable since …".
+one line: "Following <main> · version 1.0.3", or "Main update Show <name> not reachable since …".
 
 ## Installer flow
 
@@ -157,10 +162,10 @@ After the HA sign-in (job 40):
      the Show then stays a free Show on its channel.
 2. **No main update Show yet:** ask "Make <name> the main update Show for this house? It will be the only
    one that looks for and asks about updates. (Recommended for your first Show.)" The default is yes.
-3. **One exists:** say "<main> is this house's main update Show (house version <tag>). <name> will follow
+3. **One exists:** say "<main> is your main update Show (version <tag>). <name> will follow
    it." Offer "follow" (default) or "make this one a main update Show too".
-4. **Making a second main** gets the warning: "<main> is already the main update Show. With two, the house
-   follows whichever of them is newest. They cannot fight, but you get two Shows that ask about updates.
+4. **Making a second main** gets the warning: "<main> is already the main update Show. With two, the other
+   Shows follow whichever of them is newer. They cannot fight, but you get two Shows that ask about updates.
    Continue?" The default is no.
 5. **After the Show is added,** the installer sets the choice through the integration's select or options
    over REST. A following Show then aligns on its own (the first row of the table above). The installer

@@ -294,7 +294,7 @@ func (u *Firmware) houseStep(ctx context.Context, now time.Time) {
 	switch decide(f) {
 	case align:
 		slog.Info("moving to the house version", "house", v, "running", layout.Version)
-		u.houseStatus("Moving to house version " + v)
+		u.houseStatus("Moving to " + v)
 		u.alignTo(ctx, v)
 		return
 	case askFirst:
@@ -314,15 +314,15 @@ func houseLine(f following, main, missing string, now time.Time) string {
 	}
 	switch {
 	case f.house == f.running:
-		return "Following " + main + " · house version " + f.house
+		return "Following " + main + " · version " + f.house
 	case f.house == f.failed:
-		return "House version " + f.house + " did not install here; staying on " + f.running
+		return "Version " + f.house + " did not install here; staying on " + f.running
 	case !f.committed:
-		return "Waiting for this version to settle before moving to house version " + f.house
+		return "Waiting for this version to settle before moving to " + f.house
 	case f.busy:
-		return "Moving to house version " + f.house + " once nobody is using this Show"
+		return "Moving to " + f.house + " once nobody is using this Show"
 	}
-	return "The house runs " + f.house + "; install it from the update card"
+	return "Your other Shows are on " + f.house + "; install it from the update card"
 }
 
 func (u *Firmware) mainName() string {
@@ -366,7 +366,7 @@ func (u *Firmware) askToAlign(v string, now time.Time) {
 	}, func() {
 		say(i18n.T("Okay, I'll remind you later."))
 	})
-	if !ask(i18n.F("This Show is on version {running}, the rest of the house runs {house}. Want me to switch to it now?",
+	if !ask(i18n.F("This Show is on version {running}, your other Shows are on {house}. Want me to switch to it now?",
 		"running", spoken(layout.Version), "house", spoken(v))) {
 		question.Withdraw("house")
 	}
@@ -385,7 +385,7 @@ func (u *Firmware) alignTo(ctx context.Context, v string) {
 		u.house.mu.Lock()
 		u.house.retryAt = time.Now().Add(fetchRetry)
 		u.house.mu.Unlock()
-		u.houseStatus("House version " + v + " could not be fetched: " + err.Error())
+		u.houseStatus("Version " + v + " could not be fetched: " + err.Error())
 		return
 	}
 	if err := u.put(ctx, m, update.Align); err != nil && !errors.Is(err, update.ErrInstalling) {
