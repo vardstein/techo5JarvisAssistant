@@ -3,6 +3,11 @@
  * day beside it. However far off it is: the card looks two weeks ahead
  * first, and further when those are empty, up to a year.
  *
+ * entity is one calendar, entities a list of them (the next event of any).
+ * A calendar Home Assistant doesn't have, or can't read, is said as such
+ * rather than as "Keine Termine": a calendar renamed or removed used to
+ * look like an empty week.
+ *
  * Every size is a multiple of --u, one pixel of the 1280x800 screen this
  * card was laid out on. On that screen it looks as it always did; on any
  * other it keeps the same proportions, limited by whichever side is
@@ -10,12 +15,13 @@
  */
 class JarvisCalendarCard extends HTMLElement {
   setConfig(config) {
-    if (!config.entity) {
+    const entities = [].concat(config.entities || [], config.entity || []).filter(Boolean);
+    if (!entities.length) {
       throw new Error("calendar entity required");
     }
 
     this._config = {
-      entity: config.entity,
+      entities: [...new Set(entities)],
       daysAhead: Number(config.daysAhead || 14),
       // Where it stops looking. daysAhead used to be both, which hid an
       // appointment three weeks out behind "Keine Termine".
@@ -36,8 +42,10 @@ class JarvisCalendarCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
 
-    const state = hass.states[this._config?.entity];
-    const marker = state ? state.state + "|" + state.last_updated : "";
+    const marker = (this._config?.entities || []).map((entity) => {
+      const state = hass.states[entity];
+      return state ? state.state + "|" + state.last_updated : "-";
+    }).join(",");
 
     if (marker !== this._marker) {
       this._marker = marker;
@@ -57,34 +65,42 @@ class JarvisCalendarCard extends HTMLElement {
       return;
     }
 
-    try {
-      // A short look first, as most days there is something soon, and a
-      // year of a busy calendar is a big answer to ask for every minute.
-      const start = new Date();
-      let events = [];
-      for (const days of this._horizons()) {
-        const end = new Date(start.getTime() + days * 86400000);
-        const query = new URLSearchParams({
-          start: start.toISOString(),
-          end: end.toISOString()
-        });
+    const there = this._config.entities.filter((entity) => this._hass.states[entity]);
+    this._missing = this._config.entities.filter((entity) => !this._hass.states[entity]);
+    this._unreadable = false;
+    this._events = [];
+    this._loading = false;
+    if (!there.length) {
+      this._render();
+      return;
+    }
 
-        const response = await this._hass.callApi(
-          "GET",
-          "calendars/" + encodeURIComponent(this._config.entity) + "?" + query.toString()
-        );
+    // A short look first, as most days there is something soon, and a
+    // year of a busy calendar is a big answer to ask for every minute.
+    const start = new Date();
+    for (const days of this._horizons()) {
+      const end = new Date(start.getTime() + days * 86400000);
+      const query = new URLSearchParams({
+        start: start.toISOString(),
+        end: end.toISOString()
+      }).toString();
 
-        events = Array.isArray(response) ? response : [];
-        if (events.length) {
-          break;
-        }
+      const answers = await Promise.allSettled(there.map((entity) =>
+        this._hass.callApi("GET", "calendars/" + encodeURIComponent(entity) + "?" + query)
+      ));
+      if (answers.every((a) => a.status === "rejected")) {
+        this._unreadable = true;
+        break;
       }
 
-      this._events = events;
-      this._loading = false;
-    } catch (_) {
-      this._events = [];
-      this._loading = false;
+      const events = answers.flatMap((a) =>
+        a.status === "fulfilled" && Array.isArray(a.value) ? a.value : []
+      );
+      events.sort((a, b) => this._start(a) - this._start(b));
+      if (events.length) {
+        this._events = events;
+        break;
+      }
     }
 
     this._render();
@@ -96,6 +112,11 @@ class JarvisCalendarCard extends HTMLElement {
     const first = this._config.daysAhead;
     const last = this._config.maxDaysAhead;
     return [...new Set([first, Math.min(Math.max(first, 92), last), last])];
+  }
+
+  _start(event) {
+    const value = new Date(event?.start?.dateTime || event?.start?.date || 0).getTime();
+    return Number.isNaN(value) ? 0 : value;
   }
 
   _escape(value) {
@@ -138,8 +159,18 @@ class JarvisCalendarCard extends HTMLElement {
 
   _render() {
     const event = this._events[0];
-    const eventName = this._loading ? "Lade…" : event?.summary || "Keine Termine";
-    const date = event ? this._when(event) : "";
+    let eventName = this._loading ? "Lade…" : event?.summary || "Keine Termine";
+    let date = event ? this._when(event) : "";
+    if (!this._loading && !event) {
+      // Only when nothing else is there to show: one calendar of three
+      // gone still leaves the others' next event on the card.
+      if (this._missing?.length === this._config.entities.length) {
+        eventName = "Kalender fehlt";
+        date = this._missing.join(", ");
+      } else if (this._unreadable) {
+        eventName = "Kalender nicht erreichbar";
+      }
+    }
 
     this.innerHTML = `
       <style>

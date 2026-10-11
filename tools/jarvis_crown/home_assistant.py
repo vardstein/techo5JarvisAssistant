@@ -905,11 +905,18 @@ def _calendar_cards(node: Any) -> list[dict]:
     return found
 
 
-def _point_calendar_cards(ha: HomeAssistant, calendar: str, have: set[str],
+def _card_calendars(card: dict) -> list[str]:
+    """The calendars a Jarvis calendar card shows: its entities, and its entity."""
+    listed = card.get("entities")
+    listed = [listed] if isinstance(listed, str) else list(listed or [])
+    return [str(c) for c in listed + [card.get("entity")] if c]
+
+
+def _point_calendar_cards(ha: HomeAssistant, chosen: list[str], have: set[str],
                           keep: Callable[[str, Any], str] | None) -> list[str]:
-    """Points every Jarvis calendar card whose calendar Home Assistant does not have (the dashboard ships
-    with calendar.personal as a stand-in) at calendar. A card on a calendar that is there is left alone.
-    Returns the dashboards changed."""
+    """Points every Jarvis calendar card that has a calendar Home Assistant does not have (the dashboard
+    ships with calendar.personal as a stand-in) at the chosen calendars: one goes in entity, more in
+    entities. A card whose calendars are all there is left alone. Returns the dashboards changed."""
     changed = []
     boards = ha.ws({"type": "lovelace/dashboards/list"}) or []
     for path in [None] + [b.get("url_path") for b in boards if b.get("mode") == "storage"]:
@@ -917,16 +924,38 @@ def _point_calendar_cards(ha: HomeAssistant, calendar: str, have: set[str],
             config = ha.ws({"type": "lovelace/config", "url_path": path})
         except HomeAssistantError:
             continue
-        cards = [c for c in _calendar_cards(config) if c.get("entity") not in have]
+        cards = [c for c in _calendar_cards(config) if not _card_calendars(c) or
+                 any(cal not in have for cal in _card_calendars(c))]
         if not cards:
             continue
         if keep:
             keep(f"dashboard-{path or 'lovelace'}", json.loads(json.dumps(config)))
         for card in cards:
-            card["entity"] = calendar
+            if len(chosen) == 1:
+                card["entity"] = chosen[0]
+                card.pop("entities", None)
+            else:
+                card["entities"] = list(chosen)
+                card.pop("entity", None)
         ha.ws({"type": "lovelace/config/save", "url_path": path, "config": config})
         changed.append(path or "lovelace")
     return changed
+
+
+def _check_calendars(ha: HomeAssistant, chosen: list[str], progress: Callable[[str], None]) -> None:
+    """Asks Home Assistant for each chosen calendar's events over one minute from now, to see that it
+    answers. What comes back is thrown away unread: the installer has no business with the events."""
+    now = time.time()
+    span = "start={}&end={}".format(*(urllib.parse.quote(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t)))
+                                      for t in (now, now + 60)))
+    for calendar in chosen:
+        try:
+            ha.request("GET", f"/api/calendars/{urllib.parse.quote(calendar)}?{span}")
+        except HomeAssistantError as exc:
+            progress(f"WARN: {calendar} did not answer ({exc}); the Show and the dashboard show nothing "
+                     "from it until it does (docs/calendars.md)")
+        else:
+            progress(f"{calendar} answers")
 
 
 def _caldav_entries(ha: HomeAssistant) -> list[dict]:
@@ -965,7 +994,7 @@ def _set_up_calendars(ha: HomeAssistant, prefix: str, opts: "DeployOptions", cho
                       progress: Callable[[str], None], sleep: Callable[[float], None],
                       clock: Callable[[], float]) -> None:
     """A CalDAV account for Home Assistant when one is given or wanted, then the calendars this Show
-    shows, and the dashboard's calendar card pointed at one that is there. An account never comes in
+    shows, a quick check that each of them answers, and the dashboard's calendar card pointed at them. An account never comes in
     next to one Home Assistant has: it replaces it, or the step is skipped."""
     have = _calendars(ha)
     old = _caldav_entries(ha)
@@ -1036,13 +1065,14 @@ def _set_up_calendars(ha: HomeAssistant, prefix: str, opts: "DeployOptions", cho
         progress(f"the Show shows {', '.join(chosen)}")
     else:
         progress(f"WARN: the Show has no esphome.{action} action yet, so it was not given its calendars")
+    _check_calendars(ha, chosen, progress)
     try:
-        boards = _point_calendar_cards(ha, chosen[0], set(have), opts.keep_replaced)
+        boards = _point_calendar_cards(ha, chosen, set(have), opts.keep_replaced)
     except HomeAssistantError as exc:
         progress(f"WARN: the dashboard's calendar card was not changed: {exc}")
         return
     for board in boards:
-        progress(f"the calendar card on {board} now shows {chosen[0]}")
+        progress(f"the calendar card on {board} now shows {', '.join(chosen)}")
 
 
 def show_username(name: str) -> str:

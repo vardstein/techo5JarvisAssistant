@@ -5,13 +5,17 @@ Two things on a Show show calendar events: the calendar card along the bottom of
 on the date under the clock. Both read from Home Assistant, so the Show never holds a calendar
 password. The calendar has to be in Home Assistant first, as a `calendar.*` entity.
 
-If the card says "Keine Termine" for weeks, or the date under the clock does nothing when you tap
-it, the calendar either isn't in Home Assistant yet or the card and the Show are pointed at a name
-that doesn't exist. The dashboard ships with `calendar.personal` as a placeholder.
+If the card says "Kalender fehlt", it is pointed at a calendar Home Assistant doesn't have, and it
+lists which. The dashboard ships with `calendar.personal` as a placeholder, and a calendar can also
+lose its name, for example when its account is added again and it comes back as
+`calendar.personal_2`. "Kalender nicht erreichbar" means Home Assistant has the calendar but couldn't
+read it, which usually means the calendar server or the account's password. "Keine Termine" really
+means nothing is on it for the next year. If the date under the clock does nothing when you tap it,
+the Show has no calendar chosen (step 4).
 
 The installer can do steps 1, 3 and 4 for a CalDAV account. It asks for the account and which
-calendars the Show shows, and points the card at one of them
-([step 9 of its Home Assistant part](jarvis-crown-installer.md)). To run only that part again
+calendars the Show shows, checks that each of them answers (without reading what's on them), and
+points the card at them ([step 9 of its Home Assistant part](jarvis-crown-installer.md)). To run only that part again
 for a Show that's already installed:
 
 ```sh
@@ -70,8 +74,20 @@ title: Kalender
 daysAhead: 14
 ```
 
-The card shows one calendar: the next event on it, however far off. It looks `daysAhead` days ahead
-first, and keeps looking up to a year (`maxDaysAhead`, 366 by default) when those are empty.
+For several calendars, list them under `entities` instead:
+
+```yaml
+type: custom:jarvis-calendar-card
+entities:
+  - calendar.personal
+  - calendar.familie
+title: Kalender
+```
+
+The card shows the next event, however far off, from whichever of its calendars has the earliest. It
+looks `daysAhead` days ahead first, and keeps looking up to a year (`maxDaysAhead`, 366 by default)
+when those are empty. A calendar on the list that is missing or can't be read is skipped as long as
+another one works.
 
 ## 4. Choose the calendars for the Show's own calendar page
 

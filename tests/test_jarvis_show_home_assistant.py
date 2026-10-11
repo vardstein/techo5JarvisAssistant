@@ -9,6 +9,7 @@ import stat
 import sys
 import tempfile
 import unittest
+import urllib.parse
 from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -604,11 +605,13 @@ class RoomTests(unittest.TestCase):
 class FakeCalendarHA(FakeHA):
     """FakeHA with Home Assistant's CalDAV form and the Show's calendar_sources action. calendars come
     from a CalDAV account it has (entry OLD), yaml_calendars from configuration.yaml (no registry entry);
-    caldav_brings are the new account's (entry CAL1)."""
+    caldav_brings are the new account's (entry CAL1). Every calendar has one private event; the ones
+    in silent don't answer."""
 
     def __init__(self, *, calendars=(), yaml_calendars=(), caldav_error=None, caldav_abort=None,
-                 caldav_brings=("calendar.personal",), **kw):
+                 caldav_brings=("calendar.personal",), silent=(), **kw):
         super().__init__(**kw)
+        self.silent = set(silent)
         self.calendars = {c: c.split(".", 1)[1].title() for c in (*calendars, *yaml_calendars)}
         self.owner = {c: "OLD" for c in calendars}
         self.caldav_entries = [{"entry_id": "OLD", "domain": "caldav", "title": "old-user"}] if calendars else []
@@ -618,6 +621,13 @@ class FakeCalendarHA(FakeHA):
         self.saved = []
 
     def request(self, method, path, body=None):
+        if method == "GET" and path.startswith("/api/calendars/"):
+            self.calls.append((method, path, body))
+            calendar = urllib.parse.unquote(path[len("/api/calendars/"):].split("?", 1)[0])
+            if calendar in self.silent or calendar not in self.calendars:
+                raise ha.HomeAssistantError(f"GET /api/calendars/{calendar}: HTTP 500")
+            return [{"summary": "Fahrpruefung PRIVATE", "description": "PRIVATE notes",
+                     "start": {"dateTime": "2026-10-29T09:00:00+01:00"}, "end": {"dateTime": "2026-10-29T10:00:00+01:00"}}]
         if method == "GET" and path == "/api/config/config_entries/entry?domain=caldav":
             return list(self.caldav_entries)
         if method == "DELETE" and path.startswith("/api/config/config_entries/entry/"):
@@ -803,6 +813,33 @@ class CalendarTests(unittest.TestCase):
         self.assertEqual(kept[0][0], "dashboard-jarvis-display")
         self.assertEqual(kept[0][1]["views"][0]["cards"][0]["cards"][0]["entity"], "calendar.personal")
         self.assertIn("the calendar card on jarvis-display now shows calendar.familie", log)
+
+    def test_the_card_gets_every_chosen_calendar(self):
+        fake = FakeCalendarHA(calendars=("calendar.familie", "calendar.arbeit"))
+        fake.boards = [{"url_path": "jarvis-display", "mode": "storage"}]
+        fake.views = {"jarvis-display": [{"cards": [
+            {"type": "custom:jarvis-calendar-card", "entities": ["calendar.arbeit", "calendar.personal"]},
+            {"type": "custom:jarvis-calendar-card", "entities": ["calendar.arbeit", "calendar.familie"]}]}]}
+        _, log = run_deploy(fake, host="10.0.0.9", calendars="calendar.familie, calendar.arbeit")
+        cards = fake.saved[0]["config"]["views"][0]["cards"]
+        self.assertEqual(cards[0], {"type": "custom:jarvis-calendar-card",
+                                    "entities": ["calendar.familie", "calendar.arbeit"]})
+        self.assertEqual(cards[1]["entities"], ["calendar.arbeit", "calendar.familie"])  # all there: untouched
+        self.assertIn("the calendar card on jarvis-display now shows calendar.familie, calendar.arbeit", log)
+
+    def test_each_chosen_calendar_is_tried_and_what_it_says_is_never_read_out(self):
+        fake = FakeCalendarHA(calendars=("calendar.familie", "calendar.arbeit"), silent=("calendar.arbeit",))
+        _, log = run_deploy(fake, host="10.0.0.9", calendars="calendar.familie,calendar.arbeit")
+        asked = [p for m, p, _ in fake.calls if p.startswith("/api/calendars/")]
+        self.assertEqual([p.split("?")[0] for p in asked], ["/api/calendars/calendar.familie",
+                                                            "/api/calendars/calendar.arbeit"])
+        self.assertTrue(all("start=" in p and "end=" in p for p in asked))
+        self.assertIn("calendar.familie answers", log)
+        self.assertTrue(any(line.startswith("WARN: calendar.arbeit did not answer") for line in log))
+        self.assertEqual(fake.sources(), [{"calendars": "calendar.familie, calendar.arbeit"}])
+        for line in log:
+            self.assertNotIn("PRIVATE", line)
+            self.assertNotIn("Fahrpruefung", line)
 
     def test_caldav_address_is_checked(self):
         self.assertEqual(ha.check_caldav_url(" https://caldav.icloud.com "), "https://caldav.icloud.com")

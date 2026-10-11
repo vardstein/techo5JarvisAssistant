@@ -26,7 +26,7 @@ formatted for de-DE. Change the strings in the card files if you need another la
 | `www/openjade/jarvis-room-environment-card.js` | Temperature and humidity, on a glass panel |
 | `www/openjade/jarvis-weather-card.js` | Current weather: condition, temperature, feels-like, humidity, wind |
 | `www/openjade/jarvis-live-timer-card.js` | The voice satellite's timer that runs out first, counting down. Takes no space when no timer runs |
-| `www/openjade/jarvis-calendar-card.js` | The next event from a calendar, however far off: it looks two weeks ahead first, then further, up to a year (`maxDaysAhead`) |
+| `www/openjade/jarvis-calendar-card.js` | The next event from one calendar (`entity`) or several (`entities`), however far off: it looks two weeks ahead first, then further, up to a year (`maxDaysAhead`). A missing or unreadable calendar is said, not shown as "Keine Termine" |
 | `jarvis-dashboard.yaml` | The dashboard itself, with example entity ids |
 
 ## Installing
@@ -45,7 +45,7 @@ formatted for de-DE. Change the strings in the card files if you need another la
      type: module
    - url: /local/openjade/jarvis-live-timer-card.js?v=1
      type: module
-   - url: /local/openjade/jarvis-calendar-card.js?v=2
+   - url: /local/openjade/jarvis-calendar-card.js?v=3
      type: module
    ```
 

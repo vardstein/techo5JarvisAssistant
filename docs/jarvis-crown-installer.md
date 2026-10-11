@@ -490,10 +490,13 @@ What happens with the answers:
      password goes to Home Assistant only. The installer doesn't write it anywhere, and the Show
      never gets it. Then it lists the calendars Home Assistant has and asks which one the Show
      shows on its calendar page ("all" offered when there are several; Enter takes all of them,
-     or the only one). It hands that to the Show through `calendar_sources`. A Jarvis calendar card on a
-     dashboard that points at a calendar Home Assistant doesn't have (the dashboard ships with
-     `calendar.personal` as a placeholder) is pointed at the first one picked. Its old configuration is
-     saved in `backups/home-assistant/` first. A card on a calendar that is there is left alone.
+     or the only one). It hands that to the Show through `calendar_sources`, then asks Home Assistant
+     once for each picked calendar's events over the next minute, only to see that it answers. What
+     comes back is thrown away unread and never logged; a calendar that doesn't answer gets a WARN.
+     A Jarvis calendar card on a dashboard that has a calendar Home Assistant doesn't have (the
+     dashboard ships with `calendar.personal` as a placeholder) is pointed at all the picked ones.
+     Its old configuration is saved in `backups/home-assistant/` first. A card whose calendars are all
+     there is left alone.
      `--caldav-url`, `--caldav-user` and `--caldav-password-file` add (or replace) an account without asking,
      `--calendars` says which calendars ahead of time, and `--calendars ''` leaves them alone. A
      server with a self-signed certificate has to be added by hand, with **Verify SSL** off.
