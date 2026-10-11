@@ -25,6 +25,29 @@ func (f *Feature) arrived() {
 	}
 }
 
+// knockedHTTPS is a browser asking for https:// while the page is up. It got here, so the page is
+// not unreached; it has only to be told to ask for http://.
+func (f *Feature) knockedHTTPS() {
+	f.mu.Lock()
+	first := f.on(time.Now()) && !f.httpsTried
+	if first {
+		f.httpsTried = true
+	}
+	f.mu.Unlock()
+	if first {
+		slog.Info("setup page: a browser asked for https://; the page is http:// only")
+		f.Changed.Emit(struct{}{})
+	}
+}
+
+// HTTPSTried is whether a browser asked for https:// since the page was opened and nothing has
+// been served to it over http:// since.
+func (f *Feature) HTTPSTried() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.on(time.Now()) && f.httpsTried && !f.reached
+}
+
 // Unreached is whether the page has been up for a while and nothing has asked it for anything.
 func (f *Feature) Unreached() bool {
 	f.mu.Lock()
@@ -33,7 +56,7 @@ func (f *Feature) Unreached() bool {
 }
 
 func (f *Feature) unreached(now time.Time) bool {
-	return f.on(now) && !f.reached && now.Sub(f.openedAt) >= unreachedAfter
+	return f.on(now) && !f.reached && !f.httpsTried && now.Sub(f.openedAt) >= unreachedAfter
 }
 
 // checkReached runs unreachedAfter past an opening, so the screen changes its line then and the log

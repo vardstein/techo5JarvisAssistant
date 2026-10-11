@@ -244,11 +244,11 @@ func (f *Feature) Run(ctx context.Context) error {
 				IdleTimeout:       30 * time.Second,
 				MaxHeaderBytes:    8 << 10,
 			}
-			go func(srv *http.Server) {
+			go func(srv *http.Server, ln net.Listener) {
 				if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 					slog.Error("web port", "err", err)
 				}
-			}(srv)
+			}(srv, sniffListener{ln})
 			slog.Info("web port open", "port", Port)
 		case !want && srv != nil:
 			_ = srv.Close() // streams in progress end here too

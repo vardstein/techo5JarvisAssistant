@@ -80,6 +80,10 @@ type Feature struct {
 	// page nobody can get to says so instead of waiting in silence.
 	reached bool
 
+	// httpsTried is whether a browser asked for https:// since it was opened: the port speaks only
+	// http://, and a browser in an HTTPS-only mode has to be told to ask for that instead.
+	httpsTried bool
+
 	// heldOpen is whether the press being made right now is what opened the page, so that a press that
 	// goes on to mean something else can take it back down (button).
 	heldOpen bool
@@ -120,6 +124,7 @@ func Get() *Feature {
 		// conversation has to be told that this press is already spoken for.
 		voice.OwnsPress(shared.TookPress)
 		web.Handle("/setup", "Setup", shared.On, shared.serve)
+		web.HTTPSKnock.Listen(func(struct{}) { shared.knockedHTTPS() })
 		web.Handle("/setup/", "", shared.On, shared.serve)
 		// The press is the whole port's authorization, not only this page's: a screenshot is one
 		// thing to let the network have and driving the screen from it is another.
@@ -171,7 +176,7 @@ func (f *Feature) Open() {
 	now := time.Now()
 	f.mu.Lock()
 	if !f.on(now) {
-		f.openedAt, f.reached = now, false
+		f.openedAt, f.reached, f.httpsTried = now, false, false
 		slog.Info("setup page open", "idle", idle, "at most", life)
 		opened := now
 		time.AfterFunc(unreachedAfter, func() { f.checkReached(opened) })

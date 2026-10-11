@@ -21,6 +21,9 @@ func setupRow(demo bool) settingRow {
 	switch {
 	case s.Waiting():
 		row.sub, row.on = "A browser is asking: answer on this screen", true
+	case s.HTTPSTried() && !demo:
+		// The browser upgraded the address on its own; the port has no certificate to answer with.
+		row.sub, row.on = i18n.Sprintf("Your browser asked for https. Open %s and allow HTTP for it", setupURL()), true
 	case s.Unreached() && !demo:
 		// Up for a while with not one request: the browser can't get here, and the screen is the only
 		// place that can say so.

@@ -41,3 +41,36 @@ func TestAPageNobodyReachesSaysSo(t *testing.T) {
 		t.Error("a closed page called unreached")
 	}
 }
+
+// A browser that asked for https:// got here: the page says to ask for http:// rather than that
+// nothing came, and stops saying it once a request has been served.
+func TestABrowserAskingForHTTPSIsToldHTTP(t *testing.T) {
+	f := build()
+	f.knockedHTTPS()
+	if f.HTTPSTried() {
+		t.Fatal("a knock on a closed page counted")
+	}
+
+	f.Open()
+	f.knockedHTTPS()
+	f.mu.Lock()
+	f.openedAt = time.Now().Add(-unreachedAfter - time.Second)
+	f.mu.Unlock()
+	if !f.HTTPSTried() {
+		t.Fatal("the https ask was not kept")
+	}
+	if f.Unreached() {
+		t.Error("a page a browser knocked on called unreached")
+	}
+
+	get(f, "/setup", nil)
+	if f.HTTPSTried() {
+		t.Error("still asking for http after a request came over it")
+	}
+
+	f.Close()
+	f.Open()
+	if f.HTTPSTried() {
+		t.Error("a reopened page kept the last opening's https ask")
+	}
+}
