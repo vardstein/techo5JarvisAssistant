@@ -88,10 +88,12 @@ class SshClient:
         self.name = name  # the Show's name, whose pinned host key ssh checks
 
     def shell(self, command: str, data: bytes | None = None) -> str:
+        # With nothing to send, ssh gets no stdin, or it reads what is waiting for the confirmation.
+        feed = {"stdin": subprocess.DEVNULL} if data is None else {"input": data}
         try:
             r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", *ssh_options(self.identity, self.name),
                                 f"root@{self.host}", command],
-                               input=data, capture_output=True, timeout=120, check=False)
+                               capture_output=True, timeout=120, check=False, **feed)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise BootLogoError(f"ssh to {self.host}: {exc}") from exc
         if r.returncode != 0:

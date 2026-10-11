@@ -134,6 +134,24 @@ class BootLogoTests(unittest.TestCase):
             self.assertGreater(k.length, k.offset + bl.SLOT_SIZE)
 
 
+class SshClientTests(unittest.TestCase):
+    def run_shell(self, data):
+        done = mock.Mock(returncode=0, stdout=b"ok", stderr=b"")
+        with mock.patch.object(bl.subprocess, "run", return_value=done) as run:
+            bl.SshClient("show.example.org").shell("true", data)
+        return run.call_args.kwargs
+
+    def test_ssh_leaves_stdin_alone_when_there_is_nothing_to_send(self):
+        kw = self.run_shell(None)
+        self.assertIs(kw["stdin"], bl.subprocess.DEVNULL)
+        self.assertNotIn("input", kw)
+
+    def test_ssh_gets_the_bytes_to_write(self):
+        kw = self.run_shell(b"slot")
+        self.assertEqual(kw["input"], b"slot")
+        self.assertNotIn("stdin", kw)
+
+
 class LargeLogoTests(BootLogoTests):
     """A board with a bigger logo: the slot and the box's size, in an order that is safe to stop in."""
 

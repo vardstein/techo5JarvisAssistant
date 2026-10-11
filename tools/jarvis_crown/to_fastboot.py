@@ -45,9 +45,10 @@ def _adb_devices(run: Callable) -> list[tuple[str, str]]:
 def _ssh(host: str, command: str, *, run: Callable, timeout: float = 30,
          identity: Path | None = None, name: str | None = None) -> subprocess.CompletedProcess:
     # BatchMode: the Show's own key or nothing, never a password question.
+    # No stdin: ssh would read what is typed ahead for the prompts that follow.
     return run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=3",
                 "-o", "ServerAliveCountMax=2", *ssh_options(identity, name), f"root@{host}", command],
-               capture_output=True, text=True, timeout=timeout, check=False)
+               stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout, check=False)
 
 
 def _address(name: str | None, backups: Path, host: str | None, find_host: Callable | None):
