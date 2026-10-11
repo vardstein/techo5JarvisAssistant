@@ -65,13 +65,27 @@ def find_shows(hass: HomeAssistant) -> list[Show]:
                 device=device.id,
                 area=device.area_id or "",
                 satellite=satellite or "",
+                mac=next((v for k, v in device.connections if k == dr.CONNECTION_NETWORK_MAC), ""),
             )
     return sorted(shows.values(), key=lambda s: s.node)
+
+
+def _macs(hass: HomeAssistant) -> dict[str, str]:
+    """The MAC Music Assistant has for each of its players' devices, by player id, which is the
+    unique id of its media player. Home Assistant's device for a player doesn't carry it."""
+    macs = {}
+    for entry in hass.config_entries.async_entries("music_assistant"):
+        mass = getattr(getattr(entry, "runtime_data", None), "mass", None)
+        for p in getattr(getattr(mass, "players", None), "players", None) or []:
+            if mac := getattr(getattr(p, "device_info", None), "mac_address", None):
+                macs[p.player_id] = mac
+    return macs
 
 
 def find_players(hass: HomeAssistant) -> list[Player]:
     """Music Assistant's media players, with the room and maker each one has in Home Assistant."""
     devices, entities = dr.async_get(hass), er.async_get(hass)
+    macs = _macs(hass)
     players = []
     for e in entities.entities.values():
         if e.platform != "music_assistant" or e.domain != "media_player" or e.disabled_by:
@@ -85,6 +99,7 @@ def find_players(hass: HomeAssistant) -> list[Player]:
             maker=(device.manufacturer if device else None) or "",
             device_name=(device.name if device else None) or "",
             available=bool(state) and state.state != STATE_UNAVAILABLE,
+            mac=macs.get(e.unique_id, ""),
         ))
     return sorted(players, key=lambda p: p.entity)
 
@@ -200,12 +215,13 @@ class GenbuHouse:
 
     def usual_player(self, show: Show) -> str:
         """Where the Show's music goes when nothing is picked for it."""
-        return plays_on("", show.area, [show.name, show.node], self.players)
+        return plays_on("", show.area, [show.name, show.node], self.players, show.mac)
 
     def automatic(self, show: Show) -> tuple[Player | None, Player | None]:
         """What Automatic is made of for this Show: the room's speaker and the Show's own player."""
         by = {p.entity: p for p in self.players}
-        return by.get(room_player(show.area, self.players)), by.get(own_player([show.name, show.node], self.players))
+        return (by.get(room_player(show.area, self.players)),
+                by.get(own_player([show.name, show.node], self.players, show.mac)))
 
     async def _changed_by_hand(self) -> None:
         for node in self.house.mains:
@@ -217,10 +233,10 @@ class GenbuHouse:
         now = dt_util.utcnow()
         self.shows = find_shows(self.hass)
         self.players = find_players(self.hass)
-        self.music = {s.device: plays_on(self.house.music_choice(s.device), s.area, [s.name, s.node], self.players)
-                      for s in self.shows if s.device}
+        self.music = {s.device: plays_on(self.house.music_choice(s.device), s.area, [s.name, s.node],
+                                         self.players, s.mac) for s in self.shows if s.device}
         self.fallback = {s.device: falls_back_to(self.house.music_choice(s.device), s.area, [s.name, s.node],
-                                                 self.players) for s in self.shows if s.device}
+                                                 self.players, s.mac) for s in self.shows if s.device}
         self._watched = {e for s in self.shows for e in s.watch if e}
         self._player_ids = {p.entity for p in self.players}
         changed = self._tidy()

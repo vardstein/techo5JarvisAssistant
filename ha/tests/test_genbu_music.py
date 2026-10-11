@@ -5,6 +5,7 @@ use reading that map."""
 import sys
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
@@ -42,12 +43,16 @@ def room(hass: HomeAssistant, name: str) -> str:
 
 
 def player(hass: HomeAssistant, object_id: str, name: str, area: str | None = None,
-           maker: str = "Arylic") -> str:
-    """A Music Assistant player; maker TECHO5 makes it a Show's own."""
+           maker: str = "Arylic", mac: str | None = None) -> str:
+    """A Music Assistant player; maker TECHO5 makes it a Show's own. The MAC is what Music Assistant
+    has for its device, which Home Assistant only has through Music Assistant's client."""
     entry = next(iter(hass.config_entries.async_entries("music_assistant")), None)
     if entry is None:
         entry = MockConfigEntry(domain="music_assistant", title="Music Assistant")
         entry.add_to_hass(hass)
+        entry.runtime_data = SimpleNamespace(mass=SimpleNamespace(players=SimpleNamespace(players=[])))
+    entry.runtime_data.mass.players.players.append(SimpleNamespace(
+        player_id=f"up{object_id}", device_info=SimpleNamespace(mac_address=mac)))
     device = dr.async_get(hass).async_get_or_create(
         config_entry_id=entry.entry_id, identifiers={("music_assistant", f"up{object_id}")},
         manufacturer=maker, name=name)
@@ -183,6 +188,32 @@ async def test_the_select_follows_the_show(hass: HomeAssistant):
     assert hass.states.get("sensor.hall_music_falls_back_to") is None
     hub = hass.config_entries.async_entries(DOMAIN)[0].runtime_data
     assert hub.house.music_choice(device) == ""
+
+
+async def test_a_renamed_show_still_falls_back_to_itself(hass: HomeAssistant):
+    # A rename reaches the Show: echod takes the new name as its node name and gives it Sendspin, so
+    # neither its node nor its player's name is what it was. Its MAC stays.
+    player(hass, "livingroom", "Wohnzimmer", "Living Room")
+    own = player(hass, "a1b2c3d4", "Jarvis Show 5", maker="TECHO5", mac="AA:BB:CC:2C:1E:D7")
+    device, _ = show(hass, "genbushow5", "Living Room")
+    devices = dr.async_get(hass)
+    devices.async_update_device(device, new_connections={(dr.CONNECTION_NETWORK_MAC, "aa:bb:cc:2c:1e:d7")})
+    await setup(hass, main="genbushow5")
+    fallback = "sensor.genbushow5_music_falls_back_to"
+    assert hass.states.get(fallback).attributes["player"] == own
+
+    devices.async_update_device(device, name_by_user="Test Show")
+    esphome = hass.config_entries.async_get_entry(devices.async_get(device).config_entry_id)
+    hass.config_entries.async_update_entry(esphome, data={**esphome.data, "device_name": "test-show"})
+    ma_device = er.async_get(hass).async_get(own).device_id
+    devices.async_update_device(ma_device, name="Test Show")
+    await look(hass)
+    assert hass.states.get(fallback).state == "Jarvis Show 5"
+    assert hass.states.get(fallback).attributes["player"] == own
+    assert hass.states.get("select.genbushow5_music_plays_on").state == "Automatic: speaker in Living Room (Wohnzimmer)"
+    devices.async_update_device(device, area_id=None)
+    await look(hass)
+    assert hass.states.get("select.genbushow5_music_plays_on").state == "Automatic: no room set (Jarvis Show 5)"
 
 
 def render(hass: HomeAssistant, text: str, **variables) -> str:

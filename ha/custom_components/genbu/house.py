@@ -121,6 +121,7 @@ class Show:
     device: str = ""  # Home Assistant's device id, which stays when the Show is renamed
     area: str = ""  # the room Home Assistant has it in
     satellite: str = ""  # its assist_satellite entity
+    mac: str = ""  # its MAC, which a rename doesn't change
 
 
 def _iso(t: datetime | None) -> str:

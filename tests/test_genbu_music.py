@@ -53,6 +53,14 @@ class PlaysOnTests(unittest.TestCase):
         not_a_show = Player("media_player.genbushow5_2", device_name="genbuShow5")
         self.assertEqual(music.own_player(["genbuShow5"], [not_a_show]), "")
 
+    def test_the_own_player_is_found_by_mac_first(self):
+        # Renamed: the names point nowhere, or at another Show, and the MAC still finds it.
+        mine = Player("media_player.genbushow5", "Jarvis Show 5", maker="TECHO5", mac="AA:BB:CC:2C:1E:D7")
+        other = Player("media_player.test_show", "Test Show", maker="TECHO5", device_name="Test Show")
+        self.assertEqual(music.own_player(["Test Show", "test-show"], [mine, other], "aa:bb:cc:2c:1e:d7"), mine.entity)
+        self.assertEqual(music.own_player(["Test Show"], [other], "aa:bb:cc:2c:1e:d7"), other.entity)
+        self.assertEqual(music.falls_back_to("", "", ["Test Show"], [mine], "aa:bb:cc:2c:1e:d7"), mine.entity)
+
     def test_a_pick_wins_while_the_player_is_there(self):
         self.assertEqual(music.plays_on(LIVING.entity, "bedroom", ["x"], [LIVING, OWN]), LIVING.entity)
         self.assertEqual(music.plays_on("media_player.gone", "bedroom", ["livingRoomEcho8"], [LIVING, OWN]),
