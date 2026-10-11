@@ -523,6 +523,75 @@ to ask. The alarm actions' names come from the device's name in
 Home Assistant (`esphome.<name>_alarm_set`); if you renamed the device there, put its action name in
 by hand.
 
+### Setting the Wecker in German
+
+The automations above only know English sentences. On a German voice pipeline, "Stell einen
+Wecker für 15 Minuten" matches none of Home Assistant's own sentences either, so it goes to the AI
+agent, if there is one. An agent can answer "Wecker steht auf 15 Minuten" without setting anything.
+This one answers the German sentences itself. For it to run before the agent, the pipeline needs
+**Prefer handling commands locally** on (Settings > Voice assistants > your assistant).
+
+It takes a time of day ("um 7 Uhr 30", "auf 7:30", "um halb 8", "um 9 Uhr abends") or a length of time
+("für 15 Minuten", "in einer halben Stunde", "in 2 Stunden"). A length of time becomes a one-off
+alarm at that time from now, so it shows up as the Wecker on the clock and in Home Assistant's
+next-alarm sensor. For a countdown that the timer card shows, say "Timer" instead: "Stell einen Timer
+für 15 Minuten" is one of Home Assistant's own sentences.
+
+```yaml
+alias: TECHO5 - Wecker per Sprache stellen
+triggers:
+  - trigger: conversation
+    command:
+      - "(stell|stelle) [mir] [einen|den|meinen] Wecker (auf|für|um|in) {when}"
+      - "(weck|wecke) mich [bitte] (um|in) {when}"
+      - "Wecker (auf|für|um|in) {when}"
+actions:
+  - variables:
+      techo5: >-
+        {{ trigger.device_id is not none and
+           device_entities(trigger.device_id) | select('search', 'stop_alarm') | list | count > 0 }}
+      node: "{{ device_attr(trigger.device_id, 'name') | slugify if techo5 else '' }}"
+      spoken: "{{ (trigger.slots.when | default('')) | lower | replace('.', ':') | trim }}"
+      nums: "{{ spoken | regex_findall('[0-9]{1,2}') | map('int') | list }}"
+      length: "{{ spoken is search('minute|stunde') }}"
+      # A length of time in minutes, or -1 when none was heard.
+      minutes: >-
+        {%- if spoken is search('halben? stunde') -%}30
+        {%- elif not nums and 'stunde' in spoken -%}60
+        {%- elif not nums -%}-1
+        {%- elif 'stunde' in spoken -%}{{ nums[0] * 60 + (nums[1] if nums | count > 1 else 0) }}
+        {%- else -%}{{ nums[0] }}{%- endif -%}
+      half: "{{ spoken is search('halb') }}"
+      evening: "{{ spoken is search('abend|nachmittag|nachts') }}"
+      h: "{{ (nums[0] - 1 if half else nums[0]) if nums else -1 }}"
+      m: "{{ 30 if half else (nums[1] if nums | count > 1 else 0) }}"
+      hh: "{{ h + 12 if evening and 0 <= h < 12 else h }}"
+      # Rounded to the nearest minute, so "für 1 Minute" doesn't ring a few seconds later.
+      at: >-
+        {%- if length -%}{{ (now() + timedelta(minutes=minutes | int, seconds=30)).strftime('%H:%M') }}
+        {%- else -%}{{ '%02d:%02d' | format(hh | int, m | int) }}{%- endif -%}
+  - choose:
+      - conditions: "{{ not techo5 }}"
+        sequence:
+          - set_conversation_response: "Sag das bitte dem Gerät, auf dem der Wecker klingeln soll."
+      - conditions: "{{ length and not (1 <= minutes | int <= 1440) }}"
+        sequence:
+          - set_conversation_response: "Wie lange? Das habe ich nicht verstanden."
+      - conditions: "{{ not length and (h < 0 or hh > 23 or m > 59) }}"
+        sequence:
+          - set_conversation_response: "Für wann? Die Uhrzeit habe ich nicht verstanden."
+    default:
+      - action: "esphome.{{ node }}_alarm_set"
+        data:
+          time: "{{ at }}"
+          days: once
+          label: Wecker
+      - set_conversation_response: >-
+          {%- if length -%}Wecker klingelt in {{ minutes }} {{ 'Minute' if minutes | int == 1 else 'Minuten' }}, um {{ at }} Uhr.
+          {%- else -%}Wecker steht auf {{ at }} Uhr.{%- endif -%}
+mode: queued
+```
+
 ## Delete an alarm
 
 In YAML, refer to this action as `esphome.<node>_alarm_delete`.
@@ -819,6 +888,7 @@ pop-ups. Each device keeps its own: one on a desk can show its owner's calendar,
 family's. Screen devices only. The calendars come from whatever Home Assistant connects to - Google
 Calendar, iCloud through CalDAV, an Outlook calendar through Microsoft 365 or a published link, its
 own Local Calendar - so no calendar password is ever on a device. Needs `home_assistant` set up first.
+[calendars.md](calendars.md) walks through getting one into Home Assistant.
 
 ### calendars (Required)
 

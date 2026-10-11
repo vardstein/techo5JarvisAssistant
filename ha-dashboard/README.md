@@ -54,7 +54,8 @@ formatted for de-DE. Change the strings in the card files if you need another la
    dashcast's included.
 4. **Settings → Dashboards → Add dashboard → New dashboard from scratch**, open it, **⋮ → Edit
    dashboard → ⋮ → Raw configuration editor**, and paste `jarvis-dashboard.yaml`.
-5. Put your own entities in: the two room sensors, your weather entity, your calendar, and for the
+5. Put your own entities in: the two room sensors, your weather entity, your calendar
+   ([docs/calendars.md](../docs/calendars.md) if it isn't in Home Assistant yet), and for the
    timer card the voice satellite's entity and device id. The device id is the last part of the
    address when you open the device under **Settings → Devices & services → Devices**.
 6. On the Show, set **Dashboard to show** to this dashboard, and **Dashboard when idle** if it should
