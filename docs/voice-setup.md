@@ -306,9 +306,12 @@ been idle for three seconds. At a tenth you still hear that the music is there, 
 comes through clearly. A
 speaker that wasn't playing is left alone, and one whose volume somebody changed during the turn
 keeps the new volume. Import it in **Settings → Automations & scenes → Blueprints → Import
-blueprint** with the file's GitHub address, then make an automation from it: the Show's assist
-satellite, and the room's speakers. If Music Assistant and the speaker's own integration both have
-an entity for one speaker, pick one of them, not both.
+blueprint** with the file's GitHub address, then make an automation from it with the Show's assist
+satellite. Leave the speakers empty and it turns down the speakers in whatever room the Show is in at
+that moment, so a Show moved to another room needs nothing changed: the room's media players, not
+other Shows, and a speaker's own entity rather than Music Assistant's. Pick speakers only to fix them
+for good; if Music Assistant and the speaker's own integration both have an entity for one speaker,
+pick one of them, not both.
 
 It can't help with the first word: the Show has to hear the wake word before anything is turned
 down. Saying it over loud music still takes a loud voice.

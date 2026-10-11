@@ -291,12 +291,21 @@ def wecker() -> dict:
 
 # --------------------------------------------------------------------------------------------- music
 
-# The player music goes to: the one asked for, else the first of the house's Music Assistant players that
-# is there, in the order look() found them.
-TARGET_PLAYER = r"""{% set ok = players | select('has_value') | list %}{{ (player | default('', true)) or (ok + players) | first | default('') }}"""
+# Where music asked for at a Show plays: what the genbu integration says for it (its "Music plays on",
+# by device id and by assist_satellite), else Music Assistant's player in its room. Never another room.
+SHOW_PLAYER = r"""{% set m = state_attr('sensor.genbu_house_version', 'music_players') or {} %}{% set a = area_id(asker) if asker else none %}{{ (m.get(asker) if asker and m is mapping else '') or ((area_entities(a) if a else []) | select('in', integration_entities('music_assistant')) | select('match', 'media_player\\.') | select('has_value') | first | default('')) }}"""
 
-# In the local music automation: Music Assistant's player in the room of the device that was asked.
-ROOM_PLAYER = r"""{% set a = area_id(trigger.device_id) if trigger.device_id else none %}{{ (area_entities(a) if a else []) | select('in', integration_entities('music_assistant')) | select('match', 'media_player\\.') | select('has_value') | first | default('') }}"""
+# The player music goes to in the scripts the model calls: the one asked for; else the Show that is
+# talking right now (the scripts are not told who asked, but only that Show's assistant is busy);
+# else, with no Show talking (typed in the app), the first of the house's players that is there, in
+# the order look() found them. With two Shows talking at once it can't tell, and says so.
+TARGET_PLAYER = (r"""{% set busy = states.assist_satellite | rejectattr('state', 'in', ['idle', 'unavailable', 'unknown']) | map(attribute='entity_id') | list %}{% set ok = players | select('has_value') | list %}{% if player | default('', true) %}{{ player }}{% elif busy | count == 1 %}{% set asker = busy[0] %}"""
+                 + SHOW_PLAYER + r"""{% elif busy | count == 0 %}{{ (ok + players) | first | default('') }}{% endif %}""")
+
+# In the local music automation: where music asked for at the device that heard it plays.
+ROOM_PLAYER = r"""{% set asker = trigger.device_id | default('', true) %}""" + SHOW_PLAYER
+
+NO_PLAYER = "Hier gibt es keinen Lautsprecher für Musik. Stell ihn in Home Assistant bei der Show unter Musik spielt auf ein."
 
 PLAYER_FIELD = {"name": "Player", "description": "Music Assistant player; empty for the usual one.",
                 "selector": {"entity": {"filter": [{"integration": "music_assistant", "domain": "media_player"}]}}}
@@ -361,6 +370,12 @@ def _start(media_id: str, media_type: str, **more: str) -> dict:
                                    "media_type": media_type, **more}}}
 
 
+def _no_player() -> list[dict]:
+    return [{"if": [{"condition": "template", "value_template": "{{ not target_player }}"}],
+             "then": [{"variables": {"result": {"success": False, "message": NO_PLAYER}}},
+                      {"stop": "Kein Player.", "response_variable": "result"}]}]
+
+
 def play_radio(house: House) -> dict:
     entry = house.music_entry
     return {
@@ -377,6 +392,7 @@ def play_radio(house: House) -> dict:
         },
         "sequence": [
             {"variables": {"players": house.players, "target_player": TARGET_PLAYER, "heard": RADIO_HEARD}},
+            *_no_player(),
             {"action": "music_assistant.get_library", "data": {
                 "config_entry_id": entry, "media_type": "radio", "limit": 500}, "response_variable": "stations"},
             # The closest station: its whole name in what was heard ("biele hit radio ffh" has
@@ -485,6 +501,7 @@ def play_mood(house: House) -> dict:
         },
         "sequence": [
             {"variables": {"players": house.players, "target_player": TARGET_PLAYER, "plan": MOOD_PLAN}},
+            *_no_player(),
             # Three lookups whatever the plan, so the answers are there below; each takes about 10 ms.
             search(1, "{{ plan.terms[0] | default('-') }}"),
             search(2, "{{ plan.terms[1] | default(plan.terms[0] | default('-')) }}"),
@@ -516,6 +533,7 @@ def play_random(house: House) -> dict:
         "fields": {"player": PLAYER_FIELD},
         "sequence": [
             {"variables": {"players": house.players, "target_player": TARGET_PLAYER}},
+            *_no_player(),
             {"action": "music_assistant.get_library", "data": {
                 "config_entry_id": house.music_entry, "limit": 1, "media_type": "track", "order_by": "random"},
              "response_variable": "random_track"},
@@ -574,8 +592,10 @@ def local_music(house: House) -> dict:
         "actions": [
             {"variables": {"said": "{{ trigger.sentence | lower }}", "kind": LOCAL_MUSIC_KIND,
                            "room_player": ROOM_PLAYER, "players": house.players,
+                           # Asked at a device, only its own player; typed, the house's usual one.
                            "target_player": "{% set ok = players | select('has_value') | list %}"
-                                            "{{ room_player or (ok + players) | first | default('') }}"}},
+                                            "{{ room_player if trigger.device_id else room_player or "
+                                            "(ok + players) | first | default('') }}"}},
             {"choose": [
                 # "spiel etwas leiser" fits the mood sentence but means the volume.
                 {"conditions": "{{ kind == 'volume' }}", "sequence": [
@@ -594,7 +614,7 @@ def local_music(house: House) -> dict:
 # ------------------------------------------------------------------------------------------ per Show
 
 def show_speakers(house: House, satellite: str) -> tuple[str, list[str]]:
-    """The Show's room and the speakers there to turn down: the room's media players that are there, less
+    """The Show's room and the speakers turn-room-down.yaml turns down there right now: the room's media players that are there, less
     any on a device with a voice assistant (the Shows turn their own down). A speaker that both Music
     Assistant and its own integration have an entity for is taken through its own one."""
     area = house.entity_area.get(satellite, "")
@@ -731,29 +751,29 @@ def _per_show(run: _Run, house: House, show: str, entities: list[str]) -> None:
     satellite = satellites[0]
     near_miss = next((e for e in sorted(entities) if e.startswith("event.") and e.endswith("_wake_word_near_miss")),
                      None)
+    item = f"techo5_turn_room_down_{service_prefix(show)}"
     found = _duck_existing(run, satellite)
-    if found:
-        item, config = found
+    if found and found[0] != item:
+        # Someone made their own from the blueprint; it stays theirs.
+        mine, config = found
         inputs = config["use_blueprint"].setdefault("input", {})
         if near_miss and not inputs.get("near_miss"):
             inputs["near_miss"] = near_miss
-            run.ha.request("POST", f"/api/config/automation/config/{item}", config)
-            run.progress(f"automation {item}: the Show's near misses now turn the room down too")
+            run.ha.request("POST", f"/api/config/automation/config/{mine}", config)
+            run.progress(f"automation {mine}: the Show's near misses now turn the room down too")
         else:
-            run.progress(f"automation {item} turns the room down for this Show already; left as it is")
+            run.progress(f"automation {mine} turns the room down for this Show already; left as it is")
         return
+    # No speakers picked: it turns down whatever room the Show is in when it listens, so a Show
+    # moved to another room needs nothing set up again. An older one of ours with fixed speakers
+    # is asked about at the end.
+    run.put("automation", item, turn_room_down(show, satellite, [], near_miss))
     area, speakers = show_speakers(house, satellite)
-    if not speakers:
-        if area:
-            where = house.areas.get(area, area)
-            run.progress(f"no speaker besides the Show in {where}, so no turn-the-room-down automation. "
-                         f"Put the room's speaker in {where} in Home Assistant, then run {_rerun(show)}")
-        else:
-            run.progress("the Show is in no room in Home Assistant, so no turn-the-room-down automation. "
-                         f"Give it the room its speaker is in, then run {_rerun(show)}")
-        return
-    run.put("automation", f"techo5_turn_room_down_{service_prefix(show)}",
-            turn_room_down(show, satellite, speakers, near_miss))
+    if not area:
+        run.progress("the Show is in no room in Home Assistant yet; the room goes quiet once it has one")
+    elif not speakers:
+        run.progress(f"no speaker besides the Show in {house.areas.get(area, area)} yet; it turns that "
+                     "one down once it is there")
 
 
 def _rerun(show: str) -> str:

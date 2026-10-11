@@ -445,18 +445,20 @@ What happens with the answers:
   6. asks whether to set up the voice extras, the Home Assistant pieces around the Shows (`--voice-extras`
      says yes ahead of time, `--no-voice-extras` no; Enter is no):
      - the [turn-room-down](voice-setup.md#music-in-the-same-room) blueprint, and for this Show an
-       automation from it with its assist satellite, its wake word near-miss event and the media
-       players in its room (not other Shows, and a speaker's own entity rather than Music
-       Assistant's). A Show that has one already, whatever it is called, keeps it; it only gets the
-       near-miss event added when that is missing;
+       automation from it with its assist satellite and its wake word near-miss event. It names no
+       speakers, so it turns down the room the Show is in when it listens, wherever that is by then.
+       One made by hand from the blueprint, whatever it is called, is kept; it only gets the
+       near-miss event added when that is missing. An older one of the installer's with fixed
+       speakers is asked about at the end like any other that differs;
      - when one of the Assist pipelines speaks German, answers that never reach the language model:
        the [volume](voice-setup.md#volume-the-music-or-the-show) blueprint with an automation from it,
        "Wo sind wir?", "Wie warm ist es in der Küche?" (each room's temperature sensor, or "draußen"
        from the weather), "Wie wird das Wetter morgen?", and "Stell einen Wecker auf 7 Uhr" or "Weck
        mich in 20 Minuten", which sets the alarm on the Show that was asked;
      - with Music Assistant in Home Assistant as well, music by voice without the model: "Spiel
-       Musik", "Spiel was Ruhiges", "Musik von Queen", "Hör Radio FFH". It plays in the room of the
-       Show that was asked, and the scripts behind it (`play_random_music`, `jarvis_play_mood`,
+       Musik", "Spiel was Ruhiges", "Musik von Queen", "Hör Radio FFH". It plays where the Show that
+       was asked plays music (its "Music plays on" in the Genbu integration: the room's speaker, else
+       the Show itself, never another room's), and says so when there is nowhere. The scripts behind it (`play_random_music`, `jarvis_play_mood`,
        `jarvis_play_radio`) are there for the model too. Moods find playlists by words in their
        names, so "laute Musik" plays a playlist with "metal" or "rock" in its name if there is one.
 

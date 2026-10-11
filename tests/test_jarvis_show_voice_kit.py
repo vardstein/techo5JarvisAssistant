@@ -156,7 +156,8 @@ class SetUpTests(unittest.TestCase):
             ("script", "jarvis_music_start"), ("script", "jarvis_play_mood"), ("script", "jarvis_play_radio"),
             ("script", "play_random_music")])
         duck = fake.configs[("automation", "techo5_turn_room_down_jarvis_show_5")]["use_blueprint"]["input"]
-        self.assertEqual(duck, {"satellite": SHOW[0], "speakers": ["media_player.speaker"], "part": 10, "quiet": 3,
+        # No speakers picked: it turns down whatever room the Show is in when it listens.
+        self.assertEqual(duck, {"satellite": SHOW[0], "speakers": [], "part": 10, "quiet": 3,
                                 "near_miss": "event.jarvis_show_5_wake_word_near_miss"})
         volume = fake.configs[("automation", "jarvis_local_volume")]["use_blueprint"]["input"]["rooms"]
         self.assertEqual(volume["wohnzimmer"], "living_room")
@@ -270,23 +271,34 @@ class SetUpTests(unittest.TestCase):
         self.assertIn("no weather entity, so no local forecast", log)
         self.assertIn("no Music Assistant in Home Assistant, so no music sentences", log)
 
-    def test_a_show_in_no_room_gets_no_turn_down(self):
+    def test_an_older_turn_down_of_ours_with_fixed_speakers_is_asked_about(self):
+        fake = FakeHA()
+        item = ("automation", "techo5_turn_room_down_jarvis_show_5")
+        old = {"alias": "old", "use_blueprint": {"path": "techo5/turn-room-down.yaml",
+                                                  "input": {"satellite": SHOW[0], "speakers": ["media_player.x"]}}}
+        fake.configs[item] = old
+        fake.related[SHOW[0]] = ["automation.techo5_turn_room_down_jarvis_show_5"]
+        fake.states["automation.techo5_turn_room_down_jarvis_show_5"] = {
+            "state": "on", "attributes": {"id": "techo5_turn_room_down_jarvis_show_5"}}
+        asked = []
+        run(fake, choose=lambda label, *_: asked.append(label) or "yes",
+            keep=lambda what, config: "/b/x.json")
+        self.assertTrue(any("techo5_turn_room_down_jarvis_show_5" in q for q in asked))
+        self.assertEqual(fake.configs[item]["use_blueprint"]["input"]["speakers"], [])
+
+    def test_a_show_in_no_room_still_gets_the_turn_down(self):
         fake = FakeHA()
         fake.devices[0]["area_id"] = None
         log = run(fake)
-        self.assertNotIn(("automation", "techo5_turn_room_down_jarvis_show_5"), fake.configs)
-        self.assertIn("the Show is in no room in Home Assistant, so no turn-the-room-down automation. Give it the "
-                      "room its speaker is in, then run python3 tools/jarvis-show.py home-assistant --name "
-                      "'Jarvis Show 5'", log)
+        self.assertIn(("automation", "techo5_turn_room_down_jarvis_show_5"), fake.configs)
+        self.assertIn("the Show is in no room in Home Assistant yet; the room goes quiet once it has one", log)
 
-    def test_a_room_without_another_speaker_says_how_to_get_the_turn_down(self):
+    def test_a_room_without_another_speaker_still_gets_the_turn_down(self):
         fake = FakeHA()
         fake.devices[0]["area_id"] = "kitchen"
         log = run(fake)
-        self.assertNotIn(("automation", "techo5_turn_room_down_jarvis_show_5"), fake.configs)
-        self.assertIn("no speaker besides the Show in Küche, so no turn-the-room-down automation. Put the room's "
-                      "speaker in Küche in Home Assistant, then run python3 tools/jarvis-show.py home-assistant "
-                      "--name 'Jarvis Show 5'", log)
+        self.assertIn(("automation", "techo5_turn_room_down_jarvis_show_5"), fake.configs)
+        self.assertIn("no speaker besides the Show in Küche yet; it turns that one down once it is there", log)
 
 
 class WeckerTests(unittest.TestCase):

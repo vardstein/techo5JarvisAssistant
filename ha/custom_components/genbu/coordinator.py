@@ -1,6 +1,9 @@
 """GenbuHouse: looks at the Genbu Shows every minute and whenever one of them changes, feeds that to
 house.House, and does what it answers: Repairs issues, the push, the pick after 7 days. It is the only
-thing that ever changes which Shows are main update Shows, so nothing can race for the job."""
+thing that ever changes which Shows are main update Shows, so nothing can race for the job.
+
+Each look also works out where each Show's music plays (music.py), so a Show moved to another room
+plays there without anything being set up again."""
 
 from __future__ import annotations
 
@@ -23,6 +26,7 @@ from homeassistant.util import dt as dt_util
 from .const import (CHANGED, CONF_MAIN, CONF_NOTIFY, DOMAIN, ISSUE_MISSING, ISSUE_NO_MAIN, ISSUE_PICKED,
                     MAIN_SELECT, MANUFACTURERS, PUSH, STORE_KEY, STORE_VERSION)
 from .house import ASK, PICK, House, Show, recommend
+from .music import Player, plays_on
 
 LOGGER = logging.getLogger(__name__)
 LOOK_EVERY = timedelta(minutes=1)
@@ -37,9 +41,11 @@ def find_shows(hass: HomeAssistant) -> list[Show]:
             if device.manufacturer not in MANUFACTURERS or device.via_device_id:
                 continue
             node = entry.data.get("device_name") or _slug(device.name or "")
-            firmware = committed = None
+            firmware = committed = satellite = None
             for e in er.async_entries_for_device(entities, device.id):
-                if e.domain == "update" and (e.unique_id.endswith("-firmware") or e.entity_id.endswith("_firmware")):
+                if e.domain == "assist_satellite" and not e.disabled_by:
+                    satellite = e.entity_id
+                elif e.domain == "update" and (e.unique_id.endswith("-firmware") or e.entity_id.endswith("_firmware")):
                     firmware = e.entity_id
                 elif e.domain == "sensor" and (e.unique_id.endswith("-committed_version")
                                                or e.entity_id.endswith("_committed_version")):
@@ -56,8 +62,30 @@ def find_shows(hass: HomeAssistant) -> list[Show]:
                 online=bool(up) and up.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN),
                 watch=(firmware, committed),
                 device=device.id,
+                area=device.area_id or "",
+                satellite=satellite or "",
             )
     return sorted(shows.values(), key=lambda s: s.node)
+
+
+def find_players(hass: HomeAssistant) -> list[Player]:
+    """Music Assistant's media players, with the room and maker each one has in Home Assistant."""
+    devices, entities = dr.async_get(hass), er.async_get(hass)
+    players = []
+    for e in entities.entities.values():
+        if e.platform != "music_assistant" or e.domain != "media_player" or e.disabled_by:
+            continue
+        device = devices.async_get(e.device_id) if e.device_id else None
+        state = hass.states.get(e.entity_id)
+        players.append(Player(
+            entity=e.entity_id,
+            name=(state.name if state else None) or e.name or e.original_name or e.entity_id,
+            area=e.area_id or (device.area_id if device else None) or "",
+            maker=(device.manufacturer if device else None) or "",
+            device_name=(device.name if device else None) or "",
+            available=bool(state) and state.state != STATE_UNAVAILABLE,
+        ))
+    return sorted(players, key=lambda p: p.entity)
 
 
 class GenbuHouse:
@@ -66,6 +94,8 @@ class GenbuHouse:
         self.store: Store[dict] = Store(hass, STORE_VERSION, STORE_KEY)
         self.house = House()
         self.shows: list[Show] = []
+        self.players: list[Player] = []
+        self.music: dict[str, str] = {}  # where each Show's music plays, by device id
         self._watched: set[str] = set()
         self._stops: list = []
         self._debounce = Debouncer(hass, LOGGER, cooldown=2, immediate=True, function=self.async_refresh)
@@ -81,7 +111,11 @@ class GenbuHouse:
         self._stops.append(async_track_time_interval(self.hass, self._tick, LOOK_EVERY))
         self._stops.append(self.hass.bus.async_listen(EVENT_STATE_CHANGED, self._changed,
                                                       event_filter=self._watching))
-        self._stops.append(self.hass.bus.async_listen(dr.EVENT_DEVICE_REGISTRY_UPDATED, self._changed))
+        self._stops.append(self.hass.bus.async_listen(dr.EVENT_DEVICE_REGISTRY_UPDATED, self._changed,
+                                                      event_filter=self._not_ours))
+        # A player or a Show moved to another room, or a new player.
+        self._stops.append(self.hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, self._changed,
+                                                      event_filter=self._player_or_satellite))
         await self.async_refresh()
 
     @callback
@@ -94,6 +128,16 @@ class GenbuHouse:
     @callback
     def _watching(self, data) -> bool:
         return data["entity_id"] in self._watched
+
+    @callback
+    def _not_ours(self, data) -> bool:
+        # The genbu devices the music selects sit on would only start another look.
+        device = dr.async_get(self.hass).async_get(data["device_id"])
+        return device is None or device.config_entry_id != self.entry.entry_id
+
+    @callback
+    def _player_or_satellite(self, data) -> bool:
+        return data["entity_id"].split(".", 1)[0] in ("media_player", "assist_satellite")
 
     @callback
     def _changed(self, _event: Event) -> None:
@@ -132,6 +176,15 @@ class GenbuHouse:
         self.house.wait_more(node, dt_util.utcnow())
         await self._changed_by_hand()
 
+    async def async_choose_music(self, device: str, player: str) -> None:
+        self.house.choose_music(device, player)
+        self._save()
+        await self.async_refresh()
+
+    def usual_player(self, show: Show) -> str:
+        """Where the Show's music goes when nothing is picked for it."""
+        return plays_on("", show.area, [show.name, show.node], self.players)
+
     async def _changed_by_hand(self) -> None:
         for node in self.house.mains:
             ir.async_delete_issue(self.hass, DOMAIN, ISSUE_PICKED + node)
@@ -141,8 +194,12 @@ class GenbuHouse:
     async def async_refresh(self) -> None:
         now = dt_util.utcnow()
         self.shows = find_shows(self.hass)
+        self.players = find_players(self.hass)
+        self.music = {s.device: plays_on(self.house.music_choice(s.device), s.area, [s.name, s.node], self.players)
+                      for s in self.shows if s.device}
         self._watched = {e for s in self.shows for e in s.watch if e}
-        changed = self.house.see(self.shows, now)
+        changed = self._tidy()
+        changed = self.house.see(self.shows, now) or changed
         for node, step in self.house.missing(now).items():
             if step == PICK:
                 new = self.house.auto_pick(node, self.shows, now)
@@ -154,6 +211,25 @@ class GenbuHouse:
         if changed:
             self._save()
         async_dispatcher_send(self.hass, CHANGED)
+
+    def _tidy(self) -> bool:
+        """Keeps the genbu device of each Show's music select in step with the Show: its name follows a
+        rename, and once the Show's own device is gone from Home Assistant, it goes too, with what was
+        picked for it. True when a pick was forgotten."""
+        devices = dr.async_get(self.hass)
+        names = {s.device: s.name for s in self.shows}
+        forgot = False
+        for device in dr.async_entries_for_config_entry(devices, self.entry.entry_id):
+            show = next((i for d, i in device.identifiers if d == DOMAIN), None)
+            if show is None:
+                continue
+            if devices.async_get(show) is None:
+                devices.async_remove_device(device.id)
+                forgot = forgot or bool(self.house.music_choice(show))
+                self.house.choose_music(show, "")
+            elif show in names and device.name != names[show]:
+                devices.async_update_device(device.id, name=names[show])
+        return forgot
 
     def _save(self) -> None:
         self.store.async_delay_save(lambda: self.house.data, 5)

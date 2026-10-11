@@ -107,5 +107,12 @@
         }
       }
     }
+  },
+  "entity": {
+    "select": {
+      "music_plays_on": {
+        "name": "Music plays on"
+      }
+    }
   }
 }
