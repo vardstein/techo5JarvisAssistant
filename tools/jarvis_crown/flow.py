@@ -58,6 +58,7 @@ class InstallInputs:
     music_assistant: str | None = None
     expected_fastboot_serial: str | None = None
     root_password_file: Path | None = None
+    update_channel: str | None = None
 
 
 @dataclass(frozen=True)
@@ -211,6 +212,7 @@ def run_install_flow(
         dashcast_key_file=inputs.dashcast_key_file,
         music_assistant=inputs.music_assistant,
         root_password_file=inputs.root_password_file,
+        update_channel=inputs.update_channel,
     )
 
     phrase = confirm_install(profile)

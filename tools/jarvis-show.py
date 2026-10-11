@@ -28,6 +28,7 @@ from jarvis_crown.shows import known_shows, show_named  # noqa: E402
 from jarvis_crown.settings import RUN, Asker, Settings, SettingsError, gather, save_defaults, secret_files  # noqa: E402
 from jarvis_crown.preflight import preflight_ok, print_checks, run_preflight  # noqa: E402
 from jarvis_crown.recovery import RecoveryError, adb_recovery_serials, identify_recovery_show  # noqa: E402
+from jarvis_crown.releases import CHANNELS, DEFAULT_CHANNEL, ReleaseError, fetch_rootfs  # noqa: E402
 from jarvis_crown.unlock import UnlockError, unlock_show  # noqa: E402
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -55,14 +56,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--amonet-zip", type=Path, help="amonet-upgrade: the pinned Amonet 2.x zip; default from the asset cache")
     parser.add_argument("--amonet-hashes", type=Path, help="trusted JSON SHA-256 map for a board whose Amonet bytes are not built-in")
     parser.add_argument("--twrp-sha256", help="trusted board-specific TWRP SHA-256 when not built-in")
-    parser.add_argument("--lineage-zip", type=Path, help="install, amonet-upgrade: the LineageOS 18.1 zip for this board (fetch-show-assets.py prints it)")
+    parser.add_argument("--lineage-zip", type=Path, help="install, amonet-upgrade: the LineageOS 18.1 zip for this board; default: fetched and checked into the asset cache")
     parser.add_argument("--work-dir", type=Path, help="scratch space for the install; default ../work next to the repo")
     parser.add_argument("--backup-dir", type=Path, help="where each unit's backups, key and name are kept; default ../backups")
     parser.add_argument("--name", help="the Show's name, as Home Assistant shows it; install, home-assistant and boot-logo find it by this")
-    parser.add_argument("--boot-image", type=Path, help="install: the board's boot image (fetch-show-assets.py prints it)")
+    parser.add_argument("--boot-image", type=Path, help="install: the board's boot image; default: fetched and checked into the asset cache")
     parser.add_argument("--boot-sha256", help="trusted board-specific boot image SHA-256 when not built-in")
-    parser.add_argument("--rootfs", type=Path, help="install: the Jarvis root filesystem from a release")
-    parser.add_argument("--rootfs-sha256", help="install: its SHA-256, from the release notes")
+    parser.add_argument("--rootfs", type=Path, help="install: a Jarvis root filesystem of your own; default: the --channel release's, signature checked")
+    parser.add_argument("--rootfs-sha256", help="install: the SHA-256 of --rootfs")
+    parser.add_argument("--channel", choices=CHANNELS, default=DEFAULT_CHANNEL,
+                        help="install: the release channel the root filesystem comes from, and the one the Show "
+                             "follows for updates afterwards (default %(default)s)")
     parser.add_argument("--wifi", help="install, wifi: the network (SSID) it joins; default: ask, or pick it on the Show's screen")
     parser.add_argument("--wifi-passphrase-file", type=Path, help="a file holding its passphrase; default the keyring, then ask")
     parser.add_argument("--serial", help="the unit's serial: wifi talks to that Show on USB (found when only one is attached); home-assistant takes its key from backups/<serial>")
@@ -161,6 +165,45 @@ def _detect_profile(board: str | None, *, allow_recovery: bool = False):
 def _cached(board: str, kind: str) -> Path:
     asset = next(a for a in assets_for(board) if a.kind == kind)
     return asset_path(default_cache_dir(), board, asset)
+
+
+class InstallFilesError(RuntimeError):
+    pass
+
+
+def _load_fetcher():
+    import importlib.util
+    path = Path(__file__).resolve().parent / "fetch-show-assets.py"
+    spec = importlib.util.spec_from_file_location("jarvis_fetch_show_assets", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _install_files(args, board: str, amonet: Path, work: Path, *, fetcher=_load_fetcher,
+                   rootfs_from=fetch_rootfs) -> dict:
+    """The LineageOS zip, boot image and Amonet folder (passed in, else fetch-show-assets for this board)
+    and the root filesystem (passed in, else the --channel release's)."""
+    import techo5lib
+    files: dict = {"lineage": args.lineage_zip, "boot": args.boot_image, "amonet_dir": amonet}
+    if not (args.lineage_zip and args.boot_image and amonet.is_dir()):
+        fetch = fetcher()
+        try:
+            got = fetch.fetch_board(board, default_cache_dir(), browser=fetch.wait_for_browser)
+        except techo5lib.Fail as exc:
+            raise InstallFilesError(f"the {board} install files: {exc}") from None
+        files["lineage"] = args.lineage_zip or got["lineage"]
+        files["boot"] = args.boot_image or got["boot"]
+        if not args.amonet_dir and "amonet_dir" in got:
+            files["amonet_dir"] = Path(got["amonet_dir"]).resolve()
+        if not files["amonet_dir"].is_dir():
+            raise InstallFilesError(f"no Amonet package for {board}; fetch-show-assets.py --board {board} "
+                                    "says where to download it")
+    if not args.rootfs:
+        rel = rootfs_from(args.channel, board, work)
+        ui.out.done(f"Jarvis Show {rel.version} from the {rel.channel} channel, signature checked")
+        files["rootfs"], files["rootfs_sha256"] = rel.path, rel.sha256
+    return files
 
 
 def _asker(args) -> Asker:
@@ -514,25 +557,29 @@ def _main() -> int:
         return 1
 
     if args.command == "install":
-        missing = []
-        for name, value in (
-            ("--lineage-zip", args.lineage_zip),
-            ("--name", args.name),
-            ("--boot-image", args.boot_image),
-            ("--rootfs", args.rootfs),
-            ("--rootfs-sha256", args.rootfs_sha256),
-        ):
-            if not value:
-                missing.append(name)
-        if missing:
-            ui.out.fail("install requires " + ", ".join(missing))
+        if not args.name:
+            ui.out.fail("install requires --name")
+            return 1
+        if bool(args.rootfs) != bool(args.rootfs_sha256):
+            ui.out.fail("--rootfs and --rootfs-sha256 go together")
             return 1
         try:
             rootfs_sha256 = _validate_optional_sha("rootfs SHA-256", args.rootfs_sha256)
-            assert rootfs_sha256 is not None
-        except (ValueError, AssertionError) as exc:
+        except ValueError as exc:
             ui.out.fail(f"{exc}")
             return 1
+
+        # Whatever was not passed in comes from the pinned asset cache and the signed release, for the
+        # board that was detected, before a single question is asked: a missing file stops the run here.
+        ui.out.heading(f"Install files for the {profile.model}")
+        try:
+            files = _install_files(args, profile.board, amonet, work)
+        except (InstallFilesError, ReleaseError) as exc:
+            ui.out.fail(f"{exc}")
+            return 1
+        amonet = files["amonet_dir"]
+        lineage_zip, boot_image = files["lineage"], files["boot"]
+        rootfs, rootfs_sha256 = files.get("rootfs", args.rootfs), files.get("rootfs_sha256", rootfs_sha256)
 
         # Everything the Show starts with, asked before anything on it is touched.
         try:
@@ -566,14 +613,15 @@ def _main() -> int:
                 board=profile.board,
                 repo_root=root,
                 amonet_dir=amonet,
-                lineage_zip=args.lineage_zip.resolve(),
+                lineage_zip=lineage_zip.resolve(),
                 work_dir=work,
                 backups_dir=backups,
                 name=args.name,
-                boot_image=args.boot_image.resolve(),
+                boot_image=boot_image.resolve(),
                 boot_sha256=boot_sha256,
-                rootfs=args.rootfs.resolve(),
+                rootfs=rootfs.resolve(),
                 rootfs_sha256=rootfs_sha256,
+                update_channel=args.channel,
                 twrp_sha256=twrp_sha256,
                 amonet_hashes=amonet_hashes,
                 wifi=settings.wifi,

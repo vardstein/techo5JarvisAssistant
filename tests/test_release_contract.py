@@ -14,6 +14,7 @@ class ReleaseContractTests(unittest.TestCase):
         for rel in (
             "tools/release-jarvis-show.sh",
             "tools/install-show.py",
+            "tools/techo5lib.py",
             "tools/linux/deploy-rootfs.sh",
         ):
             self.assertIn(expected, (ROOT / rel).read_text(encoding="utf-8"), rel)

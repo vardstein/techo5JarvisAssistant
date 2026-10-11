@@ -31,6 +31,7 @@ ROOTFS_MARKER = "etc/jarvis-show-release.json"
 LEGACY_CROWN_ROOTFS_MARKER = "etc/jarvis-crown-release.json"
 PROFILE_ID = "jarvis-show-v1"
 SUPPORTED_BOARDS = ("crown", "checkers")
+UPDATE_CHANNELS = ("stable", "staging", "dev")  # echod/internal/update/channel.go
 FINAL_CONFIRM_PHRASE = "ERASE CROWN"  # compatibility alias
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -213,6 +214,7 @@ def make_install_plan(
     dashcast_key_file: Path | None = None,
     music_assistant: str | None = None,
     root_password_file: Path | None = None,
+    update_channel: str | None = None,
 ) -> InstallPlan:
     profile = profile_for_board(board)
     if confirmation != profile.install_confirmation:
@@ -273,6 +275,10 @@ def make_install_plan(
         argv.extend(["--music-assistant", music_assistant])
     if root_password_file:
         argv.extend(["--root-password-file", str(root_password_file)])
+    if update_channel:
+        if update_channel not in UPDATE_CHANNELS:
+            raise InstallError(f"unknown update channel {update_channel!r}")
+        argv.extend(["--update-channel", update_channel])
 
     required = {
         "--jarvis-show-prestaged",

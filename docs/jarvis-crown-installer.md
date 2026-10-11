@@ -33,6 +33,14 @@ keeps a file only when its size and SHA-256 match the pin in `tools/jarvis_crown
 the paths. It refuses a folder inside the repository: these files are hundreds of MB and never belong in
 the checkout. `--check` verifies what is cached without downloading.
 
+`jarvis-show.py install` does the same by itself for the board it detects, Amonet included, whenever
+`--lineage-zip`, `--boot-image` or `--amonet-dir` is left out. Without `--rootfs` it also takes the
+Jarvis root filesystem from a published release: the one `--channel` names (`stable`, `staging` or
+`dev`, default `stable`). The release manifest is believed only with the release key's signature over
+it and only when it names this board, and the download is held to the manifest's hash. The Show is
+then set to follow the same channel for updates. A channel with no release for the board stops the
+run before any question, with the other channels to try.
+
 Amonet zips are only attached to the XDA threads, and XDA's CDN answers anything that isn't a real
 browser with a 403 challenge page, so a script can't download them. The tool opens the attachment link
 in your default browser instead (log in to XDA if it asks) and waits up to ten minutes for the finished
@@ -539,7 +547,7 @@ has the default given here.
 | `preflight` (the default) | Checks this computer and the input files. Touches no Show. With a Show on fastboot it also says which board it is. | nothing |
 | `identify` | Reads the Show on fastboot, read-only: board, serial, whether it is unlocked. | a Show on fastboot |
 | `unlock` | Runs Amonet on the Show on fastboot, after you type the confirmation. Does nothing on a unit that is already unlocked. | a Show on fastboot |
-| `install` | The whole install: unlock if needed, recovery backup, LineageOS's drivers, Jarvis, and then Home Assistant (below). Asks everything before it writes. | `--lineage-zip`, `--name`, `--boot-image`, `--rootfs`, `--rootfs-sha256` |
+| `install` | The whole install: fetches what it needs, unlocks if needed, recovery backup, LineageOS's drivers, Jarvis, and then Home Assistant (below). Asks everything before it writes. | `--name` |
 | `amonet-upgrade` | Moves a unit that still has Amonet 1.x to 2.x, from TWRP ([Amonet 1.x units](#amonet-1x-units)). | `--board`, one Show in TWRP |
 | `wifi` | Puts an installed Show on a Wi-Fi network over its USB cable, for when it is offline. | `--wifi` |
 | `home-assistant` | Adds an installed Show to Home Assistant and sets it up: the steps above. Safe to run again. | `--name` |
@@ -554,12 +562,13 @@ has the default given here.
 | `--serial SERIAL` | wifi, home-assistant | Which unit. `wifi` talks to that Show on USB (not needed when only one is attached); `home-assistant` takes its key from `backups/<serial>/`. |
 | `--host ADDRESS` | home-assistant, boot-logo | The Show's address, when `backups/<serial>/address`, mDNS and Home Assistant cannot find it (a Show on another VLAN, say). |
 | `--key-file FILE` | home-assistant | The Show's ESPHome encryption key. Default `backups/<serial>/home-assistant.key`. |
-| `--lineage-zip ZIP` | install, amonet-upgrade, preflight | LineageOS 18.1 for this board. `tools/fetch-show-assets.py` downloads it and prints the path. `amonet-upgrade` takes the cached one when this is left out. |
-| `--boot-image FILE` | install | The board's boot image, also from `fetch-show-assets.py`. |
+| `--lineage-zip ZIP` | install, amonet-upgrade, preflight | LineageOS 18.1 for this board. Default the cached one, which `install` downloads and checks when it isn't there yet. |
+| `--boot-image FILE` | install | The board's boot image. Default fetched and checked the same way. |
 | `--boot-sha256 HASH` | install | Its SHA-256, only for a boot image the installer has no pin for. |
-| `--rootfs FILE` | install | The Jarvis root filesystem, from a release. |
-| `--rootfs-sha256 HASH` | install | Its SHA-256, from the same release. |
-| `--amonet-dir DIR` | install, unlock, preflight | The unpacked Amonet 2.x package. Default `../third_party/<board>`, else the asset cache. |
+| `--channel stable\|staging\|dev` | install | The release channel the root filesystem comes from, and the one the Show follows for updates. Default `stable`. |
+| `--rootfs FILE` | install | A Jarvis root filesystem of your own instead of the channel's. Needs `--rootfs-sha256`. |
+| `--rootfs-sha256 HASH` | install | Its SHA-256. |
+| `--amonet-dir DIR` | install, unlock, preflight | The unpacked Amonet 2.x package. Default `../third_party/<board>`, else the asset cache, which `install` fills (through the browser) when it is empty. |
 | `--amonet-zip ZIP` | amonet-upgrade | The Amonet 2.x zip. Default the cached one. |
 | `--amonet-hashes JSON` | install, unlock | SHA-256s for an Amonet package with no pin built in. |
 | `--twrp-sha256 HASH` | install | The same for TWRP. |

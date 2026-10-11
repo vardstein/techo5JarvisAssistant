@@ -141,6 +141,8 @@ def device_settings(a):
             out['dashcast_key'] = check_dashcast_key(read_secret(a.dashcast_key_file, 'DashCast key'))
         if a.music_assistant:
             out['music_assistant'] = normalize_music_assistant(a.music_assistant)
+        if getattr(a, 'update_channel', None):
+            out['update_channel'] = a.update_channel
     except ValueError as e:
         fail(str(e))
     return out
@@ -155,6 +157,10 @@ def initial_state(ssh, settings):
         state['dashboard'] = {'server': settings['dashcast'], 'key': settings['dashcast_key']}
     if settings.get('music_assistant'):
         state['sendspin'] = {'enabled': True, 'server_ip': settings['music_assistant']}
+    # The daemon follows stable unless told otherwise; a Show installed from another channel stays on it,
+    # so Home Assistant does not offer it the stable build as an update.
+    if settings.get('update_channel', 'stable') != 'stable':
+        state['update'] = {'channel': settings['update_channel']}
     return state
 
 
@@ -166,6 +172,8 @@ def describe_settings(ssh, settings):
         out.append('DashCast %s' % settings['dashcast'])
     if settings.get('music_assistant'):
         out.append('Music Assistant %s' % settings['music_assistant'])
+    if settings.get('update_channel', 'stable') != 'stable':
+        out.append('updates from the %s channel' % settings['update_channel'])
     return out
 
 
@@ -531,6 +539,8 @@ def main():
     ap.add_argument('--dashcast', help='the DashCast server, host[:port] (port 9555 when left out)')
     ap.add_argument('--dashcast-key-file', help='a file holding the DashCast server key (with --dashcast)')
     ap.add_argument('--music-assistant', help="the Music Assistant server's IP address, which the Sendspin player pairs with")
+    ap.add_argument('--update-channel', choices=('stable', 'staging', 'dev'),
+                    help='the release channel the Show follows for updates (default stable)')
     ap.add_argument('--root-password-file', help="a file holding root's password, which the Show's USB console asks for; "
                     'asked for when missing (only its hash goes to the unit)')
     ap.add_argument('--amazon-logo', action='store_true',
