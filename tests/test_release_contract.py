@@ -37,6 +37,14 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertIn("jarvis-show-rootfs-${{ steps.meta.outputs.version }}.tar.gz", source)
         self.assertIn("tools/release-jarvis-show.sh", source)
 
+    def test_channels_are_moved_by_the_checking_mover(self):
+        # Parallel pushes once left a channel holding one release's manifest and another's signature;
+        # release_channels.py works the target out from the release list and reads the channel back.
+        source = (ROOT / "tools/release-jarvis-show.sh").read_text(encoding="utf-8")
+        self.assertIn('tools/release_channels.py" "${channel_args[@]}" "${rolling[@]}"', source)
+        self.assertIn('--version "$VERSION"', source)
+        self.assertNotIn("manifest.json.sig\" --repo \"$REPO\" --clobber", source)
+
     def test_release_workflow_direct_shell_entrypoints_are_executable(self):
         for rel in (
             "tools/security-regression.sh",

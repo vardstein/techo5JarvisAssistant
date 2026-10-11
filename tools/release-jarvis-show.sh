@@ -26,9 +26,10 @@ usage: $0 --version vX.Y.Z[...prerelease] --notes TEXT --binary FILE --rootfs FI
 Without --publish the script only validates artifacts and writes signed manifest/SHA256SUMS into --out.
 It does not build the rootfs or boot images.
 
---channel says which update channel the release is for. Without it, -stable.N or no suffix is stable,
--staging.N or -rc.N is staging and anything else is dev. A release moves its own channel and every less
-stable one forward (stable: stable, staging, dev; staging: staging, dev), never back.
+--channel says which update channel the release is for, and must agree with the name: -stable.N or no
+suffix is stable, -staging.N or -rc.N is staging and anything else is dev. Without it the name decides.
+A release moves its own channel and every less stable one forward (stable: stable, staging, dev;
+staging: staging, dev), never back.
 --target is the commit a new release tag is made on; without it GitHub uses the default branch.
 USAGE
 }
@@ -63,7 +64,8 @@ if [ -z "$CHANNEL" ]; then
 fi
 case $CHANNEL in
   stable) [[ $VERSION != *-* || $VERSION == *-stable.* ]] || { echo "a stable release is vX.Y.Z-stable.N or vX.Y.Z: $VERSION" >&2; exit 2; };;
-  staging|dev) [[ $VERSION == *-* && $VERSION != *-stable.* ]] || { echo "a $CHANNEL release must be a prerelease (vX.Y.Z-...), not stable: $VERSION" >&2; exit 2; };;
+  staging) [[ $VERSION == *-staging.* || $VERSION == *-rc.* ]] || { echo "a staging release is vX.Y.Z-staging.N or vX.Y.Z-rc.N: $VERSION" >&2; exit 2; };;
+  dev) [[ $VERSION == *-* && $VERSION != *-stable.* && $VERSION != *-staging.* && $VERSION != *-rc.* ]] || { echo "a dev release is a prerelease other than -stable, -staging or -rc: $VERSION" >&2; exit 2; };;
   *) echo "invalid --channel: $CHANNEL" >&2; exit 2;;
 esac
 for pair in "binary:$BINARY" "rootfs:$ROOTFS" "signing key:$SIGN_KEY"; do
@@ -159,76 +161,14 @@ gh "${release_args[@]}"
 # own channel and the less stable ones, so dev never offers something older than staging or stable: a
 # unit would refuse it and its update card would never clear (techo5 issue #42). A channel never moves
 # back. The tags are not the branch names because a tag and a branch both called dev confuse git.
+# release_channels.py points each channel at the newest release it may carry and reads it back, so runs
+# for several branches pushed at once cannot leave one release's manifest next to another's signature.
 case $CHANNEL in
   stable|staging) rolling=(staging dev);;
   dev) rolling=(dev);;
 esac
-
-newer() {
-  python3 - "$1" "$2" <<'PY'
-import re, sys
-
-def parse(v):
-    m = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.]+))?", v or "")
-    if not m: return None
-    core = tuple(map(int, m.group(1,2,3)))
-    pre = m.group(4)
-    fields = [] if pre is None else [int(x) if x.isdigit() else x for x in pre.split('.')]
-    return core, pre is None, fields
-
-# CI builds (dev.N, staging.N, stable.N) rank by their numbers whatever channel they name: N is the
-# shared run number, and it is how the Show and Home Assistant rank them (echod internal/update/version.go).
-CHANNELS = {"dev": 0, "staging": 1, "stable": 2}
-
-def channel_build(fields):
-    if len(fields) < 2 or fields[0] not in CHANNELS or not all(isinstance(x, int) for x in fields[1:]):
-        return None
-    return fields[1:], CHANNELS[fields[0]]
-
-def newer(a,b):
-    if not b: return True
-    pa,pb=parse(a),parse(b)
-    if not pa or not pb: return False
-    if pa[0] != pb[0]: return pa[0] > pb[0]
-    if pa[1] != pb[1]: return pa[1] and not pb[1]
-    ca,cb=channel_build(pa[2]),channel_build(pb[2])
-    if ca and cb:
-        n = max(len(ca[0]), len(cb[0]))
-        xa, xb = ca[0] + [0]*(n-len(ca[0])), cb[0] + [0]*(n-len(cb[0]))
-        return (xa, ca[1]) > (xb, cb[1])
-    for x,y in zip(pa[2],pb[2]):
-        if x == y: continue
-        if isinstance(x,int) and isinstance(y,int): return x > y
-        return str(x) > str(y)
-    return len(pa[2]) > len(pb[2])
-
-sys.exit(0 if newer(sys.argv[1], sys.argv[2]) else 10)
-PY
-}
-
-for name in "${rolling[@]}"; do
-  tag="channel-$name"
-  current=
-  if gh release view "$tag" --repo "$REPO" >/dev/null 2>&1; then
-    current=$(gh release download "$tag" --repo "$REPO" -p manifest.json -O - 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version", ""))' || true)
-  else
-    create=(release create "$tag" --repo "$REPO" --prerelease --latest=false --title "Jarvis Show $name channel"
-      --notes "Rolling Jarvis Show $name channel. It holds only the signed manifest of the release it points at.")
-    [ -z "$TARGET" ] || create+=(--target "$TARGET")
-    gh "${create[@]}"
-  fi
-  set +e
-  newer "$VERSION" "$current"
-  compare_status=$?
-  set -e
-  case $compare_status in
-    0)
-      gh release upload "$tag" "$OUT/manifest.json" "$OUT/manifest.json.sig" --repo "$REPO" --clobber
-      echo "PASS: $name channel advanced to $VERSION"
-      ;;
-    10) echo "PASS: $name channel left on newer/equal $current";;
-    *) exit "$compare_status";;
-  esac
-done
+channel_args=(--repo "$REPO" --version "$VERSION")
+[ -z "$TARGET" ] || channel_args+=(--target "$TARGET")
+python3 "$ROOT/tools/release_channels.py" "${channel_args[@]}" "${rolling[@]}"
 
 echo "PASS: published https://github.com/$REPO/releases/tag/$VERSION ($CHANNEL)"
