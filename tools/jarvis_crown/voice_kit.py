@@ -32,6 +32,9 @@ from .home_assistant import Chooser, HomeAssistant, HomeAssistantError, NotFound
 
 BLUEPRINT_FOLDER = "techo5"
 BLUEPRINT_SOURCE = "https://github.com/vardstein/techo5JarvisAssistant/blob/genbuShowCrown/blueprints/automation/"
+# Ours from any branch: one saved while the branch had another name (jarvis-crown-v1) is still ours to update.
+_OUR_BLUEPRINT = re.compile(r"^https://github[.]com/vardstein/techo5JarvisAssistant/blob/[^/]+(?:/[^/]+)*?"
+                            r"/blueprints/automation/(?P<name>[^/]+)$")
 BLUEPRINT_DIR = Path(__file__).resolve().parents[2] / "blueprints" / "automation"
 TURN_ROOM_DOWN = "turn-room-down.yaml"
 VOLUME = "volume-where-the-music-is.yaml"
@@ -645,6 +648,11 @@ def turn_room_down(show: str, satellite: str, speakers: list[str], near_miss: st
 Keep = Callable[[str, Any], str]
 
 
+def _ours(name: str, source: str | None) -> bool:
+    found = _OUR_BLUEPRINT.match(source or "")
+    return bool(found) and found["name"] == name
+
+
 @dataclass
 class _Run:
     ha: HomeAssistant
@@ -711,7 +719,7 @@ class _Run:
         listed = self.ha.ws({"type": "blueprint/list", "domain": "automation"}) or {}
         there = listed.get(path)
         source = BLUEPRINT_SOURCE + name
-        if there is not None and ((there.get("metadata") or {}).get("source_url") != source):
+        if there is not None and not _ours(name, (there.get("metadata") or {}).get("source_url")):
             self.progress(f"blueprint {path} is there and is not this installer's; left alone")
             return True
         text = (BLUEPRINT_DIR / name).read_text(encoding="utf-8")

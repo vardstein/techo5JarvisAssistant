@@ -251,6 +251,22 @@ class SetUpTests(unittest.TestCase):
         log = run(fake)
         self.assertIn("blueprint techo5/turn-room-down.yaml brought up to date", log)
 
+    def test_our_blueprint_from_an_older_branch_name_is_still_ours(self):
+        fake = FakeHA()
+        old = SOURCE.replace("/genbuShowCrown/", "/jarvis-crown-v1/") + "turn-room-down.yaml"
+        fake.blueprints["techo5/turn-room-down.yaml"] = {"metadata": {"source_url": old}}
+        log = run(fake)
+        self.assertIn("blueprint techo5/turn-room-down.yaml brought up to date", log)
+        self.assertEqual(fake.blueprints["techo5/turn-room-down.yaml"]["metadata"]["source_url"],
+                         SOURCE + "turn-room-down.yaml")
+
+    def test_another_of_our_blueprints_at_that_path_is_not_ours_to_overwrite(self):
+        fake = FakeHA()
+        other = SOURCE + "volume-where-the-music-is.yaml"
+        fake.blueprints["techo5/turn-room-down.yaml"] = {"metadata": {"source_url": other}}
+        log = run(fake)
+        self.assertIn("blueprint techo5/turn-room-down.yaml is there and is not this installer's; left alone", log)
+
     def test_a_house_without_german_gets_only_the_turn_down(self):
         fake = FakeHA(language="en")
         log = run(fake)
