@@ -170,6 +170,7 @@ var fr = lang{
 		"Searching%s":                             "Recherche%s",
 		"working…":                                "un instant…",
 		"paired · tap to connect":                 "appairé · touchez pour connecter",
+		"connected · tap to disconnect":           "connecté · touchez pour déconnecter",
 		"tap to pair":                             "touchez pour appairer",
 		"Reading the calendar…":                   "Lecture de l'agenda…",
 		"Nothing on this day":                     "Rien ce jour-là",

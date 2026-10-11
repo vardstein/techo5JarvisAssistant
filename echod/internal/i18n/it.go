@@ -170,6 +170,7 @@ var it = lang{
 		"Searching%s":                             "Ricerca%s",
 		"working…":                                "un momento…",
 		"paired · tap to connect":                 "associato · tocca per connettere",
+		"connected · tap to disconnect":           "connesso · tocca per disconnettere",
 		"tap to pair":                             "tocca per associare",
 		"Reading the calendar…":                   "Lettura del calendario…",
 		"Nothing on this day":                     "Niente in questo giorno",

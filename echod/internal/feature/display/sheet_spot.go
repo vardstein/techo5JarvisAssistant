@@ -517,3 +517,24 @@ func (d *Display) Demo(for_ time.Duration) {
 	d.mu.Unlock()
 	d.wake()
 }
+
+// bluetoothRows are the Connections card's Bluetooth rows on the Spot: its speaker, to connect or
+// disconnect, and pairing, which picks the strongest speaker it hears by itself.
+func bluetoothRows(bt btaudio.State) []settingRow {
+	switch {
+	case !bt.Available:
+		return []settingRow{{label: "Bluetooth audio", sub: "Not available on this build", kind: ctlValue}}
+	case bt.Connected != "":
+		return append([]settingRow{{id: "bt", label: bt.Connected, sub: cmpOr(bt.Status, "Bluetooth audio · Connected"), kind: ctlButton, button: "Disconnect"}}, pairRow)
+	case bt.Remembered != "":
+		// What it is doing, while it does something; otherwise plainly not connected.
+		row := settingRow{id: "bt", label: bt.Remembered, sub: "Bluetooth audio", kind: ctlButton, value: "Not connected", button: "Connect"}
+		if bt.Status != "" {
+			row.sub, row.value = bt.Status, ""
+		}
+		return []settingRow{row, pairRow}
+	}
+	return []settingRow{{label: "Bluetooth audio", sub: cmpOr(bt.Status, "Earbuds or a speaker"), kind: ctlValue, value: "None yet"}, pairRow}
+}
+
+var pairRow = settingRow{id: "pair", label: "Pair a new device", sub: "Put it in pairing mode first", kind: ctlButton, button: "Pair"}

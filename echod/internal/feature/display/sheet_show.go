@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/btaudio"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/home"
 	"github.com/HuskerMinion/techo5/echod/internal/layout"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/wifi"
@@ -89,6 +90,24 @@ func resetRows(st settings) []settingRow {
 		sub: "Erases the settings, Wi-Fi, the Home Assistant key and the root password", kind: ctlDanger, button: "Reset"}
 	if since := st.now.Sub(st.resetArm); !st.resetArm.IsZero() && since < resetWindow {
 		row.sub, row.button = "Tap Erase to wipe this Show and restart", "Erase"
+	}
+	return []settingRow{row}
+}
+
+// bluetoothRows is the Connections card's one Bluetooth row. It opens the Bluetooth page
+// (render_bt.go), where the speaker or earbuds are connected, disconnected and paired.
+func bluetoothRows(bt btaudio.State) []settingRow {
+	if !bt.Available {
+		return []settingRow{{label: "Bluetooth audio", sub: "Not available on this build", kind: ctlValue}}
+	}
+	row := settingRow{id: "bluetooth", label: "Bluetooth audio", kind: ctlChoice}
+	switch {
+	case bt.Connected != "":
+		row.value, row.sub = bt.Connected, cmpOr(bt.Status, "Connected")
+	case bt.Remembered != "":
+		row.value, row.sub = "Not connected", cmpOr(bt.Status, bt.Remembered)
+	default:
+		row.value, row.sub = "None yet", cmpOr(bt.Status, "Earbuds or a speaker")
 	}
 	return []settingRow{row}
 }
@@ -176,6 +195,12 @@ func (d *Display) deviceRowTap(id string, p part, opt int) bool {
 			slog.Warn("factory reset asked for from the screen")
 			factoryReset("screen")
 		}
+	case "bluetooth":
+		d.showSheet(false)
+		d.mu.Lock()
+		d.btFromSheet = true
+		d.mu.Unlock()
+		btaudio.Get().SetPairing(true)
 	case "wifi":
 		if wifi.Available() {
 			d.showSheet(false)

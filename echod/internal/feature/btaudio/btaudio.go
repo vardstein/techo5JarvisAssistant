@@ -606,6 +606,8 @@ func (f *Feature) SetPairing(on bool) {
 	if on && a != nil {
 		f.pairOff = time.AfterFunc(pairingFor, func() { f.SetPairing(false) })
 		f.state.Status = "Put your earbuds in pairing mode"
+	} else if !on {
+		f.state.Status = "" // what pairing said is over with it
 	}
 	f.mu.Unlock()
 	f.pairing.Set(on && a != nil)
@@ -695,7 +697,7 @@ func (f *Feature) connect(ctx context.Context, address string, pair bool) {
 		slog.Error("saving the bluetooth device failed", "err", err)
 	}
 	f.mu.Lock()
-	f.state.Remembered = name
+	f.state.Remembered, f.state.Status = name, ""
 	f.mu.Unlock()
 	slog.Info("bluetooth connected", "device", name)
 	if pair {

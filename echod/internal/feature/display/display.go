@@ -53,6 +53,7 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/screen"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/touch"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/hass"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/safe"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/wifi"
 	"github.com/HuskerMinion/techo5/echod/internal/service"
 )
@@ -210,6 +211,9 @@ type Display struct {
 	wifi     wifiState
 	wifiOpen bool
 	wifiAt   time.Time
+
+	// btFromSheet is the Bluetooth page opened from the settings: its Done goes back there.
+	btFromSheet bool
 
 	// quiet is a turn that was a screen command ("go home", "show the deck"): its words and reply
 	// are not shown, so the screen moves at once. radioCue is when Home Assistant last named a
@@ -766,24 +770,38 @@ func (d *Display) gesture(g touch.Gesture) {
 		return
 	}
 
-	// The pairing page: a tap on a row pairs or connects it, the bar at the bottom ends the page.
-	// A swipe from the right opens it from the clock.
+	// The Bluetooth page: a tap on a row pairs and connects it, or disconnects the one connected, and
+	// the bar at the bottom ends the page, back to the settings when it was opened from there.
 	bt := btaudio.Get()
 	if bt.Pairing() {
+		done := false
 		switch g.Kind {
 		case touch.Tap:
 			if d.r == nil {
 				return
 			}
-			st := bt.State()
+			list := btList(bt.State().Devices)
 			switch row := d.r.btRowAt(g.Y); {
 			case row == btRows:
-				bt.SetPairing(false)
-			case row >= 0 && row < len(st.Devices) && !st.Devices[row].Busy:
-				bt.Choose(st.Devices[row].Address)
+				done = true
+			case row >= 0 && row < len(list) && list[row].Busy:
+			case row >= 0 && row < len(list) && list[row].Connected:
+				safe.Go("bluetooth disconnect from the screen", bt.Disconnect)
+			case row >= 0 && row < len(list):
+				bt.Choose(list[row].Address)
 			}
 		case touch.SwipeRight:
+			done = true
+		}
+		if done {
 			bt.SetPairing(false)
+			d.mu.Lock()
+			back := d.btFromSheet
+			d.btFromSheet = false
+			d.mu.Unlock()
+			if back {
+				d.showSheet(true)
+			}
 		}
 		d.wake()
 		return

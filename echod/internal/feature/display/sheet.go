@@ -249,25 +249,7 @@ func connectionRows(sv sheetView) []settingRow {
 	if st.address == "-" {
 		wifiRow.sub = "No address yet"
 	}
-	rows := []settingRow{wifiRow}
-	switch {
-	case !bt.Available:
-		rows = append(rows, settingRow{label: "Bluetooth audio", sub: "Not available on this build", kind: ctlValue})
-	case bt.Connected != "":
-		rows = append(rows, settingRow{id: "bt", label: bt.Connected, sub: cmpOr(bt.Status, "Bluetooth audio · Connected"), kind: ctlButton, button: "Disconnect"})
-	case bt.Remembered != "":
-		// What it is doing, while it does something; otherwise plainly not connected.
-		row := settingRow{id: "bt", label: bt.Remembered, sub: "Bluetooth audio", kind: ctlButton, value: "Not connected", button: "Connect"}
-		if bt.Status != "" {
-			row.sub, row.value = bt.Status, ""
-		}
-		rows = append(rows, row)
-	default:
-		rows = append(rows, settingRow{label: "Bluetooth audio", sub: cmpOr(bt.Status, "Earbuds or a speaker"), kind: ctlValue, value: "None yet"})
-	}
-	if bt.Available {
-		rows = append(rows, settingRow{id: "pair", label: "Pair a new device", sub: "Put it in pairing mode first", kind: ctlButton, button: "Pair"})
-	}
+	rows := append([]settingRow{wifiRow}, bluetoothRows(bt)...)
 	return append(rows, settingRow{id: "btproxy", label: "Bluetooth proxy", sub: "Lets Home Assistant hear nearby devices",
 		kind: ctlToggle, on: st.btProxy})
 }

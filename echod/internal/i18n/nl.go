@@ -165,6 +165,7 @@ var nl = lang{
 		"Searching%s":                             "Zoeken%s",
 		"working…":                                "even geduld…",
 		"paired · tap to connect":                 "gekoppeld · tik om te verbinden",
+		"connected · tap to disconnect":           "verbonden · tik om te verbreken",
 		"tap to pair":                             "tik om te koppelen",
 		"Reading the calendar…":                   "Agenda lezen…",
 		"Nothing on this day":                     "Niets op deze dag",

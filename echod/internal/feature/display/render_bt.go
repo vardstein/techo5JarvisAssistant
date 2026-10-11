@@ -3,13 +3,17 @@
 package display
 
 import (
-	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"image/draw"
+	"slices"
+
+	"github.com/HuskerMinion/techo5/echod/internal/feature/btaudio"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 )
 
-// The pairing page: a title, a line saying what to do, the devices the scan has found as rows a
-// finger can hit, and a bar at the bottom that ends pairing. Geometry is shared with the gesture
+// The Bluetooth page, opened from Connections in the settings: a title, a line saying what to do,
+// the devices as rows a finger can hit, and a bar at the bottom that ends it. The one connected and
+// the ones paired come first, then what the scan has found. Geometry is shared with the gesture
 // handler, which maps a tap back to a row.
 // The panel is 960 by 480 in landscape: title, hint, four rows, and the bar fit in 480.
 const (
@@ -34,8 +38,25 @@ func (r *renderer) btRowAt(y int) int {
 	return row
 }
 
+// btList is the page's devices in the order it lists them: connected, paired, then the rest, each
+// group strongest first as the scan sorted them.
+func btList(devices []btaudio.Device) []btaudio.Device {
+	rank := func(d btaudio.Device) int {
+		switch {
+		case d.Connected:
+			return 0
+		case d.Paired:
+			return 1
+		}
+		return 2
+	}
+	list := slices.Clone(devices)
+	slices.SortStableFunc(list, func(a, b btaudio.Device) int { return rank(a) - rank(b) })
+	return list
+}
+
 func (r *renderer) pairingPage(s scene) {
-	r.text(r.body, "Bluetooth", r.margin, 52, amber)
+	r.text(r.body, "Bluetooth audio", r.margin, 52, amber)
 	t := clockHM(s.now)
 	r.text(r.small, t, r.w-r.margin-r.width(r.small, t), 52, dim)
 	hint := s.bt.Status
@@ -49,7 +70,7 @@ func (r *renderer) pairingPage(s scene) {
 		n := int(s.now.UnixMilli() / 400 % 4)
 		r.text(r.small, i18n.Sprintf("Searching%s", "..."[:n]), r.margin, btRowTop+38, dim)
 	}
-	for i, d := range s.bt.Devices {
+	for i, d := range btList(s.bt.Devices) {
 		if i >= btRows {
 			break
 		}
@@ -65,7 +86,7 @@ func (r *renderer) pairingPage(s scene) {
 		case d.Busy:
 			right = "working…"
 		case d.Connected:
-			right = "connected"
+			right = "connected · tap to disconnect"
 		case d.Paired:
 			right = "paired · tap to connect"
 		default:
