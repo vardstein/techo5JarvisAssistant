@@ -436,8 +436,9 @@ What happens with the answers:
   5. when the room has no dashboard of its own (by the rules in
      [The room's dashboard](dashboards.md#the-rooms-dashboard)), asks whether to make a small one.
      It holds what someone standing in the room would reach for: up to two thermostats, two
-     temperature and two humidity sensors, and the room's lights, blinds and fans, twelve tiles at
-     most. Doors, windows, motion, media players and the Show itself are left out. It is made as
+     temperature and two humidity sensors, and the room's lights, players, blinds, switches and fans,
+     sixteen tiles at most. Tapping a player's tile opens its controls, a switch's tile toggles it.
+     Doors, windows, motion and the Show itself are left out. It is made as
      `dashboard-<room>` (for "Küche", `dashboard-kueche`), and a room with nothing on that list gets
      none. Enter is no. `--room-dashboard` makes it without asking, `--no-room-dashboard` never
      asks. A dashboard that is already there is never changed;

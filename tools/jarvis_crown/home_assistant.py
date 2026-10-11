@@ -739,10 +739,12 @@ def _room_board(ha: HomeAssistant, area: str, name: str) -> str | None:
 
 
 # What a room's dashboard shows, in this order: what someone in the room would reach for. Doors, windows
-# and motion are left out, since whoever looks at the Show is in the room and sees them.
+# and motion are left out, since whoever looks at the Show is in the room and sees them. A media player's
+# tile opens its controls; a switch's toggles it.
 _ROOM_CARDS = (("climate", None, 2), ("sensor", "temperature", 2), ("sensor", "humidity", 2),
-               ("light", None, 6), ("cover", None, 4), ("fan", None, 2))
-_ROOM_CARDS_MAX = 12
+               ("light", None, 6), ("media_player", None, 2), ("cover", None, 4), ("switch", None, 4),
+               ("fan", None, 2))
+_ROOM_CARDS_MAX = 16
 
 
 def _room_cards(ha: HomeAssistant, area: str, own_device: str) -> list[dict]:
@@ -797,7 +799,8 @@ def _room_dashboard(ha: HomeAssistant, entities: list[str], make: bool | None,
         return f"no room dashboard for {name}"
     cards = _room_cards(ha, area, device)
     if not cards:
-        return f"nothing in {name} worth a room dashboard (no heating, lights, blinds or fans), so none made"
+        return (f"nothing in {name} worth a room dashboard (no heating, lights, players, blinds, switches "
+                "or fans), so none made")
     url_path = "dashboard-" + (slug_key(name, True) or slug_key(area) or "room")
     ha.ws({"type": "lovelace/dashboards/create", "url_path": url_path, "title": name, "icon": "mdi:sofa",
            "require_admin": False, "show_in_sidebar": True, "mode": "storage"})

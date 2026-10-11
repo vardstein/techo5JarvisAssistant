@@ -113,6 +113,8 @@ class FakeHA:
             {"entity_id": "light.versteckt", "device_id": None, "area_id": "living_room", "hidden_by": "user"},
             {"entity_id": "binary_sensor.fenster", "device_id": None, "area_id": "living_room"},
             {"entity_id": "media_player.wohnzimmer", "device_id": None, "area_id": "living_room"},
+            {"entity_id": "switch.stehlampe", "device_id": None, "area_id": "living_room"},
+            {"entity_id": "switch.kaffee", "device_id": None, "area_id": "kitchen"},
             {"entity_id": "light.kueche", "device_id": None, "area_id": "kitchen"},
             {"entity_id": "light.jarvis_show_5_screen", "device_id": "D1", "area_id": None},
         ]
@@ -488,9 +490,11 @@ class RoomTests(unittest.TestCase):
         self.assertEqual(save["type"], "lovelace/config/save")
         cards = save["config"]["views"][0]["sections"][0]["cards"]
         self.assertEqual([c["entity"] for c in cards],
-                         ["climate.wohnzimmer", "sensor.wohnzimmer_temperature", "light.decke"])
+                         ["climate.wohnzimmer", "sensor.wohnzimmer_temperature", "light.decke",
+                          "media_player.wohnzimmer", "switch.stehlampe"])
         self.assertEqual(cards[0]["features"], [{"type": "target-temperature"}])
-        self.assertIn("room dashboard dashboard-wohnzimmer made for Wohnzimmer, 3 cards", log)
+        self.assertEqual(cards[3], {"type": "tile", "entity": "media_player.wohnzimmer"})
+        self.assertIn("room dashboard dashboard-wohnzimmer made for Wohnzimmer, 5 cards", log)
 
     def test_enter_makes_no_room_dashboard(self):
         fake = FakeHA()
@@ -527,7 +531,8 @@ class RoomTests(unittest.TestCase):
 
     def test_a_room_with_nothing_to_show_gets_none(self):
         fake = FakeHA()
-        fake.entities = [e for e in fake.entities if e["entity_id"].startswith(("binary_sensor.", "media_player."))]
+        fake.entities = [e for e in fake.entities
+                         if e["entity_id"].startswith(("binary_sensor.", "sensor.wohnzimmer_battery"))]
         _, log = run_deploy(fake, host="10.0.0.9", room="Wohnzimmer", room_dashboard=True)
         self.assertEqual(len(fake.ws_calls), 1)
         self.assertTrue(any("nothing in Wohnzimmer worth a room dashboard" in line for line in log))
