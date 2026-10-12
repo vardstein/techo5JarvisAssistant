@@ -9,7 +9,6 @@ import (
 	"image/color"
 	"image/draw"
 	"log/slog"
-	"math"
 	"sync"
 	"time"
 
@@ -293,6 +292,8 @@ type renderer struct {
 
 	// carFc is the settings screen's type at each panel and menu size drawn so far (render_sheet.go).
 	carFc map[int]*carFaces
+	// turnFc is the Classic turn page's type (turn_car.go).
+	turnFc *turnFaces
 
 	// zoomFaces are the settings screen's text sizes at each menu size chosen so far (menu_size.go).
 	zoomFaces map[int]*sheetFaces
@@ -502,7 +503,7 @@ func (r *renderer) draw(s scene) {
 		return
 	}
 
-	if s.eq != nil {
+	if s.eq != nil && !s.eq.classic {
 		switch {
 		case s.eq.glow:
 			r.glow(s)
@@ -519,14 +520,12 @@ func (r *renderer) draw(s scene) {
 
 	var behind *image.RGBA // the photo behind the idle page, when it has one
 	switch s.phase {
-	case "listening":
-		r.status(s, "Listening…", true)
-	case "thinking":
-		r.status(s, "Thinking…", true)
-		r.words(s.heard, "", 200)
-	case "replying", "lingering":
-		r.cornerClock(s)
-		r.words(s.heard, s.reply, 70)
+	case "listening", "thinking", "replying", "lingering":
+		r.carTurn(s)
+		if s.showVolume {
+			r.volumeBar(s)
+		}
+		return
 	default:
 		if s.sunrise > 0 {
 			// The light before an alarm takes the whole screen: the panel is the lamp in the room, and
@@ -771,57 +770,6 @@ func (r *renderer) cornerClockDated(s scene) {
 	r.cornerClock(s)
 	d := i18n.Date(s.now, "Mon, Jan 2")
 	r.text(r.tiny, d, r.w-r.margin-r.width(r.tiny, d), r.margin+r.s(54), dim)
-}
-
-// status is a phase title with an indicator that breathes while the device waits.
-func (r *renderer) status(s scene, title string, breathe bool) {
-	r.cornerClock(s)
-	r.text(r.title, title, r.margin, r.s(120), amber)
-	if breathe {
-		// A bar under the title, its length rising and falling with a period of 1.6 s.
-		t := float64(s.now.Sub(s.since).Milliseconds()) / 1600
-		f := 0.55 + 0.45*math.Sin(2*math.Pi*t)
-		full := r.w - 2*r.margin
-		draw.Draw(r.dst, image.Rect(r.margin, r.s(140), r.margin+full, r.s(146)), image.NewUniform(ember), image.Point{}, draw.Src)
-		draw.Draw(r.dst, image.Rect(r.margin, r.s(140), r.margin+int(float64(full)*f), r.s(146)), image.NewUniform(amber), image.Point{}, draw.Src)
-	}
-}
-
-// words lays out what was heard, dimmed, and the reply beneath it, starting at top and stopping at
-// the footer. A long reply is shrunk one step before being cut.
-func (r *renderer) words(heard, reply string, top int) {
-	y := top
-	maxW := r.w - 2*r.margin
-	bottom := r.h - 70
-	if heard != "" {
-		for _, line := range r.wrap(r.small, "“"+heard+"”", maxW) {
-			if y+40 > bottom {
-				break
-			}
-			r.text(r.small, line, r.margin, y+30, dim)
-			y += 42
-		}
-		y += 18
-	}
-	if reply == "" {
-		return
-	}
-	face, lineH := r.body, 52
-	lines := r.wrap(face, reply, maxW)
-	if len(lines)*lineH > bottom-y {
-		face, lineH = r.small, 42
-		lines = r.wrap(face, reply, maxW)
-	}
-	for i, line := range lines {
-		if y+lineH > bottom {
-			if i > 0 {
-				r.text(face, "…", r.margin, y, cream)
-			}
-			break
-		}
-		r.text(face, line, r.margin, y+lineH-12, cream)
-		y += lineH
-	}
 }
 
 // headerH is the strip at the very top of the panel that the header keeps itself inside.

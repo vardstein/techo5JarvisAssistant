@@ -161,6 +161,15 @@ func TestShowScenesDraw(t *testing.T) {
 			sheet: settings{cat: catSound, volume: 15, wakeWord: "Okay Nabu"}},
 		"settings-thinking": {now: at, phase: "thinking", heard: "Ja, bitte", showSheet: true,
 			sheet: settings{cat: catSound, volume: 15, wakeWord: "Okay Nabu"}},
+		// The turn's own page, in the classic style (the other styles are added below).
+		"turn-classic-listening": {now: at, since: at.Add(-400 * time.Millisecond), phase: "listening", weather: sky,
+			eq: classicVoice(0.7)},
+		"turn-classic-thinking": {now: at, since: at.Add(-400 * time.Millisecond), phase: "thinking", weather: sky,
+			heard: "Wie wird das Wetter morgen"},
+		"turn-classic-replying": {now: at, phase: "replying", weather: sky, heard: "Wie wird das Wetter morgen",
+			reply: "Morgen wird es wechselhaft, bis 17 Grad, am Nachmittag ab und zu Regen.", eq: classicVoice(0.5)},
+		"turn-classic-long": {now: at, phase: "replying", weather: sky, heard: "Was koche ich heute",
+			reply: "Wie wäre es mit einer Gemüsepfanne: Paprika, Zucchini und Zwiebeln anbraten, mit Sojasoße und etwas Honig ablöschen, dazu Reis. Dauert etwa 25 Minuten, und du brauchst nur eine Pfanne. Soll ich dir das Rezept auf den Bildschirm legen?"},
 		"clock-music-strip": {now: at, phase: "idle", weather: sky, strip: true, playing: true,
 			radio: home.Radio{Now: "Music Assistant", Title: "Reason That I Sing", Artist: "Release", Music: true}},
 		"clock-music-strip-paused": {now: at, phase: "idle", weather: sky, strip: true, paused: true,
@@ -267,6 +276,28 @@ func TestShowScenesDraw(t *testing.T) {
 	scenes["radar-alerts"] = scene{now: at, phase: "idle", showWeather: true, showRadar: true, alerts: alerts,
 		radar: home.RadarView{Frames: []home.RadarFrame{{Image: image.NewRGBA(image.Rect(0, 0, showWide, showHigh)), At: at}},
 			Home: image.Pt(showWide/2, showHigh/2), Places: []home.RadarPlace{{Name: "Omaha", At: image.Pt(470, 250), Pop: 480000}}}}
+
+	// The turn's page in the other styles, at each step of a turn.
+	for _, style := range []string{"bars", "wave", "glow"} {
+		for _, step := range []struct {
+			name, phase, heard, reply string
+			amp                       float64
+		}{
+			{"listening", "listening", "", "", 0.7},
+			{"thinking", "thinking", "Wie wird das Wetter morgen", "", 0},
+			{"replying", "replying", "Wie wird das Wetter morgen", "Morgen wird es wechselhaft, bis 17 Grad, am Nachmittag ab und zu Regen.", 0.5},
+		} {
+			v := &eqView{wave: style == "wave", glow: style == "glow", thinking: step.phase == "thinking"}
+			if step.phase == "thinking" {
+				v.level, v.peak = make([]float64, eqBands), make([]float64, eqBands)
+				eqThinking(at, v.level, v.peak)
+			} else {
+				v.level, v.peak = eqVoice(step.amp, 3)
+			}
+			scenes["turn-"+style+"-"+step.name] = scene{now: at, phase: step.phase, weather: sky,
+				heard: step.heard, reply: step.reply, eq: v}
+		}
+	}
 
 	// The light before an alarm, frame by frame: the same curve the panel follows, with the sun's
 	// face on, for looking at away from a device at six in the morning.

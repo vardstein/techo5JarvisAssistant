@@ -69,6 +69,7 @@ type eqView struct {
 	wave        bool // drawn as the wave rather than the bars
 	glow        bool // drawn as the glow
 	thinking    bool // the answer is being worked out: the glow runs rather than following a voice
+	classic     bool // drawn as the Classic page, whose rings follow the voice (turn_car.go)
 }
 
 var (
