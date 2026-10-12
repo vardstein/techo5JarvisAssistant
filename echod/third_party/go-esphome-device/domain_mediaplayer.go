@@ -63,6 +63,8 @@ const (
 	MediaPlayerVolumeUp   = api.MediaPlayerCommand_MEDIA_PLAYER_COMMAND_VOLUME_UP
 	MediaPlayerVolumeDown = api.MediaPlayerCommand_MEDIA_PLAYER_COMMAND_VOLUME_DOWN
 	MediaPlayerToggle     = api.MediaPlayerCommand_MEDIA_PLAYER_COMMAND_TOGGLE
+	MediaPlayerTurnOn     = api.MediaPlayerCommand_MEDIA_PLAYER_COMMAND_TURN_ON
+	MediaPlayerTurnOff    = api.MediaPlayerCommand_MEDIA_PLAYER_COMMAND_TURN_OFF
 )
 
 // MediaCommand is one media_player command. Only the fields Home Assistant set are

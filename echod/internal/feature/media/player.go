@@ -176,6 +176,10 @@ func build() *Player {
 				esphome.MediaPlayerFeaturePlay |
 				esphome.MediaPlayerFeaturePause |
 				esphome.MediaPlayerFeatureStop |
+				// Turn off is what Assist uses for "turn the music in the bedroom off", and an area's
+				// players that can't take it fail the whole request. It is a stop here; turn on is left
+				// out, so "turn the bedroom on" never starts music nobody asked for.
+				esphome.MediaPlayerFeatureTurnOff |
 				esphome.MediaPlayerFeatureBrowseMedia |
 				esphome.MediaPlayerFeatureAnnounce,
 			SupportsPause:    true,
@@ -566,7 +570,7 @@ func (p *Player) command(c esphome.MediaCommand) {
 		p.Mute(true)
 	case esphome.MediaPlayerUnmute:
 		p.Mute(false)
-	case esphome.MediaPlayerStop:
+	case esphome.MediaPlayerStop, esphome.MediaPlayerTurnOff:
 		// Stop is what people say to a speaker to make it quiet, and what Home Assistant sends for it:
 		// kept as a pause, so the screen still shows what was playing and play picks it up again. A
 		// track left stopped that long is really over. A track somebody else is playing is theirs to
