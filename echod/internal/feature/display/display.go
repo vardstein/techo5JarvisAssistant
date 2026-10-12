@@ -130,7 +130,9 @@ type Display struct {
 	dashTouched   time.Time
 	dashShowing   bool
 	dashFollow    bool
-	dashEdge      int // edgeNone, or the edge the finger on it started at
+	listFollow    bool     // the touchscreen follows fingers for a list (follow.go)
+	list          listDrag // a finger on one
+	dashEdge      int      // edgeNone, or the edge the finger on it started at
 	dashEdgeAt    image.Point
 	dashAwayUntil time.Time // the idle dashboard put away, the clock up until then
 	dashPage      string    // "" for the dashboard, dashboard.PageMusic (the library button's page), or the room's dashboard
@@ -653,7 +655,10 @@ func (d *Display) gesture(g touch.Gesture) {
 	d.mu.Lock()
 	on := d.on
 	d.mu.Unlock()
-	slog.Info("touch", "gesture", g.String())
+	if g.Kind != touch.Drag {
+		// A moving finger reports dozens of times a second; where it came down and lifted is enough.
+		slog.Info("touch", "gesture", g.String())
+	}
 	d.mu.Lock()
 	d.touchedAt = time.Now()
 	d.mu.Unlock()
@@ -782,6 +787,12 @@ func (d *Display) gesture(g touch.Gesture) {
 			}
 			d.wake()
 		}
+		return
+	}
+
+	// A finger moving a list: the list goes with it, and what it turns out to be, a tap or a swipe, comes
+	// back through here as one (follow.go).
+	if (g.Kind == touch.Hold || g.Kind == touch.Drag || g.Kind == touch.Release) && d.listFinger(g) {
 		return
 	}
 
@@ -2037,6 +2048,7 @@ func (d *Display) frame() time.Duration {
 	d.mu.Unlock()
 
 	d.r.draw(s)
+	d.followLists(d.listsFollow(s, ring.any()))
 	if err := d.dev.Present(); err != nil {
 		slog.Warn("presenting the frame failed", "err", err)
 	}

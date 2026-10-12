@@ -258,6 +258,9 @@ func TestShowScenesDraw(t *testing.T) {
 		for name, s := range scenes {
 			img := image.NewRGBA(image.Rect(0, 0, panel.wide, panel.high))
 			newRenderer(img).draw(s)
+			if panel.name == "" {
+				timeDraw(name, img, s)
+			}
 			if dir == "" {
 				continue
 			}

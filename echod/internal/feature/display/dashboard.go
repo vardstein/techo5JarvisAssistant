@@ -228,15 +228,11 @@ func (d *Display) dashScene(s *scene, busy bool) {
 
 	d.mu.Lock()
 	d.dashShowing = want
-	// Either way the page wants every finger as it moves: streamed, to scroll the page under it;
-	// drawn, to scroll and to slide a tile's level. The rest of the screen wants swipes.
-	follow := want
-	changed := follow != d.dashFollow
-	d.dashFollow = follow
 	d.mu.Unlock()
-	if changed {
-		touch.Get().SetFollow(follow)
-	}
+	// Either way the page wants every finger as it moves: streamed, to scroll the page under it;
+	// drawn, to scroll and to slide a tile's level. The lists want them too (follow.go); the rest of
+	// the screen wants swipes.
+	d.followDash(want)
 }
 
 // dashGesture is a finger on the dashboard. It goes to the page as it moves, except a finger that

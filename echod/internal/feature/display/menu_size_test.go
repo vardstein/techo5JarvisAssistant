@@ -154,6 +154,9 @@ func TestEveryMenuSizeFits(t *testing.T) {
 					img := image.NewRGBA(image.Rect(0, 0, panel.wide, panel.high))
 					r := newRenderer(img)
 					r.draw(s)
+					if lang == "" && panel.name == "" && menuZoom.Load() == 75 {
+						timeDraw("menu-"+name, img, s)
+					}
 					var opts []image.Rectangle
 					for _, z := range r.zones {
 						if z.r.Empty() || !z.r.In(img.Rect) {
