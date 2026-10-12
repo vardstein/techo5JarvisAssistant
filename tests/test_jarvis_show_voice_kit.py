@@ -150,8 +150,9 @@ class SetUpTests(unittest.TestCase):
         log = run(fake)
         self.assertEqual(set(fake.blueprints), {"techo5/turn-room-down.yaml", "techo5/volume-where-the-music-is.yaml"})
         self.assertEqual(sorted(fake.configs), [
-            ("automation", "jarvis_local_forecast"), ("automation", "jarvis_local_random_music"),
-            ("automation", "jarvis_local_room_temperature"), ("automation", "jarvis_local_volume"),
+            ("automation", "jarvis_local_forecast"), ("automation", "jarvis_local_music_stop"),
+            ("automation", "jarvis_local_random_music"), ("automation", "jarvis_local_room_temperature"),
+            ("automation", "jarvis_local_volume"),
             ("automation", "jarvis_local_wecker"), ("automation", "jarvis_local_where_are_we"), ("automation", "techo5_turn_room_down_jarvis_show_5"),
             ("script", "jarvis_music_start"), ("script", "jarvis_play_mood"), ("script", "jarvis_play_radio"),
             ("script", "play_random_music")])
@@ -172,7 +173,7 @@ class SetUpTests(unittest.TestCase):
         fake.posts.clear()
         log = run(fake)
         self.assertEqual(fake.posts, [])
-        self.assertEqual(sum("is already there" in line for line in log), 11)
+        self.assertEqual(sum("is already there" in line for line in log), 12)
 
     def test_one_that_differs_is_kept_unless_the_person_says_so(self):
         fake = FakeHA()
@@ -282,6 +283,7 @@ class SetUpTests(unittest.TestCase):
         made = {item for _, item in fake.configs}
         self.assertNotIn("jarvis_local_forecast", made)
         self.assertNotIn("play_random_music", made)
+        self.assertNotIn("jarvis_local_music_stop", made)
         self.assertNotIn("draußen", json.dumps(fake.configs[("automation", "jarvis_local_room_temperature")],
                                                ensure_ascii=False))
         self.assertIn("no weather entity, so no local forecast", log)
@@ -352,6 +354,80 @@ class TemplateTests(unittest.TestCase):
         fake = FakeHA()
         run(fake)
         self.assertNotRegex(json.dumps(list(fake.configs.values())), r"__[A-Z]+__")
+
+
+try:
+    import hassil
+except ImportError:
+    hassil = None
+
+
+@unittest.skipUnless(hassil, "hassil is not installed")
+class SentenceTests(unittest.TestCase):
+    """The sentences matched the way Home Assistant matches sentence triggers: every trigger whose
+    sentences fit runs, so no sentence may fit two; and one that fits none goes on to Home Assistant's
+    own sentences, then the model."""
+
+    def heard(self, text: str) -> list[tuple[str, str]]:
+        from hassil import Intents, recognize_all
+        from hassil.expression import Group, ListReference
+        from hassil.intents import WildcardSlotList
+        house = kit.House(german=True, areas={"living_room": "Wohnzimmer"}, weather="weather.home",
+                          music_entry=MA_ENTRY, players=["media_player.living_ma"])
+        intents = {}
+        for name, item in {"music": kit.local_music(house), "stop": kit.local_music_stop(house),
+                           "wecker": kit.wecker(), "where": kit.where_are_we(house),
+                           "temperature": kit.room_temperature(house), "forecast": kit.forecast(house)}.items():
+            for t in item["triggers"]:
+                intents[f"{name}:{t.get('id', '')}"] = {"data": [{"sentences": t["command"]}]}
+        found = Intents.from_dict({"language": "de", "intents": intents})
+        lists = set()
+
+        def walk(e):
+            if isinstance(e, ListReference):
+                lists.add(e.list_name)
+            elif isinstance(e, Group):
+                for x in e.items:
+                    walk(x)
+        for intent in found.intents.values():
+            for data in intent.data:
+                for sentence in data.sentences:
+                    walk(sentence.expression)
+        for name in lists:
+            found.slot_lists[name] = WildcardSlotList(name)
+        got = {}
+        for r in recognize_all(text, found):
+            if r.intent.name in got:
+                break
+            got[r.intent.name] = {k: v.text for k, v in r.entities.items()}
+        return sorted((name, str(slots)) for name, slots in got.items())
+
+    def test_music_is_started_however_it_is_asked_for(self):
+        for text in ["Spiele Musik!", "Ich spiele Musik.", "Spielen Musik", "Spiel Musik ab", "Musik spielen",
+                     "Bitte spiel Musik", "Spiel Musik, bitte", "Spiel die Musik", "Spiel Musik Spiel Musik",
+                     "Mach Musik", "Musik ab", "Musik an", "Mach die Musik an"]:
+            self.assertEqual(self.heard(text), [("music:", "{}")], text)
+
+    def test_just_the_music_has_its_own_trigger(self):
+        for text in ["Die Musik.", "Musik", "Musik bitte", "Bitte Musik"]:
+            self.assertEqual(self.heard(text), [("music:toggle", "{}")], text)
+
+    def test_stop_in_the_words_home_assistant_misses(self):
+        for text in ["Stopp! Stopp!", "Stopp Stopp Stopp", "Halt stopp", "Pause Pause", "Aufhören", "Hör auf",
+                     "Hör auf mit der Musik", "Mach die Musik aus", "Mach bitte die Musik aus"]:
+            self.assertEqual(self.heard(text), [("stop:", "{}")], text)
+
+    def test_what_home_assistant_gets_right_is_left_to_it(self):
+        for text in ["Stopp", "Pause", "Halt", "Musik aus", "Stopp die Musik", "Musik pausieren", "Weiter",
+                     "Nächstes Lied"]:
+            self.assertEqual(self.heard(text), [], text)
+
+    def test_the_other_sentences_are_heard_as_before(self):
+        self.assertEqual(self.heard("Spiel was Flottes"), [("music:", "{'mood': 'Flottes'}")])
+        self.assertEqual(self.heard("Spiel Musik von Queen"), [("music:", "{'mood': 'Queen'}")])
+        self.assertEqual(self.heard("Hör Radio Bob"), [("music:", "{'station': 'Bob'}")])
+        self.assertEqual(self.heard("Spiel etwas leiser"), [("music:", "{'mood': 'leiser'}")])
+        self.assertEqual(self.heard("Wo sind wir"), [("where:", "{}")])
 
 
 if __name__ == "__main__":

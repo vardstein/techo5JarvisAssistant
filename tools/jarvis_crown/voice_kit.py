@@ -8,7 +8,8 @@ What the Shows use in Home Assistant beyond their own device, set up the same wa
 - answers that never need the language model: where we are, how warm it is in a room or outside,
   tomorrow's weather, the volume, and the Wecker set on the Show that was asked;
 - with Music Assistant: random music, music by mood or artist, and radio by name, started without the
-  model and answered with what plays.
+  model and answered with what plays; and stopping it in the words Home Assistant's own sentences miss
+  ("Stopp, stopp", "Hör auf", "Mach die Musik aus").
 
 The sentences are German, so all but the per-Show automation are only set up when an Assist pipeline
 speaks German. What the house has is looked up: rooms and how German says "in" them, each room's
@@ -560,7 +561,18 @@ def play_random(house: House) -> dict:
     }
 
 
-LOCAL_MUSIC_KIND = r"""{% if 'station' in trigger.slots or said | regex_search('\\b(radio|sender)\\b') %}radio{% elif 'mood' in trigger.slots and trigger.slots.mood | lower | trim in ['leiser', 'lauter'] %}volume{% elif 'mood' in trigger.slots %}mood{% else %}random{% endif %}"""
+LOCAL_MUSIC_KIND = r"""{% if trigger.id == 'toggle' %}toggle{% elif 'station' in trigger.slots or said | regex_search('\\b(radio|sender)\\b') %}radio{% elif 'mood' in trigger.slots and trigger.slots.mood | lower | trim in ['leiser', 'lauter'] %}volume{% elif 'mood' in trigger.slots %}mood{% else %}random{% endif %}"""
+
+# The media players playing in the room of the device that heard it, and the target player; Music
+# Assistant's own first, so a speaker it plays through is not paused twice over.
+ROOM_PLAYING = r"""{% set a = area_id(trigger.device_id) if trigger.device_id else none %}{% set p = ((area_entities(a) if a else []) | select('match', 'media_player\\.') | list) + ([target_player] if target_player else []) %}{% set p = p | unique | select('is_state', 'playing') | list %}{% set ma = p | select('in', integration_entities('music_assistant')) | list %}{{ ma or p }}"""
+
+NOW_PLAYING = (r"""{% set t = state_attr(playing[0], 'media_title') or '' %}{% set ar = state_attr(playing[0], 'media_artist') or '' %}{% set t = (t | """
+               + SPOKEN + r""") or t %}{% if t %}Gerade läuft {{ t }}{{ ' von ' ~ ar if ar }}.{% else %}Hier läuft schon Musik.{% endif %}""")
+
+# Asked at a device, only its own player; typed, the house's usual one.
+LOCAL_TARGET = ("{% set ok = players | select('has_value') | list %}"
+                "{{ room_player if trigger.device_id else room_player or (ok + players) | first | default('') }}")
 
 
 def local_music(house: House) -> dict:
@@ -578,12 +590,17 @@ def local_music(house: House) -> dict:
                        'Musik", "Musik von ..."), oder Radio ("Biele Hit Radio FFH"), im Raum des Geräts, das '
                        'gefragt wurde. Sagt, was jetzt läuft. Alle Sätze stehen in einem Auslöser, damit nie '
                        'zwei Läufe gleichzeitig starten; die Sätze bleiben eng, weil ein Satz, der hier passt, '
-                       'nie beim Sprachmodell ankommt.',
+                       'nie beim Sprachmodell ankommt. Nur "die Musik" hat einen eigenen Auslöser: läuft hier '
+                       'schon etwas, sagt es nur, was.',
         "mode": "single",
         "triggers": [{"trigger": "conversation", "command": [
-            "spiel[e] [doch] [mal] [einfach] [(irgendwelche|irgendeine|ein bisschen|etwas)] musik",
+            "[ich] [bitte] (spiel|spiele|spielen) [doch] [mal] [einfach] [bitte] "
+            "[(irgendwelche|irgendeine|ein bisschen|etwas|die)] musik [ab] [bitte]",
             "spiel[e] [doch] [mal] [einfach] (was|etwas|irgendwas)",
             "spielemusik",
+            "spiel[e] musik spiel[e] musik",
+            "[bitte] musik (spielen|abspielen|ab) [bitte]",
+            "(mach|mache) [doch] [mal] [bitte] [etwas] musik",
             "[mach|mache] [doch] [mal] [(die|etwas)] musik an",
             "musik an",
             "(spiel|spiele|viel|biele) [doch] [mal] [einfach] (was|etwas|irgendwas) {mood}",
@@ -594,15 +611,19 @@ def local_music(house: House) -> dict:
             "(spiel|spiele|viel|biele|hör|höre) [doch] [mal] {station} radio",
             "(spiel|spiele|viel|biele|hör|höre) [doch] [mal] {station} radio {rest}",
             "(spiel|spiele|viel|biele|hör|höre) [doch] [mal] radio {station}",
-            "(spiel|spiele|viel|biele|hör|höre) [doch] [mal] [den] sender {station}"]}],
+            "(spiel|spiele|viel|biele|hör|höre) [doch] [mal] [den] sender {station}"]},
+            # Just "die Musik": start some if nothing plays here, else only say what is on.
+            {"trigger": "conversation", "id": "toggle", "command": ["[bitte] [die] musik [bitte]"]}],
         "actions": [
             {"variables": {"said": "{{ trigger.sentence | lower }}", "kind": LOCAL_MUSIC_KIND,
                            "room_player": ROOM_PLAYER, "players": house.players,
-                           # Asked at a device, only its own player; typed, the house's usual one.
-                           "target_player": "{% set ok = players | select('has_value') | list %}"
-                                            "{{ room_player if trigger.device_id else room_player or "
-                                            "(ok + players) | first | default('') }}"}},
+                           "target_player": LOCAL_TARGET}},
             {"choose": [
+                {"conditions": "{{ kind == 'toggle' }}", "sequence": [
+                    {"variables": {"playing": ROOM_PLAYING}},
+                    {"if": "{{ playing | count > 0 }}",
+                     "then": [{"set_conversation_response": NOW_PLAYING}],
+                     "else": answered("script.play_random_music", {}, "Musik läuft.")}]},
                 # "spiel etwas leiser" fits the mood sentence but means the volume.
                 {"conditions": "{{ kind == 'volume' }}", "sequence": [
                     {"if": "{{ trigger.slots.mood | lower | trim == 'leiser' }}",
@@ -613,6 +634,33 @@ def local_music(house: House) -> dict:
                 {"conditions": "{{ kind == 'mood' }}", "sequence": answered(
                     "script.jarvis_play_mood", {"query": "{{ said }}"}, "Das hat gerade nicht geklappt.")}],
              "default": answered("script.play_random_music", {}, "Musik läuft.")},
+        ],
+    }
+
+
+def local_music_stop(house: House) -> dict:
+    """Stopping the music in the words the built-in sentences miss. "Stopp", "Musik aus" or "Stopp die
+    Musik" are left to Home Assistant's own pause, which already gets them right; a sentence here would
+    win over it, since sentence triggers are tried first."""
+    return {
+        "alias": "Jarvis - Local Music Stop",
+        "description": 'Hält die Musik im Raum des Geräts an, das gefragt wurde, ohne das Sprachmodell: '
+                       '"Stopp, stopp", "Hör auf", "Mach die Musik aus". Einfaches "Stopp" oder "Musik aus" '
+                       'erledigt Home Assistant selbst.',
+        "mode": "single",
+        "triggers": [{"trigger": "conversation", "command": [
+            "(stopp|stop|halt|pause) (stopp|stop|halt|pause) [(stopp|stop|halt|pause)]",
+            "[bitte] (hör|höre|hoer) [doch] [mal] [bitte] auf [mit der musik] [bitte]",
+            "[bitte] aufhören [bitte]",
+            "(mach|mache) [doch] [mal] [bitte] [die] musik aus [bitte]"]}],
+        "actions": [
+            {"variables": {"room_player": ROOM_PLAYER, "players": house.players, "target_player": LOCAL_TARGET}},
+            {"variables": {"playing": ROOM_PLAYING}},
+            {"if": "{{ playing | count > 0 }}",
+             "then": [{"action": "media_player.media_pause", "target": {"entity_id": "{{ playing }}"},
+                       "continue_on_error": True},
+                      {"set_conversation_response": "Pausiert."}],
+             "else": [{"set_conversation_response": "Hier läuft gerade nichts."}]},
         ],
     }
 
@@ -829,3 +877,4 @@ def _set_up(run: _Run, show: str, entities: list[str]) -> None:
     run.put("script", "jarvis_play_mood", play_mood(house))
     run.put("script", "play_random_music", play_random(house))
     run.put("automation", "jarvis_local_random_music", local_music(house))
+    run.put("automation", "jarvis_local_music_stop", local_music_stop(house))

@@ -299,3 +299,108 @@ async def test_spoken_titles_leave_out_the_brackets(hass: HomeAssistant):
     steps = voice_kit.play_random(voice_kit.House(music_entry="ma"))["sequence"]
     title = next(s["variables"]["title"] for s in steps if "title" in s.get("variables", {}))
     assert render(hass, title, random_track={"items": [track]}) == "Viva Colonia"
+
+
+async def test_what_plays_in_the_room_is_what_stop_pauses(hass: HomeAssistant):
+    living = player(hass, "livingroom", "Wohnzimmer", "Living Room")
+    kitchen = player(hass, "kitchen", "Küche", "Kitchen")
+    own = player(hass, "hall", "hall", "Living Room", maker="TECHO5")
+    linkplay = MockConfigEntry(domain="linkplay")
+    linkplay.add_to_hass(hass)
+    d = dr.async_get(hass).async_get_or_create(config_entry_id=linkplay.entry_id, identifiers={("linkplay", "x")},
+                                               manufacturer="Arylic", name="Wohnzimmer")
+    dr.async_get(hass).async_update_device(d.id, area_id=room(hass, "Living Room"))
+    native = er.async_get(hass).async_get_or_create("media_player", "linkplay", "x", config_entry=linkplay,
+                                                    device_id=d.id, suggested_object_id="wohnzimmer_native").entity_id
+    device, _ = show(hass, "hall", "Living Room")
+    await setup(hass, main="hall")
+
+    def playing(**trigger) -> list:
+        return Template(voice_kit.ROOM_PLAYING, hass).async_render(
+            {"trigger": trigger, "target_player": render(hass, voice_kit.ROOM_PLAYER, trigger=trigger)})
+
+    assert playing(device_id=device) == []
+    hass.states.async_set(kitchen, "playing")
+    assert playing(device_id=device) == []  # never another room's
+    # Music Assistant's player and the speaker's own entity both play: only Music Assistant's is paused.
+    hass.states.async_set(living, "playing", {"media_title": "Bohemian Rhapsody (Remastered 2011)",
+                                              "media_artist": "Queen"})
+    hass.states.async_set(native, "playing")
+    assert playing(device_id=device) == [living]
+    # The speaker played from elsewhere, not through Music Assistant.
+    hass.states.async_set(living, "idle")
+    assert playing(device_id=device) == [native]
+    # The Show's own player, when the room's music goes to it.
+    hass.states.async_set(native, "idle")
+    hass.states.async_set(own, "playing")
+    assert playing(device_id=device) == [own]
+
+    hass.states.async_set(own, "idle")
+    hass.states.async_set(living, "playing", {"media_title": "Bohemian Rhapsody (Remastered 2011)",
+                                              "media_artist": "Queen"})
+    assert render(hass, voice_kit.NOW_PLAYING, playing=[living]) == "Gerade läuft Bohemian Rhapsody von Queen."
+    hass.states.async_set(living, "playing", {})
+    assert render(hass, voice_kit.NOW_PLAYING, playing=[living]) == "Hier läuft schon Musik."
+
+
+async def test_stop_stop_pauses_the_music_in_the_room(hass: HomeAssistant):
+    from homeassistant.components import conversation
+    from homeassistant.core import Context
+    from homeassistant.setup import async_setup_component
+    from pytest_homeassistant_custom_component.common import async_mock_service
+
+    living = player(hass, "livingroom", "Wohnzimmer", "Living Room")
+    kitchen = player(hass, "kitchen", "Küche", "Kitchen")
+    device, _ = show(hass, "hall", "Living Room")
+    await setup(hass, main="hall")
+    paused = async_mock_service(hass, "media_player", "media_pause")
+    house = voice_kit.House(german=True, music_entry="ma", players=[living, kitchen])
+    assert await async_setup_component(hass, "homeassistant", {})
+    assert await async_setup_component(hass, "conversation", {})
+    assert await async_setup_component(hass, "automation", {"automation": [
+        {"id": "jarvis_local_music_stop", **voice_kit.local_music_stop(house)}]})
+    await hass.async_block_till_done()
+
+    async def say(text: str) -> str:
+        r = await conversation.async_converse(hass, text, None, Context(), language="de", device_id=device)
+        return r.response.speech["plain"]["speech"]
+
+    hass.states.async_set(living, "playing")
+    hass.states.async_set(kitchen, "playing")
+    assert await say("Stopp, stopp!") == "Pausiert."
+    assert [c.data["entity_id"] for c in paused] == [[living]]
+    hass.states.async_set(living, "paused")
+    assert await say("Hör auf") == "Hier läuft gerade nichts."
+    assert len(paused) == 1
+
+
+async def test_die_musik_starts_some_or_says_what_plays(hass: HomeAssistant):
+    from homeassistant.components import conversation
+    from homeassistant.core import Context, SupportsResponse
+    from homeassistant.setup import async_setup_component
+    from pytest_homeassistant_custom_component.common import async_mock_service
+
+    living = player(hass, "livingroom", "Wohnzimmer", "Living Room")
+    device, _ = show(hass, "hall", "Living Room")
+    await setup(hass, main="hall")
+    started = async_mock_service(hass, "script", "play_random_music", supports_response=SupportsResponse.OPTIONAL,
+                                 response={"message": "Spiele Yesterday von The Beatles und ähnliche Lieder."})
+    house = voice_kit.House(german=True, music_entry="ma", players=[living])
+    assert await async_setup_component(hass, "homeassistant", {})
+    assert await async_setup_component(hass, "conversation", {})
+    assert await async_setup_component(hass, "automation", {"automation": [
+        {"id": "jarvis_local_random_music", **voice_kit.local_music(house)}]})
+    await hass.async_block_till_done()
+
+    async def say(text: str) -> str:
+        r = await conversation.async_converse(hass, text, None, Context(), language="de", device_id=device)
+        return r.response.speech["plain"]["speech"]
+
+    assert await say("Die Musik.") == "Spiele Yesterday von The Beatles und ähnliche Lieder."
+    assert [c.data["player"] for c in started] == [living]
+    hass.states.async_set(living, "playing", {"media_title": "Yesterday", "media_artist": "The Beatles"})
+    assert await say("Musik bitte") == "Gerade läuft Yesterday von The Beatles."
+    assert len(started) == 1
+    # The other sentences still start music whatever plays.
+    assert await say("Spiel die Musik") == "Spiele Yesterday von The Beatles und ähnliche Lieder."
+    assert len(started) == 2
