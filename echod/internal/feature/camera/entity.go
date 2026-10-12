@@ -30,9 +30,12 @@ const (
 	// well inside that while the stream is open.
 	streamFor = 5 * time.Second
 
-	// streamEvery paces the stream: the API link also carries voice, and the receiver is a
-	// browser thumbnail, not a monitor.
-	streamEvery = 500 * time.Millisecond
+	// streamEvery paces the stream, counted from the start of one picture to the start of the next.
+	// Another Show puts the stream up full screen (GENBU-116), so it runs at up to eight pictures a
+	// second; what bounds it on the Show's two cores is making each one, about 50 ms to encode. The
+	// voice on the same link is not held up: a picture goes out in 1 KiB pieces, and audio fits in
+	// between them.
+	streamEvery = 125 * time.Millisecond
 )
 
 // key is the entity key, the library's FNV-1 of the object id.
@@ -171,6 +174,7 @@ func (f *Feature) pump(c *esphome.Conn) {
 			if time.Since(last) < streamEvery {
 				continue
 			}
+			last = time.Now()
 			jpg, err := encode(fr)
 			if err != nil {
 				return
@@ -178,7 +182,6 @@ func (f *Feature) pump(c *esphome.Conn) {
 			if err := send(c, jpg); err != nil {
 				return
 			}
-			last = time.Now()
 		case <-time.After(time.Second):
 		}
 	}

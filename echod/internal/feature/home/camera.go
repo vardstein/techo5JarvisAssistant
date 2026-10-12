@@ -12,7 +12,6 @@ import (
 	"unicode"
 
 	esphome "github.com/ygelfand/go-esphome-device"
-	xdraw "golang.org/x/image/draw"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/camera"
@@ -24,9 +23,8 @@ import (
 )
 
 // The cameras page: "show the front door" puts a camera's live view up for a while, a tap takes it
-// down. Frames are Home Assistant's snapshots through the token, fetched one after another while
-// the view is up, decoded and scaled here; a few a second is what the panel and the SoC manage,
-// and enough to see who is there.
+// down. Frames come from Home Assistant through the token, a stream or snapshots depending on the
+// camera (camera_frames.go), or from the device's own sensor, and are scaled to the panel here.
 
 const (
 	// cameraShow is how long a camera stays up when asked for by voice.
@@ -45,6 +43,7 @@ type CameraView struct {
 	Error    string      // why there is no frame, when there is none
 
 	span time.Duration // how long it was asked for; Until is restarted from the first frame
+	gen  uint64        // which view this is: one opened again is a new one
 }
 
 // LocalCamera is the entity name of the device's own camera on the list; it is not a Home
@@ -185,7 +184,12 @@ func (f *Feature) showCamera(entity string, d time.Duration, sound, doorbell boo
 	}
 	f.mu.Lock()
 	fresh := f.cam.Entity != entity || time.Now().After(f.cam.Until)
-	f.cam = CameraView{Entity: entity, Name: name, Doorbell: doorbell, Until: time.Now().Add(d), Frame: f.cam.Frame, span: d}
+	gen := f.cam.gen
+	if fresh {
+		f.camGen++
+		gen = f.camGen
+	}
+	f.cam = CameraView{Entity: entity, Name: name, Doorbell: doorbell, Until: time.Now().Add(d), Frame: f.cam.Frame, span: d, gen: gen}
 	if fresh {
 		f.cam.Frame = nil
 		f.camMuted = false // a fresh view starts audible if its sound was asked for
@@ -194,9 +198,9 @@ func (f *Feature) showCamera(entity string, d time.Duration, sound, doorbell boo
 	slog.Info("camera up", "entity", entity, "for", d, "sound", fresh && sound)
 	if fresh {
 		if entity == LocalCamera {
-			go f.localFrames()
+			go f.localFrames(gen)
 		} else {
-			go f.fetchFrames(entity)
+			go f.fetchFrames(gen, entity)
 		}
 		if sound && !isReolink(entity) {
 			// The sound is asked of Home Assistant and taken off the speaker when this view ends; a
@@ -227,52 +231,16 @@ func (f *Feature) HideCamera() {
 	f.Changed.Emit(struct{}{})
 }
 
-// fetchFrames pulls snapshots while the view is up, one after another.
-func (f *Feature) fetchFrames(entity string) {
-	for {
-		f.mu.Lock()
-		up := f.cam.Entity == entity && time.Now().Before(f.cam.Until)
-		f.mu.Unlock()
-		if !up {
-			return
-		}
-		frame, err := f.snapshot(entity)
-		f.mu.Lock()
-		if f.cam.Entity == entity {
-			if err != nil {
-				f.cam.Error = err.Error()
-			} else {
-				// The time on screen counts from the first picture, not from the request: some
-				// cameras take a while to start a stream, and a view that closes as it opens
-				// is no view at all.
-				if f.cam.Frame == nil {
-					f.cam.Until = time.Now().Add(f.cam.span)
-				}
-				f.cam.Frame, f.cam.Error = frame, ""
-			}
-		}
-		f.mu.Unlock()
-		f.Changed.Emit(struct{}{})
-		if err != nil {
-			slog.Warn("camera frame", "entity", entity, "err", err)
-			time.Sleep(2 * time.Second)
-		}
-	}
-}
-
-// localFrames shows the device's own camera while the view is up: every frame the sensor
+// localFrames shows the device's own camera while view gen is up: every frame the sensor
 // produces, scaled to the panel.
-func (f *Feature) localFrames() {
+func (f *Feature) localFrames(gen uint64) {
 	release, err := camera.Get().Acquire()
 	if err != nil {
-		f.mu.Lock()
-		f.cam.Error = err.Error()
-		f.mu.Unlock()
-		f.Changed.Emit(struct{}{})
+		f.frameFailed(gen, LocalCamera, err)
 		return
 	}
 	defer release()
-	dst := image.NewRGBA(image.Rect(0, 0, cameraFrameH*camera.Width/camera.Height, cameraFrameH))
+	size := image.Rect(0, 0, cameraFrameH*camera.Width/camera.Height, cameraFrameH)
 	frames := make(chan *camera.Frame, 1)
 	cancel := camera.Get().Frames.Listen(func(fr *camera.Frame) {
 		select {
@@ -281,28 +249,12 @@ func (f *Feature) localFrames() {
 		}
 	})
 	defer cancel()
-	for {
-		f.mu.Lock()
-		up := f.cam.Entity == LocalCamera && time.Now().Before(f.cam.Until)
-		f.mu.Unlock()
-		if !up {
-			return
-		}
+	for f.cameraUp(gen) {
 		select {
 		case fr := <-frames:
-			src := fr.Image()
-			xdraw.ApproxBiLinear.Scale(dst, dst.Bounds(), src, src.Bounds(), xdraw.Src, nil)
-			shown := image.NewRGBA(dst.Bounds())
-			copy(shown.Pix, dst.Pix)
-			f.mu.Lock()
-			if f.cam.Entity == LocalCamera {
-				if f.cam.Frame == nil {
-					f.cam.Until = time.Now().Add(f.cam.span)
-				}
-				f.cam.Frame, f.cam.Error = shown, ""
-			}
-			f.mu.Unlock()
-			f.Changed.Emit(struct{}{})
+			shown := image.NewRGBA(size)
+			scaleInto(shown, fr.Image())
+			f.showFrame(gen, shown)
 		case <-time.After(500 * time.Millisecond):
 			// No frame yet (the sensor is starting) — back round to check the view is still up.
 		}
@@ -323,32 +275,6 @@ func (f *Feature) Prewarm() {
 			}
 		}(c.Entity)
 	}
-}
-
-// snapshot fetches one frame and scales it to fit the panel.
-func (f *Feature) snapshot(entity string) (*image.RGBA, error) {
-	var b []byte
-	var err error
-	if isReolink(entity) {
-		b, err = reolinkSnap(entity)
-	} else {
-		b, err = hass.Get().Fetch("/api/camera_proxy/" + entity)
-	}
-	if err != nil {
-		return nil, err
-	}
-	src, err := decodeWithin(b, maxFramePixels, "camera "+entity)
-	if err != nil {
-		return nil, err
-	}
-	sw, sh := src.Bounds().Dx(), src.Bounds().Dy()
-	w, h := cameraFrameW, sh*cameraFrameW/sw
-	if h > cameraFrameH {
-		w, h = sw*cameraFrameH/sh, cameraFrameH
-	}
-	dst := image.NewRGBA(image.Rect(0, 0, w, h))
-	xdraw.ApproxBiLinear.Scale(dst, dst.Bounds(), src, src.Bounds(), xdraw.Src, nil)
-	return dst, nil
 }
 
 // MatchCamera finds a camera named in what was heard: "show the front door", "show me the deck
