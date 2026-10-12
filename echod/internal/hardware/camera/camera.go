@@ -54,12 +54,13 @@ import (
 // a choice someone had to make, and the symptom of making it wrongly is a camera that opens, streams
 // nothing, and times out.
 type sensorSpec struct {
-	w, h       int  // what the sensor hands over
-	outW, outH int  // one pixel per Bayer cell: the live view and the stream
-	minShut    int  // shortest exposure the driver takes, in lines
-	frameLines int  // shutter lines that fit a frame at the sensor's own rate
-	blueFirst  bool // the first pixel of each cell is blue, not red
-	camtgPLL   bool // move the camtg mux to the 48 MHz PLL ourselves: see open
+	w, h       int     // what the sensor hands over
+	outW, outH int     // one pixel per Bayer cell: the live view and the stream
+	minShut    int     // shortest exposure the driver takes, in lines
+	frameLines int     // shutter lines that fit a frame at the sensor's own rate
+	blueFirst  bool    // the first pixel of each cell is blue, not red
+	camtgPLL   bool    // move the camtg mux to the 48 MHz PLL ourselves: see open
+	shade      float64 // the lens's falloff to undo: gain 1 + shade·r², r 1 at the corner (shading)
 }
 
 // hasOV9734 is whether this board carries the OV9734 rather than the OV02B10.
@@ -72,7 +73,18 @@ func pickSensor(ov9734 bool) sensorSpec {
 	return sensorSpec{w: 1600, h: 1200, outW: 800, outH: 600, minShut: 4, frameLines: 1200}
 }
 
-var sensor = pickSensor(hasOV9734())
+var sensor = withShading(pickSensor(hasOV9734()), layout.Checkers())
+
+// withShading adds the lens correction where it was measured. The Show 5's lens takes the corners
+// down to about a quarter of the middle: a sheet of paper over it measured 1 + 3·r² (2026-10-12).
+// Undoing all of it would make the corners four times as noisy, so this undoes most of it. The
+// Echo 8 has the same sensor behind its own lens, not measured yet.
+func withShading(s sensorSpec, checkers bool) sensorSpec {
+	if checkers {
+		s.shade = 2
+	}
+	return s
+}
 
 // Width and Height are the frames handed out.
 var Width, Height = sensor.outW, sensor.outH
@@ -390,11 +402,11 @@ func (d *device) setFeature(id uint32, v uint64) {
 // first — up to a frame at the sensor's rate — then gain, then longer shutters at the cost of
 // frame rate, then the rest of the gain.
 const (
-	aeTarget   = 290  // mean of the 10-bit frame to aim for: a lit room, no clipping to speak of
+	aeTarget   = 340  // mean of the 10-bit frame to aim for: a lit room, no clipping to speak of
 	aeDelay    = 3    // frames between changes: a new exposure takes two frames to show
 	aeMaxShut  = 4000 // beyond this the frame rate drops under 5 a second
 	aeMinGain  = 64   // 1x
-	aeMidGain  = 384  // 6x, before trading frame rate
+	aeMidGain  = 640  // 10x, before trading frame rate: more grain, but the picture keeps moving
 	aeMaxGain  = 992  // the driver's ceiling, 15.5x
 	aeDeadband = 6    // no change inside target ± this
 )
@@ -887,23 +899,26 @@ func (m *measure) tone() tone {
 func render(raw []byte, t tone) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, Width, Height))
 	lut := t.tables()
+	sh := shading()
 	row0 := make([]uint16, sensorW)
 	row1 := make([]uint16, sensorW)
 	for y := 0; y < Height; y++ {
 		unpackLine(raw[(2*y)*bytesPerLine:(2*y+1)*bytesPerLine], row0)
 		unpackLine(raw[(2*y+1)*bytesPerLine:(2*y+2)*bytesPerLine], row1)
 		pix := img.Pix[y*img.Stride:]
+		sy := sh.y[y>>1]
 		for x := 0; x < Width; x++ {
-			r := row0[2*x]
-			g := row0[2*x+1] + row1[2*x]
-			b := row1[2*x+1]
+			r := uint(row0[2*x])
+			g := uint(row0[2*x+1] + row1[2*x])
+			b := uint(row1[2*x+1])
 			if sensor.blueFirst {
 				r, b = b, r
 			}
+			k := sh.x[x>>1] + sy
 			j := x * 4
-			pix[j] = lut[0][r<<1]
-			pix[j+1] = lut[1][g]
-			pix[j+2] = lut[2][b<<1]
+			pix[j] = lut[0][shaded(r<<1, k)]
+			pix[j+1] = lut[1][shaded(g, k)]
+			pix[j+2] = lut[2][shaded(b<<1, k)]
 			pix[j+3] = 255
 		}
 	}
@@ -984,7 +999,9 @@ type nv12Colour struct {
 func renderNV12Rows(raw []byte, k *nv12Colour, yp, uv []byte, stride, from, to int) {
 	lp, lg, lq := k.lp, k.lg, k.lq
 	wp, cbp, crp, wq, cbq, crq := k.wp, k.cbp, k.crp, k.wq, k.cbq, k.crq
+	sh := shading()
 	for oy := from; oy+1 < to; oy += 2 {
+		sy := sh.y[oy>>1]
 		l0 := raw[(2*oy)*bytesPerLine : (2*oy+1)*bytesPerLine]
 		l1 := raw[(2*oy+1)*bytesPerLine : (2*oy+2)*bytesPerLine]
 		l2 := raw[(2*oy+2)*bytesPerLine : (2*oy+3)*bytesPerLine]
@@ -993,20 +1010,21 @@ func renderNV12Rows(raw []byte, k *nv12Colour, yp, uv []byte, stride, from, to i
 		y1 := yp[(oy+1)*stride : (oy+1)*stride+Width]
 		c := uv[(oy/2)*stride : (oy/2)*stride+Width]
 		for ox, i := 0, 0; ox+1 < len(y0) && ox+1 < len(y1) && ox+1 < len(c) && i+5 <= len(l0); ox, i = ox+2, i+5 {
+			s := sh.x[ox>>1] + sy
 			a, b := l0[i:i+5:i+5], l1[i:i+5:i+5]
-			p0 := int(lp[(uint(a[0])|uint(a[1]&3)<<8)<<1&2047])
-			g0 := int(lg[((uint(a[1])>>2|uint(a[2]&0xF)<<6)+(uint(b[0])|uint(b[1]&3)<<8))&2047])
-			q0 := int(lq[(uint(b[1])>>2|uint(b[2]&0xF)<<6)<<1&2047])
-			p1 := int(lp[(uint(a[2])>>4|uint(a[3]&0x3F)<<4)<<1&2047])
-			g1 := int(lg[((uint(a[3])>>6|uint(a[4])<<2)+(uint(b[2])>>4|uint(b[3]&0x3F)<<4))&2047])
-			q1 := int(lq[(uint(b[3])>>6|uint(b[4])<<2)<<1&2047])
+			p0 := int(lp[shaded((uint(a[0])|uint(a[1]&3)<<8)<<1, s)])
+			g0 := int(lg[shaded((uint(a[1])>>2|uint(a[2]&0xF)<<6)+(uint(b[0])|uint(b[1]&3)<<8), s)])
+			q0 := int(lq[shaded((uint(b[1])>>2|uint(b[2]&0xF)<<6)<<1, s)])
+			p1 := int(lp[shaded((uint(a[2])>>4|uint(a[3]&0x3F)<<4)<<1, s)])
+			g1 := int(lg[shaded((uint(a[3])>>6|uint(a[4])<<2)+(uint(b[2])>>4|uint(b[3]&0x3F)<<4), s)])
+			q1 := int(lq[shaded((uint(b[3])>>6|uint(b[4])<<2)<<1, s)])
 			a, b = l2[i:i+5:i+5], l3[i:i+5:i+5]
-			p2 := int(lp[(uint(a[0])|uint(a[1]&3)<<8)<<1&2047])
-			g2 := int(lg[((uint(a[1])>>2|uint(a[2]&0xF)<<6)+(uint(b[0])|uint(b[1]&3)<<8))&2047])
-			q2 := int(lq[(uint(b[1])>>2|uint(b[2]&0xF)<<6)<<1&2047])
-			p3 := int(lp[(uint(a[2])>>4|uint(a[3]&0x3F)<<4)<<1&2047])
-			g3 := int(lg[((uint(a[3])>>6|uint(a[4])<<2)+(uint(b[2])>>4|uint(b[3]&0x3F)<<4))&2047])
-			q3 := int(lq[(uint(b[3])>>6|uint(b[4])<<2)<<1&2047])
+			p2 := int(lp[shaded((uint(a[0])|uint(a[1]&3)<<8)<<1, s)])
+			g2 := int(lg[shaded((uint(a[1])>>2|uint(a[2]&0xF)<<6)+(uint(b[0])|uint(b[1]&3)<<8), s)])
+			q2 := int(lq[shaded((uint(b[1])>>2|uint(b[2]&0xF)<<6)<<1, s)])
+			p3 := int(lp[shaded((uint(a[2])>>4|uint(a[3]&0x3F)<<4)<<1, s)])
+			g3 := int(lg[shaded((uint(a[3])>>6|uint(a[4])<<2)+(uint(b[2])>>4|uint(b[3]&0x3F)<<4), s)])
+			q3 := int(lq[shaded((uint(b[3])>>6|uint(b[4])<<2)<<1, s)])
 			// The weights add up to 256, so luma cannot leave 0..255.
 			y0[ox] = byte((wp*p0 + 150*g0 + wq*q0 + 128) >> 8)
 			y0[ox+1] = byte((wp*p1 + 150*g1 + wq*q1 + 128) >> 8)
@@ -1018,6 +1036,31 @@ func renderNV12Rows(raw []byte, k *nv12Colour, yp, uv []byte, stride, from, to i
 		}
 	}
 }
+
+// shadeTables split the lens correction by axis: the gain for a 2x2 block of the half-size picture
+// is x[bx] + y[by], in 256ths. r² is the sum of an x and a y part, so the sum is the whole gain.
+type shadeTables struct{ x, y []uint }
+
+var shading = sync.OnceValue(buildShading)
+
+func buildShading() *shadeTables {
+	bw, bh := Width/2, Height/2
+	t := &shadeTables{x: make([]uint, bw), y: make([]uint, bh)}
+	// The middle of block b is pixel 2b+0.5; the middle of the picture is (n-1)/2.
+	d := float64(Width*Width+Height*Height) / 4
+	for b := range t.x {
+		dx := float64(2*b) + 1 - float64(Width)/2
+		t.x[b] = uint(math.Round(256 * sensor.shade * dx * dx / d))
+	}
+	for b := range t.y {
+		dy := float64(2*b) + 1 - float64(Height)/2
+		t.y[b] = 256 + uint(math.Round(256*sensor.shade*dy*dy/d))
+	}
+	return t
+}
+
+// shaded is a table index v with the lens correction k (256ths) applied, kept on the table.
+func shaded(v, k uint) uint { return min(v*k>>8, 2047) }
 
 func clamp8(v int) byte {
 	if v < 0 {
@@ -1088,8 +1131,10 @@ func (f *Frame) Full() *image.RGBA {
 		return uint32(px[y*w+x])
 	}
 	luts := f.level().tables()
+	sh := shading()
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	for y := 0; y < h; y++ {
+		sy := sh.y[y>>2]
 		for x := 0; x < w; x++ {
 			var r, g, b uint32
 			c := at(x, y)
@@ -1115,10 +1160,11 @@ func (f *Frame) Full() *image.RGBA {
 				r, b = b, r
 			}
 			// The tables run on the 11-bit scale of a summed green pair; single samples double up.
+			k := sh.x[x>>2] + sy
 			j := (y*w + x) * 4
-			img.Pix[j] = luts[0][r<<1]
-			img.Pix[j+1] = luts[1][g<<1]
-			img.Pix[j+2] = luts[2][b<<1]
+			img.Pix[j] = luts[0][shaded(uint(r)<<1, k)]
+			img.Pix[j+1] = luts[1][shaded(uint(g)<<1, k)]
+			img.Pix[j+2] = luts[2][shaded(uint(b)<<1, k)]
 			img.Pix[j+3] = 255
 		}
 	}
