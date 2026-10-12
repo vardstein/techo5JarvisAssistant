@@ -1,6 +1,5 @@
 """Sets Genbu up. The form asks which Show is the main update Show; the installer fills the same form
-over REST. The options add more main update Shows (after a warning) and a phone to tell, and say whether
-the ESPHome originals of the controls copied onto each Show's genbu device stay hidden."""
+over REST. The options add more main update Shows (after a warning) and a phone to tell."""
 
 from __future__ import annotations
 
@@ -15,7 +14,7 @@ try:  # Home Assistant 2026.10 and later
 except ImportError:
     import voluptuous as vol
 
-from .const import CONF_EXTRA, CONF_HIDE, CONF_MAIN, CONF_NOTIFY, DOMAIN
+from .const import CONF_EXTRA, CONF_MAIN, CONF_NOTIFY, DOMAIN
 from .coordinator import find_shows
 
 
@@ -61,7 +60,6 @@ class GenbuOptions(OptionsFlow):
             vol.Optional(CONF_EXTRA, default=[m for m in mains[1:] if m in others]): cv.multi_select(others),
             vol.Optional(CONF_NOTIFY, description={
                 "suggested_value": self.config_entry.options.get(CONF_NOTIFY, "")}): str,
-            vol.Optional(CONF_HIDE, default=self.config_entry.options.get(CONF_HIDE, True)): bool,
         })
         return self.async_show_form(step_id="init", data_schema=schema, description_placeholders={
             "main": hub.name(mains[0]) if mains else "-"})
@@ -84,4 +82,4 @@ class GenbuOptions(OptionsFlow):
         hub = self.config_entry.runtime_data
         await hub.async_set_extra(list(self.answer.get(CONF_EXTRA, [])))
         notify = str(self.answer.get(CONF_NOTIFY) or "").strip().removeprefix("notify.")
-        return self.async_create_entry(data={CONF_NOTIFY: notify, CONF_HIDE: bool(self.answer.get(CONF_HIDE, True))})
+        return self.async_create_entry(data={CONF_NOTIFY: notify})

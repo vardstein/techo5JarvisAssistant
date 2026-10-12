@@ -24,13 +24,11 @@
         "description": "{main} ist der Haupt-Update-Show. Ändern kannst du das in select.genbu_main_update_show.",
         "data": {
           "extra_mains": "Weitere Haupt-Update-Shows",
-          "notify_service": "Handy für Hinweise",
-          "hide_originals": "ESPHome-Originale ausblenden"
+          "notify_service": "Handy für Hinweise"
         },
         "data_description": {
           "extra_mains": "Einer reicht meistens. Mit mehreren folgen die anderen Shows dem, der die neueste Version hat.",
-          "notify_service": "Ein Notify-Dienst, z. B. mobile_app_mein_handy. Er bekommt eine Nachricht, wenn ein Haupt-Update-Show einen Tag offline ist.",
-          "hide_originals": "Die Bedienelemente jeder Show sind auch an ihrem Genbu-Gerät. Ist das an, werden die alltäglichen am ESPHome-Gerät ausgeblendet, damit sie nicht doppelt auftauchen. Sie funktionieren weiter, und Assist steuert weiter die Originale. Aus macht sie wieder sichtbar."
+          "notify_service": "Ein Notify-Dienst, z. B. mobile_app_mein_handy. Er bekommt eine Nachricht, wenn ein Haupt-Update-Show einen Tag offline ist."
         }
       },
       "second": {
@@ -114,45 +112,11 @@
     "select": {
       "music_plays_on": {
         "name": "Musik spielt auf"
-      },
-      "assistant": {
-        "name": "Assistent",
-        "state": {
-          "preferred": "Bevorzugt"
-        }
-      },
-      "assistant_2": {
-        "name": "Assistent 2",
-        "state": {
-          "preferred": "Bevorzugt"
-        }
-      },
-      "wake_word": {
-        "name": "Aktivierungswort"
-      },
-      "wake_word_2": {
-        "name": "Aktivierungswort 2"
-      },
-      "finished_speaking": {
-        "name": "Erkennen, wann fertig gesprochen ist",
-        "state": {
-          "default": "Standard",
-          "relaxed": "Entspannt",
-          "aggressive": "Streng"
-        }
       }
     },
     "sensor": {
       "music_falls_back_to": {
         "name": "Musik weicht aus auf"
-      },
-      "firmware": {
-        "name": "Firmware-Version"
-      }
-    },
-    "number": {
-      "volume": {
-        "name": "Lautstärke"
       }
     }
   },
