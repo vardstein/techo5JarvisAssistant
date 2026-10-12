@@ -667,7 +667,7 @@ func convert(raw []byte) (*image.RGBA, tone) {
 
 // stats levels one frame: gray-world white balance, the darkest 0.1% at black (within reason), the
 // top percentile at white, gamma 1/1.8 or steeper for a backlit frame.
-func stats(raw []byte) tone { return sample(raw, statsStep) }
+func stats(raw []byte) tone { return sampleEven(raw) }
 
 // statsStep is how many cells the measurement moves on by. Levels and white balance come from a
 // sixteenth of the frame; sampling every cell measures the same picture for four times the work.
@@ -676,9 +676,7 @@ const statsStep = 2
 func sample(raw []byte, step int) tone {
 	row0 := make([]uint16, sensorW)
 	row1 := make([]uint16, sensorW)
-	var sumR, sumG, sumB uint32
-	var hist, center [2048]int
-	taken, middle := 0, 0
+	var m measure
 	for y := 0; y < Height; y += step {
 		unpackLine(raw[(2*y)*bytesPerLine:(2*y+1)*bytesPerLine], row0)
 		unpackLine(raw[(2*y+1)*bytesPerLine:(2*y+2)*bytesPerLine], row1)
@@ -690,17 +688,57 @@ func sample(raw []byte, step int) tone {
 			if sensor.blueFirst {
 				r, b = b, r
 			}
-			sumR += uint32(r)
-			sumG += uint32(g)
-			sumB += uint32(b)
-			hist[g]++
-			taken++
-			if down && x >= Width/4 && x < Width*3/4 {
-				center[g]++
-				middle++
-			}
+			m.add(uint32(r), uint32(g), uint32(b), down && x >= Width/4 && x < Width*3/4)
 		}
 	}
+	return m.tone()
+}
+
+// sampleEven is sample(raw, 2) without unpacking whole lines it then mostly skips: the cells it
+// measures are the first of every five bytes' two, so it reads three bytes of the five, on every
+// other pair of lines. A quarter of the work the stream used to spend on it.
+func sampleEven(raw []byte) tone {
+	var m measure
+	for y := 0; y < Height; y += 2 {
+		l0 := raw[(2*y)*bytesPerLine : (2*y+1)*bytesPerLine]
+		l1 := raw[(2*y+1)*bytesPerLine : (2*y+2)*bytesPerLine]
+		down := y >= Height/4 && y < Height*3/4
+		for x, i := 0, 0; x < Width && i+3 <= len(l0) && i+3 <= len(l1); x, i = x+2, i+5 {
+			a, c := l0[i:i+3:i+3], l1[i:i+3:i+3]
+			r := uint32(a[0]) | uint32(a[1]&3)<<8
+			g := (uint32(a[1])>>2 | uint32(a[2]&0xF)<<6) + (uint32(c[0]) | uint32(c[1]&3)<<8)
+			b := uint32(c[1])>>2 | uint32(c[2]&0xF)<<6
+			if sensor.blueFirst {
+				r, b = b, r
+			}
+			m.add(r, g, b, down && x >= Width/4 && x < Width*3/4)
+		}
+	}
+	return m.tone()
+}
+
+// measure gathers what a tone is worked out from.
+type measure struct {
+	sumR, sumG, sumB uint32
+	hist, center     [2048]int
+	taken, middle    int
+}
+
+func (m *measure) add(r, g, b uint32, middle bool) {
+	m.sumR += r
+	m.sumG += g
+	m.sumB += b
+	m.hist[g&2047]++
+	m.taken++
+	if middle {
+		m.center[g&2047]++
+		m.middle++
+	}
+}
+
+func (m *measure) tone() tone {
+	sumR, sumG, sumB, taken, middle := m.sumR, m.sumG, m.sumB, m.taken, m.middle
+	hist, center := &m.hist, &m.center
 	n := float64(taken)
 	t := tone{gainR: 1, gainB: 1, white: 1, gamma: gammaNormal}
 	avgR, avgG, avgB := float64(sumR)*2/n, float64(sumG)/n, float64(sumB)*2/n
@@ -760,6 +798,90 @@ func render(raw []byte, t tone) *image.RGBA {
 		}
 	}
 	return img
+}
+
+// NV12 paints the frame's half-size picture straight into an NV12 buffer for the hardware encoder
+// (hardware/jpegenc): the pixels Image would make, without making them as RGBA first. That saves
+// the stream about half its time per frame. y holds Height rows of luma stride bytes apart, uv the
+// interleaved Cb Cr rows at half height. A frame with nothing behind it (the black frame handed out
+// on mute) is painted black.
+func (f *Frame) NV12(y, uv []byte, stride int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.raw == nil {
+		for row := 0; row < Height; row++ {
+			clear(y[row*stride : row*stride+Width])
+		}
+		for row := 0; row < Height/2; row++ {
+			c := uv[row*stride : row*stride+Width]
+			for i := range c {
+				c[i] = 128
+			}
+		}
+		return
+	}
+	renderNV12(f.raw, f.level(), y, uv, stride)
+}
+
+// renderNV12 is render into NV12, full-range BT.601 as JFIF has it, chroma the average of each 2x2
+// block. It reads the packed lines in place: five bytes are four samples, two Bayer cells, two
+// output pixels; four sensor lines make two output rows, one row of chroma. Of each four lines the
+// first has red then green, the second green then blue (blue first on some sensors).
+// It is all in one loop because the compiler will not inline a helper this size, and a call per
+// pixel pair was a fifth of the time.
+func renderNV12(raw []byte, t tone, yp, uv []byte, stride int) {
+	lut := t.tables()
+	// p is the colour the first line's cells start with, q the one the second line's end with: red
+	// and blue, or blue and red. Each gets its own table and its own weights.
+	lp, lg, lq := &lut[0], &lut[1], &lut[2]
+	wp, cbp, crp, wq, cbq, crq := 77, -43, 128, 29, 128, -21
+	if sensor.blueFirst {
+		lp, lq = lq, lp
+		wp, cbp, crp, wq, cbq, crq = wq, cbq, crq, wp, cbp, crp
+	}
+	for oy := 0; oy+1 < Height; oy += 2 {
+		l0 := raw[(2*oy)*bytesPerLine : (2*oy+1)*bytesPerLine]
+		l1 := raw[(2*oy+1)*bytesPerLine : (2*oy+2)*bytesPerLine]
+		l2 := raw[(2*oy+2)*bytesPerLine : (2*oy+3)*bytesPerLine]
+		l3 := raw[(2*oy+3)*bytesPerLine : (2*oy+4)*bytesPerLine]
+		y0 := yp[oy*stride : oy*stride+Width]
+		y1 := yp[(oy+1)*stride : (oy+1)*stride+Width]
+		c := uv[(oy/2)*stride : (oy/2)*stride+Width]
+		for ox, i := 0, 0; ox+1 < len(y0) && ox+1 < len(y1) && ox+1 < len(c) && i+5 <= len(l0); ox, i = ox+2, i+5 {
+			a, b := l0[i:i+5:i+5], l1[i:i+5:i+5]
+			p0 := int(lp[(uint(a[0])|uint(a[1]&3)<<8)<<1&2047])
+			g0 := int(lg[((uint(a[1])>>2|uint(a[2]&0xF)<<6)+(uint(b[0])|uint(b[1]&3)<<8))&2047])
+			q0 := int(lq[(uint(b[1])>>2|uint(b[2]&0xF)<<6)<<1&2047])
+			p1 := int(lp[(uint(a[2])>>4|uint(a[3]&0x3F)<<4)<<1&2047])
+			g1 := int(lg[((uint(a[3])>>6|uint(a[4])<<2)+(uint(b[2])>>4|uint(b[3]&0x3F)<<4))&2047])
+			q1 := int(lq[(uint(b[3])>>6|uint(b[4])<<2)<<1&2047])
+			a, b = l2[i:i+5:i+5], l3[i:i+5:i+5]
+			p2 := int(lp[(uint(a[0])|uint(a[1]&3)<<8)<<1&2047])
+			g2 := int(lg[((uint(a[1])>>2|uint(a[2]&0xF)<<6)+(uint(b[0])|uint(b[1]&3)<<8))&2047])
+			q2 := int(lq[(uint(b[1])>>2|uint(b[2]&0xF)<<6)<<1&2047])
+			p3 := int(lp[(uint(a[2])>>4|uint(a[3]&0x3F)<<4)<<1&2047])
+			g3 := int(lg[((uint(a[3])>>6|uint(a[4])<<2)+(uint(b[2])>>4|uint(b[3]&0x3F)<<4))&2047])
+			q3 := int(lq[(uint(b[3])>>6|uint(b[4])<<2)<<1&2047])
+			// The weights add up to 256, so luma cannot leave 0..255.
+			y0[ox] = byte((wp*p0 + 150*g0 + wq*q0 + 128) >> 8)
+			y0[ox+1] = byte((wp*p1 + 150*g1 + wq*q1 + 128) >> 8)
+			y1[ox] = byte((wp*p2 + 150*g2 + wq*q2 + 128) >> 8)
+			y1[ox+1] = byte((wp*p3 + 150*g3 + wq*q3 + 128) >> 8)
+			p, g, q := p0+p1+p2+p3, g0+g1+g2+g3, q0+q1+q2+q3
+			c[ox] = clamp8(((cbp*p - 85*g + cbq*q + 512) >> 10) + 128)
+			c[ox+1] = clamp8(((crp*p - 107*g + crq*q + 512) >> 10) + 128)
+		}
+	}
+}
+
+func clamp8(v int) byte {
+	if v < 0 {
+		return 0
+	}
+	if v > 255 {
+		return 255
+	}
+	return byte(v)
 }
 
 // tables are per-channel lookups from an 11-bit level to an 8-bit output: gain, scale to white,

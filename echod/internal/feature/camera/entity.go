@@ -29,13 +29,6 @@ const (
 	// streamFor is how long one stream request keeps frames flowing; Home Assistant renews it
 	// well inside that while the stream is open.
 	streamFor = 5 * time.Second
-
-	// streamEvery paces the stream, counted from the start of one picture to the start of the next.
-	// Another Show puts the stream up full screen (GENBU-116), so it runs at up to eight pictures a
-	// second; what bounds it on the Show's two cores is making each one, about 50 ms to encode. The
-	// voice on the same link is not held up: a picture goes out in 1 KiB pieces, and audio fits in
-	// between them.
-	streamEvery = 125 * time.Millisecond
 )
 
 // key is the entity key, the library's FNV-1 of the object id.
@@ -158,7 +151,10 @@ func (f *Feature) pump(c *esphome.Conn) {
 		}
 	})
 	defer cancel()
-	last := time.Time{}
+	// Every frame the sensor makes goes out (GENBU-116): encoding one in hardware takes well under a
+	// millisecond, so what paces the stream is the sensor. Should the link fall behind, frames
+	// holds one and the rest are skipped, never queued. The voice on the same link is not held up:
+	// a picture goes out in 1 KiB pieces, and audio fits in between them.
 	for {
 		streams.mu.Lock()
 		if time.Now().After(streams.until[c]) {
@@ -171,10 +167,6 @@ func (f *Feature) pump(c *esphome.Conn) {
 		}
 		select {
 		case fr := <-frames:
-			if time.Since(last) < streamEvery {
-				continue
-			}
-			last = time.Now()
 			jpg, err := encode(fr)
 			if err != nil {
 				return
