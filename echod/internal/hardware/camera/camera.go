@@ -54,12 +54,12 @@ import (
 // a choice someone had to make, and the symptom of making it wrongly is a camera that opens, streams
 // nothing, and times out.
 type sensorSpec struct {
-	w, h       int    // what the sensor hands over
-	outW, outH int    // one pixel per Bayer cell: the live view and the stream
-	minShut    int    // shortest exposure the driver takes, in lines
-	frameLines int    // shutter lines that fit a frame at the sensor's own rate
-	blueFirst  bool   // the first pixel of each cell is blue, not red
-	clkcnt     uint32 // the timing generator's MCLK divider, less one: see open
+	w, h       int  // what the sensor hands over
+	outW, outH int  // one pixel per Bayer cell: the live view and the stream
+	minShut    int  // shortest exposure the driver takes, in lines
+	frameLines int  // shutter lines that fit a frame at the sensor's own rate
+	blueFirst  bool // the first pixel of each cell is blue, not red
+	camtgPLL   bool // move the camtg mux to the 48 MHz PLL ourselves: see open
 }
 
 // hasOV9734 is whether this board carries the OV9734 rather than the OV02B10.
@@ -67,9 +67,9 @@ func hasOV9734() bool { return layout.Checkers() || layout.Crown() }
 
 func pickSensor(ov9734 bool) sensorSpec {
 	if ov9734 {
-		return sensorSpec{w: 1280, h: 720, outW: 640, outH: 360, minShut: 1, frameLines: 798, blueFirst: true, clkcnt: 1}
+		return sensorSpec{w: 1280, h: 720, outW: 640, outH: 360, minShut: 1, frameLines: 798, blueFirst: true, camtgPLL: true}
 	}
-	return sensorSpec{w: 1600, h: 1200, outW: 800, outH: 600, minShut: 4, frameLines: 1200, clkcnt: 1}
+	return sensorSpec{w: 1600, h: 1200, outW: 800, outH: 600, minShut: 4, frameLines: 1200}
 }
 
 var sensor = pickSensor(hasOV9734())
@@ -110,6 +110,7 @@ const (
 	ispBase, ispLen       = 0x15000000, 0x10000
 	seninfBase, seninfLen = 0x15008000, 0x4000
 	mipiBase, mipiLen     = 0x10217000, 0x3000
+	topBase, topLen       = 0x10000000, 0x1000 // topckgen: camera-isp's PLL_BASE_ADDR window
 
 	// CAM registers (offsets in the CAMINF window).
 	regCtlEn1      = 0x4004
@@ -154,6 +155,11 @@ const (
 	regNcsi2IntEn    = 0x03B0
 	regNcsi2HsrxDbg  = 0x03D8
 	regCsi2Ctrl      = 0x0360
+
+	// topckgen registers (offsets in the topckgen window).
+	regClkCfgUpdate = 0x0004
+	regClkCfg2      = 0x0060
+	camtgUnivpllD26 = 1 // camtg_sel parent 1 of clk26m, univpll_d26, univpll2_d2
 
 	ionHeapMultimedia = 10
 	ionCmdSystem      = 0
@@ -262,22 +268,32 @@ func open() (*device, error) {
 		return nil, fmt.Errorf("open kd_camera_hw: %w", err)
 	}
 
-	// Sensor master clock. SET_MCLK_PLL asks the kernel to move the camtg mux onto the 48 MHz
-	// univpll_d26, so that the timing generator's divide by 2 gives the 24 MHz the drivers' mode
-	// tables are written for. On these kernels it never happens: kd_sensorlist.c only looks up the
-	// camtg clocks in probe when the device tree says cmmclk-always-on, and ours does not, so
-	// clk_set_parent gets a NULL clock and does nothing. camtg stays on the 26 MHz crystal, and
-	// divided by 2 that made 13 MHz: the OV9734 ran at 16.4 frames a second while the driver
-	// believed 30.4 (measured on a 1st gen, 2026-10-12; 30.37/16.45 is 24/13).
+	// Sensor master clock: the camtg clock divided by 2 in the SENINF timing generator.
+	// SET_MCLK_PLL asks the kernel to move the camtg mux onto the 48 MHz univpll_d26, so that the
+	// divide by 2 gives the 24 MHz the drivers' mode tables are written for. On these kernels it
+	// never happens: kd_sensorlist.c only looks the camtg clocks up in probe when the device tree
+	// says cmmclk-always-on, and ours does not, so clk_set_parent gets a NULL clock and does
+	// nothing. camtg stays on the 26 MHz crystal and the sensor gets 13: the OV9734 ran at 16.4
+	// frames a second while its driver believed 30.4 (1st gen, 2026-10-12; 30.37/16.45 is 24/13).
+	// Passing the crystal through undivided (clkcnt 0) gives no frames at all.
 	//
-	// Feeding the OV9734 the crystal undivided (clkcnt 0) gave no frames at all (dev.84), so both
-	// sensors stay on the divide by 2 until camtg itself can be moved to the 48 MHz PLL.
+	// So for the OV9734 we move the mux ourselves, through the topckgen window camera-isp maps
+	// for this (PLL_BASE_ADDR, what Android's camera HAL used before the kernel took the job
+	// over), with the same two writes as the kernel's mtk_mux_upd_set_parent. The OV02B10 keeps
+	// what the kernel leaves until someone can try it on a 2nd gen. /etc/mdev.conf keeps
+	// camera-isp root only, since that window reaches the whole clock controller.
 	d.mclk = [3]uint32{1, 1, 0}
 	if err := ioctl(d.sens, ioc(3, sensMagic, nrSetMCLK, 12), unsafe.Pointer(&d.mclk[0])); err != nil {
 		d.close()
 		return nil, fmt.Errorf("SET_MCLK_PLL: %w", err)
 	}
-	setMCLK1(d.sen, sensor.clkcnt)
+	if sensor.camtgPLL {
+		if err := camtgToPLL(d.isp); err != nil {
+			d.close()
+			return nil, err
+		}
+	}
+	setMCLK1(d.sen, 1)
 
 	// Frame buffers from the ION multimedia heap, mapped for the IMGO port.
 	if err := d.allocBuffers(); err != nil {
@@ -517,6 +533,23 @@ func m4uConfig(port int32) error {
 	if err := ioctl(fd, ioc(1, 'g', 11, 4), unsafe.Pointer(&p)); err != nil {
 		return fmt.Errorf("m4u config port %d: %w", port, err)
 	}
+	return nil
+}
+
+// camtgToPLL selects univpll_d26 (48 MHz) for the camtg mux: topckgen CLK_CFG_2 bits 0-1, then
+// its bit in CLK_CFG_UPDATE (clk-mt8163.c: camtg_sel at 0x60, shift 0, width 2, update 0x4 bit 8).
+func camtgToPLL(isp int) error {
+	top, err := mapWindow(isp, topBase, topLen)
+	if err != nil {
+		return err
+	}
+	defer top.unmap()
+	was := top.rd(regClkCfg2)
+	if was&3 != camtgUnivpllD26 {
+		top.wr(regClkCfg2, was&^3|camtgUnivpllD26)
+		top.wr(regClkCfgUpdate, 1<<8)
+	}
+	slog.Info("camera clock", "camtg_was", was&3, "camtg_now", top.rd(regClkCfg2)&3)
 	return nil
 }
 
