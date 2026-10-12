@@ -12,6 +12,7 @@ import (
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/home"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/voice"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/touch"
 	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 )
@@ -513,5 +514,27 @@ func TestTheShelfSlidesAndBackCloses(t *testing.T) {
 	d.drawerGesture(touch.Gesture{Kind: touch.Tap, X: 40, Y: 40})
 	if d.drawer {
 		t.Fatal("back on the shelf left the drawer in")
+	}
+}
+
+// The drawer comes in from the right edge over a settings page as it does over the clock; a swipe left
+// across the middle of the page is not it (Jade, 2026-10-12: no way to the radio from a sub-page).
+func TestTheDrawerSwipesInOverSettings(t *testing.T) {
+	config.Use(filepath.Join(t.TempDir(), "state.json"))
+	if err := config.Set().Screen().Welcomed(true); err != nil {
+		t.Fatal(err)
+	}
+	d := &Display{r: testRenderer(), poke: make(chan struct{}, 1), on: true, view: voice.State{Phase: "idle"}, drawerTab: drawerAnnounce}
+	d.showSheet(true)
+	d.mu.Lock()
+	d.root, d.page = false, "display"
+	d.mu.Unlock()
+	d.gesture(touch.Gesture{Kind: touch.SwipeLeft, X: d.r.w / 2, Y: 300})
+	if d.drawer || !d.sheet {
+		t.Fatalf("a swipe left mid-page: drawer %v sheet %v, want the page left as it was", d.drawer, d.sheet)
+	}
+	d.gesture(touch.Gesture{Kind: touch.SwipeLeft, X: d.r.w - 20, Y: 300})
+	if !d.drawer || d.sheet || d.drawerTab != drawerAnnounce {
+		t.Fatalf("a swipe in from the edge: drawer %v sheet %v tab %d, want the drawer on its last tab", d.drawer, d.sheet, d.drawerTab)
 	}
 }

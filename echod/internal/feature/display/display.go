@@ -776,6 +776,14 @@ func (d *Display) gesture(g touch.Gesture) {
 		if d.r == nil {
 			return
 		}
+		if d.drawerSwipe(g) {
+			bt.SetPairing(false)
+			d.mu.Lock()
+			d.btFromSheet, d.btScroll = false, 0
+			d.mu.Unlock()
+			d.openDrawerOver()
+			return
+		}
 		done := false
 		switch g.Kind {
 		case touch.Tap:
@@ -858,6 +866,12 @@ func (d *Display) gesture(g touch.Gesture) {
 	wifiOpen := d.wifiOpen
 	d.mu.Unlock()
 	if wifiOpen {
+		if d.drawerSwipe(g) {
+			d.closeWifi()
+			d.showSheet(false)
+			d.openDrawerOver()
+			return
+		}
 		if d.r != nil {
 			d.wifiGesture(g)
 		}
@@ -894,6 +908,9 @@ func (d *Display) gesture(g touch.Gesture) {
 			d.sheetSwipe(g)
 		case g.Kind == touch.SwipeRight:
 			d.sheetBack() // the way the Car Thing went back: a swipe to the right, anywhere
+		case d.drawerSwipe(g):
+			d.showSheet(false)
+			d.openDrawerOver()
 		}
 		d.wake()
 		return
@@ -1035,11 +1052,8 @@ func (d *Display) gesture(g touch.Gesture) {
 		voice.Get().Action()
 	case touch.SwipeLeft:
 		// From the right edge it brings the drawer in, on the tab it was last on.
-		if d.r != nil && g.X >= d.r.w-d.r.drawerEdge() {
-			d.mu.Lock()
-			tab := d.drawerTab
-			d.mu.Unlock()
-			d.openDrawer(tab)
+		if d.drawerSwipe(g) {
+			d.openDrawerOver()
 		}
 	case touch.SwipeUp:
 		// Up is the recipe Jarvis last looked up, when there is one (dashboard.RecipePath).
