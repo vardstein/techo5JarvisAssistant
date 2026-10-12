@@ -188,6 +188,9 @@ type Display struct {
 	// being up at the last frame (menu_idle.go).
 	menuSince time.Time
 	menuUp    bool
+	// takeOver is a conversation just started, for the next frame to clear the screen for it
+	// (assistantTakesOver).
+	takeOver bool
 
 	// nightGlow is the screen turned down to a night light by the night schedule, until a touch or
 	// the end of the night brings it back.
@@ -573,6 +576,14 @@ func (d *Display) changed(s voice.State) {
 	newHeard := s.Heard != "" && s.Heard != d.view.Heard
 	if s.Phase == "listening" && d.view.Phase != "listening" {
 		d.quiet = false
+		// A new conversation takes the screen from whatever is on it; a follow-up is the same one
+		// going on, and leaves up what its last answer put there.
+		d.takeOver = !s.FollowUp
+	}
+	if s.Phase != "listening" {
+		// Only while it is still listening: a frame that comes later, once the question has been heard,
+		// would take down the camera or the page the answer is putting up.
+		d.takeOver = false
 	}
 	d.view = s
 	d.viewAt = time.Now()
@@ -1812,6 +1823,7 @@ func (d *Display) frame() time.Duration {
 		return 80 * time.Millisecond
 	}
 
+	d.assistantTakesOver()
 	d.menuIdle(now, view.Phase != "idle")
 
 	s := scene{now: now, phase: view.Phase, heard: view.Heard, reply: view.Reply, since: at, ring: ring, call: call}

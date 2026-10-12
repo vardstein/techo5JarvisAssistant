@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HuskerMinion/techo5/echod/internal/feature/voice"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/wifi"
 )
 
@@ -66,5 +67,50 @@ func TestMenusGoHomeUntouched(t *testing.T) {
 		}
 		d.closeWifi()
 		d.menuIdle(start.Add(time.Hour), false)
+	}
+}
+
+// A conversation started with the wake word takes the screen: the drawer and the settings go, and so
+// do the pages put up before it. A follow-up is the same conversation and leaves the screen alone, and
+// a frame that only comes once the question has been heard does not take down what the answer shows.
+func TestTheAssistantTakesTheScreen(t *testing.T) {
+	d := &Display{r: testRenderer(), poke: make(chan struct{}, 1), on: true, view: voice.State{Phase: "idle"}}
+	turn := func(followUp bool) {
+		d.changed(voice.State{Phase: "idle"})
+		d.changed(voice.State{Phase: "listening", FollowUp: followUp})
+	}
+
+	d.openDrawer(drawerRadio)
+	d.mu.Lock()
+	d.calUntil, d.weatherUntil = time.Now().Add(time.Minute), time.Now().Add(time.Minute)
+	d.mu.Unlock()
+	turn(false)
+	d.assistantTakesOver()
+	if d.drawer || !d.calUntil.IsZero() || !d.weatherUntil.IsZero() {
+		t.Fatalf("a new conversation left the screen as it was: drawer=%v calendar=%v forecast=%v", d.drawer, d.calUntil, d.weatherUntil)
+	}
+
+	d.showSheet(true)
+	turn(true)
+	d.assistantTakesOver()
+	if !d.sheet {
+		t.Fatal("a follow-up put the settings away")
+	}
+
+	turn(false)
+	d.changed(voice.State{Phase: "thinking", Heard: "show the front door"})
+	d.assistantTakesOver()
+	if !d.sheet {
+		t.Fatal("a frame after the question had been heard still took the screen")
+	}
+
+	d.showSheet(false)
+	d.mu.Lock()
+	d.wifiOpen, d.wifi = true, wifiState{status: wifi.Status{Connected: true}, text: "correct horse"}
+	d.mu.Unlock()
+	turn(false)
+	d.assistantTakesOver()
+	if !d.wifiOpen {
+		t.Fatal("a half-typed Wi-Fi password was thrown away for the assistant")
 	}
 }

@@ -661,7 +661,7 @@ func (c *conversation) start(n nextTurn) {
 	be := c.be
 	c.send("start", func() error { return be.Start(phrase) })
 
-	c.shown = State{Backend: c.be.Name()}
+	c.shown = State{Backend: c.be.Name(), FollowUp: n.followUp}
 	c.enter(phaseListening)
 	c.turn.Listening()
 	c.reply = reply{}
