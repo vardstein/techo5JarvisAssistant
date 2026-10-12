@@ -12,7 +12,7 @@
       "alexa"
     ],
     "wake_slots": 1,
-    "brain_mode": "automatic",
+    "brain_mode": "home-assistant",
     "follow_up_seconds": 6,
     "automatic_follow_ups": 2,
     "follow_up_tone": false,

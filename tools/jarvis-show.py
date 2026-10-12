@@ -288,8 +288,10 @@ def _find_host(name: str):
 
 # How the assistant, wake word, room and room dashboard questions read, by the label deploy() asks them with.
 QUESTIONS = {  # label: (question, help, names for the options, the answers Enter takes when offered)
+    # Enter leaves the assistant as it is: a new Show talks to Home Assistant's preferred pipeline, so it
+    # follows the house's own assistant, whatever that is called (GENBU-108).
     "assistant": ("Which assistant should the Show talk to?", "",
-                  {"preferred": "the one Home Assistant has as preferred"}, ("jarvis",)),
+                  {"preferred": "the one Home Assistant has as preferred"}, ()),
     "wake word": ("Which wake word should it listen for?", "",
                   {"no_wake_word": "none, no wake word"}, ("okay nabu", "nabu")),
     "room": ("Which room is it in?", "It plays and shows that room's music.", {}, ()),
@@ -325,8 +327,7 @@ QUESTIONS = {  # label: (question, help, names for the options, the answers Ente
 
 
 def _chooser(args):
-    """Asks for the assistant, wake word and room the switches left open; '' on a switch means do not touch it.
-    Enter takes Jarvis when this Home Assistant and this Show have it."""
+    """Asks for the assistant, wake word and room the switches left open; '' on a switch means do not touch it."""
     asker = _asker(args)
     if not asker.interactive:
         return None
