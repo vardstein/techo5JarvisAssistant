@@ -1887,10 +1887,11 @@ func (d *Display) frame() time.Duration {
 		// A screen command: the screen it asked for is the answer, not the words.
 		s.phase, s.heard, s.reply = "idle", "", ""
 	}
-	if equalizerOn() && (s.phase == "listening" || s.phase == "thinking" || s.phase == "replying" || s.phase == "lingering") {
+	if s.phase == "listening" || s.phase == "thinking" || s.phase == "replying" || s.phase == "lingering" {
 		s.eq = eqFor(s.phase, nightNow(now), now)
 		s.eq.wave = waveOn()
 		s.eq.glow = glowOn()
+		s.eq.classic = !equalizerOn()
 	}
 	// A stream this player is carrying is the room's when it is what is being heard: the page names it,
 	// and says what it is doing, though the audio never passes through this player's own stream. Both,

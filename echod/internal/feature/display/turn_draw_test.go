@@ -4,6 +4,13 @@ package display
 
 import "math"
 
+// classicVoice is the Classic page's view of a voice at amp.
+func classicVoice(amp float64) *eqView {
+	v := &eqView{classic: true}
+	v.level, v.peak = eqVoice(amp, 3)
+	return v
+}
+
 // eqVoice is a made-up voice's spectrum: most of it low, a little higher up.
 func eqVoice(amp float64, seed int) (level, peak []float64) {
 	level, peak = make([]float64, eqBands), make([]float64, eqBands)

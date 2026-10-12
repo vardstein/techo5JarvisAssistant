@@ -18,24 +18,25 @@ type eqLine struct {
 	lineH int
 }
 
-// eqWords lays out what goes under the bars: what it is doing, what was heard, and the answer, the
-// answer a size smaller when it is long.
+// eqWords lays out what goes under the picture, in the Car Thing's type like the Classic page: what it
+// is doing, what was heard, and the answer in bold, a size or two smaller when it is long.
 func (r *renderer) eqWords(s scene, room int) []eqLine {
 	accent, heardCol, replyCol := color.RGBA{120, 220, 140, 255}, color.RGBA{170, 178, 190, 255}, color.RGBA{240, 244, 250, 255}
 	if s.eq.night {
 		accent, heardCol, replyCol = color.RGBA{255, 90, 70, 255}, color.RGBA{150, 110, 105, 255}, color.RGBA{255, 140, 120, 255}
 	}
+	tf := r.turnType()
 	maxW := r.w - 2*r.margin
 	var out []eqLine
 	switch s.phase {
 	case "listening":
-		out = append(out, eqLine{r.small, "Listening…", accent, r.s(42)})
+		out = append(out, eqLine{tf.label, "Listening…", accent, r.s(48)})
 	case "thinking":
-		out = append(out, eqLine{r.small, "Thinking…", accent, r.s(42)})
+		out = append(out, eqLine{tf.label, "Thinking…", accent, r.s(48)})
 	}
 	if s.heard != "" && s.phase != "listening" {
-		for _, l := range r.wrap(r.small, "“"+s.heard+"”", maxW) {
-			out = append(out, eqLine{r.small, l, heardCol, r.s(40)})
+		for _, l := range r.wrap(tf.cello, sentenceCase(s.heard), maxW) {
+			out = append(out, eqLine{tf.cello, l, heardCol, r.s(40)})
 		}
 		out[len(out)-1].lineH += r.s(10) // a breath between the question and the answer
 	}
@@ -46,14 +47,16 @@ func (r *renderer) eqWords(s scene, room int) []eqLine {
 	for _, l := range out {
 		used += l.lineH
 	}
-	face, lineH := r.body, r.s(52)
-	lines := r.wrap(face, s.reply, maxW)
-	if used+len(lines)*lineH > room {
-		face, lineH = r.small, r.s(42)
-		lines = r.wrap(face, s.reply, maxW)
+	var lines []string
+	var st turnStep
+	for _, st = range []turnStep{{tf.alto, r.s(49)}, {tf.canon, r.s(46)}, {tf.cello, r.s(40)}} {
+		lines = r.wrap(st.face, s.reply, maxW)
+		if used+len(lines)*st.lineH <= room {
+			break
+		}
 	}
 	for _, l := range lines {
-		out = append(out, eqLine{face, l, replyCol, lineH})
+		out = append(out, eqLine{st.face, l, replyCol, st.lineH})
 	}
 	return out
 }
