@@ -427,6 +427,8 @@ What happens with the answers:
      words this Show has, and you pick one or press Enter to keep the current one. The pipeline Home
      Assistant has as preferred is marked "(default)", and "preferred" says which one it means
      today. When that is the only pipeline there is, nothing is asked: both choices do the same.
+     A new Show starts on "preferred", so it talks to whatever assistant the house uses, and the
+     installer never picks a pipeline by its name or sets up anything else in the assistant chain.
      `--assistant` and `--wake-word` answer ahead of time; `''` leaves one alone. With nobody at
      the terminal and no switch, both stay as they are;
   4. asks which room (Home Assistant area) it stands in and puts its device there, over the

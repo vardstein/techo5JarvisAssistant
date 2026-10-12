@@ -374,13 +374,15 @@ class DeployTests(unittest.TestCase):
     def test_the_installer_shows_what_home_assistant_names(self):
         args = argparse.Namespace(assistant=None, wake_word=None, room=None, room_dashboard=None, voice_extras=None,
                                   calendars=None, no_questions=False)
-        said = []
-        asker = Asker(interactive=True, ask=lambda _: "", say=said.append)
+        said, prompts = [], []
+        asker = Asker(interactive=True, ask=lambda q: prompts.append(q) or "", say=said.append)
         with mock.patch.object(show_cli, "_asker", return_value=asker):
             picked = show_cli._chooser(args)("assistant", "preferred", ["preferred", "Jarvis", "Basic"],
                                                 {"Jarvis": "Jarvis (default)"})
-        self.assertEqual(picked, "Jarvis")
+        # Enter leaves it as it is: no assistant is picked by its name, whatever this house calls its own.
+        self.assertIsNone(picked)
         self.assertIn("  │   2  Jarvis (default)", said)
+        self.assertTrue(any("Enter leaves it as it is" in q for q in prompts))
 
     def test_the_rename_switch_answers_the_new_name_question(self):
         with mock.patch.object(sys, "argv", ["jarvis-show.py", "home-assistant", "--name", "Jarvis Show 5",
