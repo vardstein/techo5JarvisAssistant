@@ -55,6 +55,12 @@ comes back under its new node name and stays main.
 Once the folder is in place the installer does step 2 itself and adds more mains when asked to. The
 `notify` service stays a choice under **Configure**; the installer keeps whatever is set there.
 
+**A Show taken out for good.** The action `genbu.forget_show` (from 1.1.0) drops one Show by its node name:
+from the main list, from the music choice, and from what Genbu remembers of it, with its Repairs issues.
+When it was the only main update Show, the Show Genbu recommends becomes main, and the answer says which
+(`mains`, `new_main`). The installer's `remove-show` calls it after removing the Show's ESPHome entry, so
+Genbu does not find it again first.
+
 ### Tests
 
 `tests/test_genbu_house.py` and `tests/test_genbu_music.py` test the logic without Home Assistant and run in CI. `ha/tests` runs the

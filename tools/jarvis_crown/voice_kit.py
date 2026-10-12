@@ -732,19 +732,19 @@ class _Run:
         return True
 
 
-def _duck_existing(run: _Run, satellite: str) -> tuple[str, dict] | None:
+def duck_existing(ha: HomeAssistant, satellite: str) -> tuple[str, dict] | None:
     """An automation from turn-room-down for this satellite that is there already, whatever its id."""
     try:
-        related = run.ha.ws({"type": "search/related", "item_type": "entity", "item_id": satellite}) or {}
+        related = ha.ws({"type": "search/related", "item_type": "entity", "item_id": satellite}) or {}
     except HomeAssistantError:
         return None
     for automation in related.get("automation") or []:
-        state = run.ha.request("GET", f"/api/states/{automation}") or {}
+        state = ha.request("GET", f"/api/states/{automation}") or {}
         item = str((state.get("attributes") or {}).get("id") or "")
         if not _ID_RE.fullmatch(item):
             continue
         try:
-            config = run.ha.request("GET", f"/api/config/automation/config/{item}")
+            config = ha.request("GET", f"/api/config/automation/config/{item}")
         except NotFound:
             continue
         bp = (config or {}).get("use_blueprint") or {}
@@ -763,7 +763,7 @@ def _per_show(run: _Run, house: House, show: str, entities: list[str]) -> None:
     near_miss = next((e for e in sorted(entities) if e.startswith("event.") and e.endswith("_wake_word_near_miss")),
                      None)
     item = f"techo5_turn_room_down_{service_prefix(show)}"
-    found = _duck_existing(run, satellite)
+    found = duck_existing(run.ha, satellite)
     if found and found[0] != item:
         # Someone made their own from the blueprint; it stays theirs.
         mine, config = found

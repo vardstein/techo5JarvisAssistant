@@ -316,6 +316,17 @@ class House:
         self._forget_old()
         self._settle(now)
 
+    def forget(self, node: str, now: datetime, new: str | None = None) -> None:
+        """A Show taken out of the house for good (the installer's remove-show): it leaves the main
+        update Shows, new taking its place when given, and nothing about it is kept."""
+        if node in self.data["mains"]:
+            self.replace(node, new, now)
+        self.data["committed"].pop(node, None)
+        for device in [d for d, n in self.data["devices"].items() if n == node]:
+            del self.data["devices"][device]
+            self.data["music"].pop(device, None)
+        self._forget_old()
+
     def music_choice(self, device: str) -> str:
         return self.data["music"].get(device, "")
 

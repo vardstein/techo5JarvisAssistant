@@ -245,6 +245,53 @@ class PickTests(unittest.TestCase):
         self.assertEqual(h.version, "v1.0.3-stable.52")
 
 
+class ForgetTests(unittest.TestCase):
+    """genbu.forget_show, which the installer's remove-show calls once the Show is out of ESPHome."""
+
+    def house_of(self, mains):
+        h = house.House()
+        flur, attic = show("flur", "v1.0.3-stable.52"), show("attic", "v1.0.3-stable.50")
+        flur.device, attic.device = "d1", "d2"
+        for node in reversed(mains):
+            h.make_main(node, NOW)
+        h.see([flur, attic], NOW)
+        h.choose_music("d1", "media_player.kitchen")
+        h.choose_music("d2", "media_player.attic")
+        return h
+
+    def test_a_follower_leaves_no_trace(self):
+        h = self.house_of(["flur"])
+        h.forget("attic", NOW)
+        self.assertEqual(h.mains, ["flur"])
+        self.assertNotIn("attic", h.data["committed"])
+        self.assertEqual(h.data["devices"], {"d1": "flur"})
+        self.assertEqual(h.data["music"], {"d1": "media_player.kitchen"})
+
+    def test_the_only_main_hands_over(self):
+        h = self.house_of(["flur"])
+        h.see([show("flur", online=False)], NOW + timedelta(hours=30))
+        h.forget("flur", NOW + timedelta(hours=30), new="attic")
+        self.assertEqual(h.mains, ["attic"])
+        self.assertEqual(h.data["missing_since"], {})
+        self.assertNotIn("flur", h.data["committed"])
+        self.assertEqual(h.data["devices"], {"d2": "attic"})
+        self.assertEqual(h.data["music"], {"d2": "media_player.attic"})
+
+    def test_a_second_main_just_leaves(self):
+        h = self.house_of(["flur", "attic"])
+        h.forget("attic", NOW)
+        self.assertEqual(h.mains, ["flur"])
+        h.forget("flur", NOW)
+        self.assertEqual(h.mains, [])
+        self.assertEqual(h.data["devices"], {})
+
+    def test_an_unknown_show_changes_nothing(self):
+        h = self.house_of(["flur"])
+        before = repr(h.data)
+        h.forget("cellar", NOW)
+        self.assertEqual(repr(h.data), before)
+
+
 class FilesTests(unittest.TestCase):
     def test_translations_have_the_same_keys(self):
         def keys(d, at=""):
@@ -265,6 +312,13 @@ class FilesTests(unittest.TestCase):
         steps = strings["issues"]["main_missing"]["fix_flow"]["step"]
         self.assertEqual(set(steps["init"]["menu_options"]), {"pick", "wait", "gone"})
         self.assertEqual(set(strings["options"]["step"]["second"]["menu_options"]), {"second_no", "second_yes"})
+
+    def test_forget_show_is_described(self):
+        strings = json.loads((GENBU / "strings.json").read_text())
+        self.assertIn("node", strings["services"]["forget_show"]["fields"])
+        services = (GENBU / "services.yaml").read_text()
+        self.assertTrue(services.startswith("forget_show:"))
+        self.assertIn('SERVICE_FORGET = "forget_show"', (GENBU / "const.py").read_text())
 
     def test_manifest(self):
         m = json.loads((GENBU / "manifest.json").read_text())

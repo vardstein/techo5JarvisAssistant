@@ -20,6 +20,11 @@ installer's token is used for that and kept nowhere.
 That token is either an admin's long-lived one, or one the installer gets by signing in as an admin
 with a username and password (sign_in, Music Assistant's own auth/login). A sign-in's token is
 revoked again when the run ends (sign_out).
+
+A Show taken out of the house (remove-show) loses its user here and its player (show_leftovers,
+remove_leftovers). The player is found by the Show's MAC, which is the Sendspin client id it connects
+with, or by its name when the MAC is not known any more. Music Assistant refuses to remove a player that
+is connected and makes it again at once, so that one waits until the Show is off the network.
 """
 from __future__ import annotations
 
@@ -198,3 +203,73 @@ def sign_out(host: str, token: str, token_id: str, *, timeout: float = 20.0,
              connect: Callable[..., Any] = socket.create_connection) -> None:
     """Revokes a token, the sign-in's own (token_id is its id) or an earlier one of the same user."""
     _connected(host, timeout, connect, lambda sock, peer: revoke_exchange(sock, peer, token, token_id))
+
+
+# ------------------------------------------------------------------------------- a Show taken out
+
+
+def _mac(value: Any) -> str:
+    """A MAC address as twelve lower-case hex digits, '' when it is not one."""
+    digits = re.sub(r"[^0-9a-f]", "", str(value or "").lower())
+    return digits if len(digits) == 12 else ""
+
+
+def _shows_player(player: dict, mac: str, names: set[str]) -> bool:
+    """Whether a player is the Show's: by its MAC, the Sendspin client id echod connects with, or by its
+    name when the MAC is not known."""
+    if mac:
+        if _mac((player.get("device_info") or {}).get("mac_address")) == mac:
+            return True
+        return any(o.get("protocol_domain") == "sendspin" and _mac(o.get("output_protocol_id")) == mac
+                   for o in player.get("output_protocols") or [])
+    return (player.get("provider") in ("universal_player", "sendspin")
+            and str(player.get("name") or "").strip().casefold() in names)
+
+
+def leftovers_exchange(sock: Any, host: str, token: str, names: list[str], mac: str | None, *,
+                       key: str | None = None) -> tuple[list[dict], list[dict]]:
+    """Logs in on a connected socket and finds what Music Assistant has of the Show: its users (by the
+    names it went by) and its players. Changes nothing."""
+    session = _login(sock, host, token, key=key)
+    usernames = set()
+    for name in names:
+        try:
+            usernames.add(show_username(name))
+        except MusicAssistantError:
+            continue
+    users = [u for u in session.call("auth/users") or [] if u.get("username") in usernames]
+    folded = {n.strip().casefold() for n in names if n.strip()}
+    players = [p for p in session.call("players/all") or [] if _shows_player(p, _mac(mac), folded)]
+    return users, players
+
+
+def remove_exchange(sock: Any, host: str, token: str, user_ids: list[str], player_ids: list[str], *,
+                    key: str | None = None) -> list[str]:
+    """Logs in on a connected socket and removes these users and player settings; returns what failed.
+    Music Assistant tells Home Assistant a player is gone, which then drops its device."""
+    session = _login(sock, host, token, key=key)
+    failed = []
+    for user_id in user_ids:
+        try:
+            session.call("auth/user/delete", user_id=user_id)
+        except MusicAssistantError as exc:
+            failed.append(str(exc))
+    for player_id in player_ids:
+        try:
+            session.call("config/players/remove", player_id=player_id)
+        except MusicAssistantError as exc:
+            failed.append(str(exc))
+    return failed
+
+
+def show_leftovers(host: str, token: str, names: list[str], mac: str | None, *, timeout: float = 20.0,
+                   connect: Callable[..., Any] = socket.create_connection) -> tuple[list[dict], list[dict]]:
+    """The Show's users and players in Music Assistant at host."""
+    return _connected(host, timeout, connect, lambda sock, peer: leftovers_exchange(sock, peer, token, names, mac))
+
+
+def remove_leftovers(host: str, token: str, user_ids: list[str], player_ids: list[str], *, timeout: float = 20.0,
+                     connect: Callable[..., Any] = socket.create_connection) -> list[str]:
+    """Removes the Show's users and players found by show_leftovers; returns what failed."""
+    return _connected(host, timeout, connect,
+                      lambda sock, peer: remove_exchange(sock, peer, token, user_ids, player_ids))
