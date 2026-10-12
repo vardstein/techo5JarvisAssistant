@@ -334,4 +334,6 @@ cannot pass camtg through; dev.85 goes back to clkcnt 1. A read on the device (c
 PLL_BASE_ADDR mmap window is topckgen, 0x10000000 + 0x1000) shows CLK_CFG_2 = 0x00010000:
 camtg sel 0 (clk26m), not gated. The fix is to select univpll_d26 there (bits 0-1 = 1, then
 BIT(8) to CLK_CFG_UPDATE at 0x04, as mtk_mux_upd_set_parent does), which makes the divide by 2
-give the 24 MHz the mode tables expect. Not done yet: it writes the SoC clock controller.
+give the 24 MHz the mode tables expect. dev.86 does that for the OV9734 boards (Jade's go,
+2026-10-12) and adds /etc/mdev.conf so camera-isp, kd_camera_hw and ion are root:root 0600: the
+camera-isp mmap windows reach topckgen, GPIO and the eFuses.
