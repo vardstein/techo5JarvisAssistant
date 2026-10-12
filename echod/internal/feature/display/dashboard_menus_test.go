@@ -53,8 +53,8 @@ func TestRingingTakesTheDashboardAway(t *testing.T) {
 	}
 }
 
-// Drawn over the dashboard, the drawer is the same drawer, its panel and the dimmed strip that
-// closes it, and the clock is not what is under it.
+// Drawn over the dashboard, the drawer is the same drawer, its back arrow putting it away, and the
+// clock is not what is under it.
 func TestTheDrawerIsDrawnOverTheDashboard(t *testing.T) {
 	config.Use(filepath.Join(t.TempDir(), "state.json"))
 	r := newRenderer(image.NewRGBA(image.Rect(0, 0, 960, 480)))
@@ -63,12 +63,12 @@ func TestTheDrawerIsDrawnOverTheDashboard(t *testing.T) {
 	defer r.zmu.Unlock()
 	closes := false
 	for _, z := range r.zones {
-		if z.kind == zoneDone && z.r.Min.X == 0 {
+		if z.kind == zoneBack && z.r.Min.X == 0 {
 			closes = true
 		}
 	}
 	if !closes {
-		t.Fatal("no dimmed strip to close the drawer over the dashboard")
+		t.Fatal("no back arrow to close the drawer over the dashboard")
 	}
 	if !r.dateAt.Empty() {
 		t.Fatal("the clock was drawn under the drawer in the dashboard's place")

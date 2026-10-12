@@ -18,7 +18,7 @@ const installFrame = 100 * time.Millisecond
 // fills with the download and then sweeps while the slot is written. It floats near the top, clear of
 // the edge, and under the microphone's pill when that is up, so the two never cover each other.
 func (r *renderer) installPill(s scene) {
-	if s.install == "" {
+	if s.install == "" || r.modalUp() != modalNone {
 		return
 	}
 	spin := r.s(11)

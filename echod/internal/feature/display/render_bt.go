@@ -3,41 +3,19 @@
 package display
 
 import (
+	"image"
 	"slices"
 
 	"github.com/HuskerMinion/techo5/echod/internal/feature/btaudio"
 	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 )
 
-// The Bluetooth page, opened from Connections in the settings: a back arrow and a title, a line
-// saying what to do, and the devices as rows a finger can hit. The one connected and
-// the ones paired come first, then what the scan has found. Geometry is shared with the gesture
-// handler, which maps a tap back to a row.
-// The sizes are the Show 5's (960 by 480): the heading and four rows fit in 480. The Show 8
-// scales them like everything else.
-const (
-	btRowTopBase    = 108 // first row's top edge
-	btRowHeightBase = 70
-	btRows          = 4
-)
+// The Bluetooth page, opened from Connections in the settings: the header with its back arrow, a
+// line saying what to do, and the devices as large rows, each saying what a tap on it does. The one
+// connected and the ones paired come first, then what the scan has found.
 
-func (p *paint) btRowTop() int    { return p.s(btRowTopBase) }
-func (p *paint) btRowHeight() int { return p.s(btRowHeightBase) }
-
-// btRowAt maps a tap to the row it landed on, or -1; the way back is btRows.
-func (r *renderer) btRowAt(x, y int) int {
-	if r.pageBackAt(x, y) {
-		return btRows
-	}
-	if y < r.btRowTop() {
-		return -1
-	}
-	row := (y - r.btRowTop()) / r.btRowHeight()
-	if row >= btRows {
-		return -1
-	}
-	return row
-}
+// btRowHigh is a device's row: its name and the line under it.
+const btRowHigh = 112
 
 // btList is the page's devices in the order it lists them: connected, paired, then the rest, each
 // group strongest first as the scan sorted them.
@@ -56,41 +34,73 @@ func btList(devices []btaudio.Device) []btaudio.Device {
 	return list
 }
 
+// btSub is the line under a device: what it is and what a tap does.
+func btSub(d btaudio.Device) string {
+	switch {
+	case d.Busy:
+		return "Working…"
+	case d.Connected:
+		return "Connected · tap to disconnect"
+	case d.Paired:
+		return "Paired · tap to connect"
+	}
+	return "Tap to pair"
+}
+
 func (r *renderer) pairingPage(s scene) {
+	cf := r.car()
+	r.pending = r.pending[:0]
+	r.fill(r.dst.Rect, walnut)
+	head, rowH := r.cz(carHeader), r.cz(btRowHigh)
+	list := image.Rect(0, head, r.w, r.h)
+	x0, x1 := r.cz(carIn), r.w-r.cz(carIn)
+
 	hint := s.bt.Status
 	if hint == "" {
 		hint = "Put your earbuds in pairing mode"
 	}
-	r.pageHead("Bluetooth audio", hint, "")
-	fc := r.faces()
-	rowTop, rowH := r.btRowTop(), r.btRowHeight()
+	intro := r.lines(cf.small, hint, x1-x0, 2)
+	devices := btList(s.bt.Devices)
+	total := len(intro)*r.cz(40) + max(len(devices), 1)*rowH
+	maxScroll := max(total+r.cz(24)-list.Dy(), 0)
+	scroll := min(max(s.btScroll, 0), maxScroll)
 
-	if len(s.bt.Devices) == 0 {
+	y := head - scroll
+	for _, l := range intro {
+		r.text(cf.small, l, x0, y+r.cz(28), subInk())
+		y += r.cz(40)
+	}
+	if len(devices) == 0 {
 		// A dot that walks while the scan runs, so a still list reads as searching rather than stuck.
 		n := int(s.now.UnixMilli() / 400 % 4)
-		r.text(fc.value, i18n.Sprintf("Searching%s", "..."[:n]), r.margin, rowTop+r.s(36), dim)
+		r.text(cf.value, i18n.Sprintf("Searching%s", "..."[:n]), x0, mid(cf.value, y+rowH/2), softInk())
 	}
-	for i, d := range btList(s.bt.Devices) {
-		if i >= btRows {
-			break
+	from := len(r.pending)
+	icon := r.cz(48)
+	tx := x0 + icon + r.cz(32)
+	for _, d := range devices {
+		if y < r.h && y+rowH > head {
+			cy := y + rowH/2
+			ink, subC := cream, subInk()
+			switch {
+			case d.Busy:
+				subC = amber
+			case d.Connected:
+				ink, subC = amber, amber
+			}
+			glyph := "bluetooth"
+			if d.Connected {
+				glyph = "bluetooth-audio"
+			}
+			r.mdiIcon(glyph, x0, cy-icon/2, zb(48), ink)
+			r.text(cf.label, r.fit(cf.label, d.Name, x1-tx), tx, mid(cf.label, cy-r.cz(17)), ink)
+			r.text(cf.small, r.fit(cf.small, btSub(d), x1-tx), tx, mid(cf.small, cy+r.cz(22)), subC)
+			r.addZone(zone{r: image.Rect(0, y, r.w, y+rowH), kind: zoneRow, id: d.Address})
 		}
-		tile := r.pageTile(rowTop+i*rowH, rowH, d.Connected)
-		cy := (tile.Min.Y + tile.Max.Y) / 2
-		right, rc := "tap to pair", dim
-		switch {
-		case d.Busy:
-			right, rc = "working…", amber
-		case d.Connected:
-			right, rc = "connected · tap to disconnect", amber
-		case d.Paired:
-			right = "paired · tap to connect"
-		}
-		rw := r.width(fc.sub, right)
-		r.text(fc.sub, right, r.w-r.margin-rw, cy+r.s(7), rc)
-		face := fc.label
-		if d.Connected {
-			face = fc.labelBold
-		}
-		r.text(face, r.fit(face, d.Name, r.w-2*r.margin-rw-r.s(24)), r.margin, cy+r.s(10), cream)
+		y += rowH
 	}
+	r.clipZones(from, list)
+	r.listFades(list, scroll, maxScroll)
+	r.carHeader("Bluetooth audio", nil)
+	r.showZones(maxScroll)
 }

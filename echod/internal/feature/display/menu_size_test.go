@@ -13,8 +13,14 @@ import (
 	"time"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/announce"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/btaudio"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/home"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/phone"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/remind"
 	"github.com/HuskerMinion/techo5/echod/internal/i18n"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/hass"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/wifi"
 )
 
 // At every menu size, on both panels, every card, every list of choices on it and every tab of the
@@ -75,6 +81,48 @@ func TestEveryMenuSizeFits(t *testing.T) {
 			announceReady: true, announcePeers: 3,
 			callees: []phone.Callee{{Name: "a", Device: true}, {Name: "b", Device: true}, {Name: "d", Number: "15551234567"}}}
 	}
+	// The shelf full: cameras, and stations with one playing, one starting and Stop, slid to its end.
+	full := scene{now: at, phase: "idle", showDrawer: true, demo: true,
+		cameras: []config.Camera{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}, {Name: "e"}},
+		radio: home.Radio{Configured: true, Source: config.RadioLocal, Sources: 3, Playing: true, Grouped: true,
+			Stations: []string{"101.1 A", "88.5 B", "93.3 C", "104.7 D"}, Now: "101.1 A", Chosen: "88.5 B"}}
+	for i, name := range drawerTabs[:drawerAnnounce] {
+		f := full
+		f.drawerTab = i
+		scenes["drawer-full-"+name] = f
+		f.drawerScroll = 1 << 20
+		scenes["drawer-full-"+name+"-end"] = f
+	}
+	recording := scenes["drawer-Announce"]
+	recording.announceRecording = true
+	scenes["drawer-Announce-recording"] = recording
+	pick := full
+	pick.drawerTab, pick.drawerPick = drawerRadio, "radiosource"
+	scenes["drawer-Radio-source"] = pick
+	// The modals, each with the most it says: over the clock, which shows faintly through.
+	soon := hass.Event{Calendar: "calendar.family", Summary: "Dentist with the kids, then the pharmacy on the way back",
+		Start: at.Add(15 * time.Minute), End: at.Add(time.Hour)}
+	scenes["modal-announcement"] = scene{now: at, phase: "idle", showAnnouncement: true,
+		announcement: announce.Message{From: "Laundry Room", Text: "the washing is finished, could somebody move it to the dryer before it starts to smell"}}
+	scenes["modal-announcement-voice"] = scene{now: at, phase: "idle", showAnnouncement: true, announcement: announce.Message{From: "Kitchen"}}
+	scenes["modal-recording"] = scene{now: at, phase: "idle", announceRecording: true, announcePeers: 3}
+	scenes["modal-reminder"] = scene{now: at, phase: "idle", showReminder: true, reminderFrom: "Kitchen",
+		reminder: remind.Reminder{Label: "Move the washing to the dryer, then put the towels on the rack by the back door so they are dry by the evening"}}
+	scenes["modal-popup"] = scene{now: at, phase: "idle", popup: &soon}
+	// The pages from Connections, with long names, and a list long enough to scroll.
+	nets := []wifi.Network{{SSID: "HomeWiFi", Signal: -48, Secured: true}, {SSID: "The neighbours upstairs, second floor", Signal: -66, Secured: true},
+		{SSID: "Cafe guest", Signal: -78}, {SSID: "Printer-3F", Signal: -84, Secured: true}, {SSID: "Garden", Signal: -72, Secured: true}}
+	home := wifi.Status{SSID: "HomeWiFi", Connected: true, Address: "10.0.0.50", State: "COMPLETED"}
+	scenes["page-wifi"] = scene{now: at, phase: "idle", showWifi: true, wifi: wifiState{status: home, nets: nets}}
+	scenes["page-wifi-end"] = scene{now: at, phase: "idle", showWifi: true, wifi: wifiState{status: home, nets: append(nets, nets...), scroll: 1 << 20}}
+	scenes["page-wifi-joining"] = scene{now: at, phase: "idle", showWifi: true, wifi: wifiState{nets: nets, busy: i18n.F("Connecting to {name}…", "name", "Garden")}}
+	scenes["page-keyboard"] = scene{now: at, phase: "idle", showWifi: true, wifi: wifiState{status: home, nets: nets, pick: &nets[1], text: "correct horse battery staple"}}
+	scenes["page-keyboard-symbols"] = scene{now: at, phase: "idle", showWifi: true, wifi: wifiState{nets: nets, pick: &nets[4], symbols: true, err: "The password was not accepted"}}
+	scenes["page-keyboard-shift"] = scene{now: at, phase: "idle", showWifi: true, wifi: wifiState{nets: nets, pick: &nets[4], shift: true}}
+	scenes["page-bluetooth"] = scene{now: at, phase: "idle", bt: btaudio.State{Available: true, Pairing: true, Status: "Put your earbuds in pairing mode",
+		Devices: []btaudio.Device{{Address: "a", Name: "Loud stranger"}, {Address: "b", Name: "Old earbuds from the drawer in the hall", Paired: true, Busy: true},
+			{Address: "c", Name: "Speaker", Paired: true, Connected: true}, {Address: "e", Name: "TV"}}}}
+	scenes["page-bluetooth-empty"] = scene{now: at, phase: "idle", bt: btaudio.State{Available: true, Pairing: true}}
 
 	config.Use(filepath.Join(t.TempDir(), "state.json"))
 	t.Cleanup(i18n.Changed)

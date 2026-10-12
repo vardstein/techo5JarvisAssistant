@@ -215,8 +215,10 @@ type Display struct {
 	wifiOpen bool
 	wifiAt   time.Time
 
-	// btFromSheet is the Bluetooth page opened from the settings: its Done goes back there.
+	// btFromSheet is the Bluetooth page opened from the settings: its Done goes back there. btScroll
+	// is how far its list is scrolled.
 	btFromSheet bool
+	btScroll    int
 
 	// quiet is a turn that was a screen command ("go home", "show the deck"): its words and reply
 	// are not shown, so the screen moves at once. radioCue is when Home Assistant last named a
@@ -715,50 +717,34 @@ func (d *Display) gesture(g touch.Gesture) {
 		return
 	}
 
-	// The microphone open for an announcement: the strip along the bottom is the way to end it, a tap
-	// sending what was said and a hold throwing it away. Only the strip — the rest of the screen is
-	// the clock and the music, which an announcement deliberately does not take over.
-	if announce.Get().Recording() && d.r != nil && onAnnounceStrip(g.X, g.Y, d.r.w, d.r.h) {
-		switch g.Kind {
-		case touch.Tap:
-			go announce.Get().Finish()
-		case touch.Hold:
-			go announce.Get().Cancel()
-		}
-		d.wake()
-		return
-	}
-
-	// One that arrived: a tap on the strip puts it away, the same as on the round face. It does not
-	// have to be put away here — the clock and the music are carrying on behind it and it goes by
-	// itself — but having to wait out something already heard is the same annoyance on any screen.
-	if _, showing := announce.Get().Showing(); showing && g.Kind == touch.Tap &&
-		d.r != nil && onAnnounceStrip(g.X, g.Y, d.r.w, d.r.h) {
-		go announce.Get().Dismiss()
-		d.wake()
-		return
-	}
-
 	// A voice turn said in the strip over a page: the strip takes the tap, so a row hidden under it is
-	// not pressed while somebody is answering.
+	// not pressed while somebody is answering. It is drawn over a modal too, so it goes first.
 	if g.Kind == touch.Tap && d.r != nil && d.r.turnStripTapped(image.Pt(g.X, g.Y)) {
 		d.wake()
 		return
 	}
 
-	// A reminder: a tap on its card puts it away, here and on every device it went off on. Only the
-	// card, as with the strip, so a finger meant for the music behind it still reaches the music.
-	if g.Kind == touch.Tap && d.r != nil && d.r.popupTapped(image.Pt(g.X, g.Y)) {
-		d.dismissPopup()
-		d.wake()
-		return
-	}
-
-	if _, showing := remind.Get().Showing(); showing && g.Kind == touch.Tap &&
-		d.r != nil && image.Pt(g.X, g.Y).In(d.r.reminderBox()) {
-		go remind.Get().Stop()
-		d.wake()
-		return
+	// A modal up (render_modal.go): the page under it is at a tenth of its light, so a finger anywhere
+	// is for the modal, and nothing reaches the page until it is gone. The microphone open for an
+	// announcement ends with a tap sending what was said or a hold throwing it away; the rest are put
+	// away with a tap, a reminder on every device it went off on.
+	if d.r != nil {
+		if kind := d.r.modalUp(); kind != modalNone {
+			switch {
+			case kind == modalRecording && g.Kind == touch.Tap:
+				go announce.Get().Finish()
+			case kind == modalRecording && g.Kind == touch.Hold:
+				go announce.Get().Cancel()
+			case kind == modalAnnouncement && g.Kind == touch.Tap:
+				go announce.Get().Dismiss()
+			case kind == modalReminder && g.Kind == touch.Tap:
+				go remind.Get().Stop()
+			case kind == modalPopup && g.Kind == touch.Tap:
+				d.dismissPopup()
+			}
+			d.wake()
+			return
+		}
 	}
 
 	// The starter guide: a tap is the next page, and Skip or a tap on the last page puts it away for
@@ -787,22 +773,37 @@ func (d *Display) gesture(g touch.Gesture) {
 	// the back arrow ends the page, back to the settings when it was opened from there.
 	bt := btaudio.Get()
 	if bt.Pairing() {
+		if d.r == nil {
+			return
+		}
 		done := false
 		switch g.Kind {
 		case touch.Tap:
-			if d.r == nil {
-				return
-			}
-			list := btList(bt.State().Devices)
-			switch row := d.r.btRowAt(g.X, g.Y); {
-			case row == btRows:
+			z, ok := d.r.zoneAt(g.X, g.Y)
+			switch {
+			case !ok:
+			case z.kind == zoneBack:
 				done = true
-			case row >= 0 && row < len(list) && list[row].Busy:
-			case row >= 0 && row < len(list) && list[row].Connected:
-				safe.Go("bluetooth disconnect from the screen", bt.Disconnect)
-			case row >= 0 && row < len(list):
-				bt.Choose(list[row].Address)
+			case z.kind == zoneRow:
+				for _, dev := range bt.State().Devices {
+					switch {
+					case dev.Address != z.id || dev.Busy:
+					case dev.Connected:
+						safe.Go("bluetooth disconnect from the screen", bt.Disconnect)
+					default:
+						bt.Choose(dev.Address)
+					}
+				}
 			}
+		case touch.SwipeUp, touch.SwipeDown:
+			cardMax, _ := d.r.scrollLimits()
+			by := notchPx
+			if g.Kind == touch.SwipeDown {
+				by = -notchPx
+			}
+			d.mu.Lock()
+			d.btScroll = min(max(d.btScroll+by, 0), cardMax)
+			d.mu.Unlock()
 		case touch.SwipeRight:
 			done = true
 		}
@@ -810,7 +811,7 @@ func (d *Display) gesture(g touch.Gesture) {
 			bt.SetPairing(false)
 			d.mu.Lock()
 			back := d.btFromSheet
-			d.btFromSheet = false
+			d.btFromSheet, d.btScroll = false, 0
 			d.mu.Unlock()
 			if back {
 				d.showSheet(true)
@@ -857,8 +858,8 @@ func (d *Display) gesture(g touch.Gesture) {
 	wifiOpen := d.wifiOpen
 	d.mu.Unlock()
 	if wifiOpen {
-		if g.Kind == touch.Tap && d.r != nil {
-			d.wifiTap(g.X, g.Y)
+		if d.r != nil {
+			d.wifiGesture(g)
 		}
 		d.wake()
 		return
@@ -1404,43 +1405,67 @@ func (d *Display) wifiScan() {
 	d.wake()
 }
 
-// wifiTap is a finger on the Wi-Fi pages.
-func (d *Display) wifiTap(x, y int) {
+// wifiGesture is a finger on the Wi-Fi pages. The list scrolls, and a swipe back closes it; the
+// keyboard only takes taps, so a slip of the finger does not throw the typing away.
+func (d *Display) wifiGesture(g touch.Gesture) {
 	d.mu.Lock()
 	w := d.wifi
 	d.mu.Unlock()
-	if w.pick != nil {
-		d.wifiKey(d.r.keyAt(x, y, w.symbols))
+	switch g.Kind {
+	case touch.SwipeUp, touch.SwipeDown:
+		if w.pick != nil {
+			return
+		}
+		cardMax, _ := d.r.scrollLimits()
+		by := notchPx
+		if g.Kind == touch.SwipeDown {
+			by = -notchPx
+		}
+		d.mu.Lock()
+		d.wifi.scroll = min(max(d.wifi.scroll+by, 0), cardMax)
+		d.mu.Unlock()
+		return
+	case touch.SwipeRight:
+		if w.pick == nil {
+			d.closeWifi()
+		}
+		return
+	case touch.Tap:
+	default:
 		return
 	}
-	h := d.r.wifiListHit(x, y)
+	z, ok := d.r.zoneAt(g.X, g.Y)
+	if !ok {
+		return
+	}
 	switch {
-	case h.done:
+	case z.kind == zoneBack && w.pick != nil:
+		d.wifiKey("cancel")
+	case z.kind == zoneBack:
 		d.closeWifi()
-	case h.rescan:
+	case z.kind == zoneAction && z.id == "rescan":
 		d.mu.Lock()
 		d.wifi.scanning, d.wifi.err = true, ""
 		d.mu.Unlock()
 		go d.wifiScan()
-	case h.row >= 0:
-		start, end, more := pageWith(len(w.nets), w.page, wifiRows)
-		if more && h.row == wifiRows-1 {
+	case z.kind == zoneAction && w.pick != nil:
+		if k, ok := strings.CutPrefix(z.id, "key:"); ok {
+			d.wifiKey(k)
+		}
+	case z.kind == zoneRow && w.pick == nil:
+		for _, n := range w.nets {
+			if n.SSID != z.id {
+				continue
+			}
+			if !n.Secured {
+				d.wifiJoin(n, "")
+				return
+			}
 			d.mu.Lock()
-			d.wifi.page++
+			d.wifi.pick, d.wifi.text, d.wifi.shift, d.wifi.symbols, d.wifi.err = &n, "", false, false, ""
 			d.mu.Unlock()
 			return
 		}
-		if start+h.row >= end {
-			return
-		}
-		n := w.nets[start+h.row]
-		if !n.Secured {
-			d.wifiJoin(n, "")
-			return
-		}
-		d.mu.Lock()
-		d.wifi.pick, d.wifi.text, d.wifi.shift, d.wifi.symbols, d.wifi.err = &n, "", false, false, ""
-		d.mu.Unlock()
 	}
 }
 
@@ -1802,7 +1827,7 @@ func (d *Display) frame() time.Duration {
 	s.bt = btaudio.Get().State()
 	d.mu.Lock()
 	s.showSheet = d.sheet
-	s.showWifi, s.wifi = d.wifiOpen, d.wifi
+	s.showWifi, s.wifi, s.btScroll = d.wifiOpen, d.wifi, d.btScroll
 	restartArm := d.restartArm
 	wifiAt := d.wifiAt
 	d.mu.Unlock()
