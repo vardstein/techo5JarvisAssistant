@@ -145,7 +145,7 @@ second for it, or 18 when it had to reload first. This automation answers with t
 device that was asked:
 
 ```yaml
-alias: Jarvis - Where are we
+alias: Genbu - Where are we
 mode: parallel
 triggers:
   - trigger: conversation
@@ -174,7 +174,7 @@ also gives up on a room with two thermostats and hands the question to the model
 from one sensor per room, says the room, and without a room uses the Show's own:
 
 ```yaml
-alias: Jarvis - Room temperature
+alias: Genbu - Room temperature
 mode: parallel
 triggers:
   - trigger: conversation
@@ -212,7 +212,7 @@ forecast said partly cloudy, 8 to 15, no rain. Home Assistant has the forecast; 
 asked for it:
 
 ```yaml
-alias: Jarvis - Forecast
+alias: Genbu - Forecast
 mode: parallel
 triggers:
   - trigger: conversation

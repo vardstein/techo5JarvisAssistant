@@ -1,4 +1,4 @@
-"""Sets Jarvis Rezepte up: it only needs to know where SearXNG is."""
+"""Sets Genbu Rezepte up: it only needs to know where SearXNG is."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ class RecipeFlow(ConfigFlow, domain=DOMAIN):
             if parts.scheme in ("http", "https") and parts.hostname:
                 await self.async_set_unique_id(DOMAIN)
                 self._abort_if_unique_id_configured()
-                return self.async_create_entry(title="Jarvis Rezepte", data={CONF_SEARXNG: url})
+                return self.async_create_entry(title="Genbu Rezepte", data={CONF_SEARXNG: url})
             errors[CONF_SEARXNG] = "bad_url"
         return self.async_show_form(step_id="user", errors=errors,
                                     data_schema=vol.Schema({vol.Required(CONF_SEARXNG): str}))

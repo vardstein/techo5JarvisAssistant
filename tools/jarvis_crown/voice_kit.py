@@ -18,7 +18,7 @@ the house lacks.
 
 Every item is looked at first: missing is made, the same is left, and one that differs (edited by hand,
 or from an older installer) is only replaced when the person says so, after its old configuration was
-saved through keep.
+saved through keep. The name an item shows under doesn't count: a house keeps the names it gave them.
 """
 from __future__ import annotations
 
@@ -165,7 +165,7 @@ WHERE_ARE_WE = r"""{% set de = __PHRASES__ %}{% set a = area_id(trigger.device_i
 def where_are_we(house: House) -> dict:
     phrases, _ = room_words(house.areas)
     return {
-        "alias": "Jarvis - Where are we",
+        "alias": "Genbu - Where are we",
         "description": 'Answers "Wo sind wir?" locally with the room of the device that was asked.',
         "triggers": [{"trigger": "conversation", "command": [
             "wo (sind wir|bin ich) [gerade|hier|jetzt]",
@@ -194,7 +194,7 @@ def room_temperature(house: House) -> dict:
         command += ["wie (warm|kalt) ist es [gerade|jetzt] (draußen|draussen)",
                     "wie viel grad (sind|hat) es [gerade|jetzt] (draußen|draussen)"]
     return {
-        "alias": "Jarvis - Room temperature",
+        "alias": "Genbu - Room temperature",
         "description": "Answers room temperature questions locally from the room sensor and names the room, "
                        "so it can't be mistaken for the weather.",
         "triggers": [{"trigger": "conversation", "command": command}],
@@ -210,7 +210,7 @@ FORECAST = r"""{% set de = {'sunny': 'sonnig', 'clear-night': 'klar', 'partlyclo
 
 def forecast(house: House) -> dict:
     return {
-        "alias": "Jarvis - Forecast",
+        "alias": "Genbu - Forecast",
         "description": "Answers tomorrow's and the day after's weather locally from the forecast, instead of "
                        "the model guessing it.",
         "triggers": [{"trigger": "conversation", "command": [
@@ -231,7 +231,7 @@ def forecast(house: House) -> dict:
 def volume(house: House) -> dict:
     _, words = room_words(house.areas)
     return {
-        "alias": "Jarvis - Volume",
+        "alias": "Genbu - Volume",
         "description": f"Blueprint {BLUEPRINT_FOLDER}/{VOLUME}.",
         "use_blueprint": {"path": f"{BLUEPRINT_FOLDER}/{VOLUME}", "input": {"rooms": words}},
     }
@@ -291,7 +291,7 @@ WECKER_VARIABLES = {
 
 def wecker() -> dict:
     return {
-        "alias": "Jarvis - Wecker",
+        "alias": "Genbu - Wecker",
         "description": 'Stellt den Wecker auf dem Gerät, das gefragt wurde, ohne das Sprachmodell: "stell einen '
                        'Wecker auf 7 Uhr", "weck mich in 20 Minuten". Das Modell würde sonst nur sagen, der '
                        'Wecker sei gestellt.',
@@ -367,9 +367,9 @@ RADIO_BEST = r"""{% set generic = ['radio', 'hit', 'fm', 'sender', 'the', 'der',
 
 def music_start() -> dict:
     return {
-        "alias": "Jarvis Musik starten",
+        "alias": "Genbu Musik starten",
         "description": "Startet Musik auf einem Player, ohne dass der Aufrufer warten muss. Nur für die "
-                       "Jarvis-Musikskripte, nicht für Assist freigeben.",
+                       "Genbu-Musikskripte, nicht für Assist freigeben.",
         "mode": "restart",
         "fields": {
             "player": {"description": "Player-Entität."},
@@ -611,7 +611,7 @@ def local_music(house: House) -> dict:
     def step(action: str) -> dict:
         return {"action": action, "target": {"entity_id": "{{ target_player }}"}, "continue_on_error": True}
     return {
-        "alias": "Jarvis - Local Music",
+        "alias": "Genbu - Local Music",
         "description": 'Musik ohne das Sprachmodell: zufällig, nach Stimmung ("spiel was Flottes", "viel laute '
                        'Musik", "Musik von ..."), oder Radio ("Biele Hit Radio FFH"), im Raum des Geräts, das '
                        'gefragt wurde. Sagt, was jetzt läuft. Alle Sätze stehen in einem Auslöser, damit nie '
@@ -669,7 +669,7 @@ def local_music_stop(house: House) -> dict:
     Musik" are left to Home Assistant's own pause, which already gets them right; a sentence here would
     win over it, since sentence triggers are tried first."""
     return {
-        "alias": "Jarvis - Local Music Stop",
+        "alias": "Genbu - Local Music Stop",
         "description": 'Hält die Musik im Raum des Geräts an, das gefragt wurde, ohne das Sprachmodell: '
                        '"Stopp, stopp", "Hör auf", "Mach die Musik aus". Einfaches "Stopp" oder "Musik aus" '
                        'erledigt Home Assistant selbst.',
@@ -747,7 +747,10 @@ class _Run:
         except NotFound:
             old = None
         if isinstance(old, dict):
-            if {k: v for k, v in old.items() if k != "id"} == config:
+            # The name it shows under is the house's: one renamed by hand, or still called what an older
+            # installer called it (Jarvis - ...), is the same item (GENBU-110).
+            if {k: v for k, v in old.items() if k not in ("id", "alias")} == \
+                    {k: v for k, v in config.items() if k != "alias"}:
                 self.progress(f"{kind} {item} is already there")
             else:
                 self.differ.append((kind, item, config, old))
