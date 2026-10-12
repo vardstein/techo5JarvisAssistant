@@ -144,8 +144,8 @@ func (d *direct) answer(ctx context.Context, pcm []byte) {
 	d.post(event{kind: evReplyText, text: reply})
 	// An answer that asks something wants one, and gets it without the wake word again: what Home
 	// Assistant's pipeline reports as continue_conversation for a chat model's reply that ends in a
-	// question.
-	if strings.HasSuffix(reply, "?") {
+	// question, read here the way the Show reads any reply.
+	if asks(reply) {
 		d.post(event{kind: evContinue})
 	}
 

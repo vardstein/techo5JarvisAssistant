@@ -279,9 +279,9 @@ def wecker() -> dict:
                 {"conditions": "{{ not techo5 }}", "sequence": [
                     {"set_conversation_response": "Sag das bitte dem Gerät, auf dem der Wecker klingeln soll."}]},
                 {"conditions": "{{ length and not (1 <= minutes | int <= 1440) }}", "sequence": [
-                    {"set_conversation_response": "Wie lange? Das habe ich nicht verstanden."}]},
+                    {"set_conversation_response": "Das habe ich nicht verstanden. Wie lange?"}]},
                 {"conditions": "{{ not length and (h < 0 or hh > 23 or m > 59) }}", "sequence": [
-                    {"set_conversation_response": "Für wann? Die Uhrzeit habe ich nicht verstanden."}]}],
+                    {"set_conversation_response": "Die Uhrzeit habe ich nicht verstanden. Für wann?"}]}],
              "default": [
                  {"action": "esphome.{{ node }}_alarm_set",
                   "data": {"time": "{{ at }}", "days": "once", "label": "Wecker"}},

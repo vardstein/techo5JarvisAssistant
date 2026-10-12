@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	esphome "github.com/ygelfand/go-esphome-device"
 	"github.com/ygelfand/go-esphome-device/api"
@@ -989,10 +990,65 @@ func bareOkay(text string) bool {
 }
 
 // asks reports whether a reply ends by asking something, which is what makes listening after it
-// worth the open microphone: its last sentence is a question.
+// worth the open microphone: its last sentence is a question, or the one before is and the last only
+// explains it ("Wie lange? Das habe ich nicht verstanden.", GENBU-117). A last sentence that starts
+// with an answer word answers the question instead ("Ist das Licht an? Ja, es ist an.").
 func asks(text string) bool {
-	t := strings.TrimRight(text, " \t\n\"'»«“”„)")
+	s := sentences(text)
+	n := len(s)
+	if n == 0 {
+		return false
+	}
+	if isQuestion(s[n-1]) {
+		return true
+	}
+	return n >= 2 && isQuestion(s[n-2]) && !answerWords[firstWord(s[n-1])]
+}
+
+// closers are what may follow the end of a sentence and still belong to it.
+const closers = "\"'»«“”„)"
+
+// sentences splits text where a sentence ends: at . ! ? ？ or … with a space or the end after it,
+// past any closing quotes or brackets.
+func sentences(text string) []string {
+	var out []string
+	r := []rune(text)
+	start := 0
+	for i := 0; i < len(r); i++ {
+		if !strings.ContainsRune(".!?？…", r[i]) {
+			continue
+		}
+		j := i + 1
+		for j < len(r) && (strings.ContainsRune(".!?？…", r[j]) || strings.ContainsRune(closers, r[j])) {
+			j++
+		}
+		if j < len(r) && !unicode.IsSpace(r[j]) {
+			continue // "z.B", "3.5", "„Küche“?" inside a sentence
+		}
+		if t := strings.TrimSpace(string(r[start:j])); t != "" {
+			out = append(out, t)
+		}
+		start, i = j, j-1
+	}
+	if t := strings.TrimSpace(string(r[start:])); t != "" {
+		out = append(out, t)
+	}
+	return out
+}
+
+// isQuestion reports whether a sentence ends with a question mark.
+func isQuestion(s string) bool {
+	t := strings.TrimRight(s, " \t\n"+closers)
 	return strings.HasSuffix(t, "?") || strings.HasSuffix(t, "？")
+}
+
+// answerWords start a sentence that answers the question before it.
+var answerWords = map[string]bool{"ja": true, "nein": true, "doch": true, "yes": true, "no": true}
+
+// firstWord is a sentence's first word in lower case, without the punctuation around it.
+func firstWord(s string) string {
+	w, _, _ := strings.Cut(strings.TrimSpace(s), " ")
+	return strings.ToLower(strings.TrimFunc(w, func(r rune) bool { return !unicode.IsLetter(r) }))
 }
 
 // preRoll is how much of the audio before a follow-up's onset is sent with it.

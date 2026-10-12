@@ -404,3 +404,30 @@ async def test_die_musik_starts_some_or_says_what_plays(hass: HomeAssistant):
     # The other sentences still start music whatever plays.
     assert await say("Spiel die Musik") == "Spiele Yesterday von The Beatles und ähnliche Lieder."
     assert len(started) == 2
+
+
+async def test_the_wecker_asks_back_and_keeps_listening(hass: HomeAssistant):
+    """When the Wecker can't read the time it asks for it, and the asking goes last (GENBU-117). Home
+    Assistant 2026.10 never asks its own agent's answers to continue, whatever they end with, so the
+    Show decides by the reply's last sentences; and a chat model's reply only continues when it ends
+    with a question."""
+    from homeassistant.components import conversation
+    from homeassistant.core import Context
+    from homeassistant.setup import async_setup_component
+
+    device, _ = show(hass, "hall", "Living Room")
+    entities = er.async_get(hass)
+    entities.async_get_or_create("button", "esphome", "aa:hall-stop_alarm", device_id=device,
+                                 suggested_object_id="hall_stop_alarm")
+    await setup(hass, main="hall")
+    assert await async_setup_component(hass, "homeassistant", {})
+    assert await async_setup_component(hass, "conversation", {})
+    assert await async_setup_component(hass, "automation", {"automation": [
+        {"id": "jarvis_wecker", **voice_kit.wecker()}]})
+    await hass.async_block_till_done()
+
+    for text, want in [("Stell einen Wecker für 0 Minuten", "Das habe ich nicht verstanden. Wie lange?"),
+                       ("Stell einen Wecker auf 25 Uhr", "Die Uhrzeit habe ich nicht verstanden. Für wann?")]:
+        r = await conversation.async_converse(hass, text, None, Context(), language="de", device_id=device)
+        assert r.response.speech["plain"]["speech"] == want
+        assert want.endswith("?")
