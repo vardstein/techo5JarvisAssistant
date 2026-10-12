@@ -430,7 +430,14 @@ What happens with the answers:
      A new Show starts on "preferred", so it talks to whatever assistant the house uses, and the
      installer never picks a pipeline by its name or sets up anything else in the assistant chain.
      `--assistant` and `--wake-word` answer ahead of time; `''` leaves one alone. With nobody at
-     the terminal and no switch, both stay as they are;
+     the terminal and no switch, both stay as they are.
+     Then it asks whether that assistant should be called "Genbu Assistant" (Enter is no). Only the
+     name changes, nothing the pipeline is built from. Home Assistant puts every device that was
+     set to the old name back on "preferred" when a pipeline is renamed, so the installer sets each
+     of them, other satellites too, to the new name right after. The pipeline as it was, and the
+     list of devices on it, are saved first in `backups/home-assistant/`. Nothing is asked when it
+     already has that name or another pipeline does. `--genbu-assistant` and
+     `--no-genbu-assistant` answer ahead of time;
   4. asks which room (Home Assistant area) it stands in and puts its device there, over the
      websocket API since REST has no device registry. The room is how the Show finds the Music
      Assistant speaker whose music it shows, when it is the only one in that area. `--room` answers
@@ -680,6 +687,7 @@ uses the Home Assistant, DashCast, Music Assistant and choice switches.
 | `--music-assistant-local-metadata` | Music Assistant stops looking metadata up online and keeps to the library's own tags. Off unless given. |
 | `--music-assistant-token-file FILE` | A file holding a Music Assistant admin's long-lived token, used instead of signing in, once for the Show's own user there (lyrics) and the switch above. |
 | `--assistant NAME` | The Assist pipeline it talks to, or `preferred`. `''` leaves it alone. |
+| `--genbu-assistant`, `--no-genbu-assistant` | Call the Show's assistant "Genbu Assistant" in Home Assistant, and keep every device that was on it there, or leave the name alone. Asked otherwise, Enter is no. |
 | `--wake-word NAME` | One of the wake words the Show offers. `''` leaves it alone. |
 | `--room NAME` | The Home Assistant area it stands in, by name or id. `''` leaves it alone. |
 | `--room-dashboard`, `--no-room-dashboard` | Make a small dashboard for its room when the room has none, or never. Asked otherwise. |
