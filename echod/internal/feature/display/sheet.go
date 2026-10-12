@@ -94,7 +94,7 @@ func categoryRows(sv sheetView) (rows []settingRow, note string) {
 			settingRow{id: "musicstrip", label: "Now playing", sub: "Full page, or a strip over the clock", kind: ctlChoice, value: stripOptionText()},
 		)
 		if hasEqualizer {
-			rows = append(rows, settingRow{id: "turnstyle", label: "Turn screen", sub: "Classic, or a wave or bars that move with the voice", kind: ctlChoice, value: turnStyles[turnStyleIndex()].label})
+			rows = append(rows, settingRow{id: "turnstyle", label: "Turn screen", sub: "What the screen shows while you speak", kind: ctlChoice, value: turnStyles[turnStyleIndex()].label})
 		}
 		rows = append(rows,
 			settingRow{id: "slideshow", label: "Slideshow", sub: "Photos from Home Assistant", kind: ctlChoice, value: slideshowOptions[slideshowIndex()]},
