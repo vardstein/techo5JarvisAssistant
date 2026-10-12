@@ -606,6 +606,7 @@ func (d *device) stream(stop chan struct{}, frame func(bayer []byte)) {
 	last := cam.rd(regTgInterSt) >> 16 & 0xFF
 	first := true
 	quiet := time.Now()
+	var tk tickStats
 	for {
 		select {
 		case <-stop:
@@ -621,6 +622,7 @@ func (d *device) stream(stop chan struct{}, frame func(bayer []byte)) {
 			time.Sleep(500 * time.Microsecond)
 			continue
 		}
+		tk.ticks += int(byte(cnt - last))
 		last = cnt
 		quiet = time.Now()
 		done := cur
@@ -628,11 +630,39 @@ func (d *device) stream(stop chan struct{}, frame func(bayer []byte)) {
 		cam.wr(regImgoBase, d.mva+uint32(cur*frameBytes))
 		if first {
 			first = false // the first tick is the start of the first frame, nothing is complete
+			tk = tickStats{from: time.Now()}
 			continue
 		}
+		t := time.Now()
 		frame(d.buf[done*frameBytes : (done+1)*frameBytes])
+		tk.took(time.Since(t))
 	}
 }
+
+// tickStats is how the sensor's frames and the work on each compare: ticks counts the sensor's
+// frames, frames the ones handed on, and a gap between the two is frames the work made it miss.
+type tickStats struct {
+	from          time.Time
+	ticks, frames int
+	work, most    time.Duration
+}
+
+func (tk *tickStats) took(work time.Duration) {
+	tk.frames++
+	tk.work += work
+	tk.most = max(tk.most, work)
+	if since := time.Since(tk.from); since >= tickEvery {
+		s := since.Seconds()
+		slog.Info("camera ticks", "sensor_per_second", float64(tk.ticks)/s,
+			"frames_per_second", float64(tk.frames)/s,
+			"work_ms", float64(tk.work.Microseconds())/1000/float64(tk.frames),
+			"work_max_ms", float64(tk.most.Microseconds())/1000)
+		*tk = tickStats{from: time.Now()}
+	}
+}
+
+// tickEvery is how often a running sensor reports, the same as the stream does.
+const tickEvery = 10 * time.Second
 
 // skip: every frame is converted on the Show.
 func (d *device) skip() bool { return false }
