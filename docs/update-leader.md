@@ -61,31 +61,26 @@ When it was the only main update Show, the Show Genbu recommends becomes main, a
 (`mains`, `new_main`). The installer's `remove-show` calls it after removing the Show's ESPHome entry, so
 Genbu does not find it again first.
 
-**A Show's controls on its Genbu device** (from 1.2.0). Devices & services → Genbu → a Show lists
-everything you would set on the Show: screen and LED ring lights, night mode, microphone mute, white
-noise, alarm buttons, the Show's settings, volume, which assistant and wake word it uses, and the
-firmware version. Home Assistant lets a device belong to one integration only, so these are copies:
-each follows its ESPHome original and passes on what is done to it, like Home Assistant's own "Change
-device type of a switch" helper. Their entity ids start with `genbu_<node>_`.
+**The Genbu page** (from 1.3.0). Genbu adds **Genbu** to the sidebar, with one card per Show. A card has
+what you would use on the Show: the media player, the voice satellite, screen and LED ring lights, night
+mode, microphone mute, white noise, the alarm buttons and the music choice; then under **Settings** the
+Show's settings, like volume and which assistant and wake word it uses; and a link to the device page.
+Every row is the Show's own ESPHome entity, so there is nothing to keep in step: rename or hide an entity
+and the card follows. Diagnostics, the camera and the events stay on the device page. Rows open the usual
+dialog. The page is in English, like the entity names the Shows report.
 
-- Diagnostics, the camera, the events, the voice satellite and the firmware update stay on the ESPHome
-  device only. The update is offered there, once; the copy only says which version runs.
-- The everyday originals (lights, switches, white noise, buttons, text sensors) are hidden once their copy
-  is there, so dashboards and the device list don't show them twice. Hidden entities still work in
-  automations and on dashboards that already use them. One you show again by hand stays shown.
-- Assist keeps using the originals. Before an original is hidden, Genbu writes down what Assist did with
-  it, so hiding does not take it away from Assist; the copies are kept from Assist when they are made.
-  Exposing a copy by hand afterwards sticks.
-- **Configure → Hide the ESPHome originals** off shows them all again. Removing Genbu does the same.
+1.2.0 put copies of these controls on each Show's Genbu device and hid the ESPHome originals. 1.3.0
+removes the copies and shows the originals again on its first start, except ones someone hid by hand
+since. Dashboards that used a copy (`genbu_<node>_...`) need the original instead.
 
 ### Tests
 
-`tests/test_genbu_house.py`, `tests/test_genbu_music.py` and `tests/test_genbu_controls.py` test the logic without Home Assistant and run in CI. `ha/tests` runs the
+`tests/test_genbu_house.py` and `tests/test_genbu_music.py` test the logic without Home Assistant and run in CI. `ha/tests` runs the
 integration in a real Home Assistant through `pytest-homeassistant-custom-component`, by hand. That needs
 the Python version current Home Assistant needs (3.14 for 2026.10):
 
 ```sh
-python3.14 -m venv /tmp/havenv && /tmp/havenv/bin/pip install pytest-homeassistant-custom-component
+python3.14 -m venv /tmp/havenv && /tmp/havenv/bin/pip install pytest-homeassistant-custom-component home-assistant-frontend
 cd ha && /tmp/havenv/bin/python -m pytest
 ```
 
