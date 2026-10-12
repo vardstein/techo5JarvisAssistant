@@ -264,7 +264,7 @@ toggle for every one of them. The toggle works per Show, not for all Shows at on
 | Turn the room down while it listens | yes | that Show's own automation, its on/off on the card | as today |
 | Watchdog (planned) | yes | that Show's own automation, its on/off on the card | when it exists |
 | Music scripts for the AI | no, house | on the house card | once per house; always exposed (decided) |
-| German voice extras (Wo sind wir, Wecker …) | no, house | on the house card | once per house, as today |
+| Voice extras, German and English (Wo sind wir, Wecker …) | no, house | on the house card | once per house, as today |
 
 The tool gate above then reads the Show's own switch: a Show with Recipes off never offers the tool, the
 kitchen Show next to it still does.
@@ -308,8 +308,10 @@ Jade's answers on 2026-10-12:
   - Recipes move into the Assist set through `llm.py`, as recommended, but only for Shows that cook and
     made safer. Jade asked for that to be fleshed out; it is §4's proposal.
   - The installer asks for each optional feature, and the control center has a toggle per Show for each
-    (§4, "Optional features"). Proposed on top: the German voice extras stay per house, for the reason
-    given there.
+    (§4, "Optional features").
+  - The voice extras stay per house, for the reason given there.
+  - The voice extras also come in English: the same pieces with English sentences and answers, set up
+    when the house has an English pipeline. Built with 1.4.0, after the open tests.
 
 ### Groups on a Show's card
 
