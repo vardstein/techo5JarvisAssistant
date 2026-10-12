@@ -3,7 +3,8 @@ house.House, and does what it answers: Repairs issues, the push, the pick after 
 thing that ever changes which Shows are main update Shows, so nothing can race for the job.
 
 Each look also works out where each Show's music plays (music.py), so a Show moved to another room
-plays there without anything being set up again."""
+plays there without anything being set up again, and finds the controls the Show's genbu device gets
+copies of (controls.py), hiding the everyday originals once."""
 
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ import logging
 import re
 from datetime import datetime, timedelta
 
+from homeassistant.components.homeassistant.exposed_entities import KNOWN_ASSISTANTS, async_should_expose
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_STATE_CHANGED, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Event, HomeAssistant, callback
@@ -24,8 +26,9 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import (CHANGED, CONF_MAIN, CONF_NOTIFY, DOMAIN, ISSUE_MISSING, ISSUE_NO_MAIN, ISSUE_PICKED,
-                    MAIN_SELECT, MANUFACTURERS, PUSH, STORE_KEY, STORE_VERSION)
+from .const import (CHANGED, CONF_HIDE, CONF_MAIN, CONF_NOTIFY, DOMAIN, ISSUE_MISSING, ISSUE_NO_MAIN,
+                    ISSUE_PICKED, MAIN_SELECT, MANUFACTURERS, PUSH, STORE_KEY, STORE_VERSION)
+from .controls import Control, control_for
 from .house import ASK, PICK, House, Show, recommend
 from .music import Player, falls_back_to, own_player, plays_on, room_player
 
@@ -104,6 +107,33 @@ def find_players(hass: HomeAssistant) -> list[Player]:
     return sorted(players, key=lambda p: p.entity)
 
 
+def find_controls(hass: HomeAssistant, device_id: str) -> dict[str, tuple[Control, str]]:
+    """The controls of the Show with this ESPHome device that get a copy, by Control.key, with the
+    original's entity id. Its ring, microphone, playback and assistant are devices of their own, via
+    the Show's. Disabled originals get no copy."""
+    devices, entities = dr.async_get(hass), er.async_get(hass)
+    ids = [device_id] + [d.id for d in devices.devices if d.via_device_id == device_id]
+    found = {}
+    for did in ids:
+        for e in er.async_entries_for_device(entities, did):
+            if e.platform != "esphome":
+                continue
+            control = control_for(e.unique_id, e.entity_category.value if e.entity_category else None)
+            if control is not None:
+                found[control.key] = (control, e.entity_id)
+    return found
+
+
+def unhide(hass: HomeAssistant, hidden: dict[str, bool]) -> None:
+    """Shows the originals Genbu hid again, unless someone else hid them since. By registry id, so a
+    renamed one is found too."""
+    entities = er.async_get(hass)
+    for rid, ours in hidden.items():
+        e = entities.async_get(rid)
+        if ours and e is not None and e.hidden_by is er.RegistryEntryHider.INTEGRATION:
+            entities.async_update_entity(e.entity_id, hidden_by=None)
+
+
 def _offline(state) -> bool:
     return state is None or state.state == STATE_UNAVAILABLE
 
@@ -124,6 +154,7 @@ class GenbuHouse:
         self.players: list[Player] = []
         self.music: dict[str, str] = {}  # where each Show's music plays, by device id
         self.fallback: dict[str, str] = {}  # where it goes when that player is offline, by device id
+        self.controls: dict[str, dict[str, tuple[Control, str]]] = {}  # find_controls, by device id
         self._watched: set[str] = set()
         self._player_ids: set[str] = set()
         self._stops: list = []
@@ -142,7 +173,7 @@ class GenbuHouse:
                                                       event_filter=self._watching))
         self._stops.append(self.hass.bus.async_listen(dr.EVENT_DEVICE_REGISTRY_UPDATED, self._changed,
                                                       event_filter=self._not_ours))
-        # A player or a Show moved to another room, or a new player.
+        # A player or a Show moved to another room, a new player, or a renamed original of a copy.
         self._stops.append(self.hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, self._changed,
                                                       event_filter=self._player_or_satellite))
         await self.async_refresh()
@@ -169,6 +200,8 @@ class GenbuHouse:
 
     @callback
     def _player_or_satellite(self, data) -> bool:
+        if data["action"] == "update" and "entity_id" in data.get("changes", {}):
+            return True
         return data["entity_id"].split(".", 1)[0] in ("media_player", "assist_satellite")
 
     @callback
@@ -233,6 +266,11 @@ class GenbuHouse:
         return (by.get(room_player(show.area, self.players)),
                 by.get(own_player([show.name, show.node], self.players, show.mac)))
 
+    def source(self, device: str, key: str) -> str | None:
+        """The entity id of the original a copy follows, None while it is gone."""
+        found = self.controls.get(device, {}).get(key)
+        return found[1] if found else None
+
     async def _changed_by_hand(self) -> None:
         for node in self.house.mains:
             ir.async_delete_issue(self.hass, DOMAIN, ISSUE_PICKED + node)
@@ -247,9 +285,11 @@ class GenbuHouse:
                                          self.players, s.mac) for s in self.shows if s.device}
         self.fallback = {s.device: falls_back_to(self.house.music_choice(s.device), s.area, [s.name, s.node],
                                                  self.players, s.mac) for s in self.shows if s.device}
+        self.controls = {s.device: find_controls(self.hass, s.device) for s in self.shows if s.device}
         self._watched = {e for s in self.shows for e in s.watch if e}
         self._player_ids = {p.entity for p in self.players}
         changed = self._tidy()
+        changed = self._hide() or changed
         changed = self.house.see(self.shows, now) or changed
         for node, step in self.house.missing(now).items():
             if step == PICK:
@@ -281,6 +321,33 @@ class GenbuHouse:
             elif show in names and device.name != names[show]:
                 devices.async_update_device(device.id, name=names[show])
         return forgot
+
+    def _hide(self) -> bool:
+        """Hides each everyday original once its copy is there, and only once: one shown again by hand
+        stays shown. With the option off, shows them all again. Hidden entities lose their default
+        Assist exposure, so what Assist does with each one is written down first; Assist keeps using
+        the originals, the copies are kept from it (entity.py). True when the store changed."""
+        hidden: dict[str, bool] = self.house.data.setdefault("hidden", {})
+        if not self.entry.options.get(CONF_HIDE, True):
+            if not hidden:
+                return False
+            unhide(self.hass, hidden)
+            hidden.clear()
+            return True
+        entities = er.async_get(self.hass)
+        changed = False
+        for controls in self.controls.values():
+            for control, entity_id in controls.values():
+                e = entities.async_get(entity_id)
+                if not control.hide or e is None or e.id in hidden:
+                    continue
+                hidden[e.id] = e.hidden_by is None
+                changed = True
+                if hidden[e.id]:
+                    for assistant in KNOWN_ASSISTANTS:
+                        async_should_expose(self.hass, assistant, entity_id)
+                    entities.async_update_entity(entity_id, hidden_by=er.RegistryEntryHider.INTEGRATION)
+        return changed
 
     def _save(self) -> None:
         self.store.async_delay_save(lambda: self.house.data, 5)

@@ -24,11 +24,13 @@
         "description": "{main} is the main update Show. Change it in select.genbu_main_update_show.",
         "data": {
           "extra_mains": "More main update Shows",
-          "notify_service": "Phone to tell"
+          "notify_service": "Phone to tell",
+          "hide_originals": "Hide the ESPHome originals"
         },
         "data_description": {
           "extra_mains": "One is usually enough. With more, the other Shows follow whichever of them runs the newest version.",
-          "notify_service": "A notify service, like mobile_app_my_phone. It gets a push when a main update Show has been offline for a day."
+          "notify_service": "A notify service, like mobile_app_my_phone. It gets a push when a main update Show has been offline for a day.",
+          "hide_originals": "Each Show's controls are also on its Genbu device. With this on, the everyday ones on the ESPHome device are hidden so they don't show twice. They keep working, and Assist keeps using them. Turn it off to show them again."
         }
       },
       "second": {
@@ -112,11 +114,45 @@
     "select": {
       "music_plays_on": {
         "name": "Music plays on"
+      },
+      "assistant": {
+        "name": "Assistant",
+        "state": {
+          "preferred": "Preferred"
+        }
+      },
+      "assistant_2": {
+        "name": "Assistant 2",
+        "state": {
+          "preferred": "Preferred"
+        }
+      },
+      "wake_word": {
+        "name": "Wake word"
+      },
+      "wake_word_2": {
+        "name": "Wake word 2"
+      },
+      "finished_speaking": {
+        "name": "Finished speaking detection",
+        "state": {
+          "default": "Default",
+          "relaxed": "Relaxed",
+          "aggressive": "Aggressive"
+        }
       }
     },
     "sensor": {
       "music_falls_back_to": {
         "name": "Music falls back to"
+      },
+      "firmware": {
+        "name": "Firmware version"
+      }
+    },
+    "number": {
+      "volume": {
+        "name": "Volume"
       }
     }
   },

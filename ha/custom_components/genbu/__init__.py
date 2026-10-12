@@ -1,7 +1,7 @@
 """Genbu: one update point per house. Finds the Genbu Shows that Home Assistant knows through ESPHome,
 keeps which of them are main update Shows, publishes the house version the others follow in
-sensor.genbu_house_version, and asks in Repairs when a main update Show goes missing. See
-docs/update-leader.md."""
+sensor.genbu_house_version, and asks in Repairs when a main update Show goes missing. Each Show's genbu
+device carries copies of its controls (controls.py). See docs/update-leader.md."""
 
 from __future__ import annotations
 
@@ -18,9 +18,9 @@ except ImportError:
     import voluptuous as vol
 
 from .const import DOMAIN, SERVICE_FORGET, STORE_KEY, STORE_VERSION
-from .coordinator import GenbuHouse
+from .coordinator import GenbuHouse, unhide
 
-PLATFORMS = [Platform.SENSOR, Platform.SELECT]
+PLATFORMS = [Platform.SENSOR, Platform.SELECT, Platform.LIGHT, Platform.SWITCH, Platform.NUMBER, Platform.BUTTON]
 FORGET_SCHEMA = vol.Schema({vol.Required("node"): cv.string})
 
 
@@ -41,7 +41,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_remove(DOMAIN, SERVICE_FORGET)
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+        return False
+    # Saved now, not in a few seconds: removing Genbu right after reads which originals it hid.
+    hub = entry.runtime_data
+    await hub.store.async_save(hub.house.data)
+    return True
 
 
 async def _forget_show(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
@@ -62,5 +67,8 @@ async def _options_changed(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    # Set up again, it starts from what the installer or the form says, not from the old house.
-    await Store(hass, STORE_VERSION, STORE_KEY).async_remove()
+    # The ESPHome originals Genbu hid come back. Set up again, it starts from what the installer or the
+    # form says, not from the old house.
+    store = Store(hass, STORE_VERSION, STORE_KEY)
+    unhide(hass, (await store.async_load() or {}).get("hidden", {}))
+    await store.async_remove()

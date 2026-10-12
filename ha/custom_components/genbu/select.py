@@ -4,18 +4,22 @@ is how the main moves by hand; a second main is added in the integration's optio
 And for each Show, "Music plays on": where music asked for at that Show plays. Automatic is the room's
 speaker, else the Show itself, which is also where music goes while a speaker is offline (music.py); its
 label says which and why. It
-sits on the Show's small genbu device (coordinator.show_device)."""
+sits on the Show's small genbu device (coordinator.show_device).
+
+The copies of the Show's own selects sit there too: white noise, its settings, and the Assist settings
+ESPHome adds (which assistant, wake word). See entity.py."""
 
 from __future__ import annotations
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import CHANGED, MAIN_SELECT
 from .coordinator import show_device
+from .entity import Copy, add_copies
 from .house import Show
 from .music import AUTO
 
@@ -47,6 +51,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add) -> Non
 
     new_shows()
     entry.async_on_unload(async_dispatcher_connect(hass, CHANGED, new_shows))
+    add_copies(hass, entry, add, "select", SelectCopy)
 
 
 class MainShow(SelectEntity):
@@ -130,3 +135,17 @@ class MusicPlaysOn(SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         await self.hub.async_choose_music(self.device, self._labels.get(option, AUTO))
+
+
+class SelectCopy(Copy, SelectEntity):
+    platform_domain = "select"
+    # Home Assistant reads the options when it registers the copy, before it has followed anything.
+    _attr_options: list[str] = []
+    _attr_current_option = None
+
+    def copy(self, state: State) -> None:
+        self._attr_options = list(state.attributes.get("options") or [])
+        self._attr_current_option = state.state if state.state in self._attr_options else None
+
+    async def async_select_option(self, option: str) -> None:
+        await self.tell("select", "select_option", option=option)

@@ -6,17 +6,23 @@ music_players is where music asked for at each Show plays, by the Show's device 
 assist_satellite, for the music automation and scripts the installer makes.
 
 And for each Show, "Music falls back to": where its music goes when the player it plays on now is
-offline. On the Show's genbu device, next to its "Music plays on" select."""
+offline. On the Show's genbu device, next to its "Music plays on" select.
+
+The copies of the Show's text sensors (next alarm, radio, last heard) sit there too, and which firmware
+it runs. See entity.py."""
 
 from __future__ import annotations
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.const import STATE_UNKNOWN
+from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import CHANGED, HOUSE_ENTITY
+from .controls import Control
 from .coordinator import show_device
+from .entity import Copy, add_copies
 from .house import Show
 
 
@@ -35,6 +41,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add) -> Non
 
     new_shows()
     entry.async_on_unload(async_dispatcher_connect(hass, CHANGED, new_shows))
+
+    def make(entry: ConfigEntry, show: Show, control: Control) -> Copy:
+        return Firmware(entry, show, control) if control.special == "firmware" else SensorCopy(entry, show, control)
+    add_copies(hass, entry, add, "sensor", make)
 
 
 class HouseVersion(SensorEntity):
@@ -94,3 +104,22 @@ class MusicFallsBackTo(SensorEntity):
         self._attr_native_value = names.get(player) or None
         self._attr_extra_state_attributes = {"player": player}
         self.async_write_ha_state()
+
+
+class SensorCopy(Copy, SensorEntity):
+    platform_domain = "sensor"
+
+    def copy(self, state: State) -> None:
+        self._attr_native_value = None if state.state == STATE_UNKNOWN else state.state
+
+
+class Firmware(Copy, SensorEntity):
+    """The version the Show runs. The update itself stays on the ESPHome device, so it is offered once."""
+    platform_domain = "sensor"
+    _attr_icon = "mdi:package-variant-closed"
+
+    def copy(self, state: State) -> None:
+        a = state.attributes
+        self._attr_native_value = a.get("installed_version")
+        self._attr_extra_state_attributes = {"latest_version": a.get("latest_version"),
+                                             "release_url": a.get("release_url")}
