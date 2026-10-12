@@ -184,6 +184,11 @@ type Display struct {
 	touchedAt time.Time
 	nightDark bool
 
+	// menuSince is when the drawer or a settings, Wi-Fi or Bluetooth page last came up; menuUp is one
+	// being up at the last frame (menu_idle.go).
+	menuSince time.Time
+	menuUp    bool
+
 	// nightGlow is the screen turned down to a night light by the night schedule, until a touch or
 	// the end of the night brings it back.
 	nightGlow bool
@@ -1806,6 +1811,8 @@ func (d *Display) frame() time.Duration {
 		}
 		return 80 * time.Millisecond
 	}
+
+	d.menuIdle(now, view.Phase != "idle")
 
 	s := scene{now: now, phase: view.Phase, heard: view.Heard, reply: view.Reply, since: at, ring: ring, call: call}
 	s.snooze = config.Get().Alarms.Snooze()
