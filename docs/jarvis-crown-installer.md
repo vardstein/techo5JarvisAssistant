@@ -407,7 +407,8 @@ own for the lyrics on the now-playing page ([Lyrics](lyrics.md)), and with
 token of its own user.
 
 The addresses have switches too (`--ha-url`, `--dashcast`, `--music-assistant`), and
-`--no-questions` (or `TECHO5_NO_PROMPT=1`, or no terminal) asks nothing at all.
+`--no-questions` (or `TECHO5_NO_PROMPT=1`, or no terminal) asks nothing at all. Such a run also
+leaves the remembered addresses alone; only a run that asked keeps its answers for next time.
 
 What happens with the answers:
 
