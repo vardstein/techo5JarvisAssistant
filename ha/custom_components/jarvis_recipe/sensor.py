@@ -1,4 +1,4 @@
-"""sensor.jarvis_recipe: the recipe Jarvis last looked up. Its state is the dish, its attributes the
+"""sensor.jarvis_recipe: the recipe the assistant last looked up. Its state is the dish, its attributes the
 recipe, which jarvis-recipe-card.js draws. It comes back after a restart, and the recipe stays out of
 the recorder's history (it is big, and the last one is all anyone needs)."""
 
@@ -21,7 +21,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add) -> Non
 
 class RecipeSensor(SensorEntity, RestoreEntity):
     _attr_icon = "mdi:chef-hat"
-    _attr_name = "Jarvis Rezept"
+    _attr_name = "Genbu Rezept"
     _attr_should_poll = False
     _unrecorded_attributes = frozenset(FIELDS)
 

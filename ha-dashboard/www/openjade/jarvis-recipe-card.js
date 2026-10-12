@@ -103,7 +103,7 @@ class JarvisRecipeCard extends HTMLElement {
     if (!this._hass) {
       body = `<div class="empty">Lade…</div>`;
     } else if (!state) {
-      body = `<div class="empty">${this._escape(this._config.entity)} fehlt<small>Ist Jarvis Rezepte eingerichtet?</small></div>`;
+      body = `<div class="empty">${this._escape(this._config.entity)} fehlt<small>Ist Genbu Rezepte eingerichtet?</small></div>`;
     } else if (empty) {
       body = `<div class="empty">Noch kein Rezept<small>Frag Jarvis nach einem, etwa „Wie mache ich Pfannkuchen?“</small></div>`;
     } else {

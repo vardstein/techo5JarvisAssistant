@@ -175,6 +175,23 @@ class SetUpTests(unittest.TestCase):
         self.assertEqual(fake.posts, [])
         self.assertEqual(sum("is already there" in line for line in log), 12)
 
+    def test_a_name_of_its_own_is_not_a_difference(self):
+        fake = FakeHA()
+        run(fake)
+        fake.configs[("automation", "jarvis_local_where_are_we")]["alias"] = "Jarvis - Where are we"
+        fake.posts.clear()
+        log = run(fake)
+        self.assertEqual(fake.posts, [])
+        self.assertEqual(fake.configs[("automation", "jarvis_local_where_are_we")]["alias"], "Jarvis - Where are we")
+        self.assertIn("automation jarvis_local_where_are_we is already there", log)
+
+    def test_nothing_it_makes_carries_an_assistant_name(self):
+        fake = FakeHA()
+        run(fake)
+        said = json.dumps([c.get("alias", "") + c.get("description", "") for c in fake.configs.values()],
+                          ensure_ascii=False).replace("Jarvis Show 5", "the Show")  # the test Show's own name
+        self.assertNotIn("Jarvis", said)
+
     def test_one_that_differs_is_kept_unless_the_person_says_so(self):
         fake = FakeHA()
         mine = {"alias": "mine", "triggers": [], "actions": []}
@@ -193,7 +210,7 @@ class SetUpTests(unittest.TestCase):
         self.assertEqual(len(asked), 1)
         self.assertIn("jarvis_local_where_are_we", asked[0])
         self.assertEqual(kept, [("automation-jarvis_local_where_are_we", {"id": "jarvis_local_where_are_we", **mine})])
-        self.assertEqual(fake.configs[("automation", "jarvis_local_where_are_we")]["alias"], "Jarvis - Where are we")
+        self.assertEqual(fake.configs[("automation", "jarvis_local_where_are_we")]["alias"], "Genbu - Where are we")
         self.assertIn("automation jarvis_local_where_are_we replaced; the old one is in /b/x.json", log)
 
     def test_several_that_differ_are_asked_about_once(self):

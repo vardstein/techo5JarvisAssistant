@@ -1,4 +1,4 @@
-"""Jarvis Rezepte: a tool for the voice assistant that looks a recipe up on the web, keeps it in
+"""Genbu Rezepte: a tool for the voice assistant that looks a recipe up on the web, keeps it in
 sensor.jarvis_recipe and puts it on the Show that asked (the jarvis-rezept dashboard). See
 docs/recipes.md."""
 

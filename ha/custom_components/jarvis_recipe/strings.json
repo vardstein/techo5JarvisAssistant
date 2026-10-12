@@ -2,13 +2,13 @@
   "config": {
     "step": {
       "user": {
-        "title": "Jarvis Rezepte",
-        "description": "Jarvis looks recipes up through your SearXNG and puts them on the Show that asked.",
+        "title": "Genbu Rezepte",
+        "description": "The assistant looks recipes up through your SearXNG and puts them on the Show that asked.",
         "data": {"searxng_url": "SearXNG address"},
         "data_description": {"searxng_url": "Where Home Assistant reaches SearXNG, like http://10.0.0.5:8080. Its JSON output has to be on (search.formats in settings.yml)."}
       }
     },
     "error": {"bad_url": "Give the whole address, starting with http:// or https://"},
-    "abort": {"already_configured": "Jarvis Rezepte is set up already"}
+    "abort": {"already_configured": "Genbu Rezepte is set up already"}
   }
 }

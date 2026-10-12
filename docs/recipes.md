@@ -1,7 +1,7 @@
 # Recipes
 
-Ask Jarvis "Wie mache ich Hackfleisch-Tacos?" and the recipe comes up on the Show you asked:
-ingredients on the left, steps on the right, big enough to read from the stove. Jarvis says which
+Ask the assistant "Wie mache ich Hackfleisch-Tacos?" and the recipe comes up on the Show you asked:
+ingredients on the left, steps on the right, big enough to read from the stove. The assistant says which
 dish it found and on which site, and doesn't read the whole thing out unless you ask.
 
 It is a real recipe from a recipe site, not one the language model makes up. Home Assistant's
@@ -25,20 +25,20 @@ later ([The recipe page](dashboards.md#the-recipe-page)).
       - json
   ```
 
-  Without that SearXNG answers 403 and Jarvis finds nothing.
+  Without that SearXNG answers 403 and the assistant finds nothing.
 - For the page on the screen, the Show must be able to stream dashboards, so a
-  [dashcast server](dashboards.md#setting-up-streamed). Without one Jarvis still finds the recipe and
+  [dashcast server](dashboards.md#setting-up-streamed). Without one the assistant still finds the recipe and
   can tell you what is in it, it just can't show it.
 
 ## Installing
 
 1. Copy `ha/custom_components/jarvis_recipe/` to `/config/custom_components/jarvis_recipe/` on Home
    Assistant (the File editor or Samba add-on will do), and restart Home Assistant.
-2. **Settings → Devices & services → Add integration → Jarvis Rezepte.** It asks for SearXNG's
+2. **Settings → Devices & services → Add integration → Genbu Rezepte.** It asks for SearXNG's
    address, for example `http://10.0.0.5:8080`. This adds `sensor.jarvis_recipe`, which holds the
    recipe last looked up.
 3. **Settings → Voice assistants**, open your assistant, then the conversation agent's options
-   (the cog next to it). Where it lets Jarvis control Home Assistant, tick **Jarvis Rezepte** as
+   (the cog next to it). Where it lets the assistant control Home Assistant, tick **Genbu Rezepte** as
    well as **Assist**, and save.
 4. Copy `ha-dashboard/www/openjade/jarvis-recipe-card.js` to `/config/www/openjade/` and add it as a
    resource, type *JavaScript module*, the same way as the other cards
@@ -91,14 +91,14 @@ asks that site for it. It sends no referrer.
 
 ## When it doesn't work
 
-- **Jarvis says it can't look up recipes, or makes one up.** The conversation agent doesn't have
-  **Jarvis Rezepte** ticked (step 3), or the model ignored the tool; try asking again with
+- **The assistant says it can't look up recipes, or makes one up.** The conversation agent doesn't have
+  **Genbu Rezepte** ticked (step 3), or the model ignored the tool; try asking again with
   "Such mir ein Rezept für …".
 - **"Kein Rezept gefunden".** SearXNG didn't answer or answered without results. Open
   `http://<searxng>/search?q=Pfannkuchen+Rezept&format=json` in a browser: a 403 means JSON answers
-  are off. Jarvis is also told which sites it tried; ask it, which helps when none of them carried
+  are off. The assistant is also told which sites it tried; ask it, which helps when none of them carried
   recipe data.
-- **Jarvis found it, but the Show stays on the clock.** The Show has no `jarvis-rezept` dashboard
+- **The assistant found it, but the Show stays on the clock.** The Show has no `jarvis-rezept` dashboard
   yet (step 5, then up to five minutes), or no dashcast server, or the question came from a device
   that isn't a Show.
 - **The page says "sensor.jarvis_recipe fehlt".** The integration isn't set up (step 2).

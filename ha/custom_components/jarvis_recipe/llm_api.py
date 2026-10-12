@@ -1,4 +1,4 @@
-"""The rezept_zeigen tool, offered to the voice assistant as the "Jarvis Rezepte" API. Pick it next to
+"""The rezept_zeigen tool, offered to the voice assistant as the "Genbu Rezepte" API. Pick it next to
 "Assist" in the conversation agent's options (docs/recipes.md)."""
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ _LOGGER = logging.getLogger(__name__)
 PROMPT = ("Wenn jemand ein Rezept will oder wissen will, wie man etwas kocht oder backt, rufe rezept_zeigen "
           "mit dem Gericht auf. Das Rezept steht dann auf dem Bildschirm: sag nur kurz, welches Gericht von "
           "welcher Seite es ist, und lies es nicht vor, außer du wirst darum gebeten.")
-AGENT = "Mozilla/5.0 (compatible; JarvisRezepte/1.0; +https://www.home-assistant.io)"
+AGENT = "Mozilla/5.0 (compatible; GenbuRezepte/1.0; +https://www.home-assistant.io)"
 TIMEOUT = aiohttp.ClientTimeout(total=8)
 SPOKEN_STEPS = 12  # steps handed back to the model; the screen shows them all
 
@@ -144,7 +144,7 @@ async def _show(hass: HomeAssistant, device_id: str | None) -> bool:
 
 class RecipeAPI(llm.API):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        super().__init__(hass=hass, id=DOMAIN, name="Jarvis Rezepte")
+        super().__init__(hass=hass, id=DOMAIN, name="Genbu Rezepte")
         self._entry = entry
 
     async def async_get_api_instance(self, llm_context: llm.LLMContext) -> llm.APIInstance:

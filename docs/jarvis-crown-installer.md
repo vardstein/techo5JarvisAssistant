@@ -573,7 +573,8 @@ conversation agent, text to speech. Whatever a pipeline is built from in that Ho
 (Whisper or the cloud, the built-in agent or an Ollama or OpenAI one, Piper or anything else) is what
 the Show uses; nothing about it is set on the Show, and changing the pipeline in Home Assistant
 changes every Show set to it. "preferred" follows whichever pipeline Home Assistant marks as
-preferred.
+preferred. Nothing the installer puts into Home Assistant names an assistant or a fixed Show: each
+piece answers the device that asked. [assistant-chain.md](assistant-chain.md) lists them.
 
 The pipeline we run with our own Shows, and what made the difference (the model's context window,
 Whisper's initial prompt, the wake word sensitivity), is in [voice-setup.md](voice-setup.md).

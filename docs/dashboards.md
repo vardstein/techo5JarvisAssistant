@@ -94,7 +94,7 @@ screen; a thermostat, the room's lights and its temperature are what it is for.
 
 ### The recipe page
 
-When Jarvis looks up a recipe for you, Home Assistant's `jarvis_recipe` integration puts it on a
+When the assistant looks up a recipe for you, Home Assistant's `jarvis_recipe` integration puts it on a
 dashboard at `jarvis-rezept`, and the Show that was asked brings it up ([setting it up](recipes.md)). The page stays: it doesn't go
 back to the clock after 10 minutes, so it is still there with flour on your hands.
 

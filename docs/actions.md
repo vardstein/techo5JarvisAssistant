@@ -546,7 +546,7 @@ next-alarm sensor. For a countdown that the timer card shows, say "Timer" instea
 für 15 Minuten" is one of Home Assistant's own sentences.
 
 ```yaml
-alias: Jarvis - Wecker
+alias: Genbu - Wecker
 triggers:
   - trigger: conversation
     command:
