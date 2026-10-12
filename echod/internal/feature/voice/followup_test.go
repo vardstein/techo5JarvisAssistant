@@ -99,3 +99,13 @@ func TestAsks(t *testing.T) {
 		}
 	}
 }
+
+// A reply arriving with no turn open - the turn was cut off by a restart - is dropped, rather than
+// marking the speaker as playing with nothing left to end it.
+func TestReplyWithNoTurnIsDropped(t *testing.T) {
+	c := &conversation{}
+	c.handle(event{kind: evReplyText, text: "Das Licht ist an."})
+	if c.shown.Reply != "" || c.phase != phaseIdle {
+		t.Fatalf("took a reply with no turn: reply %q, phase %v", c.shown.Reply, c.phase)
+	}
+}
