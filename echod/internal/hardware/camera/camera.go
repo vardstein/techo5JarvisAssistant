@@ -98,6 +98,8 @@ const (
 	sensorMain  = 1
 
 	// Sensor features (ACDK_SENSOR_FEATURE_ENUM, from 3000): exposure in lines, gain in 1/64.
+	featPeriod  = 3002 // line and frame length, in pixel clocks and lines
+	featPclk    = 3003 // the pixel clock, Hz
 	featShutter = 3004
 	featGain    = 3006
 
@@ -309,7 +311,35 @@ func open() (*device, error) {
 	d.setFeature(featShutter, uint64(d.shutter))
 	d.setFeature(featGain, uint64(d.gain))
 	d.settle = aeDelay
+	fps, line, frame, pclk := d.rate()
+	slog.Info("camera mode", "fps", fps, "line_length", line, "frame_length", frame, "pclk", pclk)
 	return d, nil
+}
+
+// rate is the frame rate the sensor's mode runs at, from its own line and frame length and pixel
+// clock, so a slow stream can be told apart from a slow sensor. Zero when the driver does not say.
+func (d *device) rate() (fps float64, line, frame, pclk uint32) {
+	p := d.feature(featPeriod)
+	line, frame = uint32(p[0])|uint32(p[1])<<8, uint32(p[2])|uint32(p[3])<<8
+	c := d.feature(featPclk)
+	pclk = uint32(c[0]) | uint32(c[1])<<8 | uint32(c[2])<<16 | uint32(c[3])<<24
+	if line == 0 || frame == 0 {
+		return 0, line, frame, pclk
+	}
+	return float64(pclk) / float64(line) / float64(frame), line, frame, pclk
+}
+
+// feature is the reading side of setFeature: the driver writes its answer into the parameter.
+func (d *device) feature(id uint32) [8]byte {
+	para, size := heapNew[[8]byte](), heapNew[uint32]()
+	*size = uint32(len(para))
+	ctl := [4]uint32{sensorMain, id, ptr32(para), ptr32(size)}
+	err := ioctl(d.sens, ioc(3, sensMagic, nrFeature, 16), unsafe.Pointer(&ctl[0]))
+	runtime.KeepAlive(size)
+	if err != nil {
+		slog.Warn("camera: sensor feature", "id", id, "err", err)
+	}
+	return *para
 }
 
 // setFeature is KDIMGSENSORIOC_X_FEATURECONCTROL with one integer parameter. The kernel is 64-bit
@@ -635,7 +665,7 @@ func (d *device) stream(stop chan struct{}, frame func(bayer []byte)) {
 		}
 		t := time.Now()
 		frame(d.buf[done*frameBytes : (done+1)*frameBytes])
-		tk.took(time.Since(t))
+		tk.took(time.Since(t), d.shutter, d.gain)
 	}
 }
 
@@ -647,7 +677,7 @@ type tickStats struct {
 	work, most    time.Duration
 }
 
-func (tk *tickStats) took(work time.Duration) {
+func (tk *tickStats) took(work time.Duration, shutter, gain int) {
 	tk.frames++
 	tk.work += work
 	tk.most = max(tk.most, work)
@@ -656,7 +686,8 @@ func (tk *tickStats) took(work time.Duration) {
 		slog.Info("camera ticks", "sensor_per_second", float64(tk.ticks)/s,
 			"frames_per_second", float64(tk.frames)/s,
 			"work_ms", float64(tk.work.Microseconds())/1000/float64(tk.frames),
-			"work_max_ms", float64(tk.most.Microseconds())/1000)
+			"work_max_ms", float64(tk.most.Microseconds())/1000,
+			"shutter", shutter, "gain", gain)
 		*tk = tickStats{from: time.Now()}
 	}
 }
