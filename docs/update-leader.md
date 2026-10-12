@@ -1,7 +1,7 @@
 # One update point per house (job 51)
 
 Status: design agreed with Jade on 2026-10-11. The Show side (echod) and the HA integration
-(`ha/custom_components/genbu`) are built; the installer is next.
+(`ha/custom_components/genbu`) are built, and so is the installer step (`tools/jarvis_crown/genbu.py`).
 
 Today every Genbu Show checks GitHub on its own every 10 minutes, and each one speaks up about an update every
 4 hours. With several Shows in one house you hear the same question from every room, and the Shows drift
@@ -52,7 +52,8 @@ comes back under its new node name and stays main.
 3. Optional, under the integration's **Configure**: more main update Shows (after the warning), and a
    `notify` service, for example `notify.mobile_app_phone`, for the push when a main Show is gone for a day.
 
-The installer does steps 2 and 3 itself once the folder is in place.
+Once the folder is in place the installer does step 2 itself and adds more mains when asked to. The
+`notify` service stays a choice under **Configure**; the installer keeps whatever is set there.
 
 ### Tests
 
@@ -171,7 +172,9 @@ After the HA sign-in (job 40):
    Continue?" The default is no.
 5. **After the Show is added,** the installer sets the choice through the integration's select or options
    over REST. A following Show then aligns on its own (the first row of the table above). The installer
-   waits until the versions match or a failure is reported, and shows the result.
+   waits until the versions match or a failure is reported, and shows the result. It waits up to 15
+   minutes; a fresh Show lets its own version settle for 5 of them first. After that the Show carries on
+   by itself and its update card shows how far it is.
 
 `--main-update-show` and `--follow` skip the questions for scripted installs.
 
@@ -194,8 +197,9 @@ After the HA sign-in (job 40):
   - going back allowed only on the align path;
   - the status line.
 - **echod `feature/firmware/tell.go`:** following Shows stay quiet. The boot ask reuses `remind.Ask`.
-- **`tools/jarvis_crown`:** integration check and setup, the questions and warning, setting the choice,
-  waiting for alignment.
+- **`tools/jarvis_crown/genbu.py`** (built): integration check and setup, the questions and warning,
+  setting the choice, waiting for alignment. `tools/jarvis-show.py` runs it after the Show is added
+  (`install` and `home-assistant`). Tests in `tests/test_jarvis_crown_genbu.py`.
 - **Tests:**
   - house version is the newest main's committed version;
   - following Show aligns up and down;

@@ -21,6 +21,7 @@ from jarvis_crown.boot_logo import BootLogoError, SshClient, put_logo  # noqa: E
 from jarvis_crown.boards import profile_for_board, profile_for_product  # noqa: E402
 from jarvis_crown.device_gate import DeviceGateError, identify_show  # noqa: E402
 from jarvis_crown.flow import FlowError, InstallInputs, run_install_flow  # noqa: E402
+from jarvis_crown import genbu  # noqa: E402
 from jarvis_crown import home_assistant as ha_api  # noqa: E402
 from jarvis_crown import ui  # noqa: E402
 from jarvis_crown import music_assistant as ma_api  # noqa: E402
@@ -120,6 +121,12 @@ def parse_args() -> argparse.Namespace:
     setup.add_argument("--caldav-password-file", type=Path,
                        help="a file holding its password, best an app password; it goes to Home Assistant and "
                             "is kept nowhere here")
+    role = setup.add_mutually_exclusive_group()
+    role.add_argument("--main-update-show", dest="update_role", action="store_const", const="main",
+                      help="make it a main update Show, the one that looks for and asks about updates "
+                           "(default: ask; Enter is yes for the first Show, follow for the next)")
+    role.add_argument("--follow", dest="update_role", action="store_const", const="follow",
+                      help="have it follow the house's main update Show")
     setup.add_argument("--no-questions", action="store_true", help="ask nothing; take switches and the keyring only")
     hass = parser.add_argument_group("home-assistant: add an installed Show to Home Assistant")
     hass.add_argument("--host", help="the Show's address, when Home Assistant has not discovered it; install and "
@@ -294,6 +301,19 @@ QUESTIONS = {  # label: (question, help, names for the options, the answers Ente
                          "For the dashboard's calendar card and the Show's own calendar page. One it has already is "
                          "replaced, never added twice. Home Assistant "
                          "keeps the password; the installer and the Show don't.", {}, ()),
+    "genbu missing": ("Genbu is not in Home Assistant yet. Check again?",
+                      "Copy ha/custom_components/genbu/ to /config/custom_components/genbu/ on Home Assistant, "
+                      "restart it, then pick again. Skipped, the Show looks for updates by itself.",
+                      {"again": "again, it is copied and Home Assistant restarted", "skip": "skip"}, ("skip",)),
+    "main update show": ("Make this Show the main update Show for your Shows?",
+                         "It will be the only one that looks for updates and asks about them; the others follow "
+                         "it. Recommended for your first Show.", {}, ("yes",)),
+    "follow main": ("How should this Show get its updates?",
+                    "The main update Show looks for updates and asks about them; the others follow it.",
+                    {}, ("follow",)),
+    "second main": ("Make this one a main update Show as well?",
+                    "With two, the other Shows follow whichever of them is newer. They cannot fight, but you get "
+                    "two Shows that ask about updates.", {"no": "no, it follows"}, ("no",)),
     "calendars": ("Which calendars should the Show show?",
                   "On its calendar page, a tap on the date under the clock. More can be picked later on the "
                   "Show: Settings, General, Calendars.", {}, ("all", "calendar.")),
@@ -395,13 +415,19 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
                                        music_assistant_login=_music_assistant_login(settings)),
         wait_seconds=wait_seconds)
     ui.out.heading(f"Adding it to Home Assistant at {settings.ha_url}")
+    hc = settings.ha_sign_in or ha_api.HomeAssistant(settings.ha_url, settings.ha_admin_token)
+    choose = _chooser(args)
     try:
-        ha_api.deploy(settings.ha_sign_in or ha_api.HomeAssistant(settings.ha_url, settings.ha_admin_token), opts,
-                      progress=ui.out.progress, find_host=_find_host(name),
-                      choose=_chooser(args))
+        entry_id = ha_api.deploy(hc, opts, progress=ui.out.progress, find_host=_find_host(name), choose=choose)
     except ha_api.HomeAssistantError as exc:
         ui.out.fail(f"Home Assistant: {exc}")
         return 5
+    ui.out.heading("Updates")
+    try:
+        genbu.set_up(hc, entry_id, ha_api.node_name(hc, entry_id) or ha_api.node_slug(now_called[0]),
+                     role=getattr(args, "update_role", None), choose=choose, progress=ui.out.progress)
+    except ha_api.HomeAssistantError as exc:
+        ui.out.progress(f"WARN: the update setup stopped part way: {exc}")
     ui.out.finish(f"{now_called[0]} is in Home Assistant and set up")
     return 0
 
