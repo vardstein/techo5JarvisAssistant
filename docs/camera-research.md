@@ -329,9 +329,9 @@ pointers are only filled by Get_ccf_clk, which probe calls only when the device 
 the 26 MHz crystal, and clkcnt 1 halves it to 13. The struct layouts are not the problem: freq
 sits at offset 4 in both.
 
-What the code does now: the OV9734 uses clkcnt 0 (the crystal undivided, 26 MHz, about 32.9 frames
-a second; the sensor takes 6 to 27 MHz). The OV02B10 keeps clkcnt 1 until it can be tried on a 2nd
-gen; its "about 14 frames a second" is probably the same halving. The clean fix is to move camtg
-to univpll_d26, but that register lives in topckgen, outside the windows camera-isp maps, and
-adding "cmmclk-always-on" means a new boot image.
-
+Tried on dev.84: clkcnt 0 (the crystal undivided, 26 MHz) gives no frames at all, so the TG
+cannot pass camtg through; dev.85 goes back to clkcnt 1. A read on the device (camera-isp's
+PLL_BASE_ADDR mmap window is topckgen, 0x10000000 + 0x1000) shows CLK_CFG_2 = 0x00010000:
+camtg sel 0 (clk26m), not gated. The fix is to select univpll_d26 there (bits 0-1 = 1, then
+BIT(8) to CLK_CFG_UPDATE at 0x04, as mtk_mux_upd_set_parent does), which makes the divide by 2
+give the 24 MHz the mode tables expect. Not done yet: it writes the SoC clock controller.
