@@ -38,7 +38,7 @@ const (
 
 // carFaces are the settings screen's type: Figtree in the Car Thing's sizes.
 type carFaces struct {
-	title, label, value, big, modal, body, small, pill font.Face
+	title, label, value, big, modal, body, small, pill, eyebrow font.Face
 }
 
 var carFonts = sync.OnceValues(func() (bold, regular *opentype.Font) {
@@ -66,7 +66,7 @@ func (r *renderer) car() *carFaces {
 	}
 	fc := &carFaces{
 		title: f(bold, 44), label: f(bold, 36), value: f(regular, 36), big: f(bold, 120),
-		modal: f(bold, 52), body: f(regular, 32), small: f(regular, 28), pill: f(bold, 32),
+		modal: f(bold, 52), body: f(regular, 32), small: f(regular, 28), pill: f(bold, 32), eyebrow: f(bold, 22),
 	}
 	if r.carFc == nil {
 		r.carFc = map[int]*carFaces{}

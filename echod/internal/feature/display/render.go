@@ -253,7 +253,7 @@ type renderer struct {
 	alertMax int             // how far the alert page could scroll in the frame last drawn
 	shapes   alertOverlay    // the alert shapes drawn over the rain map, kept while they stay the same
 	dateAt   image.Rectangle // the date under the clock, the same way: a tap there opens the calendar
-	popupAt  image.Rectangle // an event's pop-up, the same way: a tap on it takes it down
+	modal    modalKind       // the modal up, the same way: a tap anywhere is for it (render_modal.go)
 	// turnStripAt is the voice turn's strip over a page that hides the turn, the same way: it takes
 	// a tap, so the page under it is not pressed blind.
 	turnStripAt image.Rectangle
@@ -377,7 +377,7 @@ func (r *renderer) draw(s scene) {
 	}
 	r.setWeatherAt(image.Rectangle{})
 	r.setDateAt(image.Rectangle{})
-	r.setPopupAt(image.Rectangle{})
+	r.setModal(modalNone)
 	r.setTurnStripAt(image.Rectangle{})
 	r.clearAlertTaps()
 	// The red night clock is the whole screen: nothing else, not even the header, is drawn over it,
@@ -427,26 +427,10 @@ func (r *renderer) draw(s scene) {
 		}
 		return
 	}
-	// The two strips sit over whatever is on the screen rather than taking it: the clock, the music
-	// and the photos all carry on behind them. A call and a ringing alarm are above them, since both
-	// are waiting on somebody.
-	defer func() {
-		switch {
-		case s.announceRecording:
-			r.recordingStrip(s)
-		case turnCovered(s):
-			r.turnStrip(s)
-		case s.showAnnouncement:
-			r.announcementStrip(s)
-		}
-		// The card is in the middle and the strips along the bottom, so a reminder and an
-		// announcement can both be up at once.
-		if s.showReminder {
-			r.reminderCard(s)
-		} else if s.popup != nil {
-			r.popupCard(s, *s.popup)
-		}
-	}()
+	// A modal sits over whatever is on the screen rather than taking it: the clock, the music and the
+	// photos carry on behind it, at a tenth of their light. A call and a ringing alarm are above it,
+	// since both are waiting on somebody.
+	defer r.overlays(s)
 
 	if s.showSheet {
 		r.settingsScreen(s)
@@ -856,6 +840,10 @@ const headerH = 36
 // The strip is filled before the words are drawn, so the line stays readable over a photo, a camera
 // view or a sunrise. On an ordinary page that fill is the background and nothing shows but the words.
 func (r *renderer) header(s scene) {
+	// A modal covers the whole screen, the top line with the rest.
+	if r.modalUp() != modalNone {
+		return
+	}
 	// The settings sheet is the one page that says this better itself: it has a Microphone row,
 	// reading "Muted" or "Listening", with the switch that changes it. A strip over the top of the
 	// sheet would say the same thing worse and cut the top off its card.

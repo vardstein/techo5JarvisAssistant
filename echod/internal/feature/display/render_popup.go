@@ -3,52 +3,12 @@
 package display
 
 import (
-	"image"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/HuskerMinion/techo5/echod/internal/feature/home"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/hass"
 )
-
-// popupBox is where an event's pop-up sits: the middle of the screen, a little smaller than a reminder.
-func (r *renderer) popupBox() image.Rectangle {
-	w, h := r.s(680), r.s(250)
-	return image.Rect((r.w-w)/2, (r.h-h)/2, (r.w-w)/2+w, (r.h-h)/2+h)
-}
-
-// popupCard is an event coming up: its calendar and how soon, its title, and its time.
-func (r *renderer) popupCard(s scene, e hass.Event) {
-	box := r.popupBox()
-	r.setPopupAt(box)
-	r.overlayBox(box)
-
-	in := r.rowIn()
-	width := box.Dx() - 2*in
-	heading := strings.ToUpper(popupSoon(e, s.now))
-	if name := popupCalendarName(e.Calendar); name != "" {
-		heading += "  ·  " + strings.ToUpper(name)
-	}
-	hintW := r.width(r.tiny, dismissHint)
-	r.rightText(r.tiny, dismissHint, box.Max.X-in, box.Min.Y+r.s(52), dim)
-	r.text(r.tiny, clipText(r, r.tiny, heading, width-hintW-r.s(24)), box.Min.X+in, box.Min.Y+r.s(52), amber)
-	r.text(r.title, clipText(r, r.title, e.Summary, width), box.Min.X+in, box.Min.Y+r.s(124), cream)
-	r.text(r.small, clipText(r, r.small, eventWhen(e, s.now), width), box.Min.X+in, box.Min.Y+r.s(180), dim)
-}
-
-func (r *renderer) setPopupAt(b image.Rectangle) {
-	r.weatherMu.Lock()
-	r.popupAt = b
-	r.weatherMu.Unlock()
-}
-
-// popupTapped is whether a tap at p landed on the pop-up as last drawn: none drawn, none tapped.
-func (r *renderer) popupTapped(p image.Point) bool {
-	r.weatherMu.Lock()
-	defer r.weatherMu.Unlock()
-	return !r.popupAt.Empty() && p.In(r.popupAt)
-}
 
 // popupSoon is how soon an event is, as its pop-up heads it: "In 15 minutes", "Starting now", "Today".
 func popupSoon(e hass.Event, now time.Time) string {
@@ -63,11 +23,11 @@ func popupSoon(e hass.Event, now time.Time) string {
 	case m == 1:
 		return "In a minute"
 	case m < 60:
-		return "In " + strconv.Itoa(m) + " minutes"
+		return i18n.Sprintf("In %d minutes", m)
 	case m == 60:
 		return "In an hour"
 	default:
-		return "At " + clockText(e.Start)
+		return i18n.Sprintf("At %s", clockText(e.Start))
 	}
 }
 

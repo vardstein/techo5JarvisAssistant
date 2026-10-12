@@ -715,50 +715,34 @@ func (d *Display) gesture(g touch.Gesture) {
 		return
 	}
 
-	// The microphone open for an announcement: the strip along the bottom is the way to end it, a tap
-	// sending what was said and a hold throwing it away. Only the strip — the rest of the screen is
-	// the clock and the music, which an announcement deliberately does not take over.
-	if announce.Get().Recording() && d.r != nil && onAnnounceStrip(g.X, g.Y, d.r.w, d.r.h) {
-		switch g.Kind {
-		case touch.Tap:
-			go announce.Get().Finish()
-		case touch.Hold:
-			go announce.Get().Cancel()
-		}
-		d.wake()
-		return
-	}
-
-	// One that arrived: a tap on the strip puts it away, the same as on the round face. It does not
-	// have to be put away here — the clock and the music are carrying on behind it and it goes by
-	// itself — but having to wait out something already heard is the same annoyance on any screen.
-	if _, showing := announce.Get().Showing(); showing && g.Kind == touch.Tap &&
-		d.r != nil && onAnnounceStrip(g.X, g.Y, d.r.w, d.r.h) {
-		go announce.Get().Dismiss()
-		d.wake()
-		return
-	}
-
 	// A voice turn said in the strip over a page: the strip takes the tap, so a row hidden under it is
-	// not pressed while somebody is answering.
+	// not pressed while somebody is answering. It is drawn over a modal too, so it goes first.
 	if g.Kind == touch.Tap && d.r != nil && d.r.turnStripTapped(image.Pt(g.X, g.Y)) {
 		d.wake()
 		return
 	}
 
-	// A reminder: a tap on its card puts it away, here and on every device it went off on. Only the
-	// card, as with the strip, so a finger meant for the music behind it still reaches the music.
-	if g.Kind == touch.Tap && d.r != nil && d.r.popupTapped(image.Pt(g.X, g.Y)) {
-		d.dismissPopup()
-		d.wake()
-		return
-	}
-
-	if _, showing := remind.Get().Showing(); showing && g.Kind == touch.Tap &&
-		d.r != nil && image.Pt(g.X, g.Y).In(d.r.reminderBox()) {
-		go remind.Get().Stop()
-		d.wake()
-		return
+	// A modal up (render_modal.go): the page under it is at a tenth of its light, so a finger anywhere
+	// is for the modal, and nothing reaches the page until it is gone. The microphone open for an
+	// announcement ends with a tap sending what was said or a hold throwing it away; the rest are put
+	// away with a tap, a reminder on every device it went off on.
+	if d.r != nil {
+		if kind := d.r.modalUp(); kind != modalNone {
+			switch {
+			case kind == modalRecording && g.Kind == touch.Tap:
+				go announce.Get().Finish()
+			case kind == modalRecording && g.Kind == touch.Hold:
+				go announce.Get().Cancel()
+			case kind == modalAnnouncement && g.Kind == touch.Tap:
+				go announce.Get().Dismiss()
+			case kind == modalReminder && g.Kind == touch.Tap:
+				go remind.Get().Stop()
+			case kind == modalPopup && g.Kind == touch.Tap:
+				d.dismissPopup()
+			}
+			d.wake()
+			return
+		}
 	}
 
 	// The starter guide: a tap is the next page, and Skip or a tap on the last page puts it away for

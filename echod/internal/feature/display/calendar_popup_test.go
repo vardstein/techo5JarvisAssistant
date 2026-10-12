@@ -161,18 +161,17 @@ func TestPopupCalendarsFollowTheCalendarsShown(t *testing.T) {
 	}
 }
 
-// A tap takes a pop-up down only where one was drawn.
+// A tap takes a pop-up down only while it is the modal drawn.
 func TestPopupTapFollowsTheDrawing(t *testing.T) {
 	r := newRenderer(image.NewRGBA(image.Rect(0, 0, 960, 480)))
 	now := time.Date(2026, 9, 26, 14, 50, 0, 0, time.Local)
 	e := hass.Event{Calendar: "calendar.family", Summary: "Dentist", Start: now.Add(10 * time.Minute), End: now.Add(time.Hour)}
-	mid := image.Pt(480, 240)
 	r.draw(scene{now: now, phase: "idle", popup: &e})
-	if !r.popupTapped(mid) {
-		t.Error("a tap on the pop-up was missed")
+	if r.modalUp() != modalPopup {
+		t.Error("the pop-up is not the modal up")
 	}
 	r.draw(scene{now: now, phase: "idle", popup: &e, showReminder: true}) // under a reminder: not drawn
-	if r.popupTapped(mid) {
-		t.Error("a tap went to a pop-up hidden under a reminder")
+	if r.modalUp() == modalPopup {
+		t.Error("a tap would go to a pop-up hidden under a reminder")
 	}
 }

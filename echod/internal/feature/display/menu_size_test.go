@@ -13,9 +13,12 @@ import (
 	"time"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/announce"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/home"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/phone"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/remind"
 	"github.com/HuskerMinion/techo5/echod/internal/i18n"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/hass"
 )
 
 // At every menu size, on both panels, every card, every list of choices on it and every tab of the
@@ -94,6 +97,16 @@ func TestEveryMenuSizeFits(t *testing.T) {
 	pick := full
 	pick.drawerTab, pick.drawerPick = drawerRadio, "radiosource"
 	scenes["drawer-Radio-source"] = pick
+	// The modals, each with the most it says: over the clock, which shows faintly through.
+	soon := hass.Event{Calendar: "calendar.family", Summary: "Dentist with the kids, then the pharmacy on the way back",
+		Start: at.Add(15 * time.Minute), End: at.Add(time.Hour)}
+	scenes["modal-announcement"] = scene{now: at, phase: "idle", showAnnouncement: true,
+		announcement: announce.Message{From: "Laundry Room", Text: "the washing is finished, could somebody move it to the dryer before it starts to smell"}}
+	scenes["modal-announcement-voice"] = scene{now: at, phase: "idle", showAnnouncement: true, announcement: announce.Message{From: "Kitchen"}}
+	scenes["modal-recording"] = scene{now: at, phase: "idle", announceRecording: true, announcePeers: 3}
+	scenes["modal-reminder"] = scene{now: at, phase: "idle", showReminder: true, reminderFrom: "Kitchen",
+		reminder: remind.Reminder{Label: "Move the washing to the dryer, then put the towels on the rack by the back door so they are dry by the evening"}}
+	scenes["modal-popup"] = scene{now: at, phase: "idle", popup: &soon}
 
 	config.Use(filepath.Join(t.TempDir(), "state.json"))
 	t.Cleanup(i18n.Changed)
