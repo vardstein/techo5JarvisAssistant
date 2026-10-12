@@ -18,24 +18,29 @@ const (
 	centerSpread       = 0.35 // of the frame's half-size, squared: how wide "the middle" is
 )
 
-// meter is the frame's brightness on the 10-bit scale as the exposure loop should see it. A frame that is
-// white everywhere still meters high, since a clipped zone counts for less but not for nothing.
+// meter is the frame's brightness on the 10-bit scale as the exposure loop should see it: after the
+// lens correction, so the loop judges the picture that is shown. A frame that is white everywhere
+// still meters high, since a clipped zone counts for less but not for nothing. Clipping is judged on
+// what the sensor read, before the correction.
 func meter(bayer []byte) float64 {
-	var sum [zoneRows][zoneCols]float64
+	var sum, read [zoneRows][zoneCols]float64
 	var count [zoneRows][zoneCols]float64
+	sh := shading()
 	groups := sensorW / 4
 	for y := 0; y+1 < sensorH; y += meterRowStep {
 		line := bayer[y*bytesPerLine:]
 		zy := y * zoneRows / sensorH
+		sy := sh.y[y>>2]
 		for g := 0; g < groups; g += meterGroupStep {
 			i := g * 5
 			if i+2 >= len(line) {
 				break
 			}
-			// The group's second pixel: green on an even row.
+			// The group's second pixel: green on an even row. Group g is block g of the shading.
 			v := float64(uint16(line[i+1])>>2 | (uint16(line[i+2])&0xF)<<6)
 			zx := g * zoneCols / groups
-			sum[zy][zx] += v
+			sum[zy][zx] += v * float64(sh.x[g]+sy) / 256
+			read[zy][zx] += v
 			count[zy][zx]++
 		}
 	}
@@ -49,7 +54,7 @@ func meter(bayer []byte) float64 {
 			cx := (float64(zx)+0.5)/zoneCols*2 - 1
 			cy := (float64(zy)+0.5)/zoneRows*2 - 1
 			w := 1 + centerBoost*math.Exp(-(cx*cx+cy*cy)/centerSpread)
-			if mean >= clipLevel {
+			if read[zy][zx]/count[zy][zx] >= clipLevel {
 				w *= clipWeight
 			}
 			weighted += w * mean

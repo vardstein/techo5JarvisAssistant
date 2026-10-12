@@ -131,3 +131,30 @@ func TestConvertLiftsABacklitFace(t *testing.T) {
 		t.Errorf("face %d is not brighter than with the fixed curve (%d)", face, oldFace)
 	}
 }
+
+// The meter judges the corrected picture, but what clips on what the sensor read: a flat frame
+// that is nowhere near clipping meters the same way at any level, though its corrected corners
+// go past clipLevel.
+func TestMeterAfterShading(t *testing.T) {
+	withShade(t, 2)
+	low := meter(pack(func(x, y int) uint16 { return 290 }))
+	high := meter(pack(func(x, y int) uint16 { return 800 }))
+	if low < 290*1.2 || low > 290*3 {
+		t.Errorf("flat 290 with the corners lifted: level %.1f", low)
+	}
+	if r := high / low; math.Abs(r-800.0/290) > 0.02 {
+		t.Errorf("flat 800 meters %.2f times flat 290, want %.2f: a lifted zone was taken for a light", r, 800.0/290)
+	}
+}
+
+// White comes from the corrected picture, so the lifted corners are not cut off.
+func TestStatsWhiteAfterShading(t *testing.T) {
+	flat := pack(func(x, y int) uint16 { return 300 })
+	if w := stats(flat).white; w != 600 {
+		t.Fatalf("flat 300 without correction: white %d, want 600", w)
+	}
+	withShade(t, 2)
+	if w := stats(flat).white; w < 1500 {
+		t.Errorf("flat 300 with the corners lifted: white %d, under the corners", w)
+	}
+}
