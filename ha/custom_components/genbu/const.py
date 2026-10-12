@@ -5,6 +5,7 @@ MANUFACTURERS = {"OpenJade"}  # what echod reports for a Genbu Show over ESPHome
 CONF_MAIN = "main_show"  # the first main update Show, from the installer or the setup form
 CONF_EXTRA = "extra_mains"
 CONF_NOTIFY = "notify_service"  # e.g. mobile_app_my_phone, for the push when a main is gone a day
+CONF_HIDE = "hide_originals"  # hide the ESPHome originals of the copies on the genbu device (controls.py)
 HOUSE_ENTITY = "sensor.genbu_house_version"
 MAIN_SELECT = "select.genbu_main_update_show"
 CHANGED = f"{DOMAIN}_changed"  # dispatcher signal: the house was looked at again

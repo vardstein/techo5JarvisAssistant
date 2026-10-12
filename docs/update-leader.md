@@ -61,9 +61,26 @@ When it was the only main update Show, the Show Genbu recommends becomes main, a
 (`mains`, `new_main`). The installer's `remove-show` calls it after removing the Show's ESPHome entry, so
 Genbu does not find it again first.
 
+**A Show's controls on its Genbu device** (from 1.2.0). Devices & services → Genbu → a Show lists
+everything you would set on the Show: screen and LED ring lights, night mode, microphone mute, white
+noise, alarm buttons, the Show's settings, volume, which assistant and wake word it uses, and the
+firmware version. Home Assistant lets a device belong to one integration only, so these are copies:
+each follows its ESPHome original and passes on what is done to it, like Home Assistant's own "Change
+device type of a switch" helper. Their entity ids start with `genbu_<node>_`.
+
+- Diagnostics, the camera, the events, the voice satellite and the firmware update stay on the ESPHome
+  device only. The update is offered there, once; the copy only says which version runs.
+- The everyday originals (lights, switches, white noise, buttons, text sensors) are hidden once their copy
+  is there, so dashboards and the device list don't show them twice. Hidden entities still work in
+  automations and on dashboards that already use them. One you show again by hand stays shown.
+- Assist keeps using the originals. Before an original is hidden, Genbu writes down what Assist did with
+  it, so hiding does not take it away from Assist; the copies are kept from Assist when they are made.
+  Exposing a copy by hand afterwards sticks.
+- **Configure → Hide the ESPHome originals** off shows them all again. Removing Genbu does the same.
+
 ### Tests
 
-`tests/test_genbu_house.py` and `tests/test_genbu_music.py` test the logic without Home Assistant and run in CI. `ha/tests` runs the
+`tests/test_genbu_house.py`, `tests/test_genbu_music.py` and `tests/test_genbu_controls.py` test the logic without Home Assistant and run in CI. `ha/tests` runs the
 integration in a real Home Assistant through `pytest-homeassistant-custom-component`, by hand. That needs
 the Python version current Home Assistant needs (3.14 for 2026.10):
 
