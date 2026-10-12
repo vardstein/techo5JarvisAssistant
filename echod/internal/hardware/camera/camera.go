@@ -67,7 +67,7 @@ func hasOV9734() bool { return layout.Checkers() || layout.Crown() }
 
 func pickSensor(ov9734 bool) sensorSpec {
 	if ov9734 {
-		return sensorSpec{w: 1280, h: 720, outW: 640, outH: 360, minShut: 1, frameLines: 798, blueFirst: true, clkcnt: 0}
+		return sensorSpec{w: 1280, h: 720, outW: 640, outH: 360, minShut: 1, frameLines: 798, blueFirst: true, clkcnt: 1}
 	}
 	return sensorSpec{w: 1600, h: 1200, outW: 800, outH: 600, minShut: 4, frameLines: 1200, clkcnt: 1}
 }
@@ -270,9 +270,8 @@ func open() (*device, error) {
 	// divided by 2 that made 13 MHz: the OV9734 ran at 16.4 frames a second while the driver
 	// believed 30.4 (measured on a 1st gen, 2026-10-12; 30.37/16.45 is 24/13).
 	//
-	// So the OV9734 takes the crystal undivided: 26 MHz is inside its input range, 8% over the
-	// 24 it is tuned for, and gives about 32.9 frames a second. The OV02B10 keeps the divide by 2
-	// until someone can try it on a 2nd gen.
+	// Feeding the OV9734 the crystal undivided (clkcnt 0) gave no frames at all (dev.84), so both
+	// sensors stay on the divide by 2 until camtg itself can be moved to the 48 MHz PLL.
 	d.mclk = [3]uint32{1, 1, 0}
 	if err := ioctl(d.sens, ioc(3, sensMagic, nrSetMCLK, 12), unsafe.Pointer(&d.mclk[0])); err != nil {
 		d.close()
