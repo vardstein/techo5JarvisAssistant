@@ -13,26 +13,26 @@ import (
 
 // The menu size is how large the settings screen is drawn: Large is the Car Thing's own sizes, which
 // on a Show 5 fill the panel the way they filled the Car Thing's, and Normal and Small a step down
-// from them, for more rows at once. The drawer has its own sizes and takes only Large as larger.
+// from them, for more rows at once. Small is what a Show starts on: it looks the best, and the larger
+// two are there for eyes that need them. The drawer has its own sizes and takes only Large as larger.
 
-// menuSizes are the choices, in the order the screen and Home Assistant offer them. Percent 0 is
-// Normal, so a Show that never chose keeps reading as it.
+// menuSizes are the choices, in the order the screen and Home Assistant offer them.
 var menuSizes = []struct {
 	label   string
 	percent int
 }{
 	{"Small", 75},
-	{"Normal", 0},
+	{"Normal", 85},
 	{"Large", 100},
 }
 
-// normalMenu is Normal's size in percent.
-const normalMenu = 85
+// smallMenu is the size of a Show that never chose one, in percent.
+const smallMenu = 75
 
 // menuZoom is the chosen size in percent, kept apart from the config so a frame reads it without its lock.
 var menuZoom atomic.Int32
 
-func init() { menuZoom.Store(normalMenu) }
+func init() { menuZoom.Store(smallMenu) }
 
 func menuSizeOptions() []string {
 	out := make([]string, len(menuSizes))
@@ -42,12 +42,15 @@ func menuSizeOptions() []string {
 	return out
 }
 
-// menuSizeIndex is the saved choice's place in menuSizes. The old Large and Larger (115 and 130) read
-// as Large, and anything else as Normal.
+// menuSizeIndex is the saved choice's place in menuSizes. Nothing saved is Small; the old Large and
+// Larger (115 and 130) read as Large, and anything else as Normal.
 func menuSizeIndex() int { return menuSizeIndexOf(config.Get().Screen.MenuSize) }
 
 func menuSizeIndexOf(v int) int {
-	if v > 100 {
+	switch {
+	case v == 0:
+		v = smallMenu
+	case v > 100:
 		v = 100
 	}
 	for i, m := range menuSizes {
@@ -59,13 +62,7 @@ func menuSizeIndexOf(v int) int {
 }
 
 // useMenuSize puts the choice at i in force without saving it.
-func useMenuSize(i int) {
-	p := menuSizes[i].percent
-	if p == 0 {
-		p = normalMenu
-	}
-	menuZoom.Store(int32(p))
-}
+func useMenuSize(i int) { menuZoom.Store(int32(menuSizes[i].percent)) }
 
 // setMenuSize saves the choice at i, puts it in force and shows it in Home Assistant.
 func setMenuSize(s *esphome.Select, i int) {

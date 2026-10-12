@@ -13,6 +13,9 @@ type State struct {
 	Heard   string
 	Reply   string
 	Backend string // backend chosen for this turn: home assistant or direct
+	// FollowUp is a turn opened without a wake word after a reply: the same conversation going on, so
+	// whatever its last answer put on the screen is still its own.
+	FollowUp bool
 }
 
 // Changed fires on every phase change and whenever a transcript or a reply arrives. It runs on the

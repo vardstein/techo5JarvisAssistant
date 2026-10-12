@@ -3,6 +3,7 @@
 package display
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
@@ -31,15 +32,36 @@ func (r *renderer) box(rect image.Rectangle, c color.Color, thick int) {
 	draw.Draw(r.dst, image.Rect(rect.Max.X-thick, rect.Min.Y, rect.Max.X, rect.Max.Y), src, image.Point{}, draw.Over)
 }
 
-// faded runs paint onto a scratch layer and lays it over the canvas at the given opacity (0–255),
-// for a picture that sits behind the page rather than on it.
-func (r *renderer) faded(alpha uint8, paint func()) {
+// faded runs paint onto a scratch layer over area and lays it on the canvas at the given opacity
+// (0–255), for a picture that sits behind the page rather than on it. The layer is premultiplied,
+// so the opacity is every channel scaled once; laid on without a mask it takes image/draw's quick
+// path, which on the Show is the difference between a frame and a fraction of one. key names what
+// paint draws: the layer is kept, and while the same key comes back paint is not run again.
+func (r *renderer) faded(key string, area image.Rectangle, alpha uint8, paint func()) {
 	real := r.dst
-	layer := image.NewRGBA(real.Bounds())
-	r.dst = layer
-	paint()
-	r.dst = real
-	draw.DrawMask(real, real.Bounds(), layer, image.Point{}, image.NewUniform(color.Alpha{A: alpha}), image.Point{}, draw.Over)
+	area = area.Intersect(real.Bounds())
+	if area.Empty() {
+		return
+	}
+	key = fmt.Sprint(key, area, alpha)
+	if r.faint.key != key || r.faint.img == nil {
+		layer := image.NewRGBA(area)
+		r.dst = layer
+		paint()
+		r.dst = real
+		k := uint32(alpha)
+		for i, v := range layer.Pix {
+			layer.Pix[i] = uint8((uint32(v)*k + 127) / 255)
+		}
+		r.faint = fadeKept{key: key, img: layer}
+	}
+	draw.Draw(real, area, r.faint.img, area.Min, draw.Over)
+}
+
+// fadeKept is a faded layer and what it shows.
+type fadeKept struct {
+	key string
+	img *image.RGBA
 }
 
 // disc fills a circle.

@@ -75,9 +75,60 @@ func current() theme {
 			}
 			t.colors[i] = c
 		}
-		return t
+		return legible(t)
 	}
 	return themes[themeIndex(sc.Theme)]
+}
+
+// What a custom palette keeps against its own ground, in WCAG's contrast figures, as the presets
+// have it: text 12 (they run 12.5 to 14.5), so a white ground gets near-black words rather than the
+// pale ones the palette had for a dark ground; dim text and the accent 3, the large-text figure the
+// light presets keep theirs near.
+const (
+	textReadable = 12.0
+	dimReadable  = 3.0
+)
+
+// readableFor is the contrast a role keeps against the ground; 0 for the ground and the rules.
+func readableFor(role int) float64 {
+	switch role {
+	case roleText:
+		return textReadable
+	case roleDim, roleAccent:
+		return dimReadable
+	}
+	return 0
+}
+
+// legible is a custom palette with its text, dim text and accent moved toward black or white,
+// whichever reads better on its ground, until each reads there. The presets are made that way.
+func legible(t theme) theme {
+	for _, role := range []int{roleText, roleDim, roleAccent} {
+		t.colors[role] = inkOnGround(t.colors[role], t.colors[roleGround], readableFor(role))
+	}
+	return t
+}
+
+// inkOnGround is c, moved a step at a time toward black or white (whichever stands out more on
+// ground) until it has the contrast asked for, or is black or white.
+func inkOnGround(c, ground color.RGBA, ratio float64) color.RGBA {
+	toward := color.RGBA{0, 0, 0, 0xff}
+	if white := (color.RGBA{0xff, 0xff, 0xff, 0xff}); contrast(white, ground) > contrast(toward, ground) {
+		toward = white
+	}
+	for i := 0; i < 24 && contrast(c, ground) < ratio; i++ {
+		c = lerp(c, toward, 0.12)
+	}
+	if contrast(c, ground) < ratio {
+		return toward
+	}
+	return c
+}
+
+// lightGround is whether the ground in force is a pale one, which wants dark words on it.
+func lightGround() bool {
+	g := current().colors[roleGround]
+	return contrast(g, color.RGBA{0, 0, 0, 0xff}) > contrast(g, color.RGBA{0xff, 0xff, 0xff, 0xff})
 }
 
 // savedCustom is the custom palette saved, whether or not it is in force.
@@ -148,8 +199,19 @@ func hsl(h, s, l float64) color.RGBA {
 const swatchCount = 14
 
 // swatch is the i-th choice for a role: the strip is lit for the job the role does — grounds
-// dark, accents vivid, text pale, dim text muted, rules a shade above a ground.
+// dark, accents vivid, text pale, dim text muted, rules a shade above a ground. On a pale ground the
+// words' strips turn dark, so every color offered for them reads on it.
 func swatch(role, i int) color.RGBA {
+	c := swatchLit(role, i)
+	if want := readableFor(role); want > 0 {
+		// Offered as it would be drawn, so the one in force is the one ringed.
+		c = inkOnGround(c, current().colors[roleGround], want)
+	}
+	return c
+}
+
+// swatchLit is the i-th color of a role's strip before it is made to read on the ground.
+func swatchLit(role, i int) color.RGBA {
 	var s, l float64
 	switch role {
 	case roleGround:
@@ -162,6 +224,19 @@ func swatch(role, i int) color.RGBA {
 		s, l = 0.15, 0.50
 	default:
 		s, l = 0.30, 0.24
+	}
+	if readableFor(role) > 0 && lightGround() {
+		switch role {
+		case roleAccent:
+			s, l = 0.75, 0.38
+		case roleText:
+			s, l = 0.40, 0.14
+		case roleDim:
+			s, l = 0.15, 0.36
+		}
+		if i == 1 { // the other neutral: a near-black for words on a pale ground
+			return hsl(0, 0, 0.08)
+		}
 	}
 	switch i {
 	case 0: // a neutral at the role's lightness

@@ -110,6 +110,8 @@ type Feature struct {
 
 	// The radio's lists from Home Assistant's Radio Browser; see local.go.
 	lists radioLists
+	// logos are the stations' logos for the shelf's tiles; see logos.go.
+	logos logoCache
 
 	// radar is the rain map; see radar.go.
 	radar   radarState

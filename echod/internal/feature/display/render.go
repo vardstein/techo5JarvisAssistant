@@ -14,8 +14,6 @@ import (
 	"time"
 
 	"golang.org/x/image/font"
-	"golang.org/x/image/font/gofont/gobold"
-	"golang.org/x/image/font/gofont/goregular"
 	"golang.org/x/image/font/opentype"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
@@ -99,6 +97,8 @@ type scene struct {
 	// radio feeds the drawer's Radio side and the now-playing screen; weather is on the clock when known.
 	radio   home.Radio
 	weather home.Weather
+	// logos are the stations' logos for the shelf's tiles, by name, as far as there are any yet.
+	logos map[string]*image.RGBA
 
 	// showWeather is the forecast page, for a while after a weather question; nowPlaying is the
 	// idle screen while the radio plays or sits paused. music is optional Music Assistant route,
@@ -263,6 +263,10 @@ type renderer struct {
 	// ground, kept while the song's picture stays the same.
 	cover coverCache
 	plain plainGround
+	// faint is the last faint picture laid behind a page (see faded), kept while it stays the same.
+	faint fadeKept
+	// logos are the stations' logos at the size the shelf's tiles draw them (logoAt).
+	logos map[logoKey]*image.RGBA
 
 	// calHits are the calendar page's buttons, days and events as last drawn (render_calendar.go).
 	calMu   sync.Mutex
@@ -333,14 +337,8 @@ func newRenderer(dst *image.RGBA) *renderer {
 	// Built in place: paint carries a mutex, so it must never be assembled elsewhere and copied in.
 	r := &renderer{paint: paint{dst: dst, w: dst.Rect.Dx(), h: dst.Rect.Dy(), sNum: dst.Rect.Dx(), sDen: drawnFor}}
 	r.margin = r.s(40)
-	bold, err := opentype.Parse(gobold.TTF)
-	if err != nil {
-		slog.Error("parsing the bold font failed", "err", err)
-	}
-	regular, err := opentype.Parse(goregular.TTF)
-	if err != nil {
-		slog.Error("parsing the regular font failed", "err", err)
-	}
+	// Figtree everywhere, as the menus have it: the clock and the pages over it are the same Show.
+	bold, regular := carFonts()
 	// Sizes are points at 72 DPI, which makes them pixels, so they scale with everything else.
 	face := func(f *opentype.Font, size int) font.Face {
 		if f == nil {

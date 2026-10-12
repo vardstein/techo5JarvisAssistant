@@ -130,7 +130,9 @@ type Display struct {
 	dashTouched   time.Time
 	dashShowing   bool
 	dashFollow    bool
-	dashEdge      int // edgeNone, or the edge the finger on it started at
+	listFollow    bool     // the touchscreen follows fingers for a list (follow.go)
+	list          listDrag // a finger on one
+	dashEdge      int      // edgeNone, or the edge the finger on it started at
 	dashEdgeAt    image.Point
 	dashAwayUntil time.Time // the idle dashboard put away, the clock up until then
 	dashPage      string    // "" for the dashboard, dashboard.PageMusic (the library button's page), or the room's dashboard
@@ -183,6 +185,14 @@ type Display struct {
 	// night schedule rather than by anyone.
 	touchedAt time.Time
 	nightDark bool
+
+	// menuSince is when the drawer or a settings, Wi-Fi or Bluetooth page last came up; menuUp is one
+	// being up at the last frame (menu_idle.go).
+	menuSince time.Time
+	menuUp    bool
+	// takeOver is a conversation just started, for the next frame to clear the screen for it
+	// (assistantTakesOver).
+	takeOver bool
 
 	// nightGlow is the screen turned down to a night light by the night schedule, until a touch or
 	// the end of the night brings it back.
@@ -568,6 +578,14 @@ func (d *Display) changed(s voice.State) {
 	newHeard := s.Heard != "" && s.Heard != d.view.Heard
 	if s.Phase == "listening" && d.view.Phase != "listening" {
 		d.quiet = false
+		// A new conversation takes the screen from whatever is on it; a follow-up is the same one
+		// going on, and leaves up what its last answer put there.
+		d.takeOver = !s.FollowUp
+	}
+	if s.Phase != "listening" {
+		// Only while it is still listening: a frame that comes later, once the question has been heard,
+		// would take down the camera or the page the answer is putting up.
+		d.takeOver = false
 	}
 	d.view = s
 	d.viewAt = time.Now()
@@ -637,7 +655,10 @@ func (d *Display) gesture(g touch.Gesture) {
 	d.mu.Lock()
 	on := d.on
 	d.mu.Unlock()
-	slog.Info("touch", "gesture", g.String())
+	if g.Kind != touch.Drag {
+		// A moving finger reports dozens of times a second; where it came down and lifted is enough.
+		slog.Info("touch", "gesture", g.String())
+	}
 	d.mu.Lock()
 	d.touchedAt = time.Now()
 	d.mu.Unlock()
@@ -769,11 +790,25 @@ func (d *Display) gesture(g touch.Gesture) {
 		return
 	}
 
+	// A finger moving a list: the list goes with it, and what it turns out to be, a tap or a swipe, comes
+	// back through here as one (follow.go).
+	if (g.Kind == touch.Hold || g.Kind == touch.Drag || g.Kind == touch.Release) && d.listFinger(g) {
+		return
+	}
+
 	// The Bluetooth page: a tap on a row pairs and connects it, or disconnects the one connected, and
 	// the back arrow ends the page, back to the settings when it was opened from there.
 	bt := btaudio.Get()
 	if bt.Pairing() {
 		if d.r == nil {
+			return
+		}
+		if d.drawerSwipe(g) {
+			bt.SetPairing(false)
+			d.mu.Lock()
+			d.btFromSheet, d.btScroll = false, 0
+			d.mu.Unlock()
+			d.openDrawerOver()
 			return
 		}
 		done := false
@@ -858,6 +893,12 @@ func (d *Display) gesture(g touch.Gesture) {
 	wifiOpen := d.wifiOpen
 	d.mu.Unlock()
 	if wifiOpen {
+		if d.drawerSwipe(g) {
+			d.closeWifi()
+			d.showSheet(false)
+			d.openDrawerOver()
+			return
+		}
 		if d.r != nil {
 			d.wifiGesture(g)
 		}
@@ -894,6 +935,9 @@ func (d *Display) gesture(g touch.Gesture) {
 			d.sheetSwipe(g)
 		case g.Kind == touch.SwipeRight:
 			d.sheetBack() // the way the Car Thing went back: a swipe to the right, anywhere
+		case d.drawerSwipe(g):
+			d.showSheet(false)
+			d.openDrawerOver()
 		}
 		d.wake()
 		return
@@ -1035,11 +1079,8 @@ func (d *Display) gesture(g touch.Gesture) {
 		voice.Get().Action()
 	case touch.SwipeLeft:
 		// From the right edge it brings the drawer in, on the tab it was last on.
-		if d.r != nil && g.X >= d.r.w-d.r.drawerEdge() {
-			d.mu.Lock()
-			tab := d.drawerTab
-			d.mu.Unlock()
-			d.openDrawer(tab)
+		if d.drawerSwipe(g) {
+			d.openDrawerOver()
 		}
 	case touch.SwipeUp:
 		// Up is the recipe Jarvis last looked up, when there is one (dashboard.RecipePath).
@@ -1793,6 +1834,9 @@ func (d *Display) frame() time.Duration {
 		return 80 * time.Millisecond
 	}
 
+	d.assistantTakesOver()
+	d.menuIdle(now, view.Phase != "idle")
+
 	s := scene{now: now, phase: view.Phase, heard: view.Heard, reply: view.Reply, since: at, ring: ring, call: call}
 	s.snooze = config.Get().Alarms.Snooze()
 	s.alarms = alarm.Get().View(now)
@@ -1889,6 +1933,10 @@ func (d *Display) frame() time.Duration {
 	}
 	if (s.showDrawer && s.drawerTab == drawerRadio) || wants {
 		s.radio = home.Get().Radio()
+	}
+	if s.showDrawer && s.drawerTab == drawerRadio && !s.demo {
+		// Not for screenshots: a list's logos say where the owner lives as its names do.
+		s.logos = home.Get().StationLogos(s.radio.Stations)
 	}
 	if routedMusic && s.radio.Now != "Music Assistant" {
 		// Preferred external MA speakers do not send Sendspin audio to this Show. Populate the native
@@ -2004,6 +2052,7 @@ func (d *Display) frame() time.Duration {
 	d.mu.Unlock()
 
 	d.r.draw(s)
+	d.followLists(d.listsFollow(s, ring.any()))
 	if err := d.dev.Present(); err != nil {
 		slog.Warn("presenting the frame failed", "err", err)
 	}

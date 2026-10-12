@@ -4,9 +4,12 @@ package display
 
 import (
 	"image"
+	"image/color"
+	"image/draw"
 	"strconv"
 	"strings"
 
+	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/font"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
@@ -129,6 +132,8 @@ func (r *renderer) shelf(s scene) int {
 
 	shelf := image.Rect(0, band, r.w, r.h)
 	from := len(r.pending)
+	r.sliding = true
+	defer func() { r.sliding = false }()
 	for i, row := range tiles {
 		left := x0 + i*step - scroll
 		if left >= r.w || left+art <= 0 {
@@ -175,15 +180,32 @@ func (r *renderer) shelfItem(row settingRow, left, top, art int) {
 	if live {
 		hi, lo = lerp(walnut, amber, 0.42), lerp(walnut, amber, 0.24)
 	}
-	r.roundFill(b, float64(r.cz(8)), hi, lo)
-	// The icon is the Car Thing's 96 on a full-sized tile, and shrinks with a smaller one.
-	full := r.cz(shelfTile)
-	icon := r.cz(96) * art / full
-	ink := softInk()
-	if live {
-		ink = cream
+	if row.pic != nil {
+		// A station's logo, on the light card the now-playing page puts one on, ringed in the accent
+		// while it plays.
+		if live {
+			ring := r.cz(5)
+			r.roundFill(b.Inset(-ring), float64(r.cz(8)+ring), amber, amber)
+		}
+		if fillsSquare(row.pic) {
+			// One that is a picture to its edges goes to the tile's edges, as the Car Thing's art did.
+			draw.Draw(r.dst, b, r.logoAt(row.pic, art, float64(r.cz(8))), image.Point{}, draw.Over)
+		} else {
+			r.roundFill(b, float64(r.cz(8)), color.RGBA{0xf4, 0xf2, 0xee, 0xff}, color.RGBA{0xe8, 0xe5, 0xe0, 0xff})
+			inner := b.Inset(art / 10)
+			draw.Draw(r.dst, inner, r.logoAt(row.pic, inner.Dx(), 0), image.Point{}, draw.Over)
+		}
+	} else {
+		r.roundFill(b, float64(r.cz(8)), hi, lo)
+		// The icon is the Car Thing's 96 on a full-sized tile, and shrinks with a smaller one.
+		full := r.cz(shelfTile)
+		icon := r.cz(96) * art / full
+		ink := softInk()
+		if live {
+			ink = cream
+		}
+		r.mdiIcon(tileIcon(row), left+(art-icon)/2, top+(art-icon)/2, zb(96)*art/full, ink)
 	}
-	r.mdiIcon(tileIcon(row), left+(art-icon)/2, top+(art-icon)/2, zb(96)*art/full, ink)
 
 	y := top + art + r.cz(16)
 	name := r.lines(cf.pill, row.label, art, 2)
@@ -214,6 +236,67 @@ func (r *renderer) shelfItem(row settingRow, left, top, art int) {
 		r.text(cf.small, line, left, y+cf.small.Metrics().Ascent.Ceil(), subInk)
 		y += r.lineH(cf.small)
 	}
+}
+
+// logoAt is a station's logo at side pixels square, its corners rounded to rad when rad is not 0,
+// made once and kept: the shelf is drawn every frame while a finger slides it, and scaling a dozen
+// logos each time would cost the frame.
+func (r *renderer) logoAt(src *image.RGBA, side int, rad float64) *image.RGBA {
+	if rad == 0 && src.Bounds().Dx() == side && src.Bounds().Dy() == side {
+		return src
+	}
+	k := logoKey{src, side, rad}
+	if img, ok := r.logos[k]; ok {
+		return img
+	}
+	if r.logos == nil || len(r.logos) >= 2*logosShown {
+		// Lists change and so does the size; what was kept for the last ones is let go at once.
+		r.logos = map[logoKey]*image.RGBA{}
+	}
+	img := image.NewRGBA(image.Rect(0, 0, side, side))
+	xdraw.CatmullRom.Scale(img, img.Bounds(), src, src.Bounds(), draw.Src, nil)
+	if rad > 0 {
+		// The corners as coverage, premultiplied, so drawing it over the ground blends the edge.
+		x1 := float64(side)
+		corner := int(rad) + 1
+		for y := 0; y < side; y++ {
+			if y >= corner && y < side-corner {
+				continue
+			}
+			for x := 0; x < side; x++ {
+				if x == corner {
+					x = side - corner
+				}
+				a := clamp01(0.5 - rrDist(float64(x)+0.5, float64(y)+0.5, 0, 0, x1, x1, rad))
+				i := img.PixOffset(x, y)
+				for c := range 4 {
+					img.Pix[i+c] = uint8(float64(img.Pix[i+c])*a + 0.5)
+				}
+			}
+		}
+	}
+	r.logos[k] = img
+	return img
+}
+
+// fillsSquare is whether a logo is a picture to all four corners, rather than a shape on nothing.
+func fillsSquare(img *image.RGBA) bool {
+	b := img.Bounds()
+	for _, p := range []image.Point{b.Min, {b.Max.X - 1, b.Min.Y}, {b.Min.X, b.Max.Y - 1}, b.Max.Sub(image.Pt(1, 1))} {
+		if img.RGBAAt(p.X, p.Y).A < 0xf0 {
+			return false
+		}
+	}
+	return true
+}
+
+// logosShown is about how many logos a list holds: Radio Browser's popular one, cut short.
+const logosShown = 60
+
+type logoKey struct {
+	src  *image.RGBA
+	side int
+	rad  float64
 }
 
 // tileIcon is the picture on a tile: what kind of thing it is.
@@ -322,7 +405,7 @@ func drawerRows(s scene) ([]settingRow, string) {
 			// Call letters and local station names say where the owner lives.
 			label = "Station " + strconv.Itoa(i+1)
 		}
-		row := settingRow{id: id, label: label, kind: ctlButton, rowTap: true}
+		row := settingRow{id: id, label: label, kind: ctlButton, rowTap: true, pic: s.logos[name]}
 		switch {
 		case name == rd.Now && rd.Playing:
 			row.bold, row.sub = true, "Playing now"

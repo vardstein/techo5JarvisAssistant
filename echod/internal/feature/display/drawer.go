@@ -31,6 +31,12 @@ func (d *Display) openDrawer(tab int) {
 	d.wake()
 }
 
+// drawerSwipe is a leftward swipe from the right edge: the drawer's way in, from the clock and from
+// every page laid over it alike.
+func (d *Display) drawerSwipe(g touch.Gesture) bool {
+	return d.r != nil && g.Kind == touch.SwipeLeft && g.X >= d.r.w-d.r.drawerEdge()
+}
+
 // closeDrawer puts it away. It says so, the way openDrawer does: whether a pick closed the drawer or left
 // it over what it had opened is the whole of one of the things the hardware testing found, and a screen
 // nobody can see is no place to check it.
