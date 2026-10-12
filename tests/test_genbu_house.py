@@ -246,7 +246,7 @@ class PickTests(unittest.TestCase):
 
 
 class ForgetTests(unittest.TestCase):
-    """genbu.forget_show, which the installer's remove-show calls once the Show is out of ESPHome."""
+    """genbu.forget_show, which the installer's --remove-show calls once the Show is out of ESPHome."""
 
     def house_of(self, mains):
         h = house.House()

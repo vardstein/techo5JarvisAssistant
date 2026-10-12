@@ -873,6 +873,12 @@ def _room_dashboard(ha: HomeAssistant, entities: list[str], make: bool | None,
     return f"room dashboard {url_path} made for {name}, {len(cards)} cards"
 
 
+def _entry_devices(ha: HomeAssistant, entry_id: str) -> list[str]:
+    """The ids of the devices the ESPHome entry has."""
+    return [str(d["id"]) for d in ha.ws({"type": "config/device_registry/list"}) or []
+            if isinstance(d, dict) and d.get("id") and entry_id in (d.get("config_entries") or [])]
+
+
 def node_name(ha: HomeAssistant, entry_id: str) -> str | None:
     """The ESPHome node name Home Assistant has for the entry, which names the Show's actions. It is not
     the installed name once the Show was renamed on its screen; None when Home Assistant does not say.
@@ -1418,6 +1424,9 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
         progress(_name_assistant(ha, entities, opts.assistant_name, choose, opts.keep_replaced))
     if opts.wake_word or choose:
         progress(_select(ha, entities, "_wake_word", opts.wake_word, choose))
+    from . import labels
+    labels.mark(ha, progress, node=node or node_slug(opts.name), devices=_entry_devices(ha, entry_id),
+                sleep=sleep, clock=clock)
     if opts.room or choose:
         progress(_room(ha, entities, opts.room, choose))
     if opts.room_dashboard or (opts.room_dashboard is None and choose):
@@ -1428,7 +1437,8 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
     if extras:
         from . import voice_kit
         try:
-            voice_kit.set_up(ha, opts.name, entities, choose=choose, keep=opts.keep_replaced, progress=progress)
+            voice_kit.set_up(ha, opts.name, entities, choose=choose, keep=opts.keep_replaced, progress=progress,
+                             node=node or node_slug(opts.name), sleep=sleep, clock=clock)
         except HomeAssistantError as exc:
             progress(f"WARN: the voice extras stopped part way: {exc}")
     services = _services(ha) if wanted else set()

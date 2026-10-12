@@ -1,8 +1,13 @@
+import contextlib
+import importlib.util
+import io
 import json
 import pathlib
 import sys
 import tempfile
+import types
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -52,6 +57,8 @@ class FakeHA:
                       {"id": "U2", "username": "show_livingroomecho8", "group_ids": ["system-users"]},
                       {"id": "U0", "username": "jade", "is_owner": True}]
         self.lovelace = {None: {"views": [{"cards": [{"type": "tile", "entity": "select.genbushow5_wake_word"}]}]}}
+        self.scripts = {}
+        self.labels = []
         self.genbu = genbu
         self.mains = list(mains)
         self.calls = []
@@ -80,13 +87,17 @@ class FakeHA:
         if path == "/api/services":
             services = {"forget_show": {}} if self.genbu == "1.1.0" else {}
             return [{"domain": "esphome", "services": {}}, {"domain": "genbu", "services": services}]
-        if path.startswith("/api/config/automation/config/"):
-            item = path.rsplit("/", 1)[1]
-            if item not in self.automations:
+        if path.startswith(("/api/config/automation/config/", "/api/config/script/config/")):
+            kind, item = path.split("/")[3], path.rsplit("/", 1)[1]
+            configs = self.automations if kind == "automation" else self.scripts
+            if item not in configs:
                 raise ha.NotFound(path)
             if method == "DELETE":
-                return {"result": "ok"} if self.automations.pop(item) else None
-            return self.automations[item]
+                del configs[item]
+                self.entities = [e for e in self.entities
+                                 if (e.get("platform"), e.get("unique_id")) != (kind, item)]
+                return {"result": "ok"}
+            return configs[item]
         if method == "DELETE" and path.startswith("/api/config/config_entries/entry/"):
             entry_id = path.rsplit("/", 1)[1]
             self.entries = [e for e in self.entries if e["entry_id"] != entry_id]
@@ -120,6 +131,15 @@ class FakeHA:
             return None
         if kind == "lovelace/dashboards/list":
             return []
+        if kind == "config/label_registry/list":
+            return self.labels
+        if kind == "config/label_registry/delete":
+            # as Home Assistant does: the label goes off everything that had it
+            self.labels = [x for x in self.labels if x["label_id"] != message["label_id"]]
+            for item in self.entities + self.devices:
+                if message["label_id"] in item.get("labels", []):
+                    item["labels"] = [x for x in item["labels"] if x != message["label_id"]]
+            return None
         if kind == "lovelace/config":
             return self.lovelace[message.get("url_path")]
         raise AssertionError(f"unexpected ws {kind}")
@@ -212,7 +232,7 @@ class PlanTests(unittest.TestCase):
         self.assertTrue(any(g.startswith("ESPHome entry 'genbuShow5' with its 2 devices") for g in goes))
         self.assertTrue(any("place in Genbu (main update Show" in g for g in goes))
         self.assertEqual(len(later), 1)
-        self.assertIn("run remove-show again", later[0])
+        self.assertIn("waits until the Show is unplugged", later[0])
         self.assertTrue(any(s.startswith("automation.mine uses it") for s in stays))
 
     def test_an_offline_player_goes_now(self):
@@ -289,6 +309,202 @@ class RemoveTests(unittest.TestCase):
         self.assertEqual(len(goes), 1)
         self.assertTrue(goes[0].startswith("Music Assistant player"))
         self.assertFalse(later)
+
+
+SHOW_LABEL = {"label_id": "genbu_show_genbushow5", "name": "Genbu Show: genbushow5"}
+INSTALLED = {"label_id": "genbu_show_installed", "name": "Genbu Show installed"}
+
+
+def labeled(kind, item, *label_ids):
+    return {"entity_id": f"{kind}.{item}", "platform": kind, "unique_id": item, "device_id": None,
+            "config_entry_id": None, "labels": list(label_ids)}
+
+
+def labeled_house():
+    """The house after a 1.3.0 install: the Show's pieces carry both labels, the house-wide ones only the
+    common one, and somebody added an automation of their own under the Show's label."""
+    house = FakeHA()
+    house.labels = [dict(SHOW_LABEL), dict(INSTALLED)]
+    both = (SHOW_LABEL["label_id"], INSTALLED["label_id"])
+    house.devices[0]["labels"] = list(both)
+    house.devices[1]["labels"] = list(both)
+    house.automations["hall_lights_with_show5"] = {"id": "hall_lights_with_show5", "triggers": []}
+    house.automations["jarvis_local_timer"] = {"id": "jarvis_local_timer", "triggers": []}
+    house.scripts = {"show5_radio": {"sequence": []}, "jarvis_music_play": {"sequence": []}}
+    house.entities += [labeled("automation", "techo5_turn_room_down_genbushow5", *both),
+                       labeled("automation", "hall_lights_with_show5", *both),
+                       labeled("script", "show5_radio", *both),
+                       labeled("automation", "jarvis_local_timer", INSTALLED["label_id"]),
+                       labeled("script", "jarvis_music_play", INSTALLED["label_id"])]
+    return house
+
+
+class LabelTests(unittest.TestCase):
+    def test_what_carries_the_shows_label_goes_and_the_label_after_it(self):
+        house = labeled_house()
+        found = remove.find(house, "genbuShow5", music=Music(players=()).find)
+        self.assertEqual([i for i, _ in found.automations],
+                         ["techo5_turn_room_down_genbushow5", "hall_lights_with_show5"])
+        self.assertEqual([i for i, _ in found.scripts], ["show5_radio"])
+        self.assertEqual([x["label_id"] for x in found.labels], ["genbu_show_genbushow5"])
+        goes, _, stays = remove.plan(found)
+        self.assertIn("script show5_radio", goes)
+        self.assertIn("label 'Genbu Show: genbushow5'", goes)
+        self.assertTrue(any("only the 'Genbu Show installed' label" in s for s in stays))
+
+        saved, keep = kept()
+        lines = []
+        self.assertEqual(remove.remove(house, found, keep=keep, progress=lines.append), 0)
+        self.assertEqual(saved["remove-show-genbushow5"]["scripts"], {"show5_radio": {"sequence": []}})
+        self.assertEqual(saved["remove-show-genbushow5"]["labels"], [SHOW_LABEL])
+        self.assertEqual(set(house.automations),
+                         {"techo5_turn_room_down_livingroomecho8", "mine", "jarvis_local_timer"})
+        self.assertEqual(set(house.scripts), {"jarvis_music_play"})
+        self.assertEqual(house.labels, [INSTALLED])
+        self.assertIn("label 'Genbu Show: genbushow5': removed", lines)
+        # the label goes last, once the Show's pieces are gone
+        writes = [c[1] for c in house.calls if c[0] in ("DELETE", "POST") or c[1].endswith("/delete")]
+        self.assertEqual(writes[-1], "config/label_registry/delete")
+
+    def test_the_label_stays_while_something_still_carries_it(self):
+        house = labeled_house()
+        house.fail.add(("DELETE", "/api/config/script/config/show5_radio"))
+        found = remove.find(house, "genbuShow5")
+        lines = []
+        self.assertEqual(remove.remove(house, found, keep=kept()[1], progress=lines.append), 1)
+        self.assertIn(SHOW_LABEL, house.labels)
+        self.assertTrue(any(line.startswith("label 'Genbu Show: genbushow5' stays: 1 thing(s)") for line in lines))
+        self.assertNotIn("config/label_registry/delete", [c[1] for c in house.calls])
+
+    def test_a_label_under_an_older_name_is_found(self):
+        house = FakeHA()
+        house.labels = [{"label_id": "old", "name": "genbu show: KITCHENSHOW"}]
+        house.automations["kitchen_extra"] = {"id": "kitchen_extra"}
+        house.entities.append(labeled("automation", "kitchen_extra", "old"))
+        found = remove.find(house, "genbuShow5", also=["kitchenShow"])
+        self.assertIn("kitchen_extra", [i for i, _ in found.automations])
+        self.assertEqual([x["label_id"] for x in found.labels], ["old"])
+
+    def test_the_common_label_alone_takes_nothing(self):
+        house = labeled_house()
+        house.labels = [dict(INSTALLED)]
+        found = remove.find(house, "genbuShow5")
+        self.assertEqual([i for i, _ in found.automations], ["techo5_turn_room_down_genbushow5"])
+        self.assertFalse(found.scripts or found.labels)
+
+    def test_a_house_without_labels_is_found_by_name(self):
+        house = FakeHA()
+        found = remove.find(house, "genbuShow5")
+        self.assertEqual([i for i, _ in found.automations], ["techo5_turn_room_down_genbushow5"])
+        self.assertFalse(found.labels)
+
+
+def _cli():
+    spec = importlib.util.spec_from_file_location("jarvis_show_cli_remove", ROOT / "tools" / "jarvis-show.py")
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    return cli
+
+
+class Clock:
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+
+class WaitUnpluggedTests(unittest.TestCase):
+    def setUp(self):
+        self.cli = _cli()
+        self.found = remove.Found(name="genbuShow5", names=["genbuShow5"], mac=MAC)
+        self.found.players = [dict(PLAYER)]
+
+    def wait(self, music, **kw):
+        clock = Clock()
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.cli._wait_unplugged(self.found, music, sleep=clock.sleep, clock=clock, **kw)
+        return out.getvalue(), clock.now
+
+    def test_waits_until_the_player_is_gone(self):
+        answers = iter([([], [dict(PLAYER)]), ([], [dict(PLAYER, available=False)])])
+        out, waited = self.wait(lambda names, mac: next(answers))
+        self.assertEqual(waited, 10)
+        self.assertFalse(self.found.players[0]["available"])
+        self.assertIn("Unplug the Show now", out)
+        self.assertIn("the Show is off the network", out)
+
+    def test_gives_up_after_the_wait_and_keeps_the_player(self):
+        asked = []
+        out, waited = self.wait(lambda names, mac: asked.append(mac) or ([], [dict(PLAYER)]), wait=30)
+        self.assertEqual(waited, 30)
+        self.assertEqual(asked, [MAC] * 6)
+        self.assertIn("still on the network", out)
+        self.assertTrue(self.found.players[0]["available"])
+
+    def test_music_assistant_not_answering_keeps_waiting(self):
+        answers = iter([None, ([], [])])
+        out, waited = self.wait(lambda names, mac: next(answers))
+        self.assertEqual(waited, 10)
+        self.assertIn("off the network", out)
+
+    def test_ctrl_c_while_waiting_removes_nothing(self):
+        cli = self.cli
+        found = remove.find(FakeHA(), "genbuShow5", music=Music().find)
+        settings = types.SimpleNamespace(ha_admin=True, ha_sign_in=object(), music_assistant="ma.example.org",
+                                         music_assistant_token="t")
+        args = types.SimpleNamespace(name="genbuShow5", yes_remove=True, no_questions=False)
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(cli, "gather", return_value=settings), \
+                mock.patch.object(cli.gone, "find", return_value=found), \
+                mock.patch.object(cli.gone, "remove") as removed, \
+                mock.patch.object(cli, "_wait_unplugged", side_effect=KeyboardInterrupt), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as err:
+            code = cli.remove_show_command(args, pathlib.Path(tmp))
+        self.assertEqual(code, 1)
+        removed.assert_not_called()
+        self.assertIn("stopped while waiting; nothing was removed", err.getvalue())
+
+    def test_an_offline_show_does_not_wait(self):
+        cli = self.cli
+        found = remove.find(FakeHA(), "genbuShow5", music=Music(players=[dict(PLAYER, available=False)]).find)
+        settings = types.SimpleNamespace(ha_admin=True, ha_sign_in=object(), music_assistant="ma.example.org",
+                                         music_assistant_token="t")
+        args = types.SimpleNamespace(name="genbuShow5", yes_remove=True, no_questions=False)
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(cli, "gather", return_value=settings), \
+                mock.patch.object(cli.gone, "find", return_value=found), \
+                mock.patch.object(cli.gone, "remove", return_value=0) as removed, \
+                mock.patch.object(cli, "_wait_unplugged") as waited, \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.remove_show_command(args, pathlib.Path(tmp)), 0)
+        waited.assert_not_called()
+        removed.assert_called_once()
+
+
+class FlagTests(unittest.TestCase):
+    def setUp(self):
+        self.cli = _cli()
+
+    def parse(self, *argv):
+        with mock.patch.object(sys, "argv", ["jarvis-show.py", *argv]):
+            return self.cli.parse_args()
+
+    def test_the_flag_is_its_own_run(self):
+        self.assertEqual(self.parse("--remove-show", "--name", "genbuShow5").command, "remove-show")
+        self.assertEqual(self.parse().command, "preflight")
+
+    def test_the_flag_with_a_command_is_refused(self):
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()) as err:
+            self.parse("home-assistant", "--remove-show", "--name", "genbuShow5")
+        self.assertIn("--remove-show is a run of its own", err.getvalue())
+
+    def test_the_old_command_is_gone(self):
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            self.parse("remove-show", "--name", "genbuShow5")
 
 
 class RecordTests(unittest.TestCase):
@@ -383,7 +599,8 @@ def _server(*answers):
 class FilesTests(unittest.TestCase):
     def test_the_command_is_there(self):
         source = (ROOT / "tools/jarvis-show.py").read_text(encoding="utf-8")
-        self.assertIn('"remove-show"', source)
+        self.assertIn('"--remove-show"', source)
+        self.assertIn("_wait_unplugged(found, music)", source)
         self.assertIn("--yes-remove", source)
         self.assertIn("ui.out.typed(found.name)", source)
 

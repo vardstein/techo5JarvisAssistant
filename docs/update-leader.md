@@ -58,7 +58,7 @@ Once the folder is in place the installer does step 2 itself and adds more mains
 **A Show taken out for good.** The action `genbu.forget_show` (from 1.1.0) drops one Show by its node name:
 from the main list, from the music choice, and from what Genbu remembers of it, with its Repairs issues.
 When it was the only main update Show, the Show Genbu recommends becomes main, and the answer says which
-(`mains`, `new_main`). The installer's `remove-show` calls it after removing the Show's ESPHome entry, so
+(`mains`, `new_main`). The installer's `--remove-show` calls it after removing the Show's ESPHome entry, so
 Genbu does not find it again first.
 
 **The Genbu page** (from 1.3.0). Genbu adds **Genbu** to the sidebar, with one card per Show. A card has

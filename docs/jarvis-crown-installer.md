@@ -607,13 +607,13 @@ has the default given here.
 | `wifi` | Puts an installed Show on a Wi-Fi network over its USB cable, for when it is offline. | `--wifi` |
 | `home-assistant` | Adds an installed Show to Home Assistant and sets it up: the steps above. Safe to run again. | `--name` |
 | `boot-logo` | Puts the OpenJade logo in place of Amazon's at boot, over SSH ([boot logos](../tools/boot-logo/README.md)). | `--name` |
-| `remove-show` | Takes a Show out of Home Assistant and Music Assistant, so it can be added again as a new device or given away ([Taking a Show out](#taking-a-show-out)). Lists first, then asks you to type the Show's name. | `--name`, an admin |
+| `--remove-show` | Not a command but a run of its own: takes a Show out of Home Assistant and Music Assistant, so it can be added again as a new device or given away ([Taking a Show out](#taking-a-show-out)). Lists first, asks you to type the Show's name, then waits for you to unplug the Show. | `--name`, an admin |
 
 ### The Show and its files
 
 | Switch | Used by | Meaning |
 | --- | --- | --- |
-| `--name NAME` | install, home-assistant, boot-logo, remove-show | The Show's name, as Home Assistant shows it. The installer records it in `backups/<serial>/show.json`, and the other commands find the unit by it. |
+| `--name NAME` | install, home-assistant, boot-logo, --remove-show | The Show's name, as Home Assistant shows it. The installer records it in `backups/<serial>/show.json`, and the other commands find the unit by it. |
 | `--board crown\|checkers` | all | Cross-checks the board. Normally it is detected; `amonet-upgrade` needs it, and `install` needs it to carry on from TWRP. |
 | `--serial SERIAL` | wifi, home-assistant | Which unit. `wifi` talks to that Show on USB (not needed when only one is attached); `home-assistant` takes its key from `backups/<serial>/`. |
 | `--host ADDRESS` | home-assistant, boot-logo, install, unlock | The Show's address, when `backups/<serial>/address`, mDNS and Home Assistant cannot find it (a Show on another VLAN, say). For `install` and `unlock`, where a Show running Jarvis is reached over SSH to send it to fastboot. |
@@ -634,36 +634,49 @@ has the default given here.
 | `--ssh-key FILE` | install | An SSH public key root accepts from the first boot, instead of the key the installer makes for this Show (`~/.ssh/genbu_<name>`). Refused when it is another Show's key. |
 | `--no-ssh` | install | No key at all: SSH stays off, the USB console is the way in. |
 | `--amazon-logo` | boot-logo | Puts Amazon's logo back instead. |
-| `--yes-remove` | remove-show | Removes without typing the Show's name first. Without it, `--no-questions` only lists what would go. |
+| `--yes-remove` | --remove-show | Removes without typing the Show's name first. Without it, `--no-questions` only lists what would go. |
 
 ### Taking a Show out
 
 ```
-python3 tools/jarvis-show.py remove-show --name "Kitchen Show"
+python3 tools/jarvis-show.py --remove-show --name "Kitchen Show"
 ```
 
 It needs a Home Assistant admin, and a Music Assistant admin for the Show's user and player there
-(without one it says so and leaves Music Assistant alone). First it lists what goes, what has to wait,
-and what stays, and saves everything that goes in `backups/home-assistant/` before it removes anything.
-In this order:
+(without one it says so and leaves Music Assistant alone). First it lists what goes, what waits for the
+Show to be unplugged, and what stays. Once you have typed the Show's name it asks you to unplug the Show
+when Music Assistant still has it connected, and waits for that (up to 10 minutes; Ctrl-C stops without
+removing anything). Then it saves everything that goes in `backups/home-assistant/` and removes it, in
+this order:
 
-1. our turn-the-room-down automation for it (`techo5_turn_room_down_<name>`); one made from the
-   blueprint by hand stays;
+1. our turn-the-room-down automation for it (`techo5_turn_room_down_<name>`), and every automation and
+   script with the Show's label (below); one made from the blueprint by hand stays, unless you gave it
+   the Show's label;
 2. its own Home Assistant user (`show_<name>`), which ends its token. Admins and the owner are never
    removed;
 3. its Music Assistant user (for the lyrics) and its player. Music Assistant keeps a player that is
-   connected and makes it again at once, so the player goes on a second run, once the Show is switched
-   off. Home Assistant drops the player's device when Music Assistant removes it;
+   connected and makes it again at once, which is why the run waits for the Show to be unplugged. If it
+   is still on the network after 10 minutes, the rest goes and the player stays for the next run. Home
+   Assistant drops the player's device when Music Assistant removes it;
 4. its ESPHome entry, which takes its devices, their entities and their area links with it;
 5. its place in Genbu (main update Show, music choice), with `genbu.forget_show`. When it was the only
    main update Show, Genbu makes the one it recommends main. A Genbu older than 1.1.0 has no such action:
    copy the new folder over and restart Home Assistant, or pick another main in
-   `select.genbu_main_update_show` yourself.
+   `select.genbu_main_update_show` yourself;
+6. the Show's label, once nothing carries it any more.
 
-What stays: the house-wide `jarvis_local_*` automations, the blueprints, the room and its dashboard,
-the calendars, and `backups/<serial>/`, so the unit can be installed again. Other automations, scripts
+What stays: everything with only the "Genbu Show installed" label (the house-wide `jarvis_local_*`
+automations and the music scripts), the blueprints, the room and its dashboard, the calendars, and
+`backups/<serial>/`, so the unit can be installed again. Other automations, scripts
 and dashboards that use the Show are listed, not changed: they show up as unavailable entities until
 you change them.
+
+**Labels.** Everything the installer makes in Home Assistant carries the label "Genbu Show installed",
+so **Settings → Labels** shows it all. What belongs to one Show (its devices and its turn-the-room-down
+automation) also carries "Genbu Show: <node>", with the Show's ESPHome name. `--remove-show` takes out the
+automations and scripts with that label, so one you add the label to yourself goes with the Show too.
+Shows installed before the labels get them the next time `home-assistant` runs; until then the Show's
+pieces are found by name, as before.
 
 Run it again any time. It finds what is left by the names the Show went by and the MAC address it kept
 in `backups/<serial>/show.json` on the first run, and says so when nothing is left. To use the Show

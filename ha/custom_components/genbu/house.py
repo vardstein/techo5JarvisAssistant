@@ -317,7 +317,7 @@ class House:
         self._settle(now)
 
     def forget(self, node: str, now: datetime, new: str | None = None) -> None:
-        """A Show taken out of the house for good (the installer's remove-show): it leaves the main
+        """A Show taken out of the house for good (the installer's --remove-show): it leaves the main
         update Shows, new taking its place when given, and nothing about it is kept."""
         if node in self.data["mains"]:
             self.replace(node, new, now)

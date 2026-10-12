@@ -21,7 +21,7 @@ That token is either an admin's long-lived one, or one the installer gets by sig
 with a username and password (sign_in, Music Assistant's own auth/login). A sign-in's token is
 revoked again when the run ends (sign_out).
 
-A Show taken out of the house (remove-show) loses its user here and its player (show_leftovers,
+A Show taken out of the house (--remove-show) loses its user here and its player (show_leftovers,
 remove_leftovers). The player is found by the Show's MAC, which is the Sendspin client id it connects
 with, or by its name when the MAC is not known any more. Music Assistant refuses to remove a player that
 is connected and makes it again at once, so that one waits until the Show is off the network.

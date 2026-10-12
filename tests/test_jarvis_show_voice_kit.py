@@ -55,6 +55,9 @@ class FakeHA:
         self.related = {}           # entity -> automation entity ids
         self.posts = []
         self.ws_calls = []
+        self.labels = []            # the label registry
+        self.item_labels = {}       # automation/script entity id -> label ids
+        self.loaded = True          # Home Assistant has loaded what was saved, so it is in the registry
 
     def ws(self, msg):
         self.ws_calls.append(msg)
@@ -66,7 +69,19 @@ class FakeHA:
         if t == "config/device_registry/list":
             return self.devices
         if t == "config/entity_registry/list":
-            return self.entities
+            items = [{"entity_id": f"{kind}.{item}", "platform": kind, "unique_id": item,
+                      "labels": list(self.item_labels.get(f"{kind}.{item}", []))}
+                     for kind, item in self.configs] if self.loaded else []
+            return self.entities + items
+        if t == "config/label_registry/list":
+            return [dict(x) for x in self.labels]
+        if t == "config/label_registry/create":
+            label = {"label_id": msg["name"].lower().replace(" ", "_").replace(":", ""), **msg}
+            self.labels.append(label)
+            return label
+        if t == "config/entity_registry/update":
+            self.item_labels[msg["entity_id"]] = list(msg["labels"])
+            return {}
         if t == "config_entries/get":
             return self.entries
         if t == "blueprint/list":
@@ -334,6 +349,77 @@ class SetUpTests(unittest.TestCase):
         log = run(fake)
         self.assertIn(("automation", "techo5_turn_room_down_jarvis_show_5"), fake.configs)
         self.assertIn("no speaker besides the Show in Küche yet; it turns that one down once it is there", log)
+
+
+class LabelTests(unittest.TestCase):
+    """Everything it makes gets "Genbu Show installed"; the Show's own automation also the Show's label."""
+
+    def labels_of(self, fake, entity_id):
+        names = {x["label_id"]: x["name"] for x in fake.labels}
+        return sorted(names[i] for i in fake.item_labels.get(entity_id, []))
+
+    def test_the_show_s_automation_gets_both_and_the_house_s_only_the_common_one(self):
+        fake = FakeHA()
+        log = run(fake, node="jarvis-show-5")
+        self.assertEqual(sorted(x["name"] for x in fake.labels), ["Genbu Show installed", "Genbu Show: jarvis-show-5"])
+        self.assertEqual(self.labels_of(fake, "automation.techo5_turn_room_down_jarvis_show_5"),
+                         ["Genbu Show installed", "Genbu Show: jarvis-show-5"])
+        for kind, item in fake.configs:
+            if not item.startswith("techo5_"):
+                self.assertEqual(self.labels_of(fake, f"{kind}.{item}"), ["Genbu Show installed"], item)
+        self.assertNotIn("WARN", "\n".join(log))
+
+    def test_a_second_run_makes_no_new_labels_and_changes_none(self):
+        fake = FakeHA()
+        run(fake, node="jarvis-show-5")
+        fake.ws_calls.clear()
+        run(fake, node="jarvis-show-5")
+        kinds = {m["type"] for m in fake.ws_calls}
+        self.assertNotIn("config/label_registry/create", kinds)
+        self.assertNotIn("config/entity_registry/update", kinds)
+
+    def test_labels_put_on_by_hand_stay(self):
+        fake = FakeHA()
+        fake.labels.append({"label_id": "kitchen", "name": "Kitchen"})
+        fake.configs[("automation", "jarvis_local_wecker")] = json.loads(json.dumps(kit.wecker()))
+        fake.item_labels["automation.jarvis_local_wecker"] = ["kitchen"]
+        run(fake, node="jarvis-show-5")
+        self.assertEqual(self.labels_of(fake, "automation.jarvis_local_wecker"), ["Genbu Show installed", "Kitchen"])
+
+    def test_one_home_assistant_has_not_loaded_is_said_and_nothing_hangs(self):
+        fake = FakeHA()
+        fake.loaded = False
+        now = [0.0]
+
+        def sleep(seconds):
+            now[0] += seconds
+        log = run(fake, node="jarvis-show-5", sleep=sleep, clock=lambda: now[0])
+        self.assertLessEqual(now[0], 11)
+        warn = [line for line in log if line.startswith("WARN: not labeled yet")]
+        self.assertEqual(len(warn), 1)
+        self.assertIn("automation techo5_turn_room_down_jarvis_show_5", warn[0])
+
+    def test_a_house_without_labels_still_gets_everything(self):
+        fake = FakeHA()
+        real = fake.ws
+
+        def ws(msg):
+            if msg["type"].startswith("config/label_registry/"):
+                raise kit.HomeAssistantError("unknown command")
+            return real(msg)
+        fake.ws = ws
+        log = run(fake, node="jarvis-show-5")
+        self.assertEqual(len(fake.configs), 12)
+        self.assertTrue(any(line.startswith("WARN: Home Assistant did not take the labels") for line in log))
+
+    def test_a_hand_made_turn_down_gets_no_label(self):
+        fake = FakeHA()
+        fake.configs[("automation", "by_hand")] = {"alias": "by hand", "use_blueprint": {
+            "path": "techo5/turn-room-down.yaml", "input": {"satellite": SHOW[0]}}}
+        fake.related[SHOW[0]] = ["automation.by_hand"]
+        fake.states["automation.by_hand"] = {"state": "on", "attributes": {"id": "by_hand"}}
+        run(fake, node="jarvis-show-5")
+        self.assertEqual(self.labels_of(fake, "automation.by_hand"), [])
 
 
 class WeckerTests(unittest.TestCase):
