@@ -36,14 +36,21 @@ func (r *renderer) turnStrip(s scene) {
 	in := r.rowIn()
 	head, rest, tone := "Listening…", "Go ahead", dim
 	if s.phase == "thinking" {
-		head, rest, tone = "Thinking…", s.heard, cream
+		head, rest, tone = "Thinking…", sentenceCase(s.heard), cream
 	}
+	// The turn page's rings, small, in front of the word: the same picture says the same thing here.
+	// They stand still, since the page under the strip is not drawn again at the turn's pace.
+	scale := 0.55 * float64(box.Dy()) / float64(r.s(ringBoxH))
+	ringW := float64(r.s(ringBoxW)) * scale
+	r.rings(s, float64(box.Min.X+in)+ringW/2, float64(box.Min.Y+box.Max.Y)/2, scale)
+
 	y := box.Min.Y + 84
-	r.text(r.title, head, box.Min.X+in, y, amber)
+	hx := box.Min.X + in + int(ringW) + 24
+	r.text(r.title, head, hx, y, amber)
 	if rest == "" {
 		return
 	}
-	x := box.Min.X + in + r.width(r.title, head) + 28
+	x := hx + r.width(r.title, head) + 28
 	r.text(r.body, clipText(r, r.body, rest, box.Max.X-in-x), x, y, tone)
 }
 
