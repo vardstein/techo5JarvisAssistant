@@ -69,8 +69,9 @@ type scene struct {
 	dashAdjust dashAdjusting // a level a finger is sliding
 
 	// bt is the Bluetooth audio state: the pairing page replaces everything while it is on, and a
-	// connected device is named in the footer.
-	bt btaudio.State
+	// connected device is named in the footer. btScroll is how far its list is scrolled.
+	bt       btaudio.State
+	btScroll int
 
 	// sheet is the settings sheet, drawn instead of everything else while showSheet is set.
 	showSheet bool

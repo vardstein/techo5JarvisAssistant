@@ -3,6 +3,7 @@
 package display
 
 import (
+	"fmt"
 	"image"
 	"os"
 	"path/filepath"
@@ -59,6 +60,83 @@ func TestBluetoothListOrder(t *testing.T) {
 	}
 	if heard[0].Address != "a" {
 		t.Error("btList changed the state it was given")
+	}
+}
+
+// At every menu size, on both panels, the keyboard has every key, each inside the panel and none on
+// top of another, in letters and in symbols.
+func TestKeyboardHasEveryKey(t *testing.T) {
+	t.Cleanup(func() { menuZoom.Store(100) })
+	net := wifi.Network{SSID: "Neighbours", Secured: true}
+	for _, m := range menuSizes {
+		useMenuSize(menuSizeIndexOf(m.percent))
+		for _, panel := range []image.Point{{showWide, showHigh}, {show8Wide, show8High}} {
+			for _, symbols := range []bool{false, true} {
+				img := image.NewRGBA(image.Rect(0, 0, panel.X, panel.Y))
+				r := newRenderer(img)
+				r.draw(scene{phase: "idle", showWifi: true, wifi: wifiState{pick: &net, symbols: symbols}})
+				what := fmt.Sprintf("%d%% %v symbols=%v", m.percent, panel, symbols)
+				keys := map[string]image.Rectangle{}
+				for _, z := range r.zones {
+					if k, ok := strings.CutPrefix(z.id, "key:"); ok {
+						if !z.r.In(img.Rect) {
+							t.Errorf("%s: key %q is off the panel: %v", what, k, z.r)
+						}
+						keys[k] = z.r
+					}
+				}
+				rows := keyRowsLetters
+				want := []string{"shift", "backspace", "symbols", "space", "join"}
+				if symbols {
+					rows, want = keyRowsSymbols, want[1:]
+				}
+				for _, k := range append(strings.Split(strings.Join(rows, ""), ""), want...) {
+					if _, ok := keys[k]; !ok {
+						t.Errorf("%s: no key %q", what, k)
+					}
+				}
+				for a, ra := range keys {
+					for b, rb := range keys {
+						if a < b && ra.Inset(1).Overlaps(rb.Inset(1)) {
+							t.Errorf("%s: keys %q and %q overlap", what, a, b)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// A tap lands on the device or network drawn there, found by its address or name rather than its
+// place, and the arrow is the way back.
+func TestPageTapsFollowTheDrawing(t *testing.T) {
+	devices := []btaudio.Device{{Address: "a", Name: "Stranger"}, {Address: "d", Name: "Speaker", Paired: true, Connected: true}}
+	nets := []wifi.Network{{SSID: "HomeWiFi", Signal: -48, Secured: true}, {SSID: "Cafe guest", Signal: -78}}
+	for name, c := range map[string]struct {
+		s    scene
+		want []string
+	}{
+		"bluetooth": {scene{phase: "idle", bt: btaudio.State{Available: true, Pairing: true, Devices: devices}}, []string{"d", "a"}},
+		"wifi":      {scene{phase: "idle", showWifi: true, wifi: wifiState{nets: nets}}, []string{"HomeWiFi", "Cafe guest"}},
+	} {
+		r := testRenderer()
+		r.draw(c.s)
+		var got []string
+		for _, z := range r.zones {
+			if z.kind == zoneRow {
+				hit, ok := r.zoneAt((z.r.Min.X+z.r.Max.X)/2, (z.r.Min.Y+z.r.Max.Y)/2)
+				if !ok || hit.id != z.id {
+					t.Errorf("%s: a tap on %q found %+v", name, z.id, hit)
+				}
+				got = append(got, z.id)
+			}
+		}
+		if strings.Join(got, ",") != strings.Join(c.want, ",") {
+			t.Errorf("%s: rows %q, want %q", name, got, c.want)
+		}
+		if z, ok := r.zoneAt(r.cz(60), r.cz(carHeader)/2); !ok || z.kind != zoneBack {
+			t.Errorf("%s: the arrow is %+v", name, z)
+		}
 	}
 }
 
