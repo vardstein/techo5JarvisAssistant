@@ -109,6 +109,9 @@ def parse_args() -> argparse.Namespace:
                        help="set up the Home Assistant pieces around the Shows: the room going quiet while a "
                             "Show listens, and with a German assistant local answers (room, temperature, "
                             "forecast, volume) and music by voice (default: ask; Enter is no)")
+    setup.add_argument("--genbu-assistant", action=argparse.BooleanOptionalAction, default=None,
+                       help="call the Assist pipeline the Show talks to 'Genbu Assistant'; every device on it "
+                            "follows the new name, and the pipeline is saved first (default: ask; Enter is no)")
     setup.add_argument("--rename-entities", action=argparse.BooleanOptionalAction, default=None,
                        help="for a Show renamed since it was installed: give its entities the new name too, "
                             "and the automations and dashboards that use them (each saved first) "
@@ -297,6 +300,10 @@ QUESTIONS = {  # label: (question, help, names for the options, the answers Ente
     "room": ("Which room is it in?", "It plays and shows that room's music.", {}, ()),
     "room dashboard": ("The room has no dashboard of its own. Make a small one?",
                        "Heating, temperature, lights and blinds; the Show swipes on to it.", {}, ()),
+    "assistant name": ("Call this assistant Genbu Assistant?",
+                       "Renames the Assist pipeline the Show talks to. Every device that uses it, Shows and "
+                       "voice satellites, follows the new name and keeps answering the same way. The pipeline "
+                       "is saved first.", {}, ("no",)),
     "voice extras": ("Set up the voice extras?",
                      "The room's music goes quiet while the Show listens. With a German assistant it also "
                      "answers about the room, the temperature, the weather and the volume, and plays music by "
@@ -333,7 +340,8 @@ def _chooser(args):
         return None
     given = {"assistant": args.assistant, "wake word": args.wake_word, "room": args.room,
              "room dashboard": args.room_dashboard, "voice extras": args.voice_extras,
-             "calendars": args.calendars, "new name": getattr(args, "rename_entities", None)}
+             "calendars": args.calendars, "new name": getattr(args, "rename_entities", None),
+             "assistant name": getattr(args, "genbu_assistant", None)}
 
     def choose(label: str, current: str, options: list[str], shown: dict[str, str] | None = None) -> str | None:
         if given.get(label) is not None:
@@ -412,7 +420,7 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
     opts = ha_api.DeployOptions(
         name=name, psk=psk, host=host, wake_word=args.wake_word or None, assistant=args.assistant or None,
         room=args.room or None, room_dashboard=args.room_dashboard, voice_extras=args.voice_extras,
-        keep_replaced=_keeper(backups), calendars=args.calendars, caldav=caldav,
+        assistant_name=getattr(args, "genbu_assistant", None), keep_replaced=_keeper(backups), calendars=args.calendars, caldav=caldav,
         ask_caldav=_caldav_asker(args), rename_entities=getattr(args, "rename_entities", None), renamed=renamed,
         settings=ha_api.DeviceSettings(dashcast=settings.dashcast, dashcast_key=settings.dashcast_key,
                                        ha_url=settings.ha_url, ha_token=settings.ha_token,

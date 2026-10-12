@@ -645,6 +645,68 @@ def _selects_ready(ha: HomeAssistant, entities: list[str]) -> bool:
     return True
 
 
+# The name the house's assistant goes by (GENBU-109): the Assist pipeline the Shows talk to, which the rest
+# of the assistant chain sends its requests to as well.
+ASSISTANT_NAME = "Genbu Assistant"
+_PIPELINE_SELECT = re.compile(r"-pipeline(?:_\d+)?$")
+# What assist_pipeline/pipeline/update takes besides the id (PIPELINE_FIELDS in Home Assistant).
+_PIPELINE_FIELDS = ("conversation_engine", "conversation_language", "language", "name", "stt_engine",
+                    "stt_language", "tts_engine", "tts_language", "tts_voice", "wake_word_entity",
+                    "wake_word_id", "prefer_local_intents", "acknowledge_media_id")
+
+
+def _pipeline_selects(ha: HomeAssistant) -> dict[str, str]:
+    """Every device's assistant select (Shows, voice satellites, ...) and the option it is on."""
+    found = {}
+    for e in ha.ws({"type": "config/entity_registry/list"}) or []:
+        eid = str(e.get("entity_id") or "")
+        if eid.startswith("select.") and _PIPELINE_SELECT.search(str(e.get("unique_id") or "")):
+            state = ha.request("GET", f"/api/states/{eid}") or {}
+            found[eid] = str(state.get("state") or "")
+    return found
+
+
+def _name_assistant(ha: HomeAssistant, entities: list[str], wanted: bool | None, choose: Chooser | None,
+                    keep: Callable[[str, Any], str] | None) -> str:
+    """Calls the Assist pipeline the Show talks to ASSISTANT_NAME, when wanted or choose says so. Devices
+    pick a pipeline by its name, and Home Assistant turns a select whose name went away back to
+    "preferred"; so every select that was on the old name is put on the new one, and none of them ends up
+    talking to another assistant. The pipeline and those selects are saved first. Returns what happened."""
+    matches = [e for e in entities if e.startswith("select.") and e.endswith("_assistant")]
+    if not matches:
+        return "no assistant select on this Show, so its assistant keeps its name"
+    current = str((ha.request("GET", f"/api/states/{min(matches, key=len)}") or {}).get("state") or "")
+    try:
+        listed = ha.ws({"type": "assist_pipeline/pipeline/list"}) or {}
+    except HomeAssistantError as exc:
+        return f"the assistant keeps its name: Home Assistant did not list its pipelines ({exc})"
+    pipelines = [p for p in listed.get("pipelines") or [] if isinstance(p, dict)]
+    want_id = listed.get("preferred_pipeline") if current == "preferred" else None
+    pipeline = next((p for p in pipelines if (p.get("id") == want_id if want_id else p.get("name") == current)), None)
+    if pipeline is None:
+        return f"the assistant keeps its name: no pipeline {current!r} in Home Assistant"
+    old = str(pipeline.get("name") or "")
+    if old == ASSISTANT_NAME:
+        return f"the assistant is already called {ASSISTANT_NAME}"
+    if any(p.get("name") == ASSISTANT_NAME for p in pipelines):
+        return f"the assistant keeps the name {old}: another pipeline is already called {ASSISTANT_NAME}"
+    if wanted is None and choose:
+        wanted = choose("assistant name", "", ["yes", "no"],
+                        {"yes": f"yes, {old} becomes {ASSISTANT_NAME}", "no": f"no, keep {old}"}) == "yes"
+    if not wanted:
+        return f"the assistant keeps the name {old}"
+    if keep is None:
+        return f"the assistant keeps the name {old}: there is nowhere to save it first"
+    selects = {e: o for e, o in _pipeline_selects(ha).items() if o == old}
+    saved = keep(f"assist-pipeline-{old}", {"pipeline": pipeline, "selects_on_it": sorted(selects)})
+    ha.ws({"type": "assist_pipeline/pipeline/update", "pipeline_id": pipeline["id"],
+           **{k: pipeline[k] for k in _PIPELINE_FIELDS if k in pipeline}, "name": ASSISTANT_NAME})
+    for entity in sorted(selects):
+        ha.request("POST", "/api/services/select/select_option", {"entity_id": entity, "option": ASSISTANT_NAME})
+    on = f"; {', '.join(sorted(selects))} follow{'s' if len(selects) == 1 else ''} it" if selects else ""
+    return f"the assistant {old} is now called {ASSISTANT_NAME}{on}; the old one is in {saved}"
+
+
 def _switch_on(ha: HomeAssistant, entities: list[str], suffix: str) -> str:
     matches = [e for e in entities if e.startswith("switch.") and e.endswith(suffix)]
     if not matches:
@@ -1238,6 +1300,7 @@ class DeployOptions:
     room: str | None = None        # the area it is in, by name or id; None as above
     room_dashboard: bool | None = None  # make a small one for the room if it has none; None: ask
     voice_extras: bool | None = None    # the house's answers and music sentences (voice_kit); None: ask
+    assistant_name: bool | None = None  # call the Show's pipeline ASSISTANT_NAME; None: ask
     calendars: str | None = None   # the calendar entities the Show shows, "a, b"; '': leave them; None: ask
     caldav: CalDAVAccount | None = None  # a calendar account to add to Home Assistant, without asking
     ask_caldav: Callable[[], CalDAVAccount | None] | None = None  # asks for one, once choose says yes
@@ -1351,6 +1414,8 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
 
     if opts.assistant or choose:
         progress(_select(ha, entities, "_assistant", opts.assistant, choose))
+    if opts.assistant_name or (opts.assistant_name is None and choose):
+        progress(_name_assistant(ha, entities, opts.assistant_name, choose, opts.keep_replaced))
     if opts.wake_word or choose:
         progress(_select(ha, entities, "_wake_word", opts.wake_word, choose))
     if opts.room or choose:

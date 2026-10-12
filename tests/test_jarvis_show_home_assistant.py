@@ -161,7 +161,7 @@ class FakeHA:
         if path == "/api/template" and "device_id(" in body["template"]:
             return f"D1\t{self.area or 'None'}"
         if path == "/api/template":
-            return "\n".join(list(self.states) + ["select.jarvis_show_5_assistant_2"])
+            return "\n".join([e for e in self.states if ".jarvis_show_5_" in e] + ["select.jarvis_show_5_assistant_2"])
         if path == "/api/services" and method == "GET":
             prefix = ha.service_prefix(self.node or "Jarvis Show 5")
             names = [f"{prefix}_{action}" for action in
@@ -370,6 +370,99 @@ class DeployTests(unittest.TestCase):
         self.assertEqual(shown["assistant"]["Jarvis"], "Jarvis (default)")
         self.assertIn("now Jarvis", shown["assistant"]["preferred"])
         self.assertNotIn("Basic", shown["assistant"])
+
+    def two_assistants(self, show_on="Jarvis"):
+        """A house with two pipelines, a Show and a voice satellite on Jarvis, and a third device on the other."""
+        fake = FakeHA()
+        jarvis = {"id": "p1", "name": "Jarvis", "language": "de", "conversation_engine": "conversation.jarvis",
+                  "conversation_language": "de", "stt_engine": "stt.faster_whisper", "stt_language": "de",
+                  "tts_engine": "tts.piper", "tts_language": "de", "tts_voice": "thorsten", "wake_word_entity": None,
+                  "wake_word_id": None, "prefer_local_intents": True}
+        fake.pipelines = {"pipelines": [jarvis, {"id": "p2", "name": "Basic"}], "preferred_pipeline": "p1"}
+        options = {"options": ["preferred", "Basic", "Jarvis"]}
+        fake.states["select.jarvis_show_5_assistant"] = {"state": show_on, "attributes": options}
+        fake.states["select.kitchen_pe_assistant"] = {"state": "Jarvis", "attributes": options}
+        fake.states["select.office_pe_assistant"] = {"state": "Basic", "attributes": options}
+        fake.entities += [
+            {"entity_id": "select.jarvis_show_5_assistant", "unique_id": "aa:bb-pipeline", "device_id": "D1"},
+            {"entity_id": "select.kitchen_pe_assistant", "unique_id": "cc:dd-pipeline", "device_id": None},
+            {"entity_id": "select.office_pe_assistant", "unique_id": "ee:ff-pipeline_2", "device_id": None},
+            {"entity_id": "select.kitchen_pe_wake_word", "unique_id": "cc:dd-wake_word", "device_id": None},
+        ]
+        fake.states["select.kitchen_pe_wake_word"] = {"state": "Jarvis", "attributes": {"options": ["Jarvis"]}}
+        return fake, jarvis
+
+    def test_the_assistant_is_renamed_and_every_device_on_it_follows(self):
+        fake, jarvis = self.two_assistants()
+        kept = {}
+
+        def keep(what, config):
+            kept[what] = config
+            return "/backups/" + what
+        _, log = run_deploy(fake, host="10.0.0.9", assistant_name=True, keep_replaced=keep)
+        update = [m for m in fake.ws_calls if m["type"] == "assist_pipeline/pipeline/update"]
+        self.assertEqual(update, [{"type": "assist_pipeline/pipeline/update", "pipeline_id": "p1",
+                                   **{k: v for k, v in jarvis.items() if k != "id"}, "name": "Genbu Assistant"}])
+        # Saved before it changed, with the devices that were on it.
+        self.assertEqual(kept["assist-pipeline-Jarvis"]["pipeline"]["name"], "Jarvis")
+        self.assertEqual(kept["assist-pipeline-Jarvis"]["selects_on_it"],
+                         ["select.jarvis_show_5_assistant", "select.kitchen_pe_assistant"])
+        self.assertEqual(fake.states["select.jarvis_show_5_assistant"]["state"], "Genbu Assistant")
+        self.assertEqual(fake.states["select.kitchen_pe_assistant"]["state"], "Genbu Assistant")
+        # Not a pipeline select, and one on another assistant: both left alone.
+        self.assertEqual(fake.states["select.kitchen_pe_wake_word"]["state"], "Jarvis")
+        self.assertEqual(fake.states["select.office_pe_assistant"]["state"], "Basic")
+        self.assertTrue(any("Jarvis is now called Genbu Assistant" in line and "/backups/" in line for line in log))
+
+    def test_a_show_on_preferred_renames_the_preferred_one(self):
+        fake, _ = self.two_assistants(show_on="preferred")
+        _, log = run_deploy(fake, host="10.0.0.9", assistant_name=True, keep_replaced=lambda *_: "x")
+        update = [m for m in fake.ws_calls if m["type"] == "assist_pipeline/pipeline/update"]
+        self.assertEqual([(m["pipeline_id"], m["name"]) for m in update], [("p1", "Genbu Assistant")])
+        self.assertEqual(fake.states["select.jarvis_show_5_assistant"]["state"], "preferred")
+        self.assertEqual(fake.states["select.kitchen_pe_assistant"]["state"], "Genbu Assistant")
+
+    def test_the_assistant_keeps_its_name_unless_asked(self):
+        for kw, said in (({"keep_replaced": lambda *_: "x"}, "keeps the name Jarvis"),
+                         ({"assistant_name": True}, "nowhere to save it first"),
+                         ({"assistant_name": False, "keep_replaced": lambda *_: "x"}, None)):
+            fake, _ = self.two_assistants()
+            asked = []
+
+            def choose(label, current, options, names=None):
+                asked.append(label)
+                return None  # Enter at every question
+            _, log = run_deploy(fake, host="10.0.0.9", choose=choose if "assistant_name" not in kw else None, **kw)
+            self.assertFalse([m for m in fake.ws_calls if m["type"] == "assist_pipeline/pipeline/update"], kw)
+            self.assertEqual(fake.states["select.kitchen_pe_assistant"]["state"], "Jarvis")
+            if said:
+                self.assertTrue(any(said in line for line in log), (kw, log))
+            else:  # --no-genbu-assistant: not even looked at
+                self.assertFalse(any("Genbu Assistant" in line or "keeps the name" in line for line in log), log)
+
+    def test_the_name_is_not_taken_twice(self):
+        fake, _ = self.two_assistants()
+        fake.pipelines["pipelines"][1]["name"] = "Genbu Assistant"
+        _, log = run_deploy(fake, host="10.0.0.9", assistant_name=True, keep_replaced=lambda *_: "x")
+        self.assertFalse([m for m in fake.ws_calls if m["type"] == "assist_pipeline/pipeline/update"])
+        self.assertTrue(any("another pipeline is already called Genbu Assistant" in line for line in log))
+        fake, _ = self.two_assistants(show_on="Basic")
+        fake.pipelines["pipelines"][1]["name"] = "Genbu Assistant"
+        fake.states["select.jarvis_show_5_assistant"]["state"] = "Genbu Assistant"
+        asked = []
+        run_deploy(fake, host="10.0.0.9", choose=lambda label, *_: asked.append(label), keep_replaced=lambda *_: "x")
+        self.assertNotIn("assistant name", asked)
+
+    def test_enter_keeps_the_assistant_name(self):
+        args = argparse.Namespace(assistant=None, wake_word=None, room=None, room_dashboard=None, voice_extras=None,
+                                  calendars=None, no_questions=False, genbu_assistant=None)
+        asker = Asker(interactive=True, ask=lambda _: "", say=lambda _: None)
+        with mock.patch.object(show_cli, "_asker", return_value=asker):
+            self.assertEqual(show_cli._chooser(args)("assistant name", "", ["yes", "no"], {}), "no")
+            args.genbu_assistant = True
+            self.assertIsNone(show_cli._chooser(args)("assistant name", "", ["yes", "no"], {}))
+        with mock.patch.object(sys, "argv", ["jarvis-show.py", "home-assistant", "--name", "x", "--genbu-assistant"]):
+            self.assertIs(show_cli.parse_args().genbu_assistant, True)
 
     def test_the_installer_shows_what_home_assistant_names(self):
         args = argparse.Namespace(assistant=None, wake_word=None, room=None, room_dashboard=None, voice_extras=None,
