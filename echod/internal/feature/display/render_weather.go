@@ -45,7 +45,7 @@ func (r *renderer) weatherPage(s scene) {
 	// The day's weather, large and faint, behind everything.
 	// Sized from the width, not the height: on the Show 5 both give 720, but a taller panel would
 	// grow this until it swallowed the page.
-	r.faded(20, func() { r.weatherIcon(cond, r.w/2, r.h/2+r.s(20), r.w*3/4) })
+	r.faded("weather "+cond, r.dst.Bounds(), 20, func() { r.weatherIcon(cond, r.w/2, r.h/2+r.s(20), r.w*3/4) })
 
 	// Today: a big icon, the reading beside it, the day's range and rain beneath.
 	r.weatherIcon(cond, r.margin+r.s(80), r.s(190), r.s(150))

@@ -418,7 +418,7 @@ func (r *renderer) coverArt(rd home.Radio, b image.Rectangle) {
 		r.roundFill(b, rad, shift(card, 6), shift(card, -4))
 		cx, cy, u := (b.Min.X+b.Max.X)/2, (b.Min.Y+b.Max.Y)/2, float64(b.Dx())/400
 		amber := color.RGBA{0xff, 0xff, 0xff, 0xff}
-		r.faded(60, func() {
+		r.faded(fmt.Sprint(rd.Music || rd.Now == "Music Assistant", card), b, 60, func() {
 			if rd.Music || rd.Now == "Music Assistant" {
 				// Two notes: heads, stems and a beam.
 				r.disc(cx-int(75*u), cy+int(80*u), int(34*u), amber)

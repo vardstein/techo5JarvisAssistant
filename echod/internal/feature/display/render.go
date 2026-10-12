@@ -261,6 +261,8 @@ type renderer struct {
 	// ground, kept while the song's picture stays the same.
 	cover coverCache
 	plain plainGround
+	// faint is the last faint picture laid behind a page (see faded), kept while it stays the same.
+	faint fadeKept
 
 	// calHits are the calendar page's buttons, days and events as last drawn (render_calendar.go).
 	calMu   sync.Mutex
