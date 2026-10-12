@@ -237,6 +237,23 @@ def volume(house: House) -> dict:
     }
 
 
+def _number_words() -> dict[str, int]:
+    """German number words up to 59, as Whisper writes small numbers out ("in einer Minute", "um
+    sieben"), each spelled the way it may come."""
+    ones = ["", "ein", "zwei", "drei", "vier", "fünf", "sechs", "sieben", "acht", "neun"]
+    words = {w: n for n, w in enumerate(ones) if w}
+    words.update({"null": 0, "eins": 1, "eine": 1, "einer": 1, "einem": 1, "einen": 1, "zwo": 2,
+                  "zehn": 10, "elf": 11, "zwölf": 12, "dreizehn": 13, "vierzehn": 14, "fünfzehn": 15,
+                  "sechzehn": 16, "siebzehn": 17, "achtzehn": 18, "neunzehn": 19})
+    for tens, t in [("zwanzig", 20), ("dreißig", 30), ("dreissig", 30), ("vierzig", 40), ("fünfzig", 50)]:
+        words[tens] = t
+        for n in range(1, 10):
+            words[f"{ones[n]}und{tens}"] = t + n
+    return words
+
+
+NUMBER_WORDS = _number_words()
+
 # A Show is told apart from other voice devices by its stop-alarm entity. Its actions are named after its
 # node, which echod makes from the device's name the way layout.Slug does: a-z and 0-9 kept, any run of
 # other characters one separator, none at the ends.
@@ -245,17 +262,26 @@ WECKER_VARIABLES = {
               "| select('search', 'stop_alarm') | list | count > 0 }}",
     "node": "{{ device_attr(trigger.device_id, 'name') | lower | regex_replace('[^a-z0-9]+', '_') "
             "| regex_replace('^_+|_+$', '') if techo5 else '' }}",
-    "spoken": "{{ (trigger.slots.when | default('')) | lower | replace('.', ':') | trim }}",
+    # What was said for the time, with number words as digits: "in einer Minute" is "in 1 minute".
+    "spoken": "{%- set words = " + repr(NUMBER_WORDS) + " -%}{%- set ns = namespace(out=[]) -%}"
+              "{%- for w in ((trigger.slots.when | default('')) | string | lower | replace('.', ':')).split() -%}"
+              "{%- set ns.out = ns.out + [words.get(w | trim(',:;!?'), w) | string] -%}"
+              "{%- endfor -%}{{ ns.out | join(' ') }}",
     "nums": "{{ spoken | regex_findall('[0-9]{1,2}') | map('int') | list }}",
     "length": "{{ spoken is search('minute|stunde') }}",
     # A length of time in minutes, or -1 when none was heard.
-    "minutes": "{%- if spoken is search('halben? stunde') -%}30{%- elif not nums and 'stunde' in spoken -%}60"
+    "minutes": "{%- if spoken is search('dreiviertel ?stunde') -%}45{%- elif spoken is search('viertel ?stunde') -%}15"
+               "{%- elif spoken is search('anderthalb|eineinhalb') and 'stunde' in spoken -%}90"
+               "{%- elif spoken is search('halben? stunde') -%}30{%- elif not nums and 'stunde' in spoken -%}60"
                "{%- elif not nums -%}-1{%- elif 'stunde' in spoken -%}"
                "{{ nums[0] * 60 + (nums[1] if nums | count > 1 else 0) }}{%- else -%}{{ nums[0] }}{%- endif -%}",
+    # "halb acht" is 7:30, "viertel vor acht" and "dreiviertel acht" 7:45, "viertel nach sieben" 7:15.
     "half": "{{ spoken is search('halb') }}",
+    "before": "{{ spoken is search('viertel vor|dreiviertel') }}",
+    "past": "{{ spoken is search('viertel nach') }}",
     "evening": "{{ spoken is search('abend|nachmittag|nachts') }}",
-    "h": "{{ (nums[0] - 1 if half else nums[0]) if nums else -1 }}",
-    "m": "{{ 30 if half else (nums[1] if nums | count > 1 else 0) }}",
+    "h": "{{ (nums[0] - 1 if half or before else nums[0]) if nums else -1 }}",
+    "m": "{{ 30 if half else 45 if before else 15 if past else (nums[1] if nums | count > 1 else 0) }}",
     "hh": "{{ h + 12 if evening and 0 <= h < 12 else h }}",
     # Rounded to the nearest minute, so "für 1 Minute" doesn't ring a few seconds later.
     "at": "{%- if length -%}{{ (now() + timedelta(minutes=minutes | int, seconds=30)).strftime('%H:%M') }}"
