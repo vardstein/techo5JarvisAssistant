@@ -111,6 +111,10 @@ type Feature struct {
 	// ownCameras is which of those are this device's own camera, by its address in Home Assistant's
 	// device registry; the list shows that one only as the local camera.
 	ownCameras map[string]bool
+	// esphomeCameras is which of Home Assistant's cameras come from ESPHome and so stream live
+	// pictures, as the entity registry said at esphomeCamerasAt (camera_frames.go).
+	esphomeCameras   map[string]bool
+	esphomeCamerasAt time.Time
 
 	// The radio's lists from Home Assistant's Radio Browser; see local.go.
 	lists radioLists
@@ -145,8 +149,10 @@ type Feature struct {
 	meta     meta
 	metaPoke chan struct{}
 
-	// cam is the camera view in progress; see camera.go.
-	cam CameraView
+	// cam is the camera view in progress; see camera.go. camGen counts the views opened, so the
+	// frames of one that closed never land in the next.
+	cam    CameraView
+	camGen uint64
 
 	// camSound is the camera whose sound this view has, camOver the media player's token for the request
 	// it was asked with, and camMuted whether that sound was silenced from the screen. camSound stays for
