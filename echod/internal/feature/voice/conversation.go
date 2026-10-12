@@ -790,11 +790,27 @@ func (c *conversation) showPhase(override string) {
 
 func (c *conversation) enter(p phase) {
 	c.phase = p
+	c.adapt(p)
 	c.visible.Store(int32(p))
 	c.listeningAgain.Store(p == phaseListening && c.followUp)
 	c.shown.Phase = p.String()
 	Changed.Emit(c.shown)
 }
+
+// adapt lets the echo canceller learn in every phase but listening. Ducked music keeps playing while
+// somebody is talking, so the canceller has a live reference then — and a voice it was never given a
+// reference for is the one thing an adaptive filter must not learn from. The reply is the opposite: the
+// device's own voice, with the room otherwise quiet, is the best thing it ever gets to learn from.
+//
+// It used to stop learning for the whole turn. On a device whose only sound is its replies, that was
+// every moment anything played, so the filter never learned at all and canceled nothing — music the
+// device played itself drowned out whoever spoke over it.
+func (c *conversation) adapt(p phase) {
+	setAdapting(p != phaseListening)
+}
+
+// setAdapting is replaced in tests, which have no microphone.
+var setAdapting = func(on bool) { mic.Get().SetAdapting(on) }
 
 // startPending opens the turn that was held back, if there is one.
 func (c *conversation) startPending() {
@@ -827,11 +843,6 @@ func (c *conversation) hold(on bool) {
 		return
 	}
 	c.holding = on
-
-	// Ducked music keeps playing under the whole turn, so the echo canceller has a live reference while
-	// somebody is talking — which is the one thing an adaptive filter must not learn from. Stop it
-	// learning for the duration; it goes on canceling with what it already knows.
-	mic.Get().SetAdapting(!on)
 
 	// Every background, not just the track: a room playing along with the rest of the house is also
 	// something a reply has to be heard over, and it is not the media player's to quieten.

@@ -305,7 +305,9 @@ the Show listens, thinks and answers, and through any follow-up. They come back 
 been idle for three seconds. At a tenth you still hear that the music is there, and the answer
 comes through clearly. A
 speaker that wasn't playing is left alone, and one whose volume somebody changed during the turn
-keeps the new volume. Import it in **Settings → Automations & scenes → Blueprints → Import
+keeps the new volume. A speaker Home Assistant can't set the volume of is paused instead and plays
+on once the turn is over, unless music was paused or stopped during the turn ("Musik aus", the
+Show's pause button); then it stays paused. Import it in **Settings → Automations & scenes → Blueprints → Import
 blueprint** with the file's GitHub address, then make an automation from it with the Show's assist
 satellite. Leave the speakers empty and it turns down the speakers in whatever room the Show is in at
 that moment, so a Show moved to another room needs nothing changed: the room's media players, not

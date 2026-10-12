@@ -9,6 +9,9 @@ blueprint:
     Pick no speakers and it turns down the speakers in whatever room the assistant is in when it
     starts listening, so a Show moved to another room needs nothing changed here.
 
+    A speaker that can't be turned down (no volume control in Home Assistant) is paused instead and
+    started again once the conversation is over, unless somebody paused or stopped music during it.
+
     A speaker that isn't playing is left alone. One stepped up or down during the turn ("lauter",
     "leiser") comes back to its old volume plus that step, and one set outright ("Lautstärke auf
     30", a slider) keeps what it was set to. The Show turns down what it plays itself, so don't pick
@@ -113,10 +116,20 @@ variables:
     {{ native if native else ns.out }}{% endif %}
   part: !input part
   quiet: !input quiet
+  # Playing and able to have its volume set (VOLUME_SET is 4 in supported_features).
   was: >-
     {% set ns = namespace(out={}) %}
-    {% for s in speakers if is_state(s, 'playing') and state_attr(s, 'volume_level') is number %}
+    {% for s in speakers if is_state(s, 'playing') and state_attr(s, 'volume_level') is number
+       and (state_attr(s, 'supported_features') | int(0)) | bitwise_and(4) > 0 %}
       {% set ns.out = dict(ns.out, **{s: state_attr(s, 'volume_level')}) %}
+    {% endfor %}
+    {{ ns.out }}
+  # Playing with no volume to turn down, and able to pause (PAUSE is 1): paused for the turn instead.
+  paused: >-
+    {% set ns = namespace(out=[]) %}
+    {% for s in speakers if is_state(s, 'playing') and s not in was
+       and (state_attr(s, 'supported_features') | int(0)) | bitwise_and(1) > 0 %}
+      {% set ns.out = ns.out + [s] %}
     {% endfor %}
     {{ ns.out }}
   down: >-
@@ -128,7 +141,7 @@ variables:
 
 conditions:
   - condition: template
-    value_template: "{{ was | count > 0 }}"
+    value_template: "{{ was | count > 0 or paused | count > 0 }}"
   # A near miss counts while nothing else is going on, and only a real one: a Show coming back after a
   # restart puts the event's last time back, from unavailable.
   - condition: template
@@ -150,6 +163,14 @@ actions:
           data:
             volume_level: "{{ down[repeat.item] }}"
           continue_on_error: true
+  - if:
+      - condition: template
+        value_template: "{{ paused | count > 0 }}"
+    then:
+      - action: media_player.media_pause
+        target:
+          entity_id: "{{ paused }}"
+        continue_on_error: true
   # After a near miss, the second try has a few seconds to start. If it doesn't, the music comes
   # back up without waiting for a conversation that isn't coming.
   - if:
@@ -171,7 +192,9 @@ actions:
   # comes in, a few milliseconds after processing starts, and miss it. Five minutes without it going
   # idle is a stuck assistant, and the music comes back up anyway.
   #
-  # Meanwhile it notes what was done to the speakers. "Lautstärke auf 30" and a slider both call
+  # Meanwhile it notes what was done to the speakers. Music paused or stopped by anybody during the
+  # turn ("Musik aus", the Show's pause button) keeps the paused speakers paused afterwards.
+  # "Lautstärke auf 30" and a slider both call
   # volume_set, which shows up as a call_service event: that speaker stays where it was put.
   # "Lautstärke hoch" from volume-where-the-music-is says how far it stepped in a techo5_volume_step
   # event first, then sets the lowered volume plus the step, which is not an outright set (same
@@ -180,6 +203,7 @@ actions:
   - variables:
       set_outright: []
       stepped: {}
+      stay_paused: false
       step_contexts: []
   - if:
       - condition: template
@@ -205,6 +229,26 @@ actions:
                     service: volume_set
                 - trigger: event
                   event_type: techo5_volume_step
+                - trigger: event
+                  event_type: call_service
+                  event_data:
+                    domain: media_player
+                    service: media_pause
+                - trigger: event
+                  event_type: call_service
+                  event_data:
+                    domain: media_player
+                    service: media_stop
+                - trigger: event
+                  event_type: call_service
+                  event_data:
+                    domain: media_player
+                    service: media_play_pause
+                - trigger: event
+                  event_type: call_service
+                  event_data:
+                    domain: media_player
+                    service: turn_off
               timeout:
                 seconds: "{{ [quiet - idle_for, 0.1] | max if idle_for >= 0 else 300 }}"
             - if:
@@ -228,6 +272,7 @@ actions:
                   value_template: >-
                     {{ wait.trigger is not none and wait.trigger.event is defined
                        and wait.trigger.event.event_type == 'call_service'
+                       and wait.trigger.event.data.service == 'volume_set'
                        and wait.trigger.event.context.id not in step_contexts }}
               then:
                 - variables:
@@ -235,6 +280,15 @@ actions:
                       {% set e = wait.trigger.event.data.service_data.entity_id | default([]) %}
                       {% set e = [e] if e is string else e | list %}
                       {{ (set_outright + (e | select('in', was) | list)) | unique | list }}
+            - if:
+                - condition: template
+                  value_template: >-
+                    {{ wait.trigger is not none and wait.trigger.event is defined
+                       and wait.trigger.event.event_type == 'call_service'
+                       and wait.trigger.event.data.service != 'volume_set' }}
+              then:
+                - variables:
+                    stay_paused: true
           until:
             - condition: template
               value_template: "{{ wait.trigger is none or repeat.index > 100 }}"
@@ -258,4 +312,16 @@ actions:
                 volume_level: >-
                   {{ was[repeat.item] if moved | abs < 0.02
                      else ([[was[repeat.item] + moved, 0] | max, 1] | min) | round(2) }}
+              continue_on_error: true
+  # What was paused for the turn plays again, when it is still paused and nobody asked for quiet.
+  - repeat:
+      for_each: "{{ paused if not stay_paused else [] }}"
+      sequence:
+        - if:
+            - condition: template
+              value_template: "{{ is_state(repeat.item, 'paused') }}"
+          then:
+            - action: media_player.media_play
+              target:
+                entity_id: "{{ repeat.item }}"
               continue_on_error: true
