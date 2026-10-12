@@ -20,8 +20,10 @@ from jarvis_crown.boards import profile_for_board
 from jarvis_crown.recovery import RecoveryError, verify_backup
 
 CHECKERS_BOOT_SHA256 = "6fd696dce2592d2237a432e23ed7c032f1643bd1fe475d3094eccd9f7d2079b2"
-CROWN_BOOT_SHA256 = "cf5a492f7ee7ec16305905c58bf7f0b2e3f3e75521668ca905b9ae1ffb6d0baa"
+CROWN_BOOT_SHA256 = "e00bed964d9b2ce31df152d183d2aeb45a7839cc5f7460a93dd97d70715ad1b7"
 BOOT_SHA256_BY_BOARD: dict[str, str | None] = {
+    # Upstream TECHO5 v1.0.1 techo5-boot-crown-v1.0.1.img, for the same reasons as checkers below. Its
+    # ramdisk is v0.8.0's byte for byte; the kernel only adds the quick-tap unmute fix (upstream #17).
     "crown": CROWN_BOOT_SHA256,
     # Upstream TECHO5 v1.0.1 techo5-boot-checkers-v1.0.1.img: listed in the v1.0.1 manifest signed by
     # the upstream release key, kernel 4.9.337-g8d928c5176cc (the Jarvis vendor-module ABI).
