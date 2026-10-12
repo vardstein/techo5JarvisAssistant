@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	esphome "github.com/ygelfand/go-esphome-device"
@@ -144,13 +145,17 @@ func (f *Feature) pump(c *esphome.Conn) {
 	}
 	defer release()
 	frames := make(chan *camera.Frame, 1)
+	var made, skipped atomic.Int64
 	cancel := camera.Get().Frames.Listen(func(fr *camera.Frame) {
+		made.Add(1)
 		select {
 		case frames <- fr:
 		default:
+			skipped.Add(1)
 		}
 	})
 	defer cancel()
+	st := pumpStats{from: time.Now()}
 	// Every frame the sensor makes goes out (GENBU-116): encoding one in hardware takes well under a
 	// millisecond, so what paces the stream is the sensor. Should the link fall behind, frames
 	// holds one and the rest are skipped, never queued. The voice on the same link is not held up:
@@ -167,14 +172,47 @@ func (f *Feature) pump(c *esphome.Conn) {
 		}
 		select {
 		case fr := <-frames:
+			t0 := time.Now()
 			jpg, err := encode(fr)
 			if err != nil {
 				return
 			}
+			t1 := time.Now()
 			if err := send(c, jpg); err != nil {
 				return
 			}
+			st.sent++
+			st.encode += t1.Sub(t0)
+			st.send += time.Since(t1)
+			st.bytes += len(jpg)
 		case <-time.After(time.Second):
 		}
+		if since := time.Since(st.from); since >= statsEvery {
+			st.log(since, made.Swap(0), skipped.Swap(0))
+		}
 	}
+}
+
+// statsEvery is how often a running stream says how it is keeping up, the way the wake word does.
+const statsEvery = 10 * time.Second
+
+// pumpStats is one stream's account since its last report: what the sensor made, what was sent,
+// and where the time went, so a slow stream shows whether the sensor, the encoder or the link is
+// holding it back.
+type pumpStats struct {
+	from         time.Time
+	sent, bytes  int
+	encode, send time.Duration
+}
+
+func (st *pumpStats) log(since time.Duration, made, skipped int64) {
+	n := max(st.sent, 1)
+	slog.Info("camera stream",
+		"made_per_second", float64(made)/since.Seconds(),
+		"sent_per_second", float64(st.sent)/since.Seconds(),
+		"skipped", skipped,
+		"encode_ms", float64(st.encode.Microseconds())/1000/float64(n),
+		"send_ms", float64(st.send.Microseconds())/1000/float64(n),
+		"kib", st.bytes/1024/n)
+	*st = pumpStats{from: time.Now()}
 }
