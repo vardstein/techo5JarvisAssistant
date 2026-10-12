@@ -152,6 +152,7 @@ an offset from 0x15000000 and must lie in 0x4000..0xFFFF):
 | 0x8204 | SENINF_TG1_SEN_CK | bits 0-5 CLKFL = clkcnt>1 ? (clkcnt+1)/2 : 1, bits 8-13 CLKRS = 0, bits 16-21 CLKCNT = clkcnt |
 
 clkcnt 1 with the 48 MHz group gives 24 MHz, what the driver's imgsensor_info.mclk asks for.
+(Wrong, as it turned out on 2026-10-12; see "The camtg clock is 26 MHz" below.)
 Result of `camprobe`: "i2c write id: 0x78, sensor id: 0x2b", "Sensor init" (the whole init
 table went over I2C), GETINFO2 with SensorId = 1 (main socket; it is an input) reports mclk 24,
 interface 1 (MIPI), output format 3, MIPI lane count field 0 (= 1 lane), and 1600 x 1200 for
@@ -196,7 +197,8 @@ preview-mode control.
 
 Sequence that produced the frame (see the code for the exact bits):
 
-1. Open camera-isp (clocks on), SET_MCLK_PLL 48 MHz group, SENINF TG1 divider clkcnt 1 (24 MHz),
+1. Open camera-isp (clocks on), SET_MCLK_PLL 48 MHz group, SENINF TG1 divider clkcnt 1 (meant as
+   24 MHz, really 13; see "The camtg clock is 26 MHz"),
    TGCLK_SEL 1, CLKPOL 1 (the HAL's value for a polarity-LOW sensor).
 2. ION multimedia heap buffer, ION_MM_CONFIG_BUFFER with module id 24 (M4U_PORT_IMGO) then
    ION_SYS_GET_PHYS for the MVA; the IMGO M4U port switched to translated mode through
@@ -311,3 +313,25 @@ OV02B10, `camera_spot.go` the Spot's. The Spot's path, found with a probe (`cmd/
   is demosaiced (bilinear, gray-world, 0.2/99.5 % levels, gamma 2.2): about 33 % of a core streaming.
 - The Spot's mute is software, so `camera_common.go` checks it every 300 ms while the sensor runs: muted
   powers the sensor down and hands out one black frame; unmuted brings it back.
+
+## The camtg clock is 26 MHz (2026-10-12)
+
+The 1st gen streamed at about 16 frames a second, not 30. The OV9734 driver's own numbers for its
+mode (GET_PERIOD 1478 x 802, GET_PIXEL_CLOCK_FREQ 36 MHz) say 30.37, but the TG frame counter
+moved 16.45 times a second, with nothing missed downstream. 30.37 / 16.45 = 1.846 = 24 / 13: the
+sensor was getting 13 MHz.
+
+The cause is in kd_sensorlist.c (amazon-oss/android_kernel_amazon_mt8163 @ 8d928c5176cc).
+kdSetSensorMclk, built with MTKCAM_USING_CCF, does `clk_prepare_enable(g_camclk_camtg_sel)` and,
+for the 48 MHz request, `clk_set_parent(g_camclk_camtg_sel, g_camclk_univpll_d26)`. Those clock
+pointers are only filled by Get_ccf_clk, which probe calls only when the device tree node has
+"cmmclk-always-on". Neither board's has it, so both calls get NULL and do nothing. camtg stays on
+the 26 MHz crystal, and clkcnt 1 halves it to 13. The struct layouts are not the problem: freq
+sits at offset 4 in both.
+
+What the code does now: the OV9734 uses clkcnt 0 (the crystal undivided, 26 MHz, about 32.9 frames
+a second; the sensor takes 6 to 27 MHz). The OV02B10 keeps clkcnt 1 until it can be tried on a 2nd
+gen; its "about 14 frames a second" is probably the same halving. The clean fix is to move camtg
+to univpll_d26, but that register lives in topckgen, outside the windows camera-isp maps, and
+adding "cmmclk-always-on" means a new boot image.
+
