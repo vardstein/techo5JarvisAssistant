@@ -415,6 +415,14 @@ func (c *conversation) handle(e event) {
 		}
 
 	case evReplyText:
+		// Text for a turn this device does not have: one opened before a restart, or one already
+		// ended here. Its audio is dropped below for the same reason, so nothing would ever end it,
+		// and the speaker would say it is playing for good - which keeps the dashboard behind it.
+		// Seen on an Echo 8 restarted by Home Assistant in the middle of a turn.
+		if c.phase == phaseIdle {
+			slog.Info("a reply for no turn, dropped", "slot", c.slot+1, "text", e.text)
+			return
+		}
 		// A follow-up answered with a bare "Okay." heard nothing meant for the device: it is what the
 		// agent is told to say to the television. Said out loud it is a voice answering nobody, and it
 		// would open the next follow-up on the same room. So it is not played and the chain ends here.
