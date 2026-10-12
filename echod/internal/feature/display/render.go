@@ -14,8 +14,6 @@ import (
 	"time"
 
 	"golang.org/x/image/font"
-	"golang.org/x/image/font/gofont/gobold"
-	"golang.org/x/image/font/gofont/goregular"
 	"golang.org/x/image/font/opentype"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
@@ -333,14 +331,8 @@ func newRenderer(dst *image.RGBA) *renderer {
 	// Built in place: paint carries a mutex, so it must never be assembled elsewhere and copied in.
 	r := &renderer{paint: paint{dst: dst, w: dst.Rect.Dx(), h: dst.Rect.Dy(), sNum: dst.Rect.Dx(), sDen: drawnFor}}
 	r.margin = r.s(40)
-	bold, err := opentype.Parse(gobold.TTF)
-	if err != nil {
-		slog.Error("parsing the bold font failed", "err", err)
-	}
-	regular, err := opentype.Parse(goregular.TTF)
-	if err != nil {
-		slog.Error("parsing the regular font failed", "err", err)
-	}
+	// Figtree everywhere, as the menus have it: the clock and the pages over it are the same Show.
+	bold, regular := carFonts()
 	// Sizes are points at 72 DPI, which makes them pixels, so they scale with everything else.
 	face := func(f *opentype.Font, size int) font.Face {
 		if f == nil {

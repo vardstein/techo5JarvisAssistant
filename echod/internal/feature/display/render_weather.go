@@ -34,7 +34,7 @@ func (r *renderer) weatherPageKept(s scene) {
 
 func (r *renderer) weatherPage(s scene) {
 	r.cornerClock(s)
-	r.text(r.small, "Weather", r.margin, r.margin+r.s(26), amber)
+	r.text(r.title3, "Weather", r.margin, r.margin+r.s(30), cream)
 
 	days := s.forecast
 	now := s.weather
@@ -45,7 +45,7 @@ func (r *renderer) weatherPage(s scene) {
 	// The day's weather, large and faint, behind everything.
 	// Sized from the width, not the height: on the Show 5 both give 720, but a taller panel would
 	// grow this until it swallowed the page.
-	r.faded(40, func() { r.weatherIcon(cond, r.w/2, r.h/2+r.s(20), r.w*3/4) })
+	r.faded(20, func() { r.weatherIcon(cond, r.w/2, r.h/2+r.s(20), r.w*3/4) })
 
 	// Today: a big icon, the reading beside it, the day's range and rain beneath.
 	r.weatherIcon(cond, r.margin+r.s(80), r.s(190), r.s(150))
@@ -54,11 +54,11 @@ func (r *renderer) weatherPage(s scene) {
 		big = fmt.Sprintf("%.0f°", days[0].High)
 	}
 	r.text(r.big, big, r.margin+r.s(170), r.s(225), cream)
-	r.text(r.body, conditionWords(cond), r.margin, r.s(300), sunPale)
+	r.text(r.body, conditionWords(cond), r.margin, r.s(300), softInk())
 	if len(days) > 0 {
-		r.text(r.small, i18n.Sprintf("High %.0f°   Low %.0f°", days[0].High, days[0].Low), r.margin, r.s(345), dim)
+		r.text(r.small, i18n.Sprintf("High %.0f°   Low %.0f°", days[0].High, days[0].Low), r.margin, r.s(345), subInk())
 		if days[0].Rain >= 0 {
-			r.text(r.small, i18n.Sprintf("Rain %d%%", days[0].Rain), r.margin, r.s(385), rainBlue)
+			r.text(r.small, i18n.Sprintf("Rain %d%%", days[0].Rain), r.margin, r.s(385), amber)
 		}
 	}
 
@@ -70,21 +70,20 @@ func (r *renderer) weatherPage(s scene) {
 		for i := 0; i < cols; i++ {
 			d := days[i+1]
 			x := left + i*colW
-			// Each day in its own box.
-			r.box(image.Rect(x+r.s(3), r.s(88), x+colW-r.s(3), r.s(360)), ember, r.s(2))
+			// The days stand in open columns, as the menus' rows do: no boxes, the type is the order.
 			name := i18n.Date(d.When, "Mon")
 			if d.When.IsZero() {
 				name = fmt.Sprintf("+%d", i+1)
 			}
-			r.text(r.small, name, x+(colW-r.width(r.small, name))/2, r.s(122), amber)
+			r.text(r.title3, name, x+(colW-r.width(r.title3, name))/2, r.s(124), softInk())
 			r.weatherIcon(d.Condition, x+colW/2, r.s(178), min(colW-r.s(10), r.s(68)))
 			hi := fmt.Sprintf("%.0f°", d.High)
 			lo := fmt.Sprintf("%.0f°", d.Low)
 			r.text(r.body, hi, x+(colW-r.width(r.body, hi))/2, r.s(262), cream)
-			r.text(r.small, lo, x+(colW-r.width(r.small, lo))/2, r.s(300), dim)
+			r.text(r.small, lo, x+(colW-r.width(r.small, lo))/2, r.s(300), subInk())
 			if d.Rain > 0 {
 				p := fmt.Sprintf("%d%%", d.Rain)
-				r.text(r.tiny, p, x+(colW-r.width(r.tiny, p))/2, r.s(338), rainBlue)
+				r.text(r.tiny, p, x+(colW-r.width(r.tiny, p))/2, r.s(338), amber)
 			}
 		}
 	} else if len(days) == 0 {
@@ -111,8 +110,9 @@ func (r *renderer) weatherButton() image.Rectangle {
 // "Forecast" ran out of both ends of it.
 func (r *renderer) weatherToggle(label string) {
 	b := r.weatherButton()
-	r.bevel(b, shift(ember, 16), true)
-	r.text(r.small, label, b.Min.X+(b.Dx()-r.width(r.small, label))/2, b.Max.Y-r.s(15), cream)
+	fill := lerp(walnut, cream, 0.14) // the menus' faint pill
+	r.roundFill(b, float64(b.Dy())/2, fill, fill)
+	r.text(r.small, label, b.Min.X+(b.Dx()-r.width(r.small, label))/2, mid(r.small, (b.Min.Y+b.Max.Y)/2), cream)
 }
 
 // radarPage is the rain map filling the panel, the loop's time and the credits over it, and home
