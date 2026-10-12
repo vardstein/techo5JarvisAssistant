@@ -6,7 +6,7 @@ import (
 	"image/color"
 	"log/slog"
 	"math"
-	"sync/atomic"
+	"sync"
 
 	"github.com/HuskerMinion/techo5/echod/internal/feature/home"
 )
@@ -17,8 +17,11 @@ func (d *Display) setMusicStrip(i int) { setStrip(nil, i) }
 // The star on the round face, mirroring Done on the other side of play and pause.
 const starX, starY, starR = center + 88.0, 420.0, 25.0
 
-// spotFaved is the track the star was last pressed for, so the star shows it was saved.
-var spotFaved atomic.Value // string
+// spotFaved is the last press of the star.
+var spotFaved struct {
+	sync.Mutex
+	favPress
+}
 
 // onStar reports whether a tap at x, y is on the star.
 func onStar(x, y int) bool {
@@ -26,21 +29,37 @@ func onStar(x, y int) bool {
 	return dx*dx+dy*dy <= (starR+8)*(starR+8)
 }
 
-// favoriteSpot saves what is playing to favorites, and fills the star in once it is saved.
+// favoriteSpot saves what is playing to favorites, or takes it out again when the star is filled.
 func (d *Display) favoriteSpot() {
 	rd := home.Get().Radio()
-	if err := home.Get().FavoriteNow(); err != nil {
-		slog.Warn("saving to favorites failed", "err", err)
+	on := spotStarFilled(rd)
+	var err error
+	if on {
+		err = home.Get().UnfavoriteNow()
+	} else {
+		err = home.Get().FavoriteNow()
+	}
+	if err != nil {
+		slog.Warn("changing a favorite failed", "err", err, "was", on)
 		return
 	}
-	spotFaved.Store(rd.Title + "\x00" + rd.Now)
+	spotFaved.Lock()
+	spotFaved.favPress = favPress{favKeyOf(rd), !on}
+	spotFaved.Unlock()
 	d.wake()
 }
 
-// spotStarFilled is whether the star was pressed for this track.
+// spotStarFilled is whether what is playing is a favorite: Music Assistant's mark on the track, or the
+// station on a favorites list, with a press of the star standing in until those catch up.
 func spotStarFilled(rd home.Radio) bool {
-	k, _ := spotFaved.Load().(string)
-	return k != "" && k == rd.Title+"\x00"+rd.Now
+	mp := home.Get().MusicPlayback()
+	listed := home.StationFavorite(rd.Now)
+	if (mp.Playing || mp.Paused) && mp.Title != "" && mp.Title == rd.Title {
+		listed = mp.Favorite
+	}
+	spotFaved.Lock()
+	defer spotFaved.Unlock()
+	return spotFaved.shown(favKeyOf(rd), listed)
 }
 
 // starMark fills a five-pointed star as a fan of triangles from its middle.

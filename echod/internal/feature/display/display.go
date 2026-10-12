@@ -292,8 +292,14 @@ type Display struct {
 	callShown bool
 	callees   []phone.Callee
 
-	// favedKey is the track the star was last pressed for, so the star shows it was saved.
-	favedKey string
+	// favShown is the song or station the page last showed and whether its star was filled: a tap
+	// on the star acts on what was on the screen. favPress is the last press, which the star keeps to
+	// until the music's own lists have caught up or the song has changed.
+	favShown     string
+	favShownOn   bool
+	favPress     favPress
+	favNote      string
+	favNoteUntil time.Time
 	// pressed is the music button last pressed, lit until pressedUntil.
 	pressed      image.Rectangle
 	pressedUntil time.Time
@@ -1163,17 +1169,46 @@ func (d *Display) musicStripGesture(g touch.Gesture) bool {
 	return true
 }
 
-// favorite saves what is playing to favorites, and marks the star once it is saved.
+// favNoteFor is how long the word under a pressed star stays up.
+const favNoteFor = 3 * time.Second
+
+// favorite saves what the page shows to favorites, or takes it out again when the star was already
+// filled, and says which it did or that it could not.
 func (d *Display) favorite() {
-	rd := home.Get().Radio()
-	if err := home.Get().FavoriteNow(); err != nil {
-		slog.Warn("saving to favorites failed", "err", err)
+	d.mu.Lock()
+	key, on := d.favShown, d.favShownOn
+	d.mu.Unlock()
+	if key == "" {
 		return
 	}
+	var err error
+	note := "Saved to favorites"
+	if on {
+		err, note = home.Get().UnfavoriteNow(), "Removed from favorites"
+	} else {
+		err = home.Get().FavoriteNow()
+	}
+	switch {
+	case errors.Is(err, home.ErrFavoriteElsewhere):
+		note = "Already a favorite"
+	case errors.Is(err, home.ErrOwnStationsFull):
+		note = "Your stations are full"
+	case err != nil && on:
+		note = "Couldn't remove it"
+	case err != nil:
+		note = "Couldn't save it"
+	}
+	if err != nil {
+		slog.Warn("favorite: the star's press failed", "removing", on, "err", err)
+	}
 	d.mu.Lock()
-	d.favedKey = rd.Title + "\x00" + rd.Now
+	if err == nil {
+		d.favPress = favPress{key, !on}
+	}
+	d.favNote, d.favNoteUntil = note, time.Now().Add(favNoteFor)
 	d.mu.Unlock()
 	d.wake()
+	time.AfterFunc(favNoteFor, d.wake)
 }
 
 // endMusic is "go home" and the now-playing screen's Done: the music stops, a held track is let go,
@@ -1957,7 +1992,22 @@ func (d *Display) frame() time.Duration {
 	if wants && s.radio.Now != "Music Assistant" && d.stripDue(now, s.radio, s.nowPlaying) && sunriseProgress(now) == 0 {
 		s.nowPlaying, s.strip = false, true
 	}
-	s.faved = d.favedKey != "" && d.favedKey == s.radio.Title+"\x00"+s.radio.Now
+	// The star is the music's own word on it: Music Assistant's mark on the song, or the station on a
+	// favorites list. A press here is believed over that until the lists agree or the song changes, as
+	// Music Assistant's queue is read a poll behind.
+	key := favKeyOf(s.radio)
+	if s.radio.Now == "Music Assistant" {
+		s.faved = s.music.Favorite && s.music.Title == s.radio.Title
+	} else {
+		s.faved = home.StationFavorite(s.radio.Now)
+	}
+	s.faved = d.favPress.shown(key, s.faved)
+	if s.nowPlaying {
+		d.favShown, d.favShownOn = key, s.faved
+	}
+	if now.Before(d.favNoteUntil) {
+		s.favNote = i18n.T(d.favNote)
+	}
 	if now.Before(d.pressedUntil) {
 		s.pressed = d.pressed
 	}

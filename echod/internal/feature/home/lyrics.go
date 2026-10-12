@@ -70,6 +70,8 @@ func (l *Lyrics) NextAt(elapsed time.Duration) time.Duration {
 type queueSong struct {
 	Name string
 	URI  string
+	// Favorite is Music Assistant's own mark on the track, which its favorite button sets.
+	Favorite bool
 }
 
 var lyrics struct {

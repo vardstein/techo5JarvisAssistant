@@ -49,6 +49,10 @@ type MusicPlaybackView struct {
 	Position float64
 	Duration float64
 	Next     string
+	// Favorite is whether Music Assistant has the song among its favorites, and TrackURI its address
+	// there, which taking it out again needs. Both from the queue, so a poll behind a new song.
+	Favorite bool
+	TrackURI string
 
 	// PositionAt is when Position was true; a playing song has moved on since.
 	PositionAt time.Time
@@ -454,13 +458,14 @@ func (f *Feature) musicPlaybackTick() {
 	needQueue := musicPlayback.queueFor != active || musicPlayback.view.Title != view.Title ||
 		time.Since(musicPlayback.queueAt) >= 15*time.Second
 	if !needQueue {
-		view.Next = musicPlayback.view.Next
+		view.Next, view.Favorite, view.TrackURI = musicPlayback.view.Next, musicPlayback.view.Favorite, musicPlayback.view.TrackURI
 	}
 	musicPlayback.Unlock()
 	var song *queueSong
 	if needQueue {
 		if next, cur, err := musicQueue(active); err == nil {
 			view.Next, song = next, &cur
+			view.Favorite, view.TrackURI = cur.Favorite, cur.URI
 			musicPlayback.Lock()
 			musicPlayback.queueFor, musicPlayback.queueAt = active, time.Now()
 			musicPlayback.Unlock()
@@ -488,6 +493,7 @@ func musicQueue(entity string) (next string, cur queueSong, err error) {
 			Name      string `json:"name"`
 			MediaType string `json:"media_type"`
 			URI       string `json:"uri"`
+			Favorite  bool   `json:"favorite"`
 		} `json:"media_item"`
 	}
 	var response map[string]struct {
@@ -511,7 +517,7 @@ func musicQueue(entity string) (next string, cur queueSong, err error) {
 			// the artist in front.
 			cur.Name = strings.TrimSpace(c.MediaItem.Name)
 			if c.MediaItem.MediaType == "track" {
-				cur.URI = c.MediaItem.URI
+				cur.URI, cur.Favorite = c.MediaItem.URI, c.MediaItem.Favorite
 			}
 		}
 	}
