@@ -82,6 +82,17 @@ func TestAsks(t *testing.T) {
 		"Ist das Licht an? Ja, es ist an.": false,
 		"":                                 false,
 		"Das Wohnzimmer ist auf 21 Grad.":  false,
+		// A question with the reason after it still asks (GENBU-117).
+		"Wie lange? Das habe ich nicht verstanden.":                  true,
+		"Welches Zimmer meinst du? Ich habe Küche und Bad gefunden.": true,
+		"Für wann? Die Uhrzeit habe ich nicht verstanden. ":          true,
+		"Meinst du „Küche“? Das gibt es zweimal.":                    true,
+		"Ist es zu? Nein. Die Tür ist offen.":                        false,
+		"Hast du das gemeint? Doch, das war es.":                     false,
+		"Wo ist das? Es ist im Flur. Das Licht ist aus.":             false,
+		"Die Version ist 3.5. Willst du sie haben?":                  true,
+		"Ich habe z.B. Küche gefunden.":                              false,
+		"Okay!":                                                      false,
 	} {
 		if got := asks(text); got != want {
 			t.Errorf("asks(%q) = %v, want %v", text, got, want)
