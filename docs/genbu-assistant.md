@@ -190,6 +190,82 @@ therefore the Genbu page plus the integration page. It is not a single list of o
 - **On the integration page**, the Genbu Assistant device's "Visit" link opens the Genbu page.
 - **When the installer is done**, it says: "Everything is on the Genbu Assistant page in the sidebar."
 
+## 4. Tools for the AI agent, and who gets them
+
+Jade, 2026-10-12: the Shows have to work in a house that is not set up like ours, for example one on
+Home Assistant Cloud by Nabu Casa with no Ollama at all. Recipes should move to where every agent finds
+them, but agents that never cook should not get them, and it has to be safe.
+
+### What Home Assistant gives us (checked in the 2026.10.1 source)
+
+- **Sentence triggers come first, whatever the agent.** `assist_pipeline/default_pipeline.py` runs the
+  installer's sentence triggers before the conversation agent, with or without "Prefer handling commands
+  locally". The German extras answer the same with Ollama, OpenAI or Nabu Casa.
+- **Nabu Casa's agent only uses the standard "Assist" tool set.** `cloud/conversation.py` passes
+  `LLM_API_ASSIST` and nothing else; it has no option to tick another set. Today's recipe tool is its own
+  set ("Genbu Rezepte"), so a Nabu Casa house can never use it.
+- **An integration can add tools to the Assist set** with an `llm.py` platform (`components/llm/__init__.py`;
+  `assist_satellite/llm.py` adds broadcast this way). It may add a line to the prompt too. Tool names have to
+  start with the domain, `genbu__…`; from 2027.3 Home Assistant stops taking them otherwise.
+- **HA asks the platform each time it builds the tool list**, and tells it the device that asked, the
+  agent's integration (`ollama`, `cloud`, `openai_conversation` …) and the language (`LLMContext`). It does
+  not say which agent entity is talking. So "this agent yes, that agent no" can't be done cleanly, but "this
+  device yes, that device no" can. The device is also what matters: a recipe needs a screen in a kitchen.
+- **Scripts are not exposed to Assist by default** (`DEFAULT_EXPOSED_DOMAINS` in
+  `homeassistant/exposed_entities.py`). An agent can only call a script someone exposed. Today the installer
+  exposes none: in our house only Play Random Music is, so the agent cannot call "Radiosender abspielen" or
+  "Musik nach Stimmung".
+
+### Proposal
+
+**Music scripts.** The installer exposes the three scripts meant for the agent: Radiosender abspielen,
+Musik nach Stimmung and Play Random Music. Not the helper Genbu Musik starten. (Decided, see below.)
+
+**Recipes move into Genbu Assistant** as `genbu__recipe`, offered through `llm.py`. Who gets it is decided
+for every request, and all of these have to hold:
+
+1. A recipe search is set up in Genbu Assistant's options (the SearXNG address). Without one, nobody gets
+   the tool.
+2. The request comes from a Genbu Show. A phone, a Voice PE, another satellite or the chat in the
+   Home Assistant app never see it. An agent that only serves those never cooks, and never gets the tool.
+3. That Show has **Recipes** on. New switch on the Show's card, in the Screen group. On by default only for
+   a Show whose recipe page works; the bedroom Show can be turned off.
+
+**Safer than today:**
+
+- **Recipe pages are strangers' text.** In the Assist set the same agent can also unlock doors and switch
+  lights, so what a page says must not reach it as words it might follow. The model gets the dish, the site,
+  servings, minutes and how many steps. Ingredients and steps only when someone asks for them to be read
+  out, and then as plain short lines (no links, no markup, each line cut at 200 characters, at most 12
+  steps), marked in the result as page text and not instructions. The screen shows the full recipe anyway.
+  Only the page's recipe data (`ld+json`) is read, as today.
+- **No way into the home network.** Today the address is checked, and aiohttp then looks the name up again
+  when it connects; a name that changes its answer in between gets through (written in the code). The new
+  tool uses its own connection with a resolver that drops every address that is not public, so the check
+  and the connection are the same lookup. Redirects are checked the same way.
+- **Limits.** One lookup at a time per Show, 8 seconds per page, at most 4 pages tried, page size capped
+  (as today).
+- **Honest labels.** The tool says it changes the screen, is not destructive and reaches the internet
+  (`ToolAnnotations`), so an agent that cares can ask first.
+- **Language.** The prompt line and the search follow the request's language, German or English.
+
+**The firmware tool** (`genbu__firmware`, §1) gets the same gate: questions ("any updates?") from any Show or
+from an admin in the app; anything that changes something asks first, always.
+
+**Every Genbu tool can be switched off** in Genbu Assistant's options (Recipes, Firmware), for the whole
+house.
+
+**The old "Genbu Rezepte" set** stays for one release and says in Repairs that it is built in now and can be
+unticked; then it goes. Our house has no recipe entry set up, so nothing changes here.
+
+### Gains, losses, breaks
+
+| | |
+|---|---|
+| **Gains** | Recipes and firmware work with any agent that can control the house, Nabu Casa included, with nothing to tick. Only Shows that cook see the recipe tool, so other agents and devices keep a shorter tool list. Strangers' text no longer reaches the model unasked. The DNS gap is closed. |
+| **Losses** | Asking for a recipe from a phone or the app chat no longer works (it never showed anything there). Reading out steps needs one more ask. |
+| **Breaks** | A house that ticked "Genbu Rezepte" sees a Repairs note for one release, then the set goes. A house that runs the agent without "Control Home Assistant" gets no Genbu tools, as it gets none of HA's. |
+
 ## Decided
 
 Jade's answers on 2026-10-12:
@@ -207,6 +283,10 @@ Jade's answers on 2026-10-12:
   - Every group can be folded in and out, and the page remembers that per browser.
 
   How the groups are found is below, under "Groups on a Show's card".
+- **Other houses (§4)** (Jade, later that evening):
+  - The installer always exposes its three music scripts to Assist.
+  - Recipes move into the Assist set through `llm.py`, as recommended, but only for Shows that cook and
+    made safer. Jade asked for that to be fleshed out; it is §4's proposal.
 
 ### Groups on a Show's card
 
