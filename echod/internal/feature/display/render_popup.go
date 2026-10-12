@@ -22,9 +22,7 @@ func (r *renderer) popupBox() image.Rectangle {
 func (r *renderer) popupCard(s scene, e hass.Event) {
 	box := r.popupBox()
 	r.setPopupAt(box)
-	r.roundShadow(box, r.cardRad(), float64(r.s(34)), r.s(12), shadowAlpha()*1.3)
-	r.roundFill(box, r.cardRad(), surface(4), surface(2))
-	r.roundHighlight(box, r.cardRad())
+	r.overlayBox(box)
 
 	in := r.rowIn()
 	width := box.Dx() - 2*in

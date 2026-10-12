@@ -52,45 +52,48 @@ func (r *renderer) drawerAt(s scene) {
 
 	panel := image.Rect(r.w-r.cardIn()-r.drawerW(), r.cardIn(), r.w-r.cardIn(), r.h-r.cardIn())
 	r.addZone(zone{r: image.Rect(0, 0, panel.Min.X-r.s(4), r.h), kind: zoneDone}) // the dimmed clock closes it
-	r.roundShadow(panel, r.cardRad(), 26, 8, shadowAlpha()*1.2)
-	r.roundFill(panel, r.cardRad(), surface(3), surface(2))
-	r.roundHighlight(panel, r.cardRad())
+	// One flat panel; the dimmed clock behind it is what sets it apart.
+	r.roundFill(panel, r.cardRad(), surface(1), surface(1))
 
-	// Cameras | Radio, a segmented switch with the open one raised.
+	// Cameras, Radio, Announce, Call: plain words, the open one in a soft box like the settings'
+	// chosen category.
 	pad := r.s(22)
 	seg := image.Rect(panel.Min.X+pad, panel.Min.Y+r.s(18), panel.Min.X+pad+r.drawerSeg(), panel.Min.Y+r.s(64))
 	segRad := r.sf(23)
-	r.roundFill(seg, segRad, surface(1), surface(1))
-	r.roundStroke(seg, segRad, r.sf(1), ember)
-	half := seg.Dx() / len(drawerTabs)
-	inset, tabRad := r.s(4), r.sf(19)
+	// Each tab is as wide as its word in bold, and what is left of the strip goes between them evenly:
+	// equal quarters put "Durchsage" up against the box of the tab beside it.
+	tabRad, padX := r.sf(14), r.s(14)
+	widths, used := make([]int, len(drawerTabs)), 0
 	for i, name := range drawerTabs {
-		b := image.Rect(seg.Min.X+i*half+inset, seg.Min.Y+inset, seg.Min.X+(i+1)*half-inset, seg.Max.Y-inset)
-		fg, face := lerp(dim, cream, 0.3), fc.nav
+		widths[i] = r.width(fc.navBold, name) + 2*padX
+		used += widths[i]
+	}
+	gap := max(seg.Dx()-used, 0) / (len(drawerTabs) - 1)
+	x := seg.Min.X
+	for i, name := range drawerTabs {
+		b := image.Rect(x, seg.Min.Y+r.s(2), x+widths[i], seg.Max.Y-r.s(2))
+		fg, face := dim, fc.nav
 		if i == s.drawerTab {
-			r.roundShadow(b, tabRad, r.sf(8), r.s(3), shadowAlpha()*0.8)
-			r.roundFill(b, tabRad, shift(amber, 14), shift(amber, -14))
-			r.roundHighlight(b, tabRad)
-			fg, face = onAccent(), fc.navBold
+			r.roundFill(b, tabRad, surface(4), surface(4))
+			fg, face = cream, fc.navBold
 		}
-		// No shrinking to fit here: the strip scales with the type, so a name that fits its pill on
+		// No shrinking to fit here: the strip scales with the type, so a name that fits its box on
 		// one panel fits it on the other. Shrinking instead of scaling was what made these look wrong.
 		r.text(face, name, b.Min.X+(b.Dx()-r.width(face, name))/2, b.Min.Y+b.Dy()/2+r.s(9), fg)
-		r.addZone(zone{r: image.Rect(seg.Min.X+i*half, seg.Min.Y-r.s(8), seg.Min.X+(i+1)*half, seg.Max.Y+r.s(8)), kind: zoneTab, opt: i})
+		// A tap anywhere up to halfway into the gaps either side picks it.
+		r.addZone(zone{r: image.Rect(b.Min.X-gap/2, seg.Min.Y-r.s(8), b.Max.X+gap/2, seg.Max.Y+r.s(8)), kind: zoneTab, opt: i})
+		x = b.Max.X + gap
 	}
 
-	// Close, a round button with an ×.
+	// Close, a flat round button with an ×.
 	side := r.s(46)
 	c := image.Rect(panel.Max.X-pad-side, seg.Min.Y, panel.Max.X-pad, seg.Max.Y)
-	r.roundShadow(c, segRad, r.sf(6), r.s(2), shadowAlpha()*0.5)
-	r.roundFill(c, segRad, surface(7), surface(5))
-	r.roundHighlight(c, segRad)
+	r.roundFill(c, segRad, surface(4), surface(4))
 	cx, cy := float64(c.Min.X)+float64(c.Dx())/2, float64(c.Min.Y)+float64(c.Dy())/2
 	arm, pen := r.sf(7), r.sf(26)/10 // 2.6 at the size this was drawn for
 	r.aaLine(cx-arm, cy-arm, cx+arm, cy+arm, pen, cream)
 	r.aaLine(cx-arm, cy+arm, cx+arm, cy-arm, pen, cream)
 	r.addZone(zone{r: c.Inset(-r.s(10)), kind: zoneDone})
-	r.rule(panel.Min.X+pad, panel.Max.X-pad, panel.Min.Y+r.headerH()-r.s(2), 1)
 
 	list := image.Rect(panel.Min.X, panel.Min.Y+r.headerH(), panel.Max.X, panel.Max.Y-r.s(8))
 	rows, note := drawerRows(s)
@@ -102,7 +105,7 @@ func (r *renderer) drawerAt(s scene) {
 		}
 	}
 	under := slices.Clone(r.dst.Pix)
-	maxScroll := r.rowList(panel, list, rows, s.drawerScroll, surface(2), under)
+	maxScroll := r.rowList(panel, list, rows, s.drawerScroll, surface(1), under)
 
 	pickMax := 0
 	if s.drawerPick != "" {
@@ -137,7 +140,7 @@ func drawerRows(s scene) ([]settingRow, string) {
 				name = demoCameras[i%len(demoCameras)]
 			}
 			rows = append(rows, settingRow{id: "cam:" + strconv.Itoa(i), label: name,
-				sub: i18n.F("Or say \"show {name}\"", "name", strings.ToLower(name)), kind: ctlButton, button: "Show", rowTap: true})
+				sub: i18n.F("Or say \"show {name}\"", "name", strings.ToLower(name)), kind: ctlButton, rowTap: true})
 		}
 		return rows, ""
 	}
@@ -180,12 +183,12 @@ func drawerRows(s scene) ([]settingRow, string) {
 			// Call letters and local station names say where the owner lives.
 			label = "Station " + strconv.Itoa(i+1)
 		}
-		row := settingRow{id: id, label: label, kind: ctlButton, button: "Play", rowTap: true}
+		row := settingRow{id: id, label: label, kind: ctlButton, rowTap: true}
 		switch {
 		case name == rd.Now && rd.Playing:
-			row.bold, row.sub, row.button = true, "Playing now", "Playing"
+			row.bold, row.sub = true, "Playing now"
 		case name == rd.Chosen && rd.Chosen != rd.Now:
-			row.sub, row.button = "Starting…", "Starting"
+			row.sub = "Starting…"
 		}
 		rows = append(rows, row)
 	}
@@ -213,7 +216,7 @@ func callRows(s scene) ([]settingRow, string) {
 			}
 		}
 		rows = append(rows, settingRow{id: "call:" + strconv.Itoa(i), label: name, sub: sub,
-			kind: ctlButton, button: "Call", rowTap: true})
+			kind: ctlButton, rowTap: true})
 	}
 	return rows, ""
 }

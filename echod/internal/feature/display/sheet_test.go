@@ -126,13 +126,14 @@ func TestCardScrolls(t *testing.T) {
 	for _, row := range rows {
 		tall += r.rowHeight(r.nextCard(r.w, r.h), row)
 	}
-	if want := tall - (r.h - 2*r.cardIn() - r.headerH() - 8); cardMax != want {
+	card := r.nextCard(r.w, r.h)
+	if want := tall - (card.Dy() - r.headerH() - r.s(8)); cardMax != want {
 		t.Fatalf("%d rows scroll %d, want %d", len(rows), cardMax, want)
 	}
 
 	s.sheet.cardScroll = cardMax + 500 // held to the end
 	r.settingsScreen(s)
-	list := image.Rect(r.railW(), r.cardIn()+r.headerH(), r.w-r.cardIn(), r.h-r.cardIn()-8)
+	list := image.Rect(card.Min.X, card.Min.Y+r.headerH(), card.Max.X, card.Max.Y-r.s(8))
 	var last bool
 	for _, z := range r.zones {
 		if z.kind == zoneRow && !z.r.In(list) {
@@ -342,7 +343,7 @@ func TestACutLineLeavesTheValueWhole(t *testing.T) {
 			t.Fatalf("card %d wide: the line was not cut, so this does not test anything", w)
 		}
 		right := card.Max.X - r.s(26)
-		if room := right - 58 - end - r.s(rowGap); r.fit(fc.value, row.value, room) != row.value {
+		if room := right - r.s(choiceTail) - end - r.s(rowGap); r.fit(fc.value, row.value, room) != row.value {
 			t.Errorf("card %d wide: the value is cut to %q", w, r.fit(fc.value, row.value, room))
 		}
 	}

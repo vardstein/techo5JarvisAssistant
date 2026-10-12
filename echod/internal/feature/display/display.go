@@ -784,7 +784,7 @@ func (d *Display) gesture(g touch.Gesture) {
 	}
 
 	// The Bluetooth page: a tap on a row pairs and connects it, or disconnects the one connected, and
-	// the bar at the bottom ends the page, back to the settings when it was opened from there.
+	// the back arrow ends the page, back to the settings when it was opened from there.
 	bt := btaudio.Get()
 	if bt.Pairing() {
 		done := false
@@ -794,7 +794,7 @@ func (d *Display) gesture(g touch.Gesture) {
 				return
 			}
 			list := btList(bt.State().Devices)
-			switch row := d.r.btRowAt(g.Y); {
+			switch row := d.r.btRowAt(g.X, g.Y); {
 			case row == btRows:
 				done = true
 			case row >= 0 && row < len(list) && list[row].Busy:
