@@ -255,6 +255,7 @@ type device struct {
 	// Exposure control: what is set on the sensor now, and frames to wait before judging it.
 	shutter, gain int
 	settle        int
+	level         int // what the meter read last
 }
 
 func open() (*device, error) {
@@ -423,6 +424,7 @@ func (d *device) autoExpose(bayer []byte) {
 		return
 	}
 	mean := int(meter(bayer))
+	d.level = mean
 	if mean >= aeTarget-aeDeadband && mean <= aeTarget+aeDeadband {
 		return
 	}
@@ -720,7 +722,7 @@ func (d *device) stream(stop chan struct{}, frame func(bayer []byte)) {
 		}
 		t := time.Now()
 		frame(d.buf[done*frameBytes : (done+1)*frameBytes])
-		if tk.took(time.Since(t), d.shutter, d.gain) {
+		if tk.took(time.Since(t), d.shutter, d.gain, d.level) {
 			fps, line, frame, _ := d.rate()
 			slog.Info("camera mode now", "fps", fps, "line_length", line, "frame_length", frame)
 		}
@@ -736,7 +738,7 @@ type tickStats struct {
 }
 
 // took books one frame's work and says whether it just logged.
-func (tk *tickStats) took(work time.Duration, shutter, gain int) bool {
+func (tk *tickStats) took(work time.Duration, shutter, gain, level int) bool {
 	tk.frames++
 	tk.work += work
 	tk.most = max(tk.most, work)
@@ -746,7 +748,7 @@ func (tk *tickStats) took(work time.Duration, shutter, gain int) bool {
 			"frames_per_second", float64(tk.frames)/s,
 			"work_ms", float64(tk.work.Microseconds())/1000/float64(tk.frames),
 			"work_max_ms", float64(tk.most.Microseconds())/1000,
-			"shutter", shutter, "gain", gain)
+			"shutter", shutter, "gain", gain, "level", level)
 		*tk = tickStats{from: time.Now()}
 		return true
 	}
@@ -788,7 +790,9 @@ func convert(raw []byte) (*image.RGBA, tone) {
 }
 
 // stats levels one frame: gray-world white balance, the darkest 0.1% at black (within reason), the
-// top percentile at white, gamma 1/1.8 or steeper for a backlit frame.
+// top percentile at white, gamma 1/1.8 or steeper for a backlit frame. It measures after the lens
+// correction, as the picture is drawn: measured before it, white sits below the lifted corners and
+// they clip.
 func stats(raw []byte) tone { return sampleEven(raw) }
 
 // statsStep is how many cells the measurement moves on by. Levels and white balance come from a
@@ -799,6 +803,7 @@ func sample(raw []byte, step int) tone {
 	row0 := make([]uint16, sensorW)
 	row1 := make([]uint16, sensorW)
 	var m measure
+	sh := shading()
 	for y := 0; y < Height; y += step {
 		unpackLine(raw[(2*y)*bytesPerLine:(2*y+1)*bytesPerLine], row0)
 		unpackLine(raw[(2*y+1)*bytesPerLine:(2*y+2)*bytesPerLine], row1)
@@ -810,7 +815,8 @@ func sample(raw []byte, step int) tone {
 			if sensor.blueFirst {
 				r, b = b, r
 			}
-			m.add(uint32(r), uint32(g), uint32(b), down && x >= Width/4 && x < Width*3/4)
+			k := sh.x[x>>1] + sh.y[y>>1]
+			m.add(uint32(shaded(uint(r), k)), uint32(shaded(uint(g), k)), uint32(shaded(uint(b), k)), down && x >= Width/4 && x < Width*3/4)
 		}
 	}
 	return m.tone()
@@ -821,10 +827,12 @@ func sample(raw []byte, step int) tone {
 // other pair of lines. A quarter of the work the stream used to spend on it.
 func sampleEven(raw []byte) tone {
 	var m measure
+	sh := shading()
 	for y := 0; y < Height; y += 2 {
 		l0 := raw[(2*y)*bytesPerLine : (2*y+1)*bytesPerLine]
 		l1 := raw[(2*y+1)*bytesPerLine : (2*y+2)*bytesPerLine]
 		down := y >= Height/4 && y < Height*3/4
+		sy := sh.y[y>>1]
 		for x, i := 0, 0; x < Width && i+3 <= len(l0) && i+3 <= len(l1); x, i = x+2, i+5 {
 			a, c := l0[i:i+3:i+3], l1[i:i+3:i+3]
 			r := uint32(a[0]) | uint32(a[1]&3)<<8
@@ -833,7 +841,8 @@ func sampleEven(raw []byte) tone {
 			if sensor.blueFirst {
 				r, b = b, r
 			}
-			m.add(r, g, b, down && x >= Width/4 && x < Width*3/4)
+			k := sh.x[x>>1] + sy
+			m.add(uint32(shaded(uint(r), k)), uint32(shaded(uint(g), k)), uint32(shaded(uint(b), k)), down && x >= Width/4 && x < Width*3/4)
 		}
 	}
 	return m.tone()
