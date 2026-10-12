@@ -536,11 +536,12 @@ def home_assistant_command(args, backups: Path) -> int:
     if key_file is None:
         return 1
     try:
-        settings = gather(args, _asker(args), want_wifi=False)
+        asker = _asker(args)
+        settings = gather(args, asker, want_wifi=False)
     except SettingsError as exc:
         ui.out.fail(f"{exc}")
         return 1
-    save_defaults(settings)
+    save_defaults(settings, asked=asker.interactive)
     music_assistant_metadata(settings)
     if not settings.ha_admin:
         ui.out.fail("adding the Show needs a Home Assistant admin: sign in as one when asked, "
@@ -865,11 +866,12 @@ def _main() -> int:
 
         # Everything the Show starts with, asked before anything on it is touched.
         try:
-            settings = gather(args, _asker(args), want_root_password=True)
+            asker = _asker(args)
+            settings = gather(args, asker, want_root_password=True)
         except SettingsError as exc:
             ui.out.fail(f"{exc}")
             return 1
-        save_defaults(settings)
+        save_defaults(settings, asked=asker.interactive)
         ui.out.heading("What the Show is set up with")
         for line in settings.summary():
             label, _, value = line.partition(": ")

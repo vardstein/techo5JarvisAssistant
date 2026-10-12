@@ -1240,6 +1240,13 @@ class GatherTests(unittest.TestCase):
                 self.assertNotIn(secret, text)
             self.assertEqual(load_defaults(path), {"wifi": "Home", "ha_url": "http://ha:8123", "dashcast": "10.0.0.5:9555"})
 
+    def test_run_that_asked_nothing_keeps_the_defaults(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "jarvis-show" / "defaults.json"
+            save_defaults(Settings(ha_url="http://ha:8123", dashcast="10.0.0.5:9555"), path)
+            save_defaults(Settings(), path, asked=False)
+            self.assertEqual(load_defaults(path), {"ha_url": "http://ha:8123", "dashcast": "10.0.0.5:9555"})
+
     def test_secret_files_are_private_and_go_away(self):
         with secret_files(Settings(ha_token=TOKEN, dashcast_key=DASH_KEY)) as files:
             self.assertEqual(set(files), {"ha_token", "dashcast_key"})

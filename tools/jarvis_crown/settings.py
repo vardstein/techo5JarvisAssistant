@@ -116,8 +116,11 @@ def load_defaults(path: Path | None = None) -> dict[str, str]:
     return {k: v for k, v in data.items() if k in REMEMBERED and isinstance(v, str)} if isinstance(data, dict) else {}
 
 
-def save_defaults(settings: Settings, path: Path | None = None) -> None:
-    """Keeps the addresses and usernames (never a secret) as the next run's defaults."""
+def save_defaults(settings: Settings, path: Path | None = None, *, asked: bool = True) -> None:
+    """Keeps the addresses and usernames (never a secret) as the next run's defaults. A run that asked
+    nothing (asked=False: --no-questions, or no terminal) leaves them alone, since it never offered them."""
+    if not asked:
+        return
     path = path or config_dir() / "defaults.json"
     data = {k: getattr(settings, k) for k in REMEMBERED if getattr(settings, k)}
     try:
