@@ -119,5 +119,17 @@
         "name": "Musik weicht aus auf"
       }
     }
+  },
+  "services": {
+    "forget_show": {
+      "name": "Show vergessen",
+      "description": "Vergisst eine Show, die das Haus für immer verlassen hat: Sie ist kein Haupt-Update-Show mehr (war sie die einzige, übernimmt die empfohlene Show), ihre Versionen und ihre Musikwahl werden gelöscht. Das remove-show des Installers ruft das auf, sobald die Show aus ESPHome raus ist.",
+      "fields": {
+        "node": {
+          "name": "Node-Name",
+          "description": "Der ESPHome-Node-Name der Show, wie in main_shows am Hausversion-Sensor."
+        }
+      }
+    }
   }
 }

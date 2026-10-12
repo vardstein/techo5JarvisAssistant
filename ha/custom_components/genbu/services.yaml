@@ -1,0 +1,7 @@
+forget_show:
+  fields:
+    node:
+      required: true
+      example: kitchen-show
+      selector:
+        text:

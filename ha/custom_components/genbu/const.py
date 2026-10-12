@@ -10,6 +10,7 @@ MAIN_SELECT = "select.genbu_main_update_show"
 CHANGED = f"{DOMAIN}_changed"  # dispatcher signal: the house was looked at again
 STORE_KEY = f"{DOMAIN}.house"
 STORE_VERSION = 1
+SERVICE_FORGET = "forget_show"  # the installer's remove-show, once the Show is out of ESPHome
 
 # Repairs issue ids; the missing one gets the node name added, so one issue per main update Show.
 ISSUE_MISSING = "main_missing_"

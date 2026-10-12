@@ -208,6 +208,16 @@ class GenbuHouse:
         self.house.wait_more(node, dt_util.utcnow())
         await self._changed_by_hand()
 
+    async def async_forget(self, node: str) -> dict:
+        """genbu.forget_show: the Show is gone for good. When it was the only main update Show, the
+        recommended one takes over at once rather than after 7 days."""
+        new = self.recommended(leaving=node) if self.house.mains == [node] else None
+        self.house.forget(node, dt_util.utcnow(), new)
+        ir.async_delete_issue(self.hass, DOMAIN, ISSUE_MISSING + node)
+        ir.async_delete_issue(self.hass, DOMAIN, ISSUE_PICKED + node)
+        await self._changed_by_hand()
+        return {"mains": self.house.mains, "new_main": new or ""}
+
     async def async_choose_music(self, device: str, player: str) -> None:
         self.house.choose_music(device, player)
         self._save()
