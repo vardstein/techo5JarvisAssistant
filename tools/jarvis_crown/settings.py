@@ -413,13 +413,14 @@ def _checked(value: str | None, check: Callable[[str], str]) -> str | None:
 def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
            lookup: Callable[..., str | None] = keyring_lookup,
            resolve: Callable[[str], str] = _resolve, want_wifi: bool = True,
-           want_root_password: bool = False,
+           want_root_password: bool = False, want_show: bool = True,
            nearby: Callable[[], list[str]] = nearby_networks,
            ha_login: Callable[..., "ha_api.SignedIn"] = ha_api.sign_in,
            ma_login: Callable[..., tuple[str, str]] = ma_api.sign_in,
            ma_logout: Callable[..., None] = ma_api.sign_out,
            run: SignIns | None = None) -> Settings:
-    """Everything the Show is set up with: switches first, then the keyring, then the terminal."""
+    """Everything the Show is set up with: switches first, then the keyring, then the terminal. Without
+    want_show, only the admin sides of Home Assistant and Music Assistant (for taking a Show out)."""
     d = defaults if defaults is not None else load_defaults()
     run = run if run is not None else RUN
 
@@ -496,7 +497,9 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
     if want_own and not own:
         raise SettingsError("--own-ha-user needs an admin, who makes the Show's user"
                             if not token else "--own-ha-user and --ha-token-file are two different Show users")
-    if ha_url and own:
+    if ha_url and not want_show:
+        pass
+    elif ha_url and own:
         asker.note("The Show becomes a Home Assistant user of its own when it is added, and gets its token then.")
     elif ha_url and not token:
         token = _checked(lookup("ha-token"), ha_token) or \
@@ -507,9 +510,10 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
     s = replace(s, ha_url=ha_url, ha_token=token, ha_admin_token=admin, own_ha_user=own,
                 ha_user=user, ha_sign_in=signed)
 
-    asker.heading("DashCast", "The dashboard, streamed to the Show.")
+    if want_show:
+        asker.heading("DashCast", "The dashboard, streamed to the Show.")
     dashcast = _checked(getattr(args, "dashcast", None), normalize_dashcast) or \
-        asker.text("server, host[:port]", d.get("dashcast"), normalize_dashcast)
+        (asker.text("server, host[:port]", d.get("dashcast"), normalize_dashcast) if want_show else None)
     key = None
     if dashcast:
         key = from_file("dashcast_key_file", "DashCast key", check_dashcast_key) or \
@@ -537,7 +541,9 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
                                     help="Used for this run only, like the sign-in, and never stored anywhere. "
                                          "Make one in Music Assistant under Settings, your profile, Long-lived "
                                          "tokens. Enter skips it, but then lyrics won't work on the Show.")
-        if ma_token is None:
+        if ma_token is None and not want_show:
+            asker.note("No Music Assistant admin: the Show's user and player there are left as they are.")
+        elif ma_token is None:
             asker.note("No Music Assistant admin: music plays, but lyrics won't work on the Show" +
                        ("; Music Assistant keeps looking metadata up online." if local else "."))
     s = replace(s, music_assistant=music, music_assistant_token=ma_token, music_assistant_user=ma_user,

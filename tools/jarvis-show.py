@@ -25,7 +25,8 @@ from jarvis_crown import genbu  # noqa: E402
 from jarvis_crown import home_assistant as ha_api  # noqa: E402
 from jarvis_crown import ui  # noqa: E402
 from jarvis_crown import music_assistant as ma_api  # noqa: E402
-from jarvis_crown.shows import known_shows, rename_show, show_named  # noqa: E402
+from jarvis_crown import remove as gone  # noqa: E402
+from jarvis_crown.shows import known_shows, rename_show, show_named, update_show  # noqa: E402
 from jarvis_crown.show_ssh import ShowKeyError, identity_for, key_path, make_key, owner_of, public_key  # noqa: E402
 from jarvis_crown.settings import RUN, Asker, Settings, SettingsError, gather, read_secret_file, save_defaults, secret_files  # noqa: E402
 from jarvis_crown.preflight import SERIAL_GROUPS, _group_names, preflight_ok, print_checks, run_preflight  # noqa: E402
@@ -53,7 +54,7 @@ STAGES = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="jarvis-show")
-    parser.add_argument("command", help="what to do (default preflight); docs/jarvis-crown-installer.md, \"Commands and switches\"", choices=["preflight", "identify", "unlock", "install", "amonet-upgrade", "wifi", "home-assistant", "boot-logo"], nargs="?", default="preflight")
+    parser.add_argument("command", help="what to do (default preflight); docs/jarvis-crown-installer.md, \"Commands and switches\"", choices=["preflight", "identify", "unlock", "install", "amonet-upgrade", "wifi", "home-assistant", "boot-logo", "remove-show"], nargs="?", default="preflight")
     parser.add_argument("--board", choices=("crown", "checkers"), help="optional first-gen board cross-check; install/identify auto-detect by default")
     parser.add_argument("--amonet-dir", type=Path, help="the unpacked Amonet 2.x package; default ../third_party/<board> or the asset cache")
     parser.add_argument("--amonet-zip", type=Path, help="amonet-upgrade: the pinned Amonet 2.x zip; default from the asset cache")
@@ -134,6 +135,9 @@ def parse_args() -> argparse.Namespace:
     hass.add_argument("--ssh-identity", type=Path, help="the private key that logs in to the Show over SSH "
                                                         "(default ~/.ssh/genbu_<name> when it is there)")
     hass.add_argument("--key-file", type=Path, help="its encryption key (default backups/<serial>/home-assistant.key)")
+    gone = parser.add_argument_group("remove-show: take a Show out of Home Assistant and Music Assistant (--name)")
+    gone.add_argument("--yes-remove", action="store_true",
+                      help="remove without typing the Show's name first; without it, --no-questions only lists")
     logo = parser.add_argument_group("boot-logo: the OpenJade logo at boot on an installed Show (--name, --host)")
     logo.add_argument("--amazon-logo", action="store_true", help="put Amazon's logo back instead")
     return parser.parse_args()
@@ -530,6 +534,85 @@ def home_assistant_command(args, backups: Path) -> int:
                                     wait_seconds=120, backups=backups)
 
 
+def remove_show_command(args, backups: Path) -> int:
+    """Everything of one Show out of Home Assistant and Music Assistant; see jarvis_crown/remove.py."""
+    if not args.name:
+        ui.out.fail("remove-show requires --name, the Show's name")
+        return 1
+    show = show_named(backups, args.name)
+    try:
+        settings = gather(args, _asker(args), want_wifi=False, want_show=False)
+    except SettingsError as exc:
+        ui.out.fail(f"{exc}")
+        return 1
+    if not settings.ha_admin:
+        ui.out.fail("taking a Show out needs a Home Assistant admin: sign in as one when asked, "
+                    "or give a token (--ha-admin-token-file or the keyring)")
+        return 1
+    hc = settings.ha_sign_in or ha_api.HomeAssistant(settings.ha_url, settings.ha_admin_token)
+    music = drop = None
+    if settings.music_assistant and settings.music_assistant_token:
+        host, token = settings.music_assistant, settings.music_assistant_token
+
+        def music(names, mac):
+            try:
+                return ma_api.show_leftovers(host, token, names, mac)
+            except ma_api.MusicAssistantError as exc:
+                ui.out.warn(f"Music Assistant: {exc}")
+                return None
+
+        def drop(users, players):
+            try:
+                return ma_api.remove_leftovers(host, token, users, players)
+            except ma_api.MusicAssistantError as exc:
+                return [f"{exc}"]
+
+    ui.out.heading(f"What {args.name} has in the house")
+    try:
+        found = gone.find(hc, args.name, also=[show.name] if show else [], mac=show.mac if show else "",
+                          music=music)
+    except ha_api.HomeAssistantError as exc:
+        ui.out.fail(f"Home Assistant: {exc}")
+        return 5
+    if show is not None and found.mac and found.mac != show.mac:
+        update_show(show.folder, mac=found.mac)  # for the run after its ESPHome entry is gone
+    goes, later, stays = gone.plan(found)
+    for label, items, say in (("Goes now", goes, ui.out.step), ("Goes on a later run", later, ui.out.warn),
+                              ("Stays", stays, ui.out.note)):
+        if items:
+            ui.out.heading(label)
+            for item in items:
+                say(item)
+    if not goes:
+        ui.out.done(f"nothing of {args.name} is left to remove now")
+        return 0
+    if not args.yes_remove:
+        if args.no_questions:
+            ui.out.heading("Nothing removed")
+            ui.out.note("--no-questions only lists; --yes-remove removes")
+            return 0
+        ui.out.caution("Home Assistant cannot undo this; what goes is saved in backups/home-assistant first.")
+        try:
+            typed = ui.out.typed(found.name)
+        except EOFError:  # no terminal (piped or closed stdin) is a no, not a crash
+            print()
+            typed = ""
+        if typed != found.name:
+            ui.out.fail("not typed; nothing was removed")
+            return 1
+    ui.out.heading(f"Taking {found.name} out")
+    failed = gone.remove(hc, found, keep=_keeper(backups), drop=drop, progress=ui.out.progress)
+    if failed:
+        ui.out.fail(f"{failed} step(s) failed; the rest went. Run remove-show again to retry them.")
+        return 5
+    if later:
+        ui.out.done(f"{found.name} is out, but for its Music Assistant player: switch the Show off, then run "
+                    "remove-show again")
+    else:
+        ui.out.done(f"{found.name} is out of the house; it can be added again as a new device")
+    return 0
+
+
 def amonet_upgrade(args, backups: Path) -> int:
     """Amonet 1.x -> 2.x for a unit already in TWRP; see jarvis_crown/amonet_upgrade.py."""
     if not args.board:
@@ -657,6 +740,8 @@ def _main() -> int:
         return boot_logo_command(args, backups)
     if args.command == "home-assistant":
         return home_assistant_command(args, backups)
+    if args.command == "remove-show":
+        return remove_show_command(args, backups)
 
     # identify/unlock require fastboot. install can resume from a verified TWRP
     # session only when an explicit board cross-check is supplied.

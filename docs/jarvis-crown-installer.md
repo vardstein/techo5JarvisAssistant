@@ -597,12 +597,13 @@ has the default given here.
 | `wifi` | Puts an installed Show on a Wi-Fi network over its USB cable, for when it is offline. | `--wifi` |
 | `home-assistant` | Adds an installed Show to Home Assistant and sets it up: the steps above. Safe to run again. | `--name` |
 | `boot-logo` | Puts the OpenJade logo in place of Amazon's at boot, over SSH ([boot logos](../tools/boot-logo/README.md)). | `--name` |
+| `remove-show` | Takes a Show out of Home Assistant and Music Assistant, so it can be added again as a new device or given away ([Taking a Show out](#taking-a-show-out)). Lists first, then asks you to type the Show's name. | `--name`, an admin |
 
 ### The Show and its files
 
 | Switch | Used by | Meaning |
 | --- | --- | --- |
-| `--name NAME` | install, home-assistant, boot-logo | The Show's name, as Home Assistant shows it. The installer records it in `backups/<serial>/show.json`, and the other commands find the unit by it. |
+| `--name NAME` | install, home-assistant, boot-logo, remove-show | The Show's name, as Home Assistant shows it. The installer records it in `backups/<serial>/show.json`, and the other commands find the unit by it. |
 | `--board crown\|checkers` | all | Cross-checks the board. Normally it is detected; `amonet-upgrade` needs it, and `install` needs it to carry on from TWRP. |
 | `--serial SERIAL` | wifi, home-assistant | Which unit. `wifi` talks to that Show on USB (not needed when only one is attached); `home-assistant` takes its key from `backups/<serial>/`. |
 | `--host ADDRESS` | home-assistant, boot-logo, install, unlock | The Show's address, when `backups/<serial>/address`, mDNS and Home Assistant cannot find it (a Show on another VLAN, say). For `install` and `unlock`, where a Show running Jarvis is reached over SSH to send it to fastboot. |
@@ -623,6 +624,40 @@ has the default given here.
 | `--ssh-key FILE` | install | An SSH public key root accepts from the first boot, instead of the key the installer makes for this Show (`~/.ssh/genbu_<name>`). Refused when it is another Show's key. |
 | `--no-ssh` | install | No key at all: SSH stays off, the USB console is the way in. |
 | `--amazon-logo` | boot-logo | Puts Amazon's logo back instead. |
+| `--yes-remove` | remove-show | Removes without typing the Show's name first. Without it, `--no-questions` only lists what would go. |
+
+### Taking a Show out
+
+```
+python3 tools/jarvis-show.py remove-show --name "Kitchen Show"
+```
+
+It needs a Home Assistant admin, and a Music Assistant admin for the Show's user and player there
+(without one it says so and leaves Music Assistant alone). First it lists what goes, what has to wait,
+and what stays, and saves everything that goes in `backups/home-assistant/` before it removes anything.
+In this order:
+
+1. our turn-the-room-down automation for it (`techo5_turn_room_down_<name>`); one made from the
+   blueprint by hand stays;
+2. its own Home Assistant user (`show_<name>`), which ends its token. Admins and the owner are never
+   removed;
+3. its Music Assistant user (for the lyrics) and its player. Music Assistant keeps a player that is
+   connected and makes it again at once, so the player goes on a second run, once the Show is switched
+   off. Home Assistant drops the player's device when Music Assistant removes it;
+4. its ESPHome entry, which takes its devices, their entities and their area links with it;
+5. its place in Genbu (main update Show, music choice), with `genbu.forget_show`. When it was the only
+   main update Show, Genbu makes the one it recommends main. A Genbu older than 1.1.0 has no such action:
+   copy the new folder over and restart Home Assistant, or pick another main in
+   `select.genbu_main_update_show` yourself.
+
+What stays: the house-wide `jarvis_local_*` automations, the blueprints, the room and its dashboard,
+the calendars, and `backups/<serial>/`, so the unit can be installed again. Other automations, scripts
+and dashboards that use the Show are listed, not changed: they show up as unavailable entities until
+you change them.
+
+Run it again any time. It finds what is left by the names the Show went by and the MAC address it kept
+in `backups/<serial>/show.json` on the first run, and says so when nothing is left. To use the Show
+again, reset it ([Factory reset](install.md#factory-reset)) and add it the usual way.
 
 ### What the Show is ready with
 
