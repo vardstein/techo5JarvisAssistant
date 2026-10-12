@@ -54,7 +54,7 @@ STAGES = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="jarvis-show")
-    parser.add_argument("command", help="what to do (default preflight); docs/jarvis-crown-installer.md, \"Commands and switches\"", choices=["preflight", "identify", "unlock", "install", "amonet-upgrade", "wifi", "home-assistant", "boot-logo", "remove-show"], nargs="?", default="preflight")
+    parser.add_argument("command", help="what to do (default preflight); docs/jarvis-crown-installer.md, \"Commands and switches\"", choices=["preflight", "identify", "unlock", "install", "amonet-upgrade", "wifi", "home-assistant", "boot-logo"], nargs="?")
     parser.add_argument("--board", choices=("crown", "checkers"), help="optional first-gen board cross-check; install/identify auto-detect by default")
     parser.add_argument("--amonet-dir", type=Path, help="the unpacked Amonet 2.x package; default ../third_party/<board> or the asset cache")
     parser.add_argument("--amonet-zip", type=Path, help="amonet-upgrade: the pinned Amonet 2.x zip; default from the asset cache")
@@ -138,12 +138,19 @@ def parse_args() -> argparse.Namespace:
     hass.add_argument("--ssh-identity", type=Path, help="the private key that logs in to the Show over SSH "
                                                         "(default ~/.ssh/genbu_<name> when it is there)")
     hass.add_argument("--key-file", type=Path, help="its encryption key (default backups/<serial>/home-assistant.key)")
-    gone = parser.add_argument_group("remove-show: take a Show out of Home Assistant and Music Assistant (--name)")
+    gone = parser.add_argument_group("--remove-show: take a Show out of Home Assistant and Music Assistant (--name)")
+    gone.add_argument("--remove-show", action="store_true",
+                      help="take the Show called --name out of the house, instead of a command; waits for it to "
+                           "be unplugged when Music Assistant still has it")
     gone.add_argument("--yes-remove", action="store_true",
                       help="remove without typing the Show's name first; without it, --no-questions only lists")
     logo = parser.add_argument_group("boot-logo: the OpenJade logo at boot on an installed Show (--name, --host)")
     logo.add_argument("--amazon-logo", action="store_true", help="put Amazon's logo back instead")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.remove_show and args.command:
+        parser.error(f"--remove-show is a run of its own; leave out {args.command!r}")
+    args.command = args.command or ("remove-show" if args.remove_show else "preflight")
+    return args
 
 
 def _show_ssh_key(args) -> Path | None:
@@ -543,10 +550,29 @@ def home_assistant_command(args, backups: Path) -> int:
                                     wait_seconds=120, backups=backups)
 
 
+def _wait_unplugged(found, music, *, wait: float = 600, every: float = 5,
+                    sleep=time.sleep, clock=time.monotonic) -> None:
+    """Waits until Music Assistant no longer has the Show's player connected, asking Music Assistant again
+    every few seconds, so that the player goes in the same run. found's players are brought up to date."""
+    ui.out.caution("Unplug the Show now (or switch it off). Music Assistant keeps its player while it is on "
+                   f"the network. This waits up to {int(wait // 60)} minutes; Ctrl-C stops without removing "
+                   "anything.")
+    until = clock() + wait
+    while any(p.get("available") for p in found.players):
+        if clock() >= until:
+            ui.out.warn("the Show is still on the network; everything else goes now, the player stays")
+            return
+        sleep(every)
+        got = music(found.names, found.mac)
+        if got is not None:
+            found.music_users, found.players = got
+    ui.out.progress("the Show is off the network")
+
+
 def remove_show_command(args, backups: Path) -> int:
     """Everything of one Show out of Home Assistant and Music Assistant; see jarvis_crown/remove.py."""
     if not args.name:
-        ui.out.fail("remove-show requires --name, the Show's name")
+        ui.out.fail("--remove-show requires --name, the Show's name")
         return 1
     show = show_named(backups, args.name)
     try:
@@ -586,7 +612,7 @@ def remove_show_command(args, backups: Path) -> int:
     if show is not None and found.mac and found.mac != show.mac:
         update_show(show.folder, mac=found.mac)  # for the run after its ESPHome entry is gone
     goes, later, stays = gone.plan(found)
-    for label, items, say in (("Goes now", goes, ui.out.step), ("Goes on a later run", later, ui.out.warn),
+    for label, items, say in (("Goes now", goes, ui.out.step), ("Goes once the Show is unplugged", later, ui.out.warn),
                               ("Stays", stays, ui.out.note)):
         if items:
             ui.out.heading(label)
@@ -609,14 +635,21 @@ def remove_show_command(args, backups: Path) -> int:
         if typed != found.name:
             ui.out.fail("not typed; nothing was removed")
             return 1
+    if later and music is not None:
+        try:
+            _wait_unplugged(found, music)
+        except KeyboardInterrupt:
+            print()
+            ui.out.fail("stopped while waiting; nothing was removed")
+            return 1
     ui.out.heading(f"Taking {found.name} out")
     failed = gone.remove(hc, found, keep=_keeper(backups), drop=drop, progress=ui.out.progress)
     if failed:
-        ui.out.fail(f"{failed} step(s) failed; the rest went. Run remove-show again to retry them.")
+        ui.out.fail(f"{failed} step(s) failed; the rest went. Run --remove-show again to retry them.")
         return 5
-    if later:
-        ui.out.done(f"{found.name} is out, but for its Music Assistant player: switch the Show off, then run "
-                    "remove-show again")
+    if any(p.get("available") for p in found.players):
+        ui.out.done(f"{found.name} is out, but for its Music Assistant player: unplug the Show, then run "
+                    "--remove-show again")
     else:
         ui.out.done(f"{found.name} is out of the house; it can be added again as a new device")
     return 0

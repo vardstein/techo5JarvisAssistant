@@ -103,6 +103,7 @@ class FakeHA:
         self.ws_calls = []
         self.pipelines = None
         self.boards = []      # lovelace/dashboards/list
+        self.labels = None    # config/label_registry/list; None: this fake knows no labels
         self.views = {}       # url_path (None for the default) -> its views
         self.devices = [{"id": "D1", "area_id": None}, {"id": "D2", "area_id": "living_room"}]
         self.entities = [
@@ -201,9 +202,18 @@ class FakeHA:
             return [{**d, "area_id": self.area or None} if d["id"] == "D1" else d for d in self.devices]
         if message["type"] == "config/entity_registry/list":
             return list(self.entities)
+        if message["type"] == "config/label_registry/list" and self.labels is not None:
+            return list(self.labels)
         self.ws_calls.append(message)
+        if message["type"] == "config/label_registry/create" and self.labels is not None:
+            made = {"label_id": message["name"].lower().replace(" ", "_").replace(":", ""), "name": message["name"]}
+            self.labels.append(made)
+            return made
         if message["type"] == "config/device_registry/update":
-            self.area = message["area_id"]
+            if "area_id" in message:
+                self.area = message["area_id"]
+            if "labels" in message:
+                next(d for d in self.devices if d["id"] == message["device_id"])["labels"] = message["labels"]
         return {}
 
     def posted(self, prefix):
@@ -248,6 +258,25 @@ class DeployTests(unittest.TestCase):
             self.assertNotIn(PSK, line)
             self.assertNotIn(TOKEN, line)
             self.assertNotIn(DASH_KEY, line)
+
+    def test_the_shows_devices_get_both_labels(self):
+        fake = FakeHA()
+        fake.labels = []
+        fake.devices[0]["config_entries"] = ["E1"]
+        fake.devices[1]["config_entries"] = ["E9"]
+        fake.node = "genbushow5"
+        _, log = run_deploy(fake, host="10.0.0.9")
+        self.assertEqual([x["name"] for x in fake.labels], ["Genbu Show installed", "Genbu Show: genbushow5"])
+        self.assertEqual(fake.devices[0]["labels"], ["genbu_show_installed", "genbu_show_genbushow5"])
+        self.assertNotIn("labels", fake.devices[1])
+        self.assertFalse([line for line in log if "label" in line])
+
+    def test_a_house_that_does_not_take_labels_still_gets_the_show(self):
+        fake = FakeHA()
+        fake.devices[0]["config_entries"] = ["E1"]
+        entry, log = run_deploy(fake, host="10.0.0.9")
+        self.assertEqual(entry, "E1")
+        self.assertTrue(any(line.startswith("WARN: Home Assistant did not take the labels") for line in log))
 
     def test_a_renamed_show_is_reached_by_the_name_home_assistant_has(self):
         fake, names = FakeHA(), []

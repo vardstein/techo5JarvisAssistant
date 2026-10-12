@@ -1,9 +1,10 @@
-"""A Show taken out of the house for good (jarvis-show.py remove-show), so that it can be added again as a
+"""A Show taken out of the house for good (jarvis-show.py --remove-show), so that it can be added again as a
 new device, or given away, without anything of it left in Home Assistant or Music Assistant.
 
 What goes, in this order, all of it saved with keep first:
   1. our turn-the-room-down automation for it (techo5_turn_room_down_*, from the blueprint, on its voice
-     assistant). One somebody made from the blueprint by hand stays theirs;
+     assistant), and every automation and script with its label, "Genbu Show: <node>" (labels.py). One
+     somebody made from the blueprint by hand stays theirs, unless they gave it the Show's label;
   2. its own Home Assistant user (show_<name>, under each name it went by), which ends its token;
   3. its Music Assistant user (the one for the lyrics) and its player there. The player only goes once the
      Show is off the network: Music Assistant makes a connected player again at once. Music Assistant
@@ -11,13 +12,16 @@ What goes, in this order, all of it saved with keep first:
   4. its ESPHome entry, which takes its devices, their entities and their area links with it;
   5. its place in Genbu (main update Show, music choice), through genbu.forget_show, after the ESPHome
      entry so that Genbu does not pick it up again first. When it was the only main update Show, Genbu
-     makes the one it recommends main instead.
-What stays: the house-wide jarvis_local_* automations, the blueprints, the room's area and dashboard, the
-calendars, and backups/<serial>, so the unit can be installed again. Other automations, scripts and
-dashboards that use its entities are listed, not changed.
+     makes the one it recommends main instead;
+  6. the Show's label, once nothing carries it any more.
+What stays: everything with only the "Genbu Show installed" label (the house-wide jarvis_local_*
+automations, the music scripts), the blueprints, the room's area and dashboard, the calendars, and
+backups/<serial>, so the unit can be installed again. Other automations, scripts and dashboards that use its
+entities are listed, not changed.
 
-Run again once the Show is off the network, it finds what is left by the names and the MAC kept from the
-first run, and removes the Music Assistant player then.
+The Music Assistant player only goes once the Show is off the network, so jarvis-show.py waits for that
+before it removes anything. Run again later, it finds what is left by the names and the MAC kept from the
+first run.
 """
 from __future__ import annotations
 
@@ -26,7 +30,7 @@ import json
 import re
 from typing import Any, Callable
 
-from . import genbu
+from . import genbu, labels
 from .home_assistant import (HomeAssistant, HomeAssistantError, NotFound, find_entry, node_name, node_slug,
                              service_prefix, show_username)
 from .rename import _dashboards, device_name, show_devices, swap
@@ -54,6 +58,8 @@ class Found:
     devices: list[dict] = field(default_factory=list)
     entities: list[str] = field(default_factory=list)
     automations: list[tuple[str, dict]] = field(default_factory=list)   # ours, by config id
+    scripts: list[tuple[str, dict]] = field(default_factory=list)       # with its label, by config id
+    labels: list[dict] = field(default_factory=list)                    # its own labels, "Genbu Show: <node>"
     uses: list[str] = field(default_factory=list)     # what else uses it; left alone
     users: list[dict] = field(default_factory=list)   # its Home Assistant users
     skipped_users: list[str] = field(default_factory=list)
@@ -66,8 +72,8 @@ class Found:
 
     @property
     def anything(self) -> bool:
-        return bool(self.entry or self.automations or self.users or self.music_users or self.players
-                    or self.main)
+        return bool(self.entry or self.automations or self.scripts or self.labels or self.users
+                    or self.music_users or self.players or self.main)
 
     @property
     def in_genbu(self) -> bool:
@@ -127,9 +133,34 @@ def _automations(ha: HomeAssistant, found: Found) -> None:
         found.automations.append((item, config))
 
 
+def _labeled(ha: HomeAssistant, found: Found) -> None:
+    """The automations and scripts with the Show's label, under any of its names. Only the Show's own label
+    counts; the common one is on the house-wide pieces too."""
+    wanted = {labels.show_label(found.node).casefold()} | \
+        {labels.show_label(node_slug(n)).casefold() for n in found.names if node_slug(n)}
+    found.labels = [x for x in ha.ws({"type": "config/label_registry/list"}) or []
+                    if isinstance(x, dict) and str(x.get("name") or "").casefold() in wanted and x.get("label_id")]
+    if not found.labels:
+        return
+    ids = {x["label_id"] for x in found.labels}
+    have = {"automation": {item for item, _ in found.automations}, "script": set()}
+    into = {"automation": found.automations, "script": found.scripts}
+    for entity in ha.ws({"type": "config/entity_registry/list"}) or []:
+        kind, item = entity.get("platform"), str(entity.get("unique_id") or "")
+        if kind not in into or not ids & set(entity.get("labels") or []) or item in have[kind] \
+                or not _ID_RE.fullmatch(item):
+            continue
+        try:
+            config = ha.request("GET", f"/api/config/{kind}/config/{item}")
+        except NotFound:
+            continue
+        have[kind].add(item)
+        into[kind].append((item, config))
+
+
 def _uses(ha: HomeAssistant, found: Found) -> None:
     """The automations, scripts, scenes and dashboards outside ours that use the Show."""
-    ours = {item for item, _ in found.automations}
+    ours = {("automation", item) for item, _ in found.automations} | {("script", item) for item, _ in found.scripts}
     states = {str(s.get("entity_id")): s for s in ha.request("GET", "/api/states") or []}
     out: set[str] = set()
     for device in found.devices:
@@ -140,7 +171,7 @@ def _uses(ha: HomeAssistant, found: Found) -> None:
         for kind in ("automation", "script", "scene"):
             for entity_id in related.get(kind) or []:
                 item = str((states.get(entity_id, {}).get("attributes") or {}).get("id") or "")
-                if kind != "automation" or item not in ours:
+                if (kind, item) not in ours:
                     out.add(entity_id)
     if found.entities:
         names = {e: e for e in found.entities}
@@ -185,6 +216,7 @@ def find(ha: HomeAssistant, name: str, *, also: list[str] = (), mac: str = "",
         found.node = node_slug(name)
     _add(found.names, found.node)
     _automations(ha, found)
+    _labeled(ha, found)
     _users(ha, found)
     got = music(found.names, found.mac) if music is not None else None
     if got is not None:
@@ -204,6 +236,8 @@ def plan(found: Found) -> tuple[list[str], list[str], list[str]]:
     goes, later, stays = [], [], []
     for item, _ in found.automations:
         goes.append(f"automation {item}")
+    for item, _ in found.scripts:
+        goes.append(f"script {item}")
     for user in found.users:
         goes.append(f"Home Assistant user {user.get('username')!r}")
     for username in found.skipped_users:
@@ -216,8 +250,8 @@ def plan(found: Found) -> tuple[list[str], list[str], list[str]]:
     for player in found.players:
         label = f"Music Assistant player {player.get('name') or player.get('player_id')!r}"
         if player.get("available"):
-            later.append(f"{label}: Music Assistant keeps it while the Show is on the network; switch the Show "
-                         "off and run remove-show again")
+            later.append(f"{label}: Music Assistant keeps it while the Show is on the network, so this waits "
+                         "until the Show is unplugged")
         else:
             goes.append(f"{label} (and its device in Home Assistant)")
     if found.entry is not None:
@@ -230,13 +264,16 @@ def plan(found: Found) -> tuple[list[str], list[str], list[str]]:
         else:
             stays.append(f"{found.node}'s place in Genbu: Genbu here is older than 1.1.0 ({genbu.HOW_TO_ADD})"
                          + (f"; pick another main update Show in {genbu.MAIN_SELECT}" if found.main else ""))
+    for label in found.labels:
+        goes.append(f"label {label.get('name')!r}")
     if not found.music_asked:
         stays.append("its user and player in Music Assistant: not looked at (that needs a Music Assistant "
                      "admin: --music-assistant-token-file, the keyring or signing in)")
     for use in found.uses:
         stays.append(f"{use} uses it; left as it is")
-    stays.append("the house-wide jarvis_local_* automations, the blueprints, the room and its dashboard, the "
-                 "calendars, and the Show's backups")
+    stays.append(f"what has only the {labels.INSTALLED!r} label (the house-wide jarvis_local_* automations, "
+                 "the music scripts), the blueprints, the room and its dashboard, the calendars, and the Show's "
+                 "backups")
     return goes, later, stays
 
 
@@ -245,6 +282,8 @@ def snapshot(found: Found) -> dict:
     return {"name": found.name, "names": found.names, "node": found.node, "mac": found.mac,
             "entry": found.entry, "devices": found.devices, "entities": found.entities,
             "automations": {item: config for item, config in found.automations},
+            "scripts": {item: config for item, config in found.scripts},
+            "labels": found.labels,
             "home_assistant_users": [{k: u.get(k) for k in ("id", "name", "username", "group_ids", "local_only")}
                                      for u in found.users],
             "music_assistant_users": [{k: u.get(k) for k in ("user_id", "username", "role", "display_name")}
@@ -275,6 +314,8 @@ def remove(ha: HomeAssistant, found: Found, *, keep: Keep, drop: Drop | None = N
 
     for item, _ in found.automations:
         step(f"automation {item}", lambda item=item: ha.request("DELETE", f"/api/config/automation/config/{item}"))
+    for item, _ in found.scripts:
+        step(f"script {item}", lambda item=item: ha.request("DELETE", f"/api/config/script/config/{item}"))
     for user in found.users:
         step(f"Home Assistant user {user.get('username')!r}",
              lambda user=user: ha.ws({"type": "config/auth/delete", "user_id": user["id"]}))
@@ -303,4 +344,17 @@ def remove(ha: HomeAssistant, found: Found, *, keep: Keep, drop: Drop | None = N
     elif found.genbu and found.main:
         progress(f"WARN: {found.node} is still a main update Show in Genbu, which is older than 1.1.0; pick "
                  f"another in {genbu.MAIN_SELECT}")
+    for label in found.labels:
+        name = f"label {label.get('name')!r}"
+        try:
+            entities, devices = labels.carrying(ha, label["label_id"])
+        except HomeAssistantError as exc:
+            failed += 1
+            progress(f"WARN: {name}: {exc}")
+            continue
+        if entities or devices:
+            progress(f"{name} stays: {len(entities) + len(devices)} thing(s) still carry it; run --remove-show "
+                     "again once they are gone")
+            continue
+        step(name, lambda label=label: ha.ws({"type": "config/label_registry/delete", "label_id": label["label_id"]}))
     return failed

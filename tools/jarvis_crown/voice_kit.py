@@ -27,9 +27,12 @@ import json
 from pathlib import Path
 import re
 import shlex
+import time
 from typing import Any, Callable
 
-from .home_assistant import Chooser, HomeAssistant, HomeAssistantError, NotFound, service_prefix, slug_key
+from . import labels
+from .home_assistant import (Chooser, HomeAssistant, HomeAssistantError, NotFound, node_slug, service_prefix,
+                             slug_key)
 
 BLUEPRINT_FOLDER = "techo5"
 BLUEPRINT_SOURCE = "https://github.com/vardstein/techo5JarvisAssistant/blob/genbuShowCrown/blueprints/automation/"
@@ -40,6 +43,7 @@ BLUEPRINT_DIR = Path(__file__).resolve().parents[2] / "blueprints" / "automation
 TURN_ROOM_DOWN = "turn-room-down.yaml"
 VOLUME = "volume-where-the-music-is.yaml"
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+OURS = "techo5_turn_room_down_"   # our per-Show automation ids; the rest of the id is the Show's prefix
 _ENTITY_RE = re.compile(r"^[a-z0-9_]+\.[a-z0-9_]+$")
 
 # Rooms the German sentences know: what an area may be called (its id or name, either language, as
@@ -738,10 +742,12 @@ class _Run:
     progress: Callable[[str], None]
 
     differ: list[tuple[str, str, dict, dict]] = field(default_factory=list)
+    items: list[tuple[str, str]] = field(default_factory=list)   # every item put, for the labels
 
     def put(self, kind: str, item: str, config: dict) -> None:
         """Makes the automation or script item. One that is there and differs waits for settle()."""
         path = f"/api/config/{kind}/config/{item}"
+        self.items.append((kind, item))
         try:
             old = self.ha.request("GET", path)
         except NotFound:
@@ -839,7 +845,7 @@ def _per_show(run: _Run, house: House, show: str, entities: list[str]) -> None:
     satellite = satellites[0]
     near_miss = next((e for e in sorted(entities) if e.startswith("event.") and e.endswith("_wake_word_near_miss")),
                      None)
-    item = f"techo5_turn_room_down_{service_prefix(show)}"
+    item = f"{OURS}{service_prefix(show)}"
     found = duck_existing(run.ha, satellite)
     if found and found[0] != item:
         # Someone made their own from the blueprint; it stays theirs.
@@ -870,12 +876,17 @@ def _rerun(show: str) -> str:
 
 
 def set_up(ha: HomeAssistant, show: str, entities: list[str], *, choose: Chooser | None = None,
-           keep: Keep | None = None, progress: Callable[[str], None] = print) -> None:
+           keep: Keep | None = None, progress: Callable[[str], None] = print, node: str = "",
+           sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic) -> None:
     """Sets up the pieces this house can have, and this Show's turn-the-room-down automation. The ones
-    that are there already and differ are asked about at the end, together."""
+    that are there already and differ are asked about at the end, together. Then all of them get the
+    installer's label, and the Show's own automation the Show's label too (node, its ESPHome name)."""
     run = _Run(ha, choose, keep, progress)
     _set_up(run, show, entities)
     run.settle()
+    own = [(k, i) for k, i in run.items if i.startswith(OURS)]
+    labels.mark(ha, progress, node=node or node_slug(show), show_items=own,
+                house_items=[x for x in run.items if x not in own], sleep=sleep, clock=clock)
 
 
 def _set_up(run: _Run, show: str, entities: list[str]) -> None:

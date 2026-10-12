@@ -123,7 +123,7 @@
   "services": {
     "forget_show": {
       "name": "Forget a Show",
-      "description": "Forgets a Show that has left the house for good: it stops being a main update Show (when it was the only one, the recommended Show takes over) and its versions and music choice are dropped. The installer's remove-show calls this after the Show is out of ESPHome.",
+      "description": "Forgets a Show that has left the house for good: it stops being a main update Show (when it was the only one, the recommended Show takes over) and its versions and music choice are dropped. The installer's --remove-show calls this after the Show is out of ESPHome.",
       "fields": {
         "node": {
           "name": "Node name",

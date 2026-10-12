@@ -84,7 +84,7 @@ def _drop_copies(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 async def _forget_show(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
-    """genbu.forget_show {node}: what the installer's remove-show calls once the Show's ESPHome entry is
+    """genbu.forget_show {node}: what the installer's --remove-show calls once the Show's ESPHome entry is
     gone, so the house keeps nothing about it. Answers with the main update Shows left."""
     entry = next((e for e in hass.config_entries.async_entries(DOMAIN) if e.state is ConfigEntryState.LOADED),
                  None)

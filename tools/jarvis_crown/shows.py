@@ -18,7 +18,7 @@ class Show:
     name: str
     board: str
     folder: Path
-    mac: str = ""   # kept by remove-show, for the run after its ESPHome entry is gone
+    mac: str = ""   # kept by --remove-show, for the run after its ESPHome entry is gone
 
     @property
     def key_file(self) -> Path:

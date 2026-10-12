@@ -123,7 +123,7 @@
   "services": {
     "forget_show": {
       "name": "Show vergessen",
-      "description": "Vergisst eine Show, die das Haus für immer verlassen hat: Sie ist kein Haupt-Update-Show mehr (war sie die einzige, übernimmt die empfohlene Show), ihre Versionen und ihre Musikwahl werden gelöscht. Das remove-show des Installers ruft das auf, sobald die Show aus ESPHome raus ist.",
+      "description": "Vergisst eine Show, die das Haus für immer verlassen hat: Sie ist kein Haupt-Update-Show mehr (war sie die einzige, übernimmt die empfohlene Show), ihre Versionen und ihre Musikwahl werden gelöscht. Der Installer ruft das mit --remove-show auf, sobald die Show aus ESPHome raus ist.",
       "fields": {
         "node": {
           "name": "Node-Name",

@@ -436,7 +436,7 @@ closed. What it was installed as (the profile) and the TECHO5 version stay. Line
 userdata (downloads and the like) isn't touched.
 
 Your Home Assistant can't reach it any more: take it out with
-`python3 tools/jarvis-show.py remove-show --name NAME`, which removes its device, user, automation,
+`python3 tools/jarvis-show.py --remove-show --name NAME`, which removes its device, user, automation,
 Music Assistant player and Genbu entry together ([Taking a Show out](jarvis-crown-installer.md#taking-a-show-out)),
 or delete it by hand from **Settings → Devices & services → ESPHome**. To add it again, open its setup page, go to **General** and choose **Let a Home Assistant
 add this device**, as after [leaving Home Assistant](actions.md#disconnect-the-device-from-home-assistant-for-good).

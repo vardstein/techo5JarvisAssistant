@@ -10,7 +10,7 @@ MAIN_SELECT = "select.genbu_main_update_show"
 CHANGED = f"{DOMAIN}_changed"  # dispatcher signal: the house was looked at again
 STORE_KEY = f"{DOMAIN}.house"
 STORE_VERSION = 1
-SERVICE_FORGET = "forget_show"  # the installer's remove-show, once the Show is out of ESPHome
+SERVICE_FORGET = "forget_show"  # the installer's --remove-show, once the Show is out of ESPHome
 PANEL = "genbu"  # the sidebar page with a card per Show, at /genbu
 PANEL_FILES = "/genbu_panel"  # where its script is served from (frontend/)
 
