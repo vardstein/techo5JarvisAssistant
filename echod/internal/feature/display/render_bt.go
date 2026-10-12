@@ -9,24 +9,24 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 )
 
-// The Bluetooth page, opened from Connections in the settings: a title, a line saying what to do,
-// the devices as rows a finger can hit, and a bar at the bottom that ends it. The one connected and
+// The Bluetooth page, opened from Connections in the settings: a back arrow and a title, a line
+// saying what to do, and the devices as rows a finger can hit. The one connected and
 // the ones paired come first, then what the scan has found. Geometry is shared with the gesture
 // handler, which maps a tap back to a row.
-// The sizes are the Show 5's (960 by 480): title, hint, four rows, and the bar fit in 480. The Show 8
+// The sizes are the Show 5's (960 by 480): the heading and four rows fit in 480. The Show 8
 // scales them like everything else.
 const (
-	btRowTopBase    = 112 // first row's top edge
-	btRowHeightBase = 58
+	btRowTopBase    = 108 // first row's top edge
+	btRowHeightBase = 70
 	btRows          = 4
 )
 
 func (p *paint) btRowTop() int    { return p.s(btRowTopBase) }
 func (p *paint) btRowHeight() int { return p.s(btRowHeightBase) }
 
-// btRowAt maps a tap to the row it landed on, or -1; the bottom bar is btRows.
-func (r *renderer) btRowAt(y int) int {
-	if y >= r.h-r.s(pageBarH) {
+// btRowAt maps a tap to the row it landed on, or -1; the way back is btRows.
+func (r *renderer) btRowAt(x, y int) int {
+	if r.pageBackAt(x, y) {
 		return btRows
 	}
 	if y < r.btRowTop() {
@@ -61,7 +61,7 @@ func (r *renderer) pairingPage(s scene) {
 	if hint == "" {
 		hint = "Put your earbuds in pairing mode"
 	}
-	r.pageHead("Bluetooth audio", hint, s.now)
+	r.pageHead("Bluetooth audio", hint, "")
 	fc := r.faces()
 	rowTop, rowH := r.btRowTop(), r.btRowHeight()
 
@@ -93,5 +93,4 @@ func (r *renderer) pairingPage(s scene) {
 		}
 		r.text(face, r.fit(face, d.Name, r.w-2*r.margin-rw-r.s(24)), r.margin, cy+r.s(10), cream)
 	}
-	r.pageButton(r.w/2, r.s(300), "Done", btnSecondary)
 }

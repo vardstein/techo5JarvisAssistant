@@ -25,7 +25,8 @@ import (
 // interface listing.
 func (d *Display) gather(s scene, restartArm time.Time) settings {
 	d.mu.Lock()
-	st := settings{cat: d.cat, picker: d.picker, cardScroll: d.cardScroll, pickScroll: d.pickScroll, checking: d.checking, colors: d.colors, folder: d.folder, brightness: d.ceiling, auto: d.autoOn, now: s.now, restartArm: restartArm, resetArm: d.resetArm}
+	st := settings{cat: d.cat, picker: d.picker, cardScroll: d.cardScroll, pickScroll: d.pickScroll, checking: d.checking, colors: d.colors, folder: d.folder, brightness: d.ceiling, auto: d.autoOn, now: s.now, restartArm: restartArm,
+		root: d.root, page: d.page, adjust: d.adjust, confirm: d.confirm, confirmAt: d.confirmAt}
 	d.mu.Unlock()
 	if st.brightness == 0 {
 		st.brightness = config.DefaultScreenBrightness

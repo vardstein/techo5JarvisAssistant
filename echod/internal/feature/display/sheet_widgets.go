@@ -6,6 +6,7 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"image"
 	"image/color"
+	"image/draw"
 	"math"
 	"slices"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/gofont/gobold"
+	"golang.org/x/image/font/gofont/gomedium"
 	"golang.org/x/image/font/gofont/goregular"
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
@@ -254,6 +256,7 @@ const (
 	ctlDanger                      // an action to think twice about
 	ctlDays                        // the seven days of the week, each on or off
 	ctlSwatches                    // a strip of colors for one role of the theme
+	ctlPage                        // a group of rows on a page of their own (the Show's sub-pages)
 )
 
 type settingRow struct {
@@ -263,22 +266,26 @@ type settingRow struct {
 	kind       controlKind
 	value      string // beside the control, or alone for ctlValue
 	on         bool   // a switch's state
-	button     string // an action's label
+	button     string // an action's label; none makes the whole row the action
 	days       uint8  // ctlDays: bit 0 Sunday to bit 6 Saturday
 	role       int    // ctlSwatches: which role of the theme
 	rowTap     bool   // a tap on the row beside its control means something of its own (partRow)
+	page       string // the sub-page the row is on, where the Show groups them (sheet_pages.go)
+	live       bool   // the line under it says how things stand now, not what the setting is for
 }
 
 // part is which piece of a row a tap landed on.
 type part int
 
 const (
-	partMain  part = iota // the switch, the choice, the button, or the row around a switch or choice
-	partMinus             // a stepper's −
-	partPlus              // a stepper's +
-	partExtra             // the second button a choice can carry (Updates' Check now)
-	partRow               // the row itself, away from its control, on a row with rowTap
-	partDay               // a day of ctlDays, or a color of ctlSwatches; the zone's opt is which
+	partMain    part = iota // the switch, the choice, the button, or the row around a switch or choice
+	partMinus               // a stepper's −
+	partPlus                // a stepper's +
+	partExtra               // the second button a choice can carry (Updates' Check now)
+	partRow                 // the row itself, away from its control, on a row with rowTap
+	partDay                 // a day of ctlDays, or a color of ctlSwatches; the zone's opt is which
+	partAdjust              // a stepper's row, which opens its value on a page of its own (the Show)
+	partConfirm             // a row that asks before it does anything (the Show)
 )
 
 type zoneKind int
@@ -291,6 +298,7 @@ const (
 	zoneOption                  // a choice in an open list
 	zoneDismiss                 // anywhere else while a list is open
 	zoneTab                     // one side of a segmented switch; opt is which
+	zoneBack                    // the back arrow and title at the top: one level up
 )
 
 // zone is a place on the screen a tap means something, recorded as it is drawn so taps always
@@ -345,14 +353,14 @@ func (r *paint) addZone(z zone) { r.pending = append(r.pending, z) }
 // layout was drawn on. Read them through the methods below, which scale them to the screen in
 // hand; nothing should use a Base value directly.
 const (
-	railWBase   = 244
-	navTopBase  = 20
-	navHBase    = 54
-	navGapBase  = 8
-	cardInBase  = 14 // the card's margin from the screen's edges
+	railWBase   = 264
+	navTopBase  = 76 // under the back arrow and "Settings"
+	navHBase    = 56
+	navGapBase  = 7
+	cardInBase  = 14 // the margin from the screen's edges
 	cardRadBase = 22
-	headerHBase = 82
-	rowHBase    = 60
+	headerHBase = 84
+	rowHBase    = 72
 	rowInBase   = 30 // text inset inside the card
 )
 
@@ -374,14 +382,15 @@ func faces() sheetFaces {
 // chosen on. Not cached: a process draws on one screen, so this is built once per renderer.
 func sheetFacesAt(s func(int) int) sheetFaces {
 	bold, _ := opentype.Parse(gobold.TTF)
+	medium, _ := opentype.Parse(gomedium.TTF)
 	regular, _ := opentype.Parse(goregular.TTF)
 	f := func(fn *opentype.Font, size int) font.Face {
 		fc, _ := opentype.NewFace(fn, &opentype.FaceOptions{Size: float64(s(size)), DPI: 72, Hinting: font.HintingFull})
 		return fc
 	}
 	return sheetFaces{
-		header: f(bold, 36), label: f(regular, 29), labelBold: f(bold, 29), sub: f(regular, 21),
-		value: f(regular, 25), nav: f(regular, 24), navBold: f(bold, 24), button: f(bold, 23),
+		header: f(bold, 38), label: f(medium, 28), labelBold: f(bold, 28), sub: f(regular, 21),
+		value: f(regular, 25), nav: f(medium, 25), navBold: f(bold, 25), button: f(bold, 23),
 	}
 }
 
@@ -400,6 +409,7 @@ type cardView struct {
 	actions      []headerAction
 	note         string
 	scroll       int
+	all          []settingRow // every row of the category, sub-pages and all, where rows is one of them
 }
 
 // scrollLimits are how far the card and an open list could scroll in the frame last drawn, so a
@@ -426,11 +436,9 @@ func (r *paint) rowList(card, list image.Rectangle, rows []settingRow, scroll in
 	top := list.Min.Y - scroll
 	for i, row := range rows {
 		h := heights[i]
+		// No rules between rows: the space around each one is what sets it apart.
 		if top+h > list.Min.Y && top < list.Max.Y {
 			r.settingRow(card, top, row)
-			if i < len(rows)-1 {
-				r.rule(card.Min.X+r.rowIn(), card.Max.X-r.rowIn(), top+h, 0.6)
-			}
 		}
 		top += h
 	}
@@ -504,15 +512,17 @@ const (
 	pickScrollOver = 18
 )
 
-// picker draws a list of choices over the dimmed screen, on a card of its own, and returns how far it
-// can scroll. Up to pickScrollOver choices run in columns, every one a tap away; a longer list is one
-// wide column that scrolls with a swipe, with room for long names.
+// picker draws a list of choices as a page of its own over the whole screen, and returns how far it
+// can scroll: a back arrow and the title at the top, the choices under it as large rows, the one in
+// force in a soft box with a check. Up to pickScrollOver choices run in columns, every one a tap
+// away; a longer list is one column that scrolls with a swipe, with room for long names. A tap
+// anywhere but on a choice puts it away, the back arrow being where a finger will look for that.
 func (r *paint) picker(p pickerView, scroll int) int {
 	fc := r.faces()
 	r.addZone(zone{r: r.dst.Rect, kind: zoneDismiss})
-	r.dimAll(0.5)
+	r.fill(r.dst.Rect, walnut)
 
-	optH, pad, titleH, gap := r.s(54), r.s(18), r.s(62), r.s(8)
+	optH, pad, titleH, gap := r.s(64), r.s(28), r.s(84), r.s(12)
 	n := len(p.opts)
 	cols, scrolls := 1, n > pickScrollOver
 	switch {
@@ -525,36 +535,13 @@ func (r *paint) picker(p pickerView, scroll int) int {
 	per := (n + cols - 1) / cols
 	// most is how many choices stand in a column on this panel. A large menu size can leave room for
 	// fewer than a short list has: that list scrolls, like a long one, rather than run off the panel.
-	most := max((r.h-titleH-pad-r.s(16))/optH, 2)
+	most := max((r.h-titleH-r.s(12))/optH, 2)
 	if per > most {
 		cols, per, scrolls = 1, n, true
 	}
-	optW := r.s(300)
-	switch {
-	case scrolls:
-		optW = r.s(640)
-	case cols == 3:
-		optW = r.s(220)
-	case cols == 2:
-		optW = r.s(250)
-	}
-	if !scrolls {
-		for _, o := range p.opts {
-			optW = max(optW, min(r.width(fc.value, o)+r.s(90), (r.w-r.s(80))/cols-gap))
-		}
-	}
-	if tw := r.width(fc.header, p.title) + r.s(12); cols*optW+(cols-1)*gap < tw {
-		optW = (tw - (cols-1)*gap + cols - 1) / cols // the title sets the width: the choices share it
-	}
-	optW = min(optW, (r.w-2*pad-r.s(16)-(cols-1)*gap)/cols) // and never past the panel's sides
-	shown := per
-	if scrolls {
-		shown = min(pickRows, most)
-	}
-	w := cols*optW + (cols-1)*gap + 2*pad
-	h := titleH + shown*optH + pad
-	card := image.Rect((r.w-w)/2, (r.h-h)/2, (r.w+w)/2, (r.h+h)/2)
-	list := image.Rect(card.Min.X+r.s(4), card.Min.Y+titleH, card.Max.X+r.s(2), card.Min.Y+titleH+shown*optH)
+	optW := (r.w - 2*pad - (cols-1)*gap) / cols
+	shown := min(per, most)
+	list := image.Rect(0, titleH, r.w, titleH+shown*optH)
 	maxScroll := 0
 	if scrolls {
 		maxScroll = per*optH - list.Dy()
@@ -562,46 +549,38 @@ func (r *paint) picker(p pickerView, scroll int) int {
 	} else {
 		scroll = 0
 	}
-
-	r.roundShadow(card, r.cardRad(), r.sf(26), r.s(10), shadowAlpha()*1.2)
-	r.roundFill(card, r.cardRad(), surface(4), surface(3))
-	r.roundHighlight(card, r.cardRad())
-	// The card before its choices go on, to clip a scrolled list back to its window after.
 	var under []uint8
 	if scrolls {
 		under = slices.Clone(r.dst.Pix)
 	}
 
+	k := r.sf(100) / 100
 	for i, o := range p.opts {
 		col, row := i/per, i%per
-		x0 := card.Min.X + pad + col*(optW+gap)
-		y0 := card.Min.Y + titleH + row*optH - scroll
+		x0 := pad + col*(optW+gap)
+		y0 := titleH + row*optH - scroll
 		if y0+optH <= list.Min.Y || y0 >= list.Max.Y {
 			continue
 		}
-		b := image.Rect(x0, y0+r.s(3), x0+optW, y0+optH-r.s(3))
-		fg := cream
-		rad, k := r.sf(14), r.sf(100)/100
+		b := image.Rect(x0, y0+r.s(4), x0+optW, y0+optH-r.s(4))
+		face, fg := fc.label, cream
 		if i == p.cur {
-			r.roundFill(b, rad, shift(amber, 12), shift(amber, -12))
-			r.roundHighlight(b, rad)
-			fg = onAccent()
-			cx, cy := float64(b.Max.X-r.s(26)), float64(b.Min.Y+b.Dy()/2)
-			r.aaLine(cx-8*k, cy, cx-3*k, cy+6*k, 2.8*k, fg)
-			r.aaLine(cx-3*k, cy+6*k, cx+8*k, cy-6*k, 2.8*k, fg)
-		} else {
-			r.roundFill(b, rad, surface(6), surface(5))
+			r.roundFill(b, r.sf(14), surface(3), surface(3))
+			face = fc.labelBold
+			cx, cy := float64(b.Max.X-r.s(28)), float64(b.Min.Y+b.Dy()/2)
+			r.aaLine(cx-9*k, cy, cx-3*k, cy+7*k, 3*k, amber)
+			r.aaLine(cx-3*k, cy+7*k, cx+9*k, cy-7*k, 3*k, amber)
 		}
-		tx := b.Min.X + r.s(18)
+		tx := b.Min.X + r.s(20)
 		if i < len(p.swatches) {
 			sw := p.swatches[i]
-			cx, cy := float64(b.Min.X+r.s(30)), float64(b.Min.Y+b.Dy()/2)
-			r.aaDisc(cx, cy, 13*k, sw[0])
-			r.aaRing(cx, cy, 13*k, 1.4*k, 0, 2*math.Pi, lerp(sw[0], color.RGBA{255, 255, 255, 255}, 0.3))
-			r.aaDisc(cx, cy, 6.5*k, sw[1])
-			tx = b.Min.X + r.s(54)
+			cx, cy := float64(b.Min.X+r.s(34)), float64(b.Min.Y+b.Dy()/2)
+			r.aaDisc(cx, cy, 14*k, sw[0])
+			r.aaRing(cx, cy, 14*k, 1.4*k, 0, 2*math.Pi, lerp(sw[0], color.RGBA{255, 255, 255, 255}, 0.3))
+			r.aaDisc(cx, cy, 7*k, sw[1])
+			tx = b.Min.X + r.s(62)
 		}
-		r.text(fc.value, r.fit(fc.value, o, b.Max.X-r.s(44)-tx), tx, b.Min.Y+b.Dy()/2+r.s(9), fg)
+		r.text(face, r.fit(face, o, b.Max.X-r.s(52)-tx), tx, b.Min.Y+b.Dy()/2+r.s(10), fg)
 		zr := image.Rect(x0-gap/2, y0, x0+optW+gap/2, y0+optH)
 		if scrolls {
 			zr = zr.Intersect(list)
@@ -609,12 +588,43 @@ func (r *paint) picker(p pickerView, scroll int) int {
 		r.addZone(zone{r: zr, kind: zoneOption, opt: i})
 	}
 	if scrolls {
-		r.restore(under, image.Rect(card.Min.X, card.Min.Y-optH, card.Max.X, list.Min.Y))
-		r.restore(under, image.Rect(card.Min.X, list.Max.Y, card.Max.X, card.Max.Y+optH))
-		r.scrollHints(list, scroll, maxScroll, surface(3))
+		r.restore(under, image.Rect(0, 0, r.w, list.Min.Y))
+		r.restore(under, image.Rect(0, list.Max.Y, r.w, r.h))
+		r.scrollHints(list, scroll, maxScroll, walnut)
 	}
-	r.text(fc.header, p.title, card.Min.X+pad+r.s(6), card.Min.Y+r.s(44), cream)
+	r.backTitle(p.title, pad, titleH)
 	return maxScroll
+}
+
+// backTitle is a page's heading: a back arrow and the title beside it, in the band titleH tall at the
+// top. The arrow is drawn here; what a tap on it does is the caller's.
+func (r *paint) backTitle(title string, left, titleH int) {
+	fc := r.faces()
+	cy := titleH/2 + r.s(2)
+	r.backArrow(left+r.s(8), cy)
+	x := left + r.s(40)
+	r.text(fc.header, r.fit(fc.header, title, r.w-x-left), x, cy+r.s(13), cream)
+}
+
+// backArrow is the arrow that goes back, its point at x.
+func (r *paint) backArrow(x, cy int) {
+	px, y, k := float64(x), float64(cy), r.sf(100)/100
+	r.aaLine(px+11*k, y-12*k, px, y, 3.4*k, cream)
+	r.aaLine(px, y, px+11*k, y+12*k, 3.4*k, cream)
+}
+
+// overlayBox is a flat box laid over a page (a reminder, an announcement, the turn): a step lighter
+// than the ground, and cut out of what is under it by a thin ring of the ground, which keeps two of
+// them apart where one overlaps the other now that neither casts a shadow.
+func (r *paint) overlayBox(box image.Rectangle) {
+	cut := r.s(4)
+	r.roundFill(box.Inset(-cut), r.cardRad()+float64(cut), walnut, walnut)
+	r.roundFill(box, r.cardRad(), surface(4), surface(4))
+}
+
+// fill paints b in one flat color.
+func (r *paint) fill(b image.Rectangle, c color.RGBA) {
+	draw.Draw(r.dst, b, image.NewUniform(c), image.Point{}, draw.Src)
 }
 
 // fit shortens text to room pixels, with an ellipsis where it was cut.
@@ -655,10 +665,12 @@ func (r *paint) settingRow(card image.Rectangle, top int, row settingRow) {
 		h += r.s(stackLine)
 	}
 	bottom := top + h
-	y := top + r.s(30) + r.rowAir(labels, subs)/2
-	if len(subs) == 0 {
-		y += r.s(10)
+	// The words sit as one block in the middle of the row, whatever lines it has.
+	block := r.s(22) + r.s(labelStep)*max(len(labels)-1, 0) + r.s(6)
+	if len(subs) > 0 {
+		block += r.s(23) + r.s(subStep)*(len(subs)-1)
 	}
+	y := top + (r.rowFor(labels, subs)-block)/2 + r.s(22)
 	for _, line := range labels {
 		r.text(face, line, card.Min.X+r.rowIn(), y, cream)
 		y += r.s(labelStep)
@@ -680,7 +692,7 @@ func (r *paint) settingRow(card image.Rectangle, top int, row settingRow) {
 	switch row.kind {
 	case ctlValue:
 		v := fit(row.value, right)
-		r.text(fc.value, v, right-r.width(fc.value, v), cy+r.s(9), dim)
+		r.text(fc.value, v, right-r.width(fc.value, v), cy+r.s(9), valueInk())
 	case ctlToggle:
 		x := r.toggle(right, cy, row.on)
 		if v := fit(row.value, x-r.s(16)); v != "" {
@@ -702,12 +714,11 @@ func (r *paint) settingRow(card image.Rectangle, top int, row settingRow) {
 			b := image.Rect(x0+i*(chipW+chipGap), cy-half, x0+i*(chipW+chipGap)+chipW, cy+half)
 			ink := cream
 			if row.days&(1<<i) != 0 {
-				r.roundFill(b, float64(half), shift(amber, 12), shift(amber, -12))
-				r.roundHighlight(b, float64(half))
+				r.roundFill(b, float64(half), amber, amber)
 				ink = onAccent()
 			} else {
-				r.roundFill(b, float64(half), surface(5), surface(4))
-				r.roundStroke(b, float64(half), r.sf(1), ember)
+				r.roundFill(b, float64(half), surface(4), surface(4))
+				ink = lerp(dim, cream, 0.5)
 			}
 			r.text(fc.button, name, b.Min.X+(chipW-r.width(fc.button, name))/2, cy+r.s(8), ink)
 			if row.id != "" {
@@ -725,7 +736,7 @@ func (r *paint) settingRow(card image.Rectangle, top int, row settingRow) {
 		if row.button != "" {
 			extra = r.width(fc.button, row.button) + r.s(44+12)
 		}
-		x := r.choice(right, cy, fit(row.value, right-r.s(58)-extra))
+		x := r.choice(right, cy, fit(row.value, right-r.s(choiceTail)-extra))
 		if row.button != "" {
 			bx := r.pillButton(x-r.s(12), cy, row.button, btnSecondary)
 			add(whole, partMain)
@@ -734,6 +745,15 @@ func (r *paint) settingRow(card image.Rectangle, top int, row settingRow) {
 		}
 		add(whole, partMain)
 	case ctlButton, ctlDanger:
+		if row.button == "" {
+			// A list of things to use (a station, a room to call): the row is the button, and the
+			// same pill on every row would only repeat what the whole list already says.
+			if v := fit(row.value, right); v != "" {
+				r.text(fc.value, v, right-r.width(fc.value, v), cy+r.s(9), valueInk())
+			}
+			add(whole, partMain)
+			break
+		}
 		style := btnSecondary
 		if row.kind == ctlDanger {
 			style = btnDanger
@@ -872,12 +892,15 @@ func (r *paint) controlWidth(row settingRow) int {
 	case ctlStepper:
 		return r.s(44) + max(r.width(fc.value, row.value), r.s(80)) + r.s(24) + r.s(44)
 	case ctlChoice:
-		w := r.width(fc.value, row.value) + r.s(58)
+		w := r.width(fc.value, row.value) + r.s(choiceTail)
 		if row.button != "" {
 			w += r.width(fc.button, row.button) + r.s(44+12)
 		}
 		return w
 	case ctlButton, ctlDanger:
+		if row.button == "" {
+			return 0
+		}
 		return r.width(fc.button, row.button) + r.s(44)
 	case ctlDays:
 		w, gap := r.dayChip()
@@ -890,19 +913,23 @@ func (r *paint) controlWidth(row settingRow) int {
 func (r *paint) toggle(right, cy int, on bool) int {
 	half, kr := r.s(17), r.s(13)
 	track := image.Rect(right-r.s(66), cy-half, right, cy+half)
+	// Flat, like everything else here: the accent when on, a raised step of the ground when off, and
+	// a plain knob.
 	if on {
-		r.roundFill(track, float64(half), shift(amber, 10), shift(amber, -14))
+		r.roundFill(track, float64(half), amber, amber)
 	} else {
-		r.roundFill(track, float64(half), surface(6), surface(5))
-		r.roundStroke(track, float64(half), r.sf(1), ember)
+		r.roundFill(track, float64(half), surface(5), surface(5))
 	}
 	kx := track.Min.X + half
 	if on {
 		kx = track.Max.X - half
 	}
 	knob := image.Rect(kx-kr, cy-kr, kx+kr, cy+kr)
-	r.roundShadow(knob, float64(kr), r.sf(5), r.s(2), 0.45)
-	r.roundFill(knob, float64(kr), shift(cream, 12), shift(cream, -6))
+	ink := cream
+	if !on {
+		ink = lerp(dim, cream, 0.5)
+	}
+	r.roundFill(knob, float64(kr), ink, ink)
 	return track.Min.X
 }
 
@@ -913,11 +940,10 @@ func (r *paint) stepper(right, cy int, value string) (minusAt, plusAt image.Rect
 	plus := image.Rect(right-bw, cy-half, right, cy+half)
 	vw := max(r.width(fc.value, value), r.s(80))
 	minus := image.Rect(plus.Min.X-vw-gap-bw, cy-half, plus.Min.X-vw-gap, cy+half)
-	rad := r.sf(12)
+	// Two flat round buttons, the value between them.
+	rad := float64(half)
 	for _, b := range []image.Rectangle{minus, plus} {
-		r.roundShadow(b, rad, r.sf(6), r.s(2), shadowAlpha()*0.7)
-		r.roundFill(b, rad, surface(7), surface(5))
-		r.roundHighlight(b, rad)
+		r.roundFill(b, rad, surface(4), surface(4))
 	}
 	mx, px := float64(minus.Min.X+bw/2), float64(plus.Min.X+bw/2)
 	arm, pen := r.sf(8), r.sf(26)/10
@@ -928,19 +954,25 @@ func (r *paint) stepper(right, cy int, value string) (minusAt, plusAt image.Rect
 	return minus, plus
 }
 
-// choice draws a value in a pill with a chevron, the way to a list of options; returns its left edge.
+// choice draws a value and a chevron, the way to a list of options, and returns its left edge. No
+// box around them: the value reads quieter than the setting's name, and the chevron says it opens.
 func (r *paint) choice(right, cy int, value string) int {
 	fc := r.faces()
-	w, half := r.width(fc.value, value)+r.s(58), r.s(20)
-	pill := image.Rect(right-w, cy-half, right, cy+half)
-	r.roundFill(pill, float64(half), surface(5), surface(4))
-	r.roundStroke(pill, float64(half), r.sf(1), ember)
-	r.text(fc.value, value, pill.Min.X+half, cy+r.s(9), cream)
-	x, y, k := float64(pill.Max.X-r.s(22)), float64(cy), r.sf(100)/100
-	r.aaLine(x-4*k, y-7*k, x+3*k, y, 2.4*k, dim)
-	r.aaLine(x+3*k, y, x-4*k, y+7*k, 2.4*k, dim)
-	return pill.Min.X
+	w := r.width(fc.value, value) + r.s(choiceTail)
+	left := right - w
+	r.text(fc.value, value, left, cy+r.s(9), valueInk())
+	x, y, k := float64(right-r.s(6)), float64(cy), r.sf(100)/100
+	r.aaLine(x-6*k, y-8*k, x+2*k, y, 2.6*k, dim)
+	r.aaLine(x+2*k, y, x-6*k, y+8*k, 2.6*k, dim)
+	return left
 }
+
+// choiceTail is the room a choice's chevron takes after its value.
+const choiceTail = 34
+
+// valueInk is the color of a setting's value: between the dim text and the text, so it reads as the
+// answer to the name beside it without competing with it.
+func valueInk() color.RGBA { return lerp(dim, cream, 0.35) }
 
 type buttonStyle int
 
@@ -957,9 +989,7 @@ var danger = color.RGBA{0xe5, 0x48, 0x4d, 0xff}
 // these screens is. Separate from buttonFace because a few answers carry a color of their own that
 // means something — the phone's red and green — rather than taking the theme's accent.
 func (r *paint) roundButton(b image.Rectangle, rad float64, fill color.RGBA) {
-	r.roundShadow(b, rad, 8, 3, shadowAlpha()*0.8)
-	r.roundFill(b, rad, shift(fill, 14), shift(fill, -14))
-	r.roundHighlight(b, rad)
+	r.roundFill(b, rad, fill, fill)
 }
 
 // buttonFace draws a button's shape and returns the color its label should be drawn in.
@@ -974,13 +1004,9 @@ func (r *paint) buttonFace(b image.Rectangle, rad float64, style buttonStyle) co
 		r.roundButton(b, rad, amber)
 		return onAccent()
 	case btnSecondary:
-		r.roundShadow(b, rad, 6, 2, shadowAlpha()*0.5)
-		r.roundFill(b, rad, surface(6), surface(4))
-		r.roundStroke(b, rad, 1, ember)
-		r.roundHighlight(b, rad)
+		r.roundFill(b, rad, surface(4), surface(4))
 	case btnDanger:
-		r.roundFill(b, rad, surface(4), surface(3))
-		r.roundStroke(b, rad, 1.6, danger)
+		r.roundFill(b, rad, surface(4), surface(4))
 		return danger
 	}
 	return cream

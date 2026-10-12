@@ -784,7 +784,7 @@ func (d *Display) gesture(g touch.Gesture) {
 	}
 
 	// The Bluetooth page: a tap on a row pairs and connects it, or disconnects the one connected, and
-	// the bar at the bottom ends the page, back to the settings when it was opened from there.
+	// the back arrow ends the page, back to the settings when it was opened from there.
 	bt := btaudio.Get()
 	if bt.Pairing() {
 		done := false
@@ -794,7 +794,7 @@ func (d *Display) gesture(g touch.Gesture) {
 				return
 			}
 			list := btList(bt.State().Devices)
-			switch row := d.r.btRowAt(g.Y); {
+			switch row := d.r.btRowAt(g.X, g.Y); {
 			case row == btRows:
 				done = true
 			case row >= 0 && row < len(list) && list[row].Busy:
@@ -891,6 +891,8 @@ func (d *Display) gesture(g touch.Gesture) {
 			d.nextTap(g.X, g.Y)
 		case g.Kind == touch.SwipeUp || g.Kind == touch.SwipeDown:
 			d.sheetSwipe(g)
+		case g.Kind == touch.SwipeRight:
+			d.sheetBack() // the way the Car Thing went back: a swipe to the right, anywhere
 		}
 		d.wake()
 		return
@@ -1214,7 +1216,8 @@ const radioCueFor = 20 * time.Second
 func (d *Display) showSheet(on bool) {
 	d.mu.Lock()
 	d.sheet = on
-	d.restartArm, d.resetArm, d.picker, d.cardScroll, d.pickScroll, d.colors = time.Time{}, time.Time{}, "", 0, 0, false
+	d.restartArm, d.picker, d.cardScroll, d.pickScroll, d.colors = time.Time{}, "", 0, 0, false
+	d.root, d.page, d.adjust, d.confirm, d.draft = true, "", "", "", nil
 	d.mu.Unlock()
 	slog.Info("settings sheet", "open", on)
 	d.wake()
@@ -1573,14 +1576,20 @@ func (d *Display) OpenSheet(name string) bool {
 		d.closeDrawer()
 		return d.openDashboard()
 	}
+	if strings.EqualFold(name, "settings") {
+		d.closeDrawer()
+		d.showSheet(true)
+		return true
+	}
 	cat, ok := catByName(name)
 	if !ok {
 		return false
 	}
 	d.closeDrawer()
 	d.mu.Lock()
-	d.sheet, d.cat, d.picker, d.restartArm, d.resetArm = true, cat, "", time.Time{}, time.Time{}
-	d.draft, d.cardScroll, d.pickScroll = nil, 0, 0
+	d.sheet, d.cat, d.picker, d.restartArm = true, cat, "", time.Time{}
+	d.draft, d.cardScroll, d.pickScroll, d.colors = nil, 0, 0, false
+	d.root, d.page, d.adjust, d.confirm = false, "", "", ""
 	d.mu.Unlock()
 	d.wake()
 	return true

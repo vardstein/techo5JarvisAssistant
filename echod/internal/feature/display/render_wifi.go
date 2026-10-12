@@ -34,8 +34,8 @@ type wifiState struct {
 // through paint.s, so the same layout comes out right on the Show 8's wider panel; wifiRows and
 // keyRows are counts of things rather than lengths, so they stay as they are.
 const (
-	wifiRowTopBase    = 118
-	wifiRowHeightBase = 44
+	wifiRowTopBase    = 106
+	wifiRowHeightBase = 58
 	wifiRows          = 6
 
 	keyTopBase    = 150
@@ -70,12 +70,10 @@ func (r *renderer) wifiListHit(x, y int) wifiHit {
 	h := wifiHit{row: -1}
 	top, rowH := r.wifiRowTop(), r.wifiRowHeight()
 	switch {
-	case y >= r.h-r.s(pageBarH):
-		if x < r.w/2 {
-			h.rescan = true
-		} else {
-			h.done = true
-		}
+	case r.pageBackAt(x, y):
+		h.done = true
+	case y < top-r.s(24) && x >= r.w/2:
+		h.rescan = true
 	case y >= top && (y-top)/rowH < wifiRows:
 		h.row = (y - top) / rowH
 	}
@@ -152,7 +150,7 @@ func (r *renderer) wifiPage(s scene) {
 	} else if w.err != "" {
 		line = w.err
 	}
-	r.pageHead("Wi-Fi", line, s.now)
+	r.pageHead("Wi-Fi", line, "Rescan")
 	fc := r.faces()
 
 	rowTop, rowH := r.wifiRowTop(), r.wifiRowHeight()
@@ -191,10 +189,6 @@ func (r *renderer) wifiPage(s scene) {
 		r.text(fc.value, "More", r.margin, cy+r.s(9), dim)
 		r.chevron(r.w-r.margin-r.s(4), cy)
 	}
-
-	// The bar: rescan on the left half, done on the right.
-	r.pageButton(r.w/4, r.s(300), "Rescan", btnSecondary)
-	r.pageButton(r.w*3/4, r.s(300), "Done", btnSecondary)
 }
 
 // signal draws a network's strength as four rising bars, level of them lit, ending at right, and
@@ -257,13 +251,13 @@ func (r *renderer) keyboardPage(s scene) {
 	w := s.wifi
 	keyTop, keyH, keyGap, keyW, keyMargin := r.keyTop(), r.keyH(), r.keyGap(), r.keyW(), r.keyMargin()
 	fc := r.faces()
-	r.vgradient(r.dst.Bounds(), shift(walnut, 7), shift(walnut, -3))
+	r.fill(r.dst.Rect, walnut)
 	title := i18n.Sprintf("Password for %s", w.pick.SSID)
 	r.text(fc.header, r.fit(fc.header, title, r.w-2*r.margin), r.margin, r.s(46), cream)
-	// The field, sunk into the ground and ringed in the accent while it takes the keys.
+	// The field, a soft box ringed in the accent while it takes the keys.
 	field := image.Rect(r.margin-r.s(14), r.s(64), r.w-r.margin+r.s(14), r.s(128))
 	rad := r.sf(14)
-	r.roundFill(field, rad, surface(-1), surface(0))
+	r.roundFill(field, rad, surface(2), surface(2))
 	ring := amber
 	shown := w.text
 	if w.busy != "" {
@@ -316,17 +310,16 @@ func (r *renderer) keyboardPage(s scene) {
 	r.key(image.Rect(keyMargin+pitch*8, y0, r.w-keyMargin, y0+keyH), "Connect", true)
 }
 
-// key draws one key: raised off the ground, or filled in the accent when lit.
+// key draws one key: a flat soft box, or filled in the accent when lit.
 func (r *renderer) key(rect image.Rectangle, label string, lit bool) {
 	rad := r.sf(10)
 	ink := cream
 	if lit {
-		r.roundFill(rect, rad, shift(amber, 14), shift(amber, -14))
+		r.roundFill(rect, rad, amber, amber)
 		ink = onAccent()
 	} else {
-		r.roundFill(rect, rad, surface(5), surface(3))
+		r.roundFill(rect, rad, surface(4), surface(4))
 	}
-	r.roundHighlight(rect, rad)
 	face := r.small
 	if r.width(face, label) > rect.Dx()-r.s(10) {
 		face = r.tiny

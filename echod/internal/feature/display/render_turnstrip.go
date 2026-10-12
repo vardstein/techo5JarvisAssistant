@@ -28,10 +28,8 @@ func (r *renderer) turnStrip(s scene) {
 	top := r.h - announceBar - announceInset
 	box := image.Rect(announceInset, top, r.w-announceInset, r.h-announceInset)
 	r.setTurnStripAt(box)
-	r.roundShadow(box, r.cardRad(), 26, 8, shadowAlpha()*1.2)
-	r.roundFill(box, r.cardRad(), shift(surface(4), 6), surface(2))
-	r.roundStroke(box, r.cardRad(), 2, amber)
-	r.roundHighlight(box, r.cardRad())
+	// A flat box a step lighter than the page; the word in the accent is what says a turn is on.
+	r.overlayBox(box)
 
 	// One line, the word in the big face and what goes with it after: two stacked lines crowded each
 	// other in the strip's hundred and thirty pixels.

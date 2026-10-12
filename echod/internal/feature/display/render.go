@@ -284,13 +284,8 @@ type renderer struct {
 	micro  font.Face // an event's words on a day of the month
 	margin int
 
-	// base keeps the settings screen's unchanging part.
-	base    *image.RGBA
-	baseKey baseKey
-
-	// shell keeps what every category of the settings screen shares, for as long as the theme holds.
-	shell    *image.RGBA
-	shellKey baseKey
+	// carFc is the settings screen's type at each panel and menu size drawn so far (render_sheet.go).
+	carFc map[int]*carFaces
 
 	// zoomFaces are the settings screen's text sizes at each menu size chosen so far (menu_size.go).
 	zoomFaces map[int]*sheetFaces

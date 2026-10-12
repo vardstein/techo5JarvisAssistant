@@ -60,13 +60,23 @@ func sheetScene(cat category) scene {
 	return s
 }
 
-// Every category, and each editor, draws its rows with somewhere to tap for every row that does
-// something, and all of it on the screen.
+// Every level draws with somewhere to tap for everything in view that does something, and all of it
+// on the screen: the categories, each category, each page, and the editors.
 func TestEveryCardDraws(t *testing.T) {
 	cases := map[string]scene{}
 	for c := category(0); c < categories; c++ {
 		cases[categoryNames[c]] = sheetScene(c)
+		for pg := range pageTitles {
+			s := sheetScene(c)
+			s.sheet.page = pg
+			if v := categoryCard(s.view()); v.title == pageTitles[pg] {
+				cases[categoryNames[c]+"/"+pg] = s
+			}
+		}
 	}
+	root := sheetScene(catDisplay)
+	root.sheet.root = true
+	cases["settings"] = root
 	editor := sheetScene(catAlarms)
 	editor.draft = &alarmDraft{alarm: editor.alarms.Local[0]}
 	cases["alarm editor"] = editor
@@ -77,13 +87,7 @@ func TestEveryCardDraws(t *testing.T) {
 	for name, s := range cases {
 		r := testRenderer()
 		r.settingsScreen(s)
-		v := categoryCard(s.view())
-		if len(v.rows) == 0 {
-			t.Errorf("%s: no rows", name)
-			continue
-		}
-		ids := map[string]bool{}
-		cats, done := 0, 0
+		ids, cats, back := map[string]bool{}, 0, 0
 		for _, z := range r.zones {
 			if !z.r.In(r.dst.Rect) || z.r.Empty() {
 				t.Errorf("%s: zone %+v is off the screen or empty", name, z)
@@ -93,25 +97,49 @@ func TestEveryCardDraws(t *testing.T) {
 				ids[z.id] = true
 			case zoneCat:
 				cats++
-			case zoneDone:
-				done++
+			case zoneBack:
+				back++
 			}
 		}
-		if cats != int(categories) || done != 1 {
-			t.Errorf("%s: %d categories and %d Done on the rail, want %d and 1", name, cats, done, categories)
+		if back != 1 {
+			t.Errorf("%s: %d ways back, want 1", name, back)
 		}
-		// The rows in view: every one with an id can be tapped.
-		shown := (r.h - 2*r.cardIn() - r.headerH() - 8) / r.rowH()
-		for i, row := range v.rows {
-			if i < shown && row.id != "" && !ids[row.id] {
+		if s.sheet.root {
+			// As many as fit, and the rest once it has scrolled to them.
+			s.sheet.cardScroll, _ = r.scrollLimits()
+			r.settingsScreen(s)
+			for _, z := range r.zones {
+				if z.kind == zoneCat && z.cat == categories-1 {
+					cats++
+				}
+			}
+			if cats < 4 {
+				t.Errorf("%s: %d categories to tap, and the last not once scrolled", name, cats-1)
+			}
+			continue
+		}
+		v := categoryCard(s.view())
+		if len(v.rows) == 0 {
+			t.Errorf("%s: no rows", name)
+			continue
+		}
+		// The rows in view: every one with an id that does something can be tapped.
+		y := r.cz(carHeader)
+		for _, row := range v.rows {
+			h := r.carLayout(row, r.w-2*r.cz(carIn)).h
+			if y+h > r.h {
+				break
+			}
+			if row.id != "" && row.kind != ctlValue && !ids[row.id] {
 				t.Errorf("%s: row %q has nowhere to tap", name, row.label)
 			}
+			y += h
 		}
 	}
 }
 
-// A card with more rows than fit scrolls, as far as its last row and no further, and nothing it
-// draws while scrolled can be tapped outside the list.
+// A list longer than the screen scrolls, as far as its last row and no further, and nothing it
+// draws while scrolled can be tapped under the header.
 func TestCardScrolls(t *testing.T) {
 	s := sheetScene(catAlarms)
 	s.alarms.Local = nil
@@ -121,27 +149,28 @@ func TestCardScrolls(t *testing.T) {
 	r := testRenderer()
 	r.settingsScreen(s)
 	cardMax, _ := r.scrollLimits()
-	// However many rows the card has ended up with — alarms, the timers, and the settings under them.
-	rows, tall := alarmsCard(s.view()).rows, 0
-	for _, row := range rows {
-		tall += r.rowHeight(r.nextCard(r.w, r.h), row)
+	v := categoryCard(s.view())
+	tall := 0
+	for _, row := range v.rows {
+		tall += r.carLayout(row, r.w-2*r.cz(carIn)).h
 	}
-	if want := tall - (r.h - 2*r.cardIn() - r.headerH() - 8); cardMax != want {
-		t.Fatalf("%d rows scroll %d, want %d", len(rows), cardMax, want)
+	if want := tall + r.cz(24) - (r.h - r.cz(carHeader)); cardMax != want {
+		t.Fatalf("%d rows scroll %d, want %d", len(v.rows), cardMax, want)
 	}
 
 	s.sheet.cardScroll = cardMax + 500 // held to the end
 	r.settingsScreen(s)
-	list := image.Rect(r.railW(), r.cardIn()+r.headerH(), r.w-r.cardIn(), r.h-r.cardIn()-8)
+	list := image.Rect(0, r.cz(carHeader), r.w, r.h)
+	lastID := v.rows[len(v.rows)-1].id
 	var last bool
 	for _, z := range r.zones {
 		if z.kind == zoneRow && !z.r.In(list) {
 			t.Errorf("row zone %+v outside the list %v", z, list)
 		}
-		last = last || z.id == "alarmsound"
+		last = last || z.id == lastID
 	}
 	if !last {
-		t.Error("scrolled to the end, the last row cannot be tapped")
+		t.Errorf("scrolled to the end, the last row (%q) cannot be tapped", lastID)
 	}
 }
 
@@ -326,30 +355,31 @@ func TestTheCameraSoundSettingIsUnderSound(t *testing.T) {
 	}
 }
 
-// A row whose line under the label is too long gives up the end of that line, not its value. On the
-// Show 5, Screen language showed "Match…" for "Match all" and Turn screen "Cla…" for "Classic": the words
-// were kept 16 pixels clear of the control but the value was fitted 24 clear of the words.
+// A label too long for its row gives up its end, not the value beside it: the value is fitted first,
+// to at most half the row, and the label takes what is left.
 func TestACutLineLeavesTheValueWhole(t *testing.T) {
-	r := testRenderer()
-	fc := r.faces()
-	// The line is longer than any card here on purpose: the test is about what a cut does.
-	row := settingRow{id: "screenlang", label: "Screen language", kind: ctlChoice, value: "Match Assistant",
-		sub: "The words on this screen and the ones it listens for, in every room of the house, from the kitchen to the hall and on up the stairs"}
-	for w := 520; w <= 760; w += 20 {
-		card := image.Rect(0, 0, w, 400)
-		_, sub, end := r.rowWords(card, row, fc.label)
-		if strings.Join(sub, " ") == row.sub {
-			t.Fatalf("card %d wide: the line was not cut, so this does not test anything", w)
-		}
-		right := card.Max.X - r.s(26)
-		if room := right - 58 - end - r.s(rowGap); r.fit(fc.value, row.value, room) != row.value {
-			t.Errorf("card %d wide: the value is cut to %q", w, r.fit(fc.value, row.value, room))
+	row := settingRow{id: "screenlang", label: "The language of the words on this screen and the ones it listens for, in every room of the house, from the kitchen to the hall and on up the stairs",
+		kind: ctlChoice, value: "Match Assistant"}
+	t.Cleanup(func() { useMenuSize(menuSizeIndexOf(0)) })
+	for _, m := range menuSizes {
+		useMenuSize(menuSizeIndexOf(m.percent))
+		for _, w := range []int{showWide, show8Wide} {
+			h := map[int]int{showWide: showHigh, show8Wide: show8High}[w]
+			r := newRenderer(image.NewRGBA(image.Rect(0, 0, w, h)))
+			l := r.carLayout(row, r.w-2*r.cz(carIn))
+			if l.value != row.value {
+				t.Errorf("%d wide at %d%%: the value is cut to %q", w, menuZoom.Load(), l.value)
+			}
+			if strings.Join(l.label, " ") == row.label {
+				t.Fatalf("%d wide at %d%%: the label was not cut, so this does not test anything", w, menuZoom.Load())
+			}
 		}
 	}
 }
 
 // No setting is cut: a label or the line under it that is too long for one line wraps to a second,
-// in English and in German, which runs the longest of the screen's languages.
+// in English and in German, which runs the longest of the screen's languages. That goes for the rows
+// that open a page too, and at every menu size.
 func TestEveryRowReadsWhole(t *testing.T) {
 	config.Use(filepath.Join(t.TempDir(), "state.json"))
 	t.Cleanup(i18n.Changed)
@@ -359,17 +389,16 @@ func TestEveryRowReadsWhole(t *testing.T) {
 		}
 		i18n.Changed()
 		for c := category(0); c < categories; c++ {
-			s := sheetScene(c)
 			r := testRenderer()
-			card, fc := r.nextCard(r.w, r.h), r.faces()
-			for _, row := range categoryCard(s.view()).rows {
-				label, sub, _ := r.rowWords(card, row, fc.label)
-				for _, l := range append(label, sub...) {
-					if strings.HasSuffix(l, "…") {
-						t.Errorf("%s %q: %q is cut", categoryNames[c], lang, row.label)
+			v := categoryCard(sheetScene(c).view())
+			for _, row := range append(v.rows, v.all...) {
+				l := r.carLayout(row, r.w-2*r.cz(carIn))
+				for _, line := range append(l.label, l.sub...) {
+					if strings.HasSuffix(line, "…") {
+						t.Errorf("%s %q: %q is cut: %q", categoryNames[c], lang, row.label, line)
 					}
 				}
-				if r.rowHeight(card, row) < r.rowH() {
+				if l.h < r.cz(carRow) {
 					t.Errorf("%s %q: %q is shorter than a row", categoryNames[c], lang, row.label)
 				}
 			}
@@ -377,59 +406,77 @@ func TestEveryRowReadsWhole(t *testing.T) {
 	}
 }
 
-// A stepper's buttons are drawn small, but a tap anywhere up the row beside one counts.
-func TestStepperTakesTheRowsHeight(t *testing.T) {
+// A stepper opens a page of its own, where each half of the screen under the value is − and +.
+func TestAStepperOpensItsOwnPage(t *testing.T) {
+	s := sheetScene(catSound)
 	r := testRenderer()
-	card := r.nextCard(r.w, r.h)
-	r.settingRow(card, 100, settingRow{id: "volume", label: "Volume", kind: ctlStepper, value: "5 of 30"})
-	r.zones, r.pending = r.pending, nil
-	right, cy := card.Max.X-r.s(26), 100+r.rowH()/2
-	minus, plus := r.stepper(right, cy, "5 of 30")
+	r.settingsScreen(s)
+	var opens bool
+	for _, z := range r.zones {
+		opens = opens || (z.id == "volume" && z.part == partAdjust)
+	}
+	if !opens {
+		t.Fatal("the volume row does not open its page")
+	}
+
+	s.sheet.adjust = "volume"
+	r.settingsScreen(s)
 	for _, c := range []struct {
 		x, y int
 		want part
 	}{
-		{(minus.Min.X + minus.Max.X) / 2, 102, partMinus},
-		{minus.Min.X - 6, 100 + r.rowH() - 2, partMinus},
-		{(plus.Min.X + plus.Max.X) / 2, 102, partPlus},
-		{card.Max.X - 12, cy, partPlus},
+		{r.w / 8, r.h - 10, partMinus},
+		{r.w/2 - 10, r.h * 3 / 4, partMinus},
+		{r.w/2 + 10, r.h * 3 / 4, partPlus},
+		{r.w - 10, r.h - 10, partPlus},
 	} {
-		if z, _ := r.zoneAt(c.x, c.y); z.kind != zoneRow || z.part != c.want {
+		if z, _ := r.zoneAt(c.x, c.y); z.kind != zoneRow || z.id != "volume" || z.part != c.want {
 			t.Errorf("a tap at %d,%d = %+v, want %v", c.x, c.y, z, c.want)
 		}
 	}
+	if z, _ := r.zoneAt(20, 20); z.kind != zoneBack {
+		t.Errorf("the back arrow = %+v, want back", z)
+	}
 }
 
-// Factory reset wants two taps like Restart, but a double tap or a resting finger is no yes: the
-// second tap only counts after resetPause, and the arm runs out after resetWindow.
-func TestFactoryResetAsksTwiceSlowly(t *testing.T) {
+// Factory reset asks first, over everything, and Erase is no yes until resetPause has gone by: a
+// double tap or a finger resting where the row was does not erase the Show.
+func TestFactoryResetAsksFirst(t *testing.T) {
 	resets := 0
 	was := factoryReset
 	factoryReset = func(string) { resets++ }
 	t.Cleanup(func() { factoryReset = was })
 
+	s := sheetScene(catGeneral)
+	s.sheet.confirm = "factoryreset"
+	r := testRenderer()
+	r.settingsScreen(s)
+	found := map[string]bool{}
+	for _, z := range r.zones {
+		if z.kind == zoneRow {
+			t.Errorf("a row can be tapped under the question: %+v", z)
+		}
+		found[z.id] = true
+	}
+	if !found["confirm.yes"] || !found["confirm.no"] || !found["confirm"] {
+		t.Fatalf("the question has %v, want Erase, Cancel and a tap off it", found)
+	}
+
 	d := &Display{r: testRenderer()}
-	d.deviceRowTap("factoryreset", partMain, 0)
-	d.deviceRowTap("factoryreset", partMain, 0)
-	if resets != 0 {
-		t.Fatal("a quick double tap erased the Show")
+	d.confirm, d.confirmAt = "factoryreset", time.Now()
+	d.confirmYes()
+	if resets != 0 || d.confirm == "" {
+		t.Fatal("an Erase right after the question erased the Show, or put the question away")
 	}
-	if row := resetRows(settings{now: time.Now(), resetArm: d.resetArm})[0]; row.button != "Erase" {
-		t.Errorf("armed button = %q, want Erase", row.button)
-	}
-
-	d.resetArm = time.Now().Add(-2 * resetPause)
-	d.deviceRowTap("factoryreset", partMain, 0)
-	if resets != 1 {
-		t.Fatalf("a deliberate second tap: %d resets, want 1", resets)
+	d.confirmAt = time.Now().Add(-2 * resetPause)
+	d.confirmYes()
+	if resets != 1 || d.confirm != "" {
+		t.Fatalf("a deliberate Erase: %d resets, question %q; want 1 and none", resets, d.confirm)
 	}
 
-	d.resetArm = time.Now().Add(-resetWindow - time.Second)
-	d.deviceRowTap("factoryreset", partMain, 0)
-	if resets != 1 {
-		t.Error("a tap after the arm ran out erased the Show")
-	}
-	if row := resetRows(settings{now: time.Now()})[0]; row.button != "Reset" {
-		t.Errorf("resting button = %q, want Reset", row.button)
+	d.confirm = "factoryreset"
+	d.sheetBack()
+	if d.confirm != "" || resets != 1 {
+		t.Error("back did not put the question away without erasing")
 	}
 }

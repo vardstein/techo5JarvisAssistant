@@ -44,9 +44,7 @@ func (r *renderer) announcementStrip(s scene) {
 
 	top := r.h - announceBar - announceInset
 	box := image.Rect(announceInset, top, r.w-announceInset, r.h-announceInset)
-	r.roundShadow(box, r.cardRad(), 26, 8, shadowAlpha()*1.2)
-	r.roundFill(box, r.cardRad(), surface(4), surface(2))
-	r.roundHighlight(box, r.cardRad())
+	r.overlayBox(box)
 
 	// The way out, on the right of the heading rather than on a line of its own: the strip is a
 	// hundred and thirty pixels and the message has first claim on them.
@@ -77,10 +75,7 @@ func (r *renderer) announcementStrip(s scene) {
 func (r *renderer) recordingStrip(s scene) {
 	top := r.h - announceBar - announceInset
 	box := image.Rect(announceInset, top, r.w-announceInset, r.h-announceInset)
-	r.roundShadow(box, r.cardRad(), 26, 8, shadowAlpha()*1.2)
-	r.roundFill(box, r.cardRad(), shift(surface(4), 6), surface(2))
-	r.roundStroke(box, r.cardRad(), 2, amber)
-	r.roundHighlight(box, r.cardRad())
+	r.overlayBox(box)
 
 	r.text(r.tiny, "SPEAKING TO THE HOUSE", box.Min.X+r.rowIn(), box.Min.Y+40, amber)
 	r.text(r.title, "Go ahead", box.Min.X+r.rowIn(), box.Min.Y+84, cream)

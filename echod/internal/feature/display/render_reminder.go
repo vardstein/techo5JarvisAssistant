@@ -23,9 +23,7 @@ func (r *renderer) reminderBox() image.Rectangle {
 
 func (r *renderer) reminderCard(s scene) {
 	box := r.reminderBox()
-	r.roundShadow(box, r.cardRad(), float64(r.s(34)), r.s(12), shadowAlpha()*1.3)
-	r.roundFill(box, r.cardRad(), surface(4), surface(2))
-	r.roundHighlight(box, r.cardRad())
+	r.overlayBox(box)
 
 	heading := "REMINDER"
 	if s.reminderFrom != "" {

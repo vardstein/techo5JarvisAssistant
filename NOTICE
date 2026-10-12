@@ -126,6 +126,11 @@ Icon font (embedded in the daemon)
   Pictogrammers, https://pictogrammers.com/library/mdi/. The icons Home Assistant uses, for dashboards
   the device draws itself. Used unmodified.
 
+Menu font (embedded in the daemon)
+  Figtree 2.0.3, echod/internal/lib/figtree — SIL Open Font License 1.1 (OFL.txt beside it)
+  The Figtree Project Authors, https://github.com/erikdkennedy/figtree. The Show's settings and
+  menus are set in it. Used unmodified.
+
 Sounds (embedded in the daemon)
   Home Assistant Voice sounds, echod/internal/hardware/speaker/sounds — Creative Commons Attribution
   4.0 International (https://creativecommons.org/licenses/by/4.0/)
