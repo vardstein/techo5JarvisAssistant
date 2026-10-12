@@ -198,3 +198,5 @@ Jade's answers on 2026-10-12:
   before updating), let people switch channels, and make spoken update requests work by meaning, not fixed
   sentences. All three are written into §1.
 - **Name and icon (§2): name only.** "Genbu Assistant"; the tortoise and snake icon stays as it is.
+- **Control center (§3): yes, as proposed**, and the sidebar entry and the page title read "Genbu Assistant"
+  instead of "Genbu". The page's address stays `/genbu`.
