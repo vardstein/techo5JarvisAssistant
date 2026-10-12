@@ -937,19 +937,52 @@ func (f *Frame) NV12(y, uv []byte, stride int) {
 // block. It reads the packed lines in place: five bytes are four samples, two Bayer cells, two
 // output pixels; four sensor lines make two output rows, one row of chroma. Of each four lines the
 // first has red then green, the second green then blue (blue first on some sensors).
-// It is all in one loop because the compiler will not inline a helper this size, and a call per
-// pixel pair was a fifth of the time.
+// The rows are split in bands, one per core, so a frame takes a quarter of the time on the Show's
+// four cores rather than most of the 33 ms a frame has at 30 fps on one.
 func renderNV12(raw []byte, t tone, yp, uv []byte, stride int) {
 	lut := t.tables()
 	// p is the colour the first line's cells start with, q the one the second line's end with: red
 	// and blue, or blue and red. Each gets its own table and its own weights.
-	lp, lg, lq := &lut[0], &lut[1], &lut[2]
-	wp, cbp, crp, wq, cbq, crq := 77, -43, 128, 29, 128, -21
+	k := nv12Colour{lp: &lut[0], lg: &lut[1], lq: &lut[2], wp: 77, cbp: -43, crp: 128, wq: 29, cbq: 128, crq: -21}
 	if sensor.blueFirst {
-		lp, lq = lq, lp
-		wp, cbp, crp, wq, cbq, crq = wq, cbq, crq, wp, cbp, crp
+		k.lp, k.lq = k.lq, k.lp
+		k.wp, k.cbp, k.crp, k.wq, k.cbq, k.crq = k.wq, k.cbq, k.crq, k.wp, k.cbp, k.crp
 	}
-	for oy := 0; oy+1 < Height; oy += 2 {
+	n := min(runtime.NumCPU(), renderBands)
+	if n < 2 {
+		renderNV12Rows(raw, &k, yp, uv, stride, 0, Height)
+		return
+	}
+	// Bands start on an even row: each step of the loop paints two rows and one of chroma.
+	band := (Height/n + 1) &^ 1
+	var wg sync.WaitGroup
+	for from := 0; from < Height; from += band {
+		wg.Add(1)
+		go func(from, to int) {
+			defer wg.Done()
+			renderNV12Rows(raw, &k, yp, uv, stride, from, to)
+		}(from, min(from+band, Height))
+	}
+	wg.Wait()
+}
+
+// renderBands caps how many goroutines paint a frame. The Show has four cores; more bands than that
+// only add switching.
+const renderBands = 4
+
+// nv12Colour is what renderNV12Rows needs to know about the sensor's colours: the tables for the
+// colour each line starts with, green, the one each ends with, and their weights in Y, Cb and Cr.
+type nv12Colour struct {
+	lp, lg, lq                 *[2048]uint8
+	wp, cbp, crp, wq, cbq, crq int
+}
+
+// renderNV12Rows paints output rows from up to to, from even. It is all in one loop because the
+// compiler will not inline a helper this size, and a call per pixel pair was a fifth of the time.
+func renderNV12Rows(raw []byte, k *nv12Colour, yp, uv []byte, stride, from, to int) {
+	lp, lg, lq := k.lp, k.lg, k.lq
+	wp, cbp, crp, wq, cbq, crq := k.wp, k.cbp, k.crp, k.wq, k.cbq, k.crq
+	for oy := from; oy+1 < to; oy += 2 {
 		l0 := raw[(2*oy)*bytesPerLine : (2*oy+1)*bytesPerLine]
 		l1 := raw[(2*oy+1)*bytesPerLine : (2*oy+2)*bytesPerLine]
 		l2 := raw[(2*oy+2)*bytesPerLine : (2*oy+3)*bytesPerLine]
