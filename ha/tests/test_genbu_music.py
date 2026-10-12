@@ -414,6 +414,7 @@ async def test_the_wecker_asks_back_and_keeps_listening(hass: HomeAssistant):
     from homeassistant.components import conversation
     from homeassistant.core import Context
     from homeassistant.setup import async_setup_component
+    from pytest_homeassistant_custom_component.common import async_mock_service
 
     device, _ = show(hass, "hall", "Living Room")
     entities = er.async_get(hass)
@@ -431,3 +432,48 @@ async def test_the_wecker_asks_back_and_keeps_listening(hass: HomeAssistant):
         r = await conversation.async_converse(hass, text, None, Context(), language="de", device_id=device)
         assert r.response.speech["plain"]["speech"] == want
         assert want.endswith("?")
+
+    # The sentence from GENBU-105: "für in", and the number written out.
+    set_ = async_mock_service(hass, "esphome", "hall_alarm_set")
+    r = await conversation.async_converse(hass, "Stell einen Wecker für in einer Minute", None, Context(),
+                                          language="de", device_id=device)
+    assert r.response.speech["plain"]["speech"].startswith("Wecker klingelt in 1 Minute, um ")
+    assert [(c.data["days"], c.data["label"]) for c in set_] == [("once", "Wecker")]
+
+
+async def test_the_wecker_reads_the_time_as_it_is_spoken(hass: HomeAssistant):
+    """Whisper writes small numbers out, and people say "viertel" and "halb" (GENBU-105)."""
+    async def heard(when: str) -> tuple:
+        variables = {"trigger": {"slots": {"when": when}, "device_id": None}}
+        for name, text in voice_kit.WECKER_VARIABLES.items():
+            variables[name] = Template(text, hass).async_render(variables)
+        return (variables["minutes"], None) if variables["length"] else (None, variables["at"])
+
+    for when, want in [
+        ("in einer Minute", (1, None)),
+        ("in einer Minute.", (1, None)),
+        ("in 1 Minute", (1, None)),
+        ("in fünf Minuten", (5, None)),
+        ("in fünfundzwanzig Minuten", (25, None)),
+        ("in zwanzig Minuten", (20, None)),
+        ("in einer Stunde", (60, None)),
+        ("in einer halben Stunde", (30, None)),
+        ("in einer Viertelstunde", (15, None)),
+        ("in einer Dreiviertelstunde", (45, None)),
+        ("in anderthalb Stunden", (90, None)),
+        ("in zwei Stunden", (120, None)),
+        ("in 1 Stunde 30", (90, None)),
+        ("um sieben", (None, "07:00")),
+        ("um sieben Uhr dreißig", (None, "07:30")),
+        ("um 7.30 Uhr", (None, "07:30")),
+        ("um zwanzig Uhr", (None, "20:00")),
+        ("um halb acht", (None, "07:30")),
+        ("um halb acht abends", (None, "19:30")),
+        ("um viertel nach sieben", (None, "07:15")),
+        ("um viertel vor acht", (None, "07:45")),
+        ("um dreiviertel acht", (None, "07:45")),
+        ("um acht Uhr abends", (None, "20:00")),
+        ("um null Uhr fünf", (None, "00:05")),
+    ]:
+        assert await heard(when) == want, when
+    assert (await heard("in Minuten"))[0] == -1
