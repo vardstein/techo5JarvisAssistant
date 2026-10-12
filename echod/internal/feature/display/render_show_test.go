@@ -73,7 +73,7 @@ func TestShowScenesDraw(t *testing.T) {
 		"drawer-radio-tunein": {now: at, phase: "idle", weather: sky, showDrawer: true, drawerTab: drawerRadio,
 			radio: home.Radio{Configured: true, Source: "local", Sources: 3, Via: "TuneIn",
 				Stations: []string{"Hitradio FFH", "hr3", "YOU FM"}}},
-		"nowplaying":{now: at, phase: "idle", nowPlaying: true, playing: true, weather: sky,
+		"nowplaying": {now: at, phase: "idle", nowPlaying: true, playing: true, weather: sky,
 			radio: home.Radio{Now: "KXYZ 101.1", Title: "Take It Easy", Artist: "Eagles"}},
 		// Music Assistant's track, carried over Sendspin: named, with the three buttons.
 		"nowplaying-music-assistant": {now: at, phase: "idle", nowPlaying: true, playing: true, weather: sky,
