@@ -252,8 +252,28 @@ for every request, and all of these have to hold:
 **The firmware tool** (`genbu__firmware`, §1) gets the same gate: questions ("any updates?") from any Show or
 from an admin in the app; anything that changes something asks first, always.
 
-**Every Genbu tool can be switched off** in Genbu Assistant's options (Recipes, Firmware), for the whole
-house.
+### Optional features: asked by the installer, switched per Show
+
+Jade, after reading the above: the installer asks for each optional feature, and the control center has a
+toggle for every one of them. The toggle works per Show, not for all Shows at once.
+
+| Feature | Per Show? | The toggle | The installer asks |
+|---|---|---|---|
+| Recipes by voice | yes | new Genbu switch on the Show, Screen group | "Recipes on this Show?" only when a recipe search is set up; then on |
+| Updates by voice | yes | new Genbu switch on the Show, Updates group | "Ask this Show about updates by voice?" on |
+| Turn the room down while it listens | yes | that Show's own automation, its on/off on the card | as today |
+| Watchdog (planned) | yes | that Show's own automation, its on/off on the card | when it exists |
+| Music scripts for the AI | no, house | on the house card | once per house; always exposed (decided) |
+| German voice extras (Wo sind wir, Wecker …) | no, house | on the house card | once per house, as today |
+
+The tool gate above then reads the Show's own switch: a Show with Recipes off never offers the tool, the
+kitchen Show next to it still does.
+
+**Why the voice extras stay per house.** A sentence trigger that matches answers, even when its automation
+stops at a condition: `default_agent.py` then says "Erledigt"/"Done", and the AI never gets the request
+(checked in 2026.10.1). So "Wo sind wir?" on a Show with the extras off would just get "Erledigt" instead of
+an answer from the AI. Turning the automations off for the house does not have that problem, because the
+sentence then does not match at all.
 
 **The old "Genbu Rezepte" set** stays for one release and says in Repairs that it is built in now and can be
 unticked; then it goes. Our house has no recipe entry set up, so nothing changes here.
@@ -262,7 +282,7 @@ unticked; then it goes. Our house has no recipe entry set up, so nothing changes
 
 | | |
 |---|---|
-| **Gains** | Recipes and firmware work with any agent that can control the house, Nabu Casa included, with nothing to tick. Only Shows that cook see the recipe tool, so other agents and devices keep a shorter tool list. Strangers' text no longer reaches the model unasked. The DNS gap is closed. |
+| **Gains** | Recipes and firmware work with any agent that can control the house, Nabu Casa included, with nothing to tick. Every optional feature is asked once and can be switched per Show from the page. Only Shows that cook see the recipe tool, so other agents and devices keep a shorter tool list. Strangers' text no longer reaches the model unasked. The DNS gap is closed. |
 | **Losses** | Asking for a recipe from a phone or the app chat no longer works (it never showed anything there). Reading out steps needs one more ask. |
 | **Breaks** | A house that ticked "Genbu Rezepte" sees a Repairs note for one release, then the set goes. A house that runs the agent without "Control Home Assistant" gets no Genbu tools, as it gets none of HA's. |
 
@@ -287,6 +307,9 @@ Jade's answers on 2026-10-12:
   - The installer always exposes its three music scripts to Assist.
   - Recipes move into the Assist set through `llm.py`, as recommended, but only for Shows that cook and
     made safer. Jade asked for that to be fleshed out; it is §4's proposal.
+  - The installer asks for each optional feature, and the control center has a toggle per Show for each
+    (§4, "Optional features"). Proposed on top: the German voice extras stay per house, for the reason
+    given there.
 
 ### Groups on a Show's card
 
