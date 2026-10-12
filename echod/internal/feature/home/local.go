@@ -31,6 +31,7 @@ const (
 // station is one entry of a Radio Browser list.
 type station struct {
 	Name, ID, Kind string
+	Thumb          string // its logo's address, when the list has one
 }
 
 type radioList struct {
@@ -182,7 +183,7 @@ func stationsOf(m hass.Media, source string) []station {
 			continue
 		}
 		seen[strings.ToLower(name)] = true
-		out = append(out, station{Name: name, ID: c.ID, Kind: c.Kind})
+		out = append(out, station{Name: name, ID: c.ID, Kind: c.Kind, Thumb: c.Thumb})
 		if source == config.RadioPopular && len(out) == popularMax {
 			break
 		}

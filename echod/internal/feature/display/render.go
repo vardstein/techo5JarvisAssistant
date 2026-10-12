@@ -97,6 +97,8 @@ type scene struct {
 	// radio feeds the drawer's Radio side and the now-playing screen; weather is on the clock when known.
 	radio   home.Radio
 	weather home.Weather
+	// logos are the stations' logos for the shelf's tiles, by name, as far as there are any yet.
+	logos map[string]*image.RGBA
 
 	// showWeather is the forecast page, for a while after a weather question; nowPlaying is the
 	// idle screen while the radio plays or sits paused. music is optional Music Assistant route,
@@ -263,6 +265,8 @@ type renderer struct {
 	plain plainGround
 	// faint is the last faint picture laid behind a page (see faded), kept while it stays the same.
 	faint fadeKept
+	// logos are the stations' logos at the size the shelf's tiles draw them (logoAt).
+	logos map[logoKey]*image.RGBA
 
 	// calHits are the calendar page's buttons, days and events as last drawn (render_calendar.go).
 	calMu   sync.Mutex

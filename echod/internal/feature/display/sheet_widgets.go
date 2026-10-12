@@ -268,14 +268,15 @@ type settingRow struct {
 	label, sub string
 	bold       bool
 	kind       controlKind
-	value      string // beside the control, or alone for ctlValue
-	on         bool   // a switch's state
-	button     string // an action's label; none makes the whole row the action
-	days       uint8  // ctlDays: bit 0 Sunday to bit 6 Saturday
-	role       int    // ctlSwatches: which role of the theme
-	rowTap     bool   // a tap on the row beside its control means something of its own (partRow)
-	page       string // the sub-page the row is on, where the Show groups them (sheet_pages.go)
-	live       bool   // the line under it says how things stand now, not what the setting is for
+	value      string      // beside the control, or alone for ctlValue
+	on         bool        // a switch's state
+	button     string      // an action's label; none makes the whole row the action
+	days       uint8       // ctlDays: bit 0 Sunday to bit 6 Saturday
+	role       int         // ctlSwatches: which role of the theme
+	rowTap     bool        // a tap on the row beside its control means something of its own (partRow)
+	page       string      // the sub-page the row is on, where the Show groups them (sheet_pages.go)
+	live       bool        // the line under it says how things stand now, not what the setting is for
+	pic        *image.RGBA // a shelf tile's picture in place of its icon: a station's logo
 }
 
 // part is which piece of a row a tap landed on.

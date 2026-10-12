@@ -56,6 +56,12 @@ func TestShowScenesDraw(t *testing.T) {
 			callees: []phone.Callee{{Name: "a", Device: true}, {Name: "b", Device: true}, {Name: "c", Device: true},
 				{Name: "d", Number: "15551234567"}, {Name: "e", Number: "106"}}},
 		"drawer-call-empty": {now: at, phase: "idle", weather: sky, showDrawer: true, drawerTab: drawerCall},
+		// Stations with their logos, one playing, one with none to show.
+		"drawer-radio-logos": {now: at, phase: "idle", weather: sky, showDrawer: true, drawerTab: drawerRadio,
+			radio: home.Radio{Configured: true, Source: "local", Sources: 2, Playing: true, Now: "Jazz Lounge",
+				Stations: []string{"KXYZ 101.1", "Jazz Lounge", "Talk at Nine", "Nordic Pop", "No Picture Here"}},
+			logos: map[string]*image.RGBA{"KXYZ 101.1": testCover(192, true), "Jazz Lounge": testCover(192, false),
+				"Talk at Nine": testCover(64, true), "Nordic Pop": testCover(120, false)}},
 		"nowplaying": {now: at, phase: "idle", nowPlaying: true, playing: true, weather: sky,
 			radio: home.Radio{Now: "KXYZ 101.1", Title: "Take It Easy", Artist: "Eagles"}},
 		// Music Assistant's track, carried over Sendspin: named, with the three buttons.

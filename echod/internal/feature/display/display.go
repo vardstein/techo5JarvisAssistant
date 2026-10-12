@@ -1934,6 +1934,10 @@ func (d *Display) frame() time.Duration {
 	if (s.showDrawer && s.drawerTab == drawerRadio) || wants {
 		s.radio = home.Get().Radio()
 	}
+	if s.showDrawer && s.drawerTab == drawerRadio && !s.demo {
+		// Not for screenshots: a list's logos say where the owner lives as its names do.
+		s.logos = home.Get().StationLogos(s.radio.Stations)
+	}
 	if routedMusic && s.radio.Now != "Music Assistant" {
 		// Preferred external MA speakers do not send Sendspin audio to this Show. Populate the native
 		// page from the resolved HA/MA player instead so the screen still says what and where is playing.
