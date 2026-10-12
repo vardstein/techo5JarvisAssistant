@@ -236,6 +236,46 @@ func BenchmarkRenderNV12(b *testing.B) {
 // TestRenderNV12 checks the stream's NV12 against the RGBA picture it replaces: every luma and
 // chroma sample computed from render's pixels must match.
 func TestRenderNV12(t *testing.T) {
+	for _, shade := range []float64{0, 2} {
+		withShade(t, shade)
+		testRenderNV12(t)
+	}
+}
+
+// withShade switches the lens correction for the rest of the test.
+func withShade(t *testing.T, shade float64) {
+	saved, savedTables := sensor.shade, shading
+	sensor.shade = shade
+	tables := buildShading()
+	shading = func() *shadeTables { return tables }
+	t.Cleanup(func() { sensor.shade, shading = saved, savedTables })
+}
+
+// TestShadingGain checks the correction where it is easy to work out: none in the middle, 1 + shade
+// in the corners, and a bright corner stays on the table.
+func TestShadingGain(t *testing.T) {
+	withShade(t, 2)
+	sh := shading()
+	gain := func(bx, by int) float64 { return float64(sh.x[bx]+sh.y[by]) / 256 }
+	for _, c := range []struct {
+		name   string
+		bx, by int
+		want   float64
+	}{
+		{"middle", Width / 4, Height / 4, 1},
+		{"top left", 0, 0, 3},
+		{"bottom right", Width/2 - 1, Height/2 - 1, 3},
+	} {
+		if g := gain(c.bx, c.by); math.Abs(g-c.want) > 0.02 {
+			t.Errorf("%s: gain %.3f, want %.3f", c.name, g, c.want)
+		}
+	}
+	if v := shaded(2000, sh.x[0]+sh.y[0]); v != 2047 {
+		t.Errorf("a bright corner went to %d, not the top of the table", v)
+	}
+}
+
+func testRenderNV12(t *testing.T) {
 	for _, blue := range []bool{false, true} {
 		saved := sensor.blueFirst
 		sensor.blueFirst = blue
