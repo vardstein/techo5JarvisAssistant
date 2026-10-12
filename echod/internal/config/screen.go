@@ -45,7 +45,7 @@ type Screen struct {
 	AnswerSeconds int `json:"answer_seconds,omitempty"`
 
 	// MenuSize is how large the settings screen, the drawer and their lists are drawn, in percent of
-	// their own size: 0 for that size.
+	// their own size: 0 for Small, the size a Show starts on.
 	MenuSize int `json:"menu_size,omitempty"`
 
 	// ClockPosition is where the home screen's clock sits: empty for the center, "bottom-left" or
