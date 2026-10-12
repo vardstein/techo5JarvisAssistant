@@ -129,6 +129,21 @@ const hasNightLight = false
 // hasCalendarPopups: not on the Spot yet.
 const hasCalendarPopups = false
 
+// subPages: the Spot's round card keeps its rows flat (sheet_pages.go is the Show's).
+const subPages = false
+
+// keysPage is the Show's page for SSH keys; on the Spot the rows only carry it.
+const keysPage = "sshkeys"
+
+// confirmYes: the Spot asks nothing over its rows; its dangerous ones are tapped twice.
+func (d *Display) confirmYes() {}
+
+// pageCard is the card as it is: the Spot has no sub-pages.
+func pageCard(v cardView, _ settings) cardView {
+	v.all = v.rows
+	return v
+}
+
 // adaptRows fits the shared rows to the round card, which is narrower than the Show's: shorter
 // labels, a status under a row's name rather than beside its button, no second button beside a
 // choice (Weather's Show: the forecast is on the dial), and Updates as two rows, its channel and

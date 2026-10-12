@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/btaudio"
@@ -33,19 +32,12 @@ const (
 
 	// hasCalendarPopups is whether events pop up on this screen (calendar_popup.go).
 	hasCalendarPopups = true
-)
 
-// settingsScreen draws the settings screen for the scene's category.
-func (r *renderer) settingsScreen(s scene) {
-	sv := s.view()
-	var pick *pickerView
-	if sv.st.picker != "" {
-		if p, ok := pickerFor(sv.st.picker, sv); ok {
-			pick = &p
-		}
-	}
-	r.settingsPage(sv.st.cat, categoryCard(sv), pick, sv.st.pickScroll)
-}
+	// subPages is whether the settings are levels, one under the other (render_sheet.go): long
+	// categories in groups on pages of their own, a stepper's value on a page, a dangerous action
+	// asked about first. The Spot keeps its rows flat.
+	subPages = true
+)
 
 // view is what the scene gives the settings cards.
 func (s scene) view() sheetView {
@@ -75,7 +67,6 @@ func deviceCard(sv sheetView) (cardView, bool) {
 func colorsCard() cardView {
 	v := cardView{
 		title: "Custom colors", blurb: "Tap a color for each part; the theme becomes Custom",
-		actions: []headerAction{{id: "colorsdone", label: "Done", style: btnPrimary}},
 	}
 	for role := range roles {
 		v.rows = append(v.rows, settingRow{id: "role:" + strconv.Itoa(role), label: roleNames[role], kind: ctlSwatches, role: role})
@@ -83,15 +74,11 @@ func colorsCard() cardView {
 	return v
 }
 
-// resetRows is the General card's last row, Factory reset. Its first tap arms it, and only a second
-// one between resetPause and resetWindow later erases.
-func resetRows(st settings) []settingRow {
-	row := settingRow{id: "factoryreset", label: "Factory reset",
-		sub: "Erases the settings, Wi-Fi, the Home Assistant key and the root password", kind: ctlDanger, button: "Reset"}
-	if since := st.now.Sub(st.resetArm); !st.resetArm.IsZero() && since < resetWindow {
-		row.sub, row.button = "Tap Erase to wipe this Show and restart", "Erase"
-	}
-	return []settingRow{row}
+// resetRows is the General card's last row, Factory reset. A tap asks first (confirmTexts), and
+// Erase only counts once resetPause has gone by.
+func resetRows(settings) []settingRow {
+	return []settingRow{{id: "factoryreset", label: "Factory reset",
+		sub: "Erases the settings, Wi-Fi, the Home Assistant key and the root password", kind: ctlDanger, button: "Reset"}}
 }
 
 // bluetoothRows is the Connections card's one Bluetooth row. It opens the Bluetooth page
@@ -180,21 +167,6 @@ func (d *Display) deviceRowTap(id string, p part, opt int) bool {
 		d.mu.Lock()
 		d.colors, d.cardScroll = true, 0
 		d.mu.Unlock()
-	case "factoryreset":
-		d.mu.Lock()
-		since := time.Since(d.resetArm)
-		armed := !d.resetArm.IsZero() && since < resetWindow
-		switch {
-		case !armed:
-			d.resetArm = time.Now()
-		case since < resetPause:
-			armed = false // the same press, or one right after: wait for a deliberate second
-		}
-		d.mu.Unlock()
-		if armed {
-			slog.Warn("factory reset asked for from the screen")
-			factoryReset("screen")
-		}
 	case "bluetooth":
 		d.showSheet(false)
 		d.mu.Lock()
@@ -214,9 +186,6 @@ func (d *Display) deviceRowTap(id string, p part, opt int) bool {
 
 // closeSheet takes the settings screen down.
 func (d *Display) closeSheet() { d.showSheet(false) }
-
-// sheetBack is a Back the Show's screen has no button for.
-func (d *Display) sheetBack() {}
 
 // showForecast puts the forecast up.
 func (d *Display) showForecast() { d.ShowWeather(false) }

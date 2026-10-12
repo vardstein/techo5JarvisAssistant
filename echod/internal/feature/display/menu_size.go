@@ -11,25 +11,28 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 )
 
-// The menu size draws the settings screen's card, the drawer and their lists of choices larger, for
-// anyone who finds them small at arm's length. The rail of categories keeps its size: on a Show 5 it
-// already fills the panel's height, and its names are short.
+// The menu size is how large the settings screen is drawn: Large is the Car Thing's own sizes, which
+// on a Show 5 fill the panel the way they filled the Car Thing's, and Normal and Small a step down
+// from them, for more rows at once. The drawer has its own sizes and takes only Large as larger.
 
-// menuSizes are the choices, in the order the screen and Home Assistant offer them. Percent 0 is the
-// drawn size.
+// menuSizes are the choices, in the order the screen and Home Assistant offer them. Percent 0 is
+// Normal, so a Show that never chose keeps reading as it.
 var menuSizes = []struct {
 	label   string
 	percent int
 }{
+	{"Small", 75},
 	{"Normal", 0},
-	{"Large", 115},
-	{"Larger", 130},
+	{"Large", 100},
 }
+
+// normalMenu is Normal's size in percent.
+const normalMenu = 85
 
 // menuZoom is the chosen size in percent, kept apart from the config so a frame reads it without its lock.
 var menuZoom atomic.Int32
 
-func init() { menuZoom.Store(100) }
+func init() { menuZoom.Store(normalMenu) }
 
 func menuSizeOptions() []string {
 	out := make([]string, len(menuSizes))
@@ -39,22 +42,27 @@ func menuSizeOptions() []string {
 	return out
 }
 
-// menuSizeIndex is the saved choice's place in menuSizes; a value no choice has reads as Normal.
-func menuSizeIndex() int {
-	v := config.Get().Screen.MenuSize
+// menuSizeIndex is the saved choice's place in menuSizes. The old Large and Larger (115 and 130) read
+// as Large, and anything else as Normal.
+func menuSizeIndex() int { return menuSizeIndexOf(config.Get().Screen.MenuSize) }
+
+func menuSizeIndexOf(v int) int {
+	if v > 100 {
+		v = 100
+	}
 	for i, m := range menuSizes {
 		if m.percent == v {
 			return i
 		}
 	}
-	return 0
+	return 1
 }
 
 // useMenuSize puts the choice at i in force without saving it.
 func useMenuSize(i int) {
 	p := menuSizes[i].percent
 	if p == 0 {
-		p = 100
+		p = normalMenu
 	}
 	menuZoom.Store(int32(p))
 }
@@ -97,7 +105,7 @@ func menuSizeSelect(wake func()) *esphome.Select {
 
 // menuSizeRow is the setting on the screen, under Display.
 func menuSizeRow() settingRow {
-	return settingRow{id: "menusize", label: "Menu size", sub: "Settings and the drawer, larger", kind: ctlChoice,
+	return settingRow{id: "menusize", label: "Menu size", sub: "How large the settings are drawn", kind: ctlChoice,
 		value: menuSizes[menuSizeIndex()].label}
 }
 
@@ -110,11 +118,14 @@ func (d *Display) chooseMenuSize(i int) {
 	d.wake()
 }
 
-// zoomed runs draw with every fixed size, and the settings screen's text, made larger by the menu size.
-// Positions taken from the panel's edges stay where they are; what grows is what is measured in the
-// Show 5's pixels, which is every size the settings parts draw with.
+// zoomed runs draw with every fixed size, and the drawer's text, made larger when the menu size is
+// Large. Positions taken from the panel's edges stay where they are; what grows is what is measured in
+// the Show 5's pixels, which is every size the drawer draws with.
 func (r *renderer) zoomed(draw func()) {
-	z := int(menuZoom.Load())
+	z := 100
+	if menuZoom.Load() >= 100 {
+		z = 115
+	}
 	if z <= 100 {
 		draw()
 		return

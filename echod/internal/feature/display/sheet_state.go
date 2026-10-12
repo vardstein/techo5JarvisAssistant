@@ -22,12 +22,9 @@ const sheetVolumeSteps = media.VolumeSteps
 // after the first.
 const restartWindow = 4 * time.Second
 
-// Factory reset asks twice too, but the second tap has to come after resetPause and before
-// resetWindow: a double tap, or a finger resting on the button, is not a yes to erasing the device.
-const (
-	resetPause  = time.Second
-	resetWindow = 8 * time.Second
-)
+// resetPause is how long Erase waits after Factory reset asked: a double tap, or a finger resting
+// where the row was, is not a yes to erasing the device.
+const resetPause = time.Second
 
 // sheetCtl is where the settings screen is, kept by the Show's and the Spot's Display under their mu:
 // the open category, a list of choices open over it, how far each is scrolled, and the editors.
@@ -51,8 +48,16 @@ type sheetCtl struct {
 	folder   folderView
 	draft    *alarmDraft
 
-	// resetArm is the first tap on Factory reset, where there is one.
-	resetArm time.Time
+	// The Show's levels, one over the other: root is the list of categories, page a group of a
+	// category's rows opened from it (backScroll how far the category was scrolled when it was),
+	// adjust the row whose value is being set on a page of its own, and confirm the row asking
+	// "are you sure?" over it all, since confirmAt.
+	root       bool
+	page       string
+	backScroll int
+	adjust     string
+	confirm    string
+	confirmAt  time.Time
 }
 
 // settings is what the settings screen shows, gathered by the display each frame.
@@ -83,8 +88,14 @@ type settings struct {
 	sendspin   bool
 	restartArm time.Time // set after a first tap on Restart
 	forgetArm  time.Time // set after a first tap on Forget, where there is one
-	resetArm   time.Time // set after a first tap on Factory reset, where there is one
 	now        time.Time
+
+	// The Show's levels (sheetCtl).
+	root      bool
+	page      string
+	adjust    string
+	confirm   string
+	confirmAt time.Time
 }
 
 // sheetView is everything a settings card is made from: the gathered settings and the features'
@@ -116,6 +127,7 @@ func (d *Display) EditNewAlarm() {
 	d.mu.Lock()
 	d.draft = &alarmDraft{isNew: true, alarm: config.Alarm{Hour: next.Hour(), Minute: 0, Days: config.DaysOnce, On: true}}
 	d.cat, d.picker, d.cardScroll = catAlarms, "", 0
+	d.root, d.page, d.adjust, d.confirm = false, "", "", ""
 	d.mu.Unlock()
 	d.wake()
 }

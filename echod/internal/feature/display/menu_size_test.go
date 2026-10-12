@@ -36,7 +36,27 @@ func TestEveryMenuSizeFits(t *testing.T) {
 		mid.sheet.cardScroll = 260
 		scenes[categoryNames[c]+"-mid"] = mid
 		scenes[categoryNames[c]+"-end"] = end
-		for _, row := range categoryCard(s.view()).rows {
+		// Each page, each stepper on its own page, and each question asked first.
+		for pg := range pageTitles {
+			p := s
+			p.sheet.page = pg
+			if categoryCard(p.view()).title == pageTitles[pg] {
+				scenes[categoryNames[c]+"-page-"+pg] = p
+			}
+		}
+		for _, row := range categoryCard(s.view()).all {
+			switch {
+			case row.kind == ctlStepper:
+				a := s
+				a.sheet.adjust = row.id
+				scenes[categoryNames[c]+"-adjust-"+row.id] = a
+			case confirmTexts[row.id] != [3]string{}:
+				q := s
+				q.sheet.confirm = row.id
+				scenes[categoryNames[c]+"-confirm-"+row.id] = q
+			}
+		}
+		for _, row := range categoryCard(s.view()).all {
 			if row.kind != ctlChoice || row.id == "" {
 				continue
 			}
@@ -47,6 +67,9 @@ func TestEveryMenuSizeFits(t *testing.T) {
 			}
 		}
 	}
+	root := sheetScene(catDisplay)
+	root.showSheet, root.sheet.root = true, true
+	scenes["Settings"] = root
 	for i, name := range drawerTabs {
 		scenes["drawer-"+name] = scene{now: at, phase: "idle", showDrawer: true, drawerTab: i, demo: true,
 			announceReady: true, announcePeers: 3,
@@ -65,18 +88,14 @@ func TestEveryMenuSizeFits(t *testing.T) {
 			// No row is cut at this size either: it wraps, as it does at the drawn size.
 			for c := category(0); c < categories; c++ {
 				r := testRenderer()
-				card := r.nextCard(r.w, r.h) // where the rail leaves it, as settingsPage has it
-				r.zoomed(func() {
-					fc := r.faces()
-					for _, row := range categoryCard(sheetScene(c).view()).rows {
-						label, sub, _ := r.rowWords(card, row, fc.label)
-						for _, l := range append(label, sub...) {
-							if strings.HasSuffix(l, "…") {
-								t.Errorf("%s %q at %d%%: %q is cut: %q %q", categoryNames[c], lang, menuZoom.Load(), row.label, label, sub)
-							}
+				for _, row := range categoryCard(sheetScene(c).view()).all {
+					l := r.carLayout(row, r.w-2*r.cz(carIn))
+					for _, line := range append(l.label, l.sub...) {
+						if strings.HasSuffix(line, "…") {
+							t.Errorf("%s %q at %d%%: %q is cut: %q %q", categoryNames[c], lang, menuZoom.Load(), row.label, l.label, l.sub)
 						}
 					}
-				})
+				}
 			}
 			for _, panel := range []struct {
 				name       string
@@ -113,15 +132,6 @@ func TestEveryMenuSizeFits(t *testing.T) {
 			}
 		}
 	}
-}
-
-func menuSizeIndexOf(percent int) int {
-	for i, m := range menuSizes {
-		if m.percent == percent {
-			return i
-		}
-	}
-	return 0
 }
 
 func writePNG(t *testing.T, path string, img image.Image) {

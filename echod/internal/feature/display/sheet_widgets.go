@@ -256,6 +256,7 @@ const (
 	ctlDanger                      // an action to think twice about
 	ctlDays                        // the seven days of the week, each on or off
 	ctlSwatches                    // a strip of colors for one role of the theme
+	ctlPage                        // a group of rows on a page of their own (the Show's sub-pages)
 )
 
 type settingRow struct {
@@ -269,18 +270,22 @@ type settingRow struct {
 	days       uint8  // ctlDays: bit 0 Sunday to bit 6 Saturday
 	role       int    // ctlSwatches: which role of the theme
 	rowTap     bool   // a tap on the row beside its control means something of its own (partRow)
+	page       string // the sub-page the row is on, where the Show groups them (sheet_pages.go)
+	live       bool   // the line under it says how things stand now, not what the setting is for
 }
 
 // part is which piece of a row a tap landed on.
 type part int
 
 const (
-	partMain  part = iota // the switch, the choice, the button, or the row around a switch or choice
-	partMinus             // a stepper's −
-	partPlus              // a stepper's +
-	partExtra             // the second button a choice can carry (Updates' Check now)
-	partRow               // the row itself, away from its control, on a row with rowTap
-	partDay               // a day of ctlDays, or a color of ctlSwatches; the zone's opt is which
+	partMain    part = iota // the switch, the choice, the button, or the row around a switch or choice
+	partMinus               // a stepper's −
+	partPlus                // a stepper's +
+	partExtra               // the second button a choice can carry (Updates' Check now)
+	partRow                 // the row itself, away from its control, on a row with rowTap
+	partDay                 // a day of ctlDays, or a color of ctlSwatches; the zone's opt is which
+	partAdjust              // a stepper's row, which opens its value on a page of its own (the Show)
+	partConfirm             // a row that asks before it does anything (the Show)
 )
 
 type zoneKind int
@@ -293,6 +298,7 @@ const (
 	zoneOption                  // a choice in an open list
 	zoneDismiss                 // anywhere else while a list is open
 	zoneTab                     // one side of a segmented switch; opt is which
+	zoneBack                    // the back arrow and title at the top: one level up
 )
 
 // zone is a place on the screen a tap means something, recorded as it is drawn so taps always
@@ -403,6 +409,7 @@ type cardView struct {
 	actions      []headerAction
 	note         string
 	scroll       int
+	all          []settingRow // every row of the category, sub-pages and all, where rows is one of them
 }
 
 // scrollLimits are how far the card and an open list could scroll in the frame last drawn, so a

@@ -47,7 +47,7 @@ func categoryCard(sv sheetView) cardView {
 	st := sv.st
 	var v cardView
 	if dv, ok := deviceCard(sv); ok {
-		v = dv
+		v = pageCard(dv, st)
 		v.scroll = st.cardScroll
 		return v
 	}
@@ -59,6 +59,7 @@ func categoryCard(sv sheetView) cardView {
 		v = cardView{title: categoryTitles[st.cat], blurb: categoryBlurbs[st.cat], rows: rows, note: note}
 	}
 	v.rows = adaptRows(v.rows, sv)
+	v = pageCard(v, st)
 	v.scroll = st.cardScroll
 	return v
 }
@@ -86,25 +87,28 @@ func categoryRows(sv sheetView) (rows []settingRow, note string) {
 			settingRow{id: "clock", label: "Clock format", kind: ctlChoice, value: clockOptions[clockIndex()]},
 		)
 		rows = append(rows, clockLayoutRows()...)
+		// In the order the Show groups them into pages: the home screen, the weather, then how long
+		// things stay up.
 		rows = append(rows,
-			settingRow{id: "camtime", label: "Camera time", sub: "How long a camera opened here stays up", kind: ctlChoice, value: cameraTimes[cameraTimeIndex()].label},
-			settingRow{id: "answertime", label: "Answer time", sub: "How long an answer stays up; a tap clears it", kind: ctlChoice, value: answerTimes[answerTimeIndex()].label},
+			settingRow{id: "callbutton", label: "Call button", sub: "On the home screen: devices and contacts", kind: ctlToggle, on: callButton.Load()},
+			settingRow{id: "musicstrip", label: "Now playing", sub: "Full page, or a strip over the clock", kind: ctlChoice, value: stripOptionText()},
 		)
 		if hasEqualizer {
 			rows = append(rows, settingRow{id: "turnstyle", label: "Turn screen", sub: "Classic, or a wave or bars that move with the voice", kind: ctlChoice, value: turnStyles[turnStyleIndex()].label})
 		}
 		rows = append(rows,
-			settingRow{id: "callbutton", label: "Call button", sub: "On the home screen: devices and contacts", kind: ctlToggle, on: callButton.Load()},
-			settingRow{id: "weatherfx", label: "Weather animation", sub: "Rain, snow and storms move on the forecast", kind: ctlToggle, on: weatherAnimation.Load()},
-			settingRow{id: "radarsrc", label: "Radar source", sub: "Automatic uses the NWS in the lower 48", kind: ctlChoice, value: home.RadarSourceOptions()[home.RadarSourceIndex()]},
-			settingRow{id: "alerts", label: "Weather alerts", sub: "The NWS's alerts for home, in the U.S.", kind: ctlToggle, on: home.AlertsOn()},
-			settingRow{id: "musicstrip", label: "Now playing", sub: "Full page, or a strip over the clock", kind: ctlChoice, value: stripOptionText()},
 			settingRow{id: "slideshow", label: "Slideshow", sub: "Photos from Home Assistant", kind: ctlChoice, value: slideshowOptions[slideshowIndex()]},
 		)
 		if slideshowIndex() != 0 {
 			rows = append(rows, slideshowRows(st.demo)...)
 		}
-		return rows, ""
+		return append(rows,
+			settingRow{id: "weatherfx", label: "Weather animation", sub: "Rain, snow and storms move on the forecast", kind: ctlToggle, on: weatherAnimation.Load()},
+			settingRow{id: "radarsrc", label: "Radar source", sub: "Automatic uses the NWS in the lower 48", kind: ctlChoice, value: home.RadarSourceOptions()[home.RadarSourceIndex()]},
+			settingRow{id: "alerts", label: "Weather alerts", sub: "The NWS's alerts for home, in the U.S.", kind: ctlToggle, on: home.AlertsOn()},
+			settingRow{id: "camtime", label: "Camera time", sub: "How long a camera opened here stays up", kind: ctlChoice, value: cameraTimes[cameraTimeIndex()].label},
+			settingRow{id: "answertime", label: "Answer time", sub: "How long an answer stays up; a tap clears it", kind: ctlChoice, value: answerTimes[answerTimeIndex()].label},
+		), ""
 	case catSound:
 		mic := "Listening"
 		if st.muted {
@@ -117,17 +121,17 @@ func categoryRows(sv sheetView) (rows []settingRow, note string) {
 		return []settingRow{
 			{id: "volume", label: "Volume", kind: ctlStepper, value: i18n.Sprintf("%d of %d", st.volume, sheetVolumeSteps)},
 			{id: "mic", label: "Microphone", sub: "The mute button does this too", kind: ctlToggle, on: !st.muted, value: mic},
+			{id: "dnd", label: "Do not disturb", sub: "Silence announcements and doorbells; turn away incoming calls", kind: ctlToggle, on: config.Get().Home.DoNotDisturb},
 			{id: "wakeword", label: "Wake word", kind: ctlChoice, value: st.wakeWord},
 			{id: "wakesens", label: "Wake word sensitivity", sub: "Higher wakes by mistake less often", kind: ctlStepper,
 				value: fmt.Sprintf("%.2f", config.Get().Wake.Slot(0).Threshold)},
 			{id: "waketone", label: "Wake sound", kind: ctlChoice, value: config.Get().Wake.Slot(0).Tone.Label()},
+			{id: "bass", label: "Bass", sub: toneSub(), kind: ctlStepper, value: toneValue(config.Get().Speaker.Bass)},
+			{id: "treble", label: "Treble", kind: ctlStepper, value: toneValue(config.Get().Speaker.Treble)},
 			{id: "sleep", label: "Sleep timer", sub: sleepSub(), kind: ctlChoice, value: sleepValue()},
 			{id: "quiet", label: "Quiet hours", sub: quietSub(), kind: ctlChoice, value: quietValue()},
 			{id: "hasounds", label: "Home Assistant sounds", sub: "For muting and timers", kind: ctlToggle, on: !config.Get().Speaker.ClassicSounds},
 			{id: "camerasound", label: "Camera sound", sub: "A camera's own audio, while its view is up", kind: ctlToggle, on: home.CameraSound()},
-			{id: "dnd", label: "Do not disturb", sub: "Silence announcements and doorbells; turn away incoming calls", kind: ctlToggle, on: config.Get().Home.DoNotDisturb},
-			{id: "bass", label: "Bass", sub: toneSub(), kind: ctlStepper, value: toneValue(config.Get().Speaker.Bass)},
-			{id: "treble", label: "Treble", kind: ctlStepper, value: toneValue(config.Get().Speaker.Treble)},
 			{id: "sendspin", label: "Music Assistant player", sub: sendspinSub, kind: ctlToggle, on: st.sendspin},
 		}, ""
 	case catConnections:
@@ -163,17 +167,19 @@ func securityRows(sv sheetView) []settingRow {
 		if len(sec.Keys) > 0 {
 			keys = ""
 		}
-		rows = append(rows,
-			settingRow{id: "ssh", label: "SSH", sub: sub, kind: ctlToggle, on: sec.SSH},
-			settingRow{label: "SSH keys", sub: "Sent from Home Assistant", kind: ctlValue, value: keys})
+		rows = append(rows, settingRow{id: "ssh", label: "SSH", sub: sub, kind: ctlToggle, on: sec.SSH})
+		// On the Show the keys are a page of their own, which needs no heading row.
+		if !subPages || len(sec.Keys) == 0 {
+			rows = append(rows, settingRow{label: "SSH keys", sub: "Sent from Home Assistant", kind: ctlValue, value: keys})
+		}
 		// A row each, named by its comment with the type and fingerprint end beside it: all three on
 		// one row cut the comment off, and the comment alone named a laptop key after a router.
 		for _, k := range sec.Keys {
 			if k.Comment == "" {
-				rows = append(rows, settingRow{label: k.Kind, kind: ctlValue})
+				rows = append(rows, settingRow{label: k.Kind, kind: ctlValue, page: keysPage})
 				continue
 			}
-			rows = append(rows, settingRow{label: k.Comment, kind: ctlValue, value: k.Kind})
+			rows = append(rows, settingRow{label: k.Comment, kind: ctlValue, value: k.Kind, page: keysPage})
 		}
 	}
 	if sec.USBAvailable {
@@ -190,11 +196,19 @@ func securityRows(sv sheetView) []settingRow {
 		link.sub, link.value = "Add the device in Home Assistant to encrypt it", "Not encrypted"
 	}
 	certs := settingRow{label: "Certificate checks", sub: "Always enforced", kind: ctlValue, value: "On"}
-	return append(rows,
-		settingRow{id: "camweb", label: "Camera diagnostics", sub: "Requires local setup authorization", kind: ctlToggle, on: sec.Camera},
-		settingRow{id: "screenweb", label: "Screen diagnostics", sub: "Requires local setup authorization", kind: ctlToggle, on: sec.Screen},
-		setupRow(st.demo),
-		link, certs)
+	if !subPages {
+		rows = append(rows, diagRows(sv)...)
+	}
+	return append(rows, setupRow(st.demo), link, certs)
+}
+
+// diagRows are the two diagnostics pages' switches: Privacy's on the Spot, General's on the Show.
+func diagRows(sv sheetView) []settingRow {
+	sec := sv.security
+	return []settingRow{
+		{id: "camweb", label: "Camera diagnostics", sub: "Requires local setup authorization", kind: ctlToggle, on: sec.Camera, page: "diag"},
+		{id: "screenweb", label: "Screen diagnostics", sub: "Requires local setup authorization", kind: ctlToggle, on: sec.Screen, page: "diag"},
+	}
 }
 
 // generalRows are the General card's: the device's name, weather, updates, what it is, and Restart.
@@ -232,10 +246,24 @@ func generalRows(sv sheetView) []settingRow {
 		settingRow{id: "timezone", label: "Time zone", sub: zoneSub(), kind: ctlChoice, value: zoneValue()},
 		settingRow{id: "screenlang", label: "Screen language", sub: "The words on this screen and the ones it listens for",
 			kind: ctlChoice, value: langOptions[langIndex()]},
-		updates,
-		settingRow{label: "About", kind: ctlValue, value: deviceModel + " · slot " + st.slot},
-		restart,
 	)
+	if subPages {
+		// Updates as a page of three: the channel, what this is, and the check with how it went.
+		check := settingRow{id: "updatecheck", label: "Check for updates", sub: updates.sub, kind: ctlButton, button: updates.button, page: "updates"}
+		if updates.button == "" {
+			check.kind = ctlValue
+		}
+		rows = append(rows,
+			settingRow{id: "updates", label: "Update channel", kind: ctlChoice, value: updates.value, page: "updates"},
+			settingRow{label: "This version", kind: ctlValue, value: st.version, page: "updates"},
+			check,
+			settingRow{label: "About", kind: ctlValue, value: deviceModel + " · slot " + st.slot},
+		)
+		rows = append(rows, diagRows(sv)...)
+	} else {
+		rows = append(rows, updates, settingRow{label: "About", kind: ctlValue, value: deviceModel + " · slot " + st.slot})
+	}
+	rows = append(rows, restart)
 	return append(rows, resetRows(st)...)
 }
 
@@ -703,14 +731,21 @@ func (d *Display) nextTap(x, y int) {
 		d.closeSheet()
 	case zoneCat:
 		d.mu.Lock()
-		d.cat, d.picker, d.restartArm, d.resetArm, d.draft, d.colors = z.cat, "", time.Time{}, time.Time{}, nil, false
+		d.cat, d.picker, d.restartArm, d.draft, d.colors = z.cat, "", time.Time{}, nil, false
 		d.cardScroll, d.pickScroll = 0, 0
+		d.root, d.page, d.adjust, d.confirm = false, "", "", ""
 		d.mu.Unlock()
+	case zoneBack:
+		d.sheetBack()
 	case zoneAction:
 		d.actionTap(z.id)
 	case zoneDismiss:
 		d.mu.Lock()
-		d.picker = ""
+		if z.id == "confirm" {
+			d.confirm = ""
+		} else {
+			d.picker = ""
+		}
 		d.mu.Unlock()
 	case zoneOption:
 		d.mu.Lock()
@@ -719,7 +754,20 @@ func (d *Display) nextTap(x, y int) {
 		d.mu.Unlock()
 		d.choose(id, z.opt)
 	case zoneRow:
-		d.rowTap(z.id, z.part, z.opt)
+		page, isPage := strings.CutPrefix(z.id, "page:")
+		d.mu.Lock()
+		switch {
+		case isPage:
+			d.page, d.backScroll, d.cardScroll = page, d.cardScroll, 0
+		case z.part == partAdjust:
+			d.adjust = z.id
+		case z.part == partConfirm:
+			d.confirm, d.confirmAt = z.id, time.Now()
+		}
+		d.mu.Unlock()
+		if !isPage && z.part != partAdjust && z.part != partConfirm {
+			d.rowTap(z.id, z.part, z.opt)
+		}
 	}
 }
 
@@ -840,6 +888,8 @@ func (d *Display) rowTap(id string, p part, opt int) {
 		d.openPicker(id)
 	case "updatecheck":
 		d.rowTap("updates", partExtra, opt)
+	case "add":
+		d.EditNewAlarm()
 	case "updates":
 		switch {
 		case p != partExtra:

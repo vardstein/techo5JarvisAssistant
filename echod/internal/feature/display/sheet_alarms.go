@@ -29,6 +29,9 @@ func alarmsCard(sv sheetView) cardView {
 		title: categoryTitles[catAlarms], blurb: categoryBlurbs[catAlarms],
 		actions: []headerAction{{id: "add", label: "+ Add alarm", style: btnPrimary}},
 	}
+	if subPages {
+		v.actions = nil // a row under the alarms instead: the header is for the way back
+	}
 	for _, row := range alarmRows(sv.alarms) {
 		switch {
 		case row.snoozed != nil:
@@ -55,7 +58,10 @@ func alarmsCard(sv sheetView) cardView {
 				bold: true, kind: ctlValue, value: when})
 		}
 	}
-	if len(v.rows) == 0 {
+	switch {
+	case subPages:
+		v.rows = append(v.rows, settingRow{id: "add", label: "Add alarm", kind: ctlButton})
+	case len(v.rows) == 0:
 		v.rows = append(v.rows, settingRow{label: "No alarms yet", sub: "Add one here, or from Home Assistant", kind: ctlValue})
 	}
 	v.rows = append(v.rows, timerRows(sv)...)
@@ -219,6 +225,12 @@ func (d *Display) actionTap(id string) {
 		d.mu.Unlock()
 	case "add":
 		d.EditNewAlarm()
+	case "confirm.no":
+		d.mu.Lock()
+		d.confirm = ""
+		d.mu.Unlock()
+	case "confirm.yes":
+		d.confirmYes()
 	case "cancel":
 		d.closeDraft()
 	case "save":
