@@ -198,5 +198,39 @@ Jade's answers on 2026-10-12:
   before updating), let people switch channels, and make spoken update requests work by meaning, not fixed
   sentences. All three are written into §1.
 - **Name and icon (§2): name only.** "Genbu Assistant"; the tortoise and snake icon stays as it is.
-- **Control center (§3): yes, as proposed**, and the sidebar entry and the page title read "Genbu Assistant"
-  instead of "Genbu". The page's address stays `/genbu`.
+- **Control center (§3): yes, as proposed.** The page's address stays `/genbu`.
+- **The page after test 9/20** (Jade, same evening): it looks right. Three changes:
+  - The sidebar entry and the page title read **"Genbu Control Center"**. This replaces the "Genbu Assistant"
+    title from the answer before. The integration keeps the name Genbu Assistant.
+  - Each Show's card is split into groups by what the things do, starting with what is on the device itself:
+    screen, camera, mute, LED ring and so on.
+  - Every group can be folded in and out, and the page remembers that per browser.
+
+  How the groups are found is below, under "Groups on a Show's card".
+
+### Groups on a Show's card
+
+The groups come from what the Show already tells Home Assistant, not from a list of entity ids. Shows with
+other firmware or new features land in the right group or in "More" without a page update.
+
+1. **The Show's sub-devices are groups already.** echod puts related things on their own device under the
+   Show: "ring", "microphone", "playback", "assistant 1", "assistant 2". Each one becomes a group named after
+   that device.
+2. **The rest goes by domain and by word** in the entity's own name, first match wins:
+
+   | Group | What lands there |
+   |---|---|
+   | On the device | screen light, night mode, the main LED ring light, microphone mute, camera, speaker volume |
+   | Voice | assist satellite, wake buttons, "Last heard", "Last reply", "Last wake word", wake word and assistant selects |
+   | Music and radio | media player, "Music plays on", white noise, radio sensors |
+   | Calls and alarms | answer, hang up, snooze, stop, next alarm, phone, missed ring, drop in, intercom |
+   | Screen | dashboard, theme, clock, slideshow, screensaver, pop-ups, weather, calendar |
+   | Night | night hours, start and end, night clock, screen at night, night light |
+   | Updates | firmware update, channel, install automatically |
+   | Network and access | Bluetooth, SSH, web access, USB debugging, setup page |
+   | More | anything else |
+3. **Inside each group**, controls come first and settings after a "Settings" line, as today.
+4. **Diagnostics** (temperatures, Wi-Fi, memory and the like) get their own last group, folded in by default.
+   Today they are left out.
+5. **What is open by default:** "On the device" is open; everything else is folded in until opened once.
+   The LED ring segments 1–12 sit folded inside the ring group, since nobody sets them one by one.
