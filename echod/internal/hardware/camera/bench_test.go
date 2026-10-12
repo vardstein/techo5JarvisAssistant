@@ -221,3 +221,63 @@ func TestSampleStepDoesNotMoveTheTone(t *testing.T) {
 		t.Errorf("gamma %.3f, want about %.3f", taken.gamma, full.gamma)
 	}
 }
+
+func BenchmarkRenderNV12(b *testing.B) {
+	t := stats(benchRaw)
+	stride := (Width + 15) / 16 * 16
+	buf := make([]byte, stride*Height*3/2)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		renderNV12(benchRaw, t, buf[:stride*Height], buf[stride*Height:], stride)
+	}
+}
+
+// TestRenderNV12 checks the stream's NV12 against the RGBA picture it replaces: every luma and
+// chroma sample computed from render's pixels must match.
+func TestRenderNV12(t *testing.T) {
+	for _, blue := range []bool{false, true} {
+		saved := sensor.blueFirst
+		sensor.blueFirst = blue
+		tn := stats(benchRaw)
+		img := render(benchRaw, tn)
+		stride := Width + 16
+		y := make([]byte, stride*Height)
+		uv := make([]byte, stride*Height/2)
+		renderNV12(benchRaw, tn, y, uv, stride)
+		sensor.blueFirst = saved
+		px := func(x, yy int) (int, int, int) {
+			i := img.PixOffset(x, yy)
+			return int(img.Pix[i]), int(img.Pix[i+1]), int(img.Pix[i+2])
+		}
+		for yy := 0; yy+1 < Height; yy += 2 {
+			for x := 0; x+1 < Width; x += 2 {
+				var sr, sg, sb int
+				for _, d := range [4][2]int{{0, 0}, {1, 0}, {0, 1}, {1, 1}} {
+					r, g, b := px(x+d[0], yy+d[1])
+					if want := byte((77*r + 150*g + 29*b + 128) >> 8); y[(yy+d[1])*stride+x+d[0]] != want {
+						t.Fatalf("blueFirst %v: luma at %d,%d is %d, want %d", blue, x+d[0], yy+d[1], y[(yy+d[1])*stride+x+d[0]], want)
+					}
+					sr, sg, sb = sr+r, sg+g, sb+b
+				}
+				cb := clamp8(((-43*sr - 85*sg + 128*sb + 512) >> 10) + 128)
+				cr := clamp8(((128*sr - 107*sg - 21*sb + 512) >> 10) + 128)
+				if got := uv[(yy/2)*stride+x : (yy/2)*stride+x+2]; got[0] != cb || got[1] != cr {
+					t.Fatalf("blueFirst %v: chroma at %d,%d is %v, want %d %d", blue, x, yy, got, cb, cr)
+				}
+			}
+		}
+	}
+}
+
+// TestSampleEven checks the stream's measurement against the plain one it stands in for.
+func TestSampleEven(t *testing.T) {
+	saved := sensor.blueFirst
+	defer func() { sensor.blueFirst = saved }()
+	for _, blue := range []bool{false, true} {
+		sensor.blueFirst = blue
+		if got, want := sampleEven(benchRaw), sample(benchRaw, 2); got != want {
+			t.Fatalf("blueFirst %v: %+v, want %+v", blue, got, want)
+		}
+	}
+}

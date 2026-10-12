@@ -18,12 +18,14 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/HuskerMinion/techo5/echod/internal/component"
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/web"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/camera"
+	"github.com/HuskerMinion/techo5/echod/internal/hardware/jpegenc"
 )
 
 func init() {
@@ -61,8 +63,44 @@ func (f *Feature) register() {
 // the daemon has touched anything.
 func cameraOpen() bool { return config.Get().Security.Camera && camera.Available() }
 
+// encode is a frame of the stream. Everyone streaming gets the same frames, so the last one encoded
+// is kept and handed to whoever asks for it next.
 func encode(f *camera.Frame) ([]byte, error) {
+	last.Lock()
+	defer last.Unlock()
+	if last.f == f {
+		return last.jpg, nil
+	}
+	jpg, err := encodeStream(f)
+	if err != nil {
+		return nil, err
+	}
+	last.f, last.jpg = f, jpg
+	return jpg, nil
+}
+
+var last struct {
+	sync.Mutex
+	f   *camera.Frame
+	jpg []byte
+}
+
+// encodeStream hands the encoder the frame painted straight into its buffer where the sensor's
+// package can do that (the Show 5), which leaves out the RGBA picture and its conversion: the two
+// together were most of the time a frame took. Anywhere else, or should that fail, it is Image.
+func encodeStream(f *camera.Frame) ([]byte, error) {
+	if n, ok := any(f).(nv12Painter); ok && jpegenc.Available() {
+		jpg, err := jpegenc.EncodeNV12(camera.Width, camera.Height, quality, n.NV12)
+		if err == nil {
+			return jpg, nil
+		}
+		slog.Debug("camera: hardware encode failed, using software", "err", err)
+	}
 	return encodeImage(f.Image())
+}
+
+type nv12Painter interface {
+	NV12(y, uv []byte, stride int)
 }
 
 // encodeFull is a still at the sensor's own size.
@@ -70,7 +108,16 @@ func encodeFull(f *camera.Frame) ([]byte, error) {
 	return encodeImage(f.Full())
 }
 
+// encodeImage uses the SoC's encoder where there is one (well under a millisecond for a stream
+// frame) and image/jpeg, about 50 ms on the Show, where there is not or it failed.
 func encodeImage(img image.Image) ([]byte, error) {
+	if rgba, ok := img.(*image.RGBA); ok && jpegenc.Available() {
+		if jpg, err := jpegenc.Encode(rgba, quality); err == nil {
+			return jpg, nil
+		} else {
+			slog.Debug("camera: hardware encode failed, using software", "err", err)
+		}
+	}
 	var b bytes.Buffer
 	if err := jpeg.Encode(&b, img, &jpeg.Options{Quality: quality}); err != nil {
 		return nil, err
