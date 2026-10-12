@@ -52,10 +52,10 @@ ASSETS: dict[str, tuple[Asset, ...]] = {
             "amazon-oss/releases lineage-18.1-crown-v0.5",
         ),
         Asset(
-            "boot", "techo5-boot-crown-v0.8.0.img",
-            f"{TECHO5_RELEASES}/v0.8.0/techo5-boot-crown-v0.8.0.img",
-            BOOT_SHA256_BY_BOARD["crown"] or "", 13154304,
-            "HuskerMinion/techo5 v0.8.0",
+            "boot", "techo5-boot-crown-v1.0.1.img",
+            f"{TECHO5_RELEASES}/v1.0.1/techo5-boot-crown-v1.0.1.img",
+            BOOT_SHA256_BY_BOARD["crown"] or "", 13156352,
+            "HuskerMinion/techo5 v1.0.1 (signed manifest)",
         ),
         # Reviewed 2026-10-09: scripts match R0rt1z2/amonet (main.py/common.py as of 999f8d0ab5), and
         # fastbrick.sh, profile.sh, device.prop, fastbrick.img, fastboot(32) and twrp.img are the bytes

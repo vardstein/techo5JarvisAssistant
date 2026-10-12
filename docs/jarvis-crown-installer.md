@@ -219,8 +219,8 @@ The wrapper will not construct an install plan until all of these are true:
 
 - J20's atomic `partitions/` backup passes its SHA-256/coverage verification again;
 - the backup manifest belongs to the same ADB recovery serial now being installed;
-- the boot image is byte-for-byte the known-good Crown v0.8.0 image
-  (`cf5a492f7ee7ec16305905c58bf7f0b2e3f3e75521668ca905b9ae1ffb6d0baa`);
+- the boot image is byte-for-byte upstream TECHO5 v1.0.1 `techo5-boot-crown-v1.0.1.img`
+  (`e00bed964d9b2ce31df152d183d2aeb45a7839cc5f7460a93dd97d70715ad1b7`), listed in the v1.0.1 manifest signed by the upstream release key;
 - the rootfs matches the exact SHA-256 supplied by the future signed Jarvis Crown release metadata;
 - the rootfs contains a regular `etc/jarvis-show-release.json` marker naming
   `product=genbu-show-v1`, a `boards` list that includes `crown`, and a non-empty version;

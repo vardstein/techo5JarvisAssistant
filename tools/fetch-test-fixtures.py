@@ -10,9 +10,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 FIXTURES = (
     (
-        "https://github.com/HuskerMinion/techo5/releases/download/v0.8.0/techo5-boot-crown-v0.8.0.img",
-        ROOT / "build/release-techo5-v0.8.0/techo5-boot-crown-v0.8.0.img",
-        "cf5a492f7ee7ec16305905c58bf7f0b2e3f3e75521668ca905b9ae1ffb6d0baa",
+        "https://github.com/HuskerMinion/techo5/releases/download/v1.0.1/techo5-boot-crown-v1.0.1.img",
+        ROOT / "build/release-techo5-v1.0.1/techo5-boot-crown-v1.0.1.img",
+        "e00bed964d9b2ce31df152d183d2aeb45a7839cc5f7460a93dd97d70715ad1b7",
     ),
     (
         "https://github.com/HuskerMinion/techo5/releases/download/v0.9.21/rootfs-v0.9.21.tar.gz",

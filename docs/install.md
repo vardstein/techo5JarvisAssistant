@@ -301,7 +301,8 @@ Then:
 - **Security**: SSH, and the camera and screen pages on port 8181, have switches on the settings
   screen (Privacy) and in Home Assistant. SSH keys only come from Home Assistant (`esphome.<device>_ssh_keys`).
 - **Updates**: the firmware update entity installs new releases into the other slot, reboots, and
-  falls back if the new slot does not settle.
+  falls back if the new slot does not settle. It leaves the boot image alone; see
+  [Updating the boot image](#updating-the-boot-image).
 - The old Android integrations for the unit (ShowAssist, the View Assist companion) can be deleted.
 
 ## Radio
@@ -377,6 +378,36 @@ or thirteen, with no pattern. The device notices and asks for the station again 
 It will do that three times in ten minutes and then leave it off, since a station that will not stay
 up is not going to. The log says `the stream ended by itself, putting it back on`. Music starting
 again on its own is this, not a fault.
+
+## Updating the boot image
+
+A firmware update replaces the root filesystem and leaves the boot image (the kernel) alone. New
+installs get the pinned one: `techo5-boot-checkers-v1.0.1.img` on the 1st gen Show 5,
+`techo5-boot-crown-v1.0.1.img` on the Show 8. With these, a quick tap to unmute no longer leaves the
+camera off until a restart. A unit installed before that keeps its old kernel until the new image is
+put on over SSH.
+
+Turn **SSH** on, then from the folder the image was downloaded to:
+
+```
+scp -O techo5-boot-<board>-v1.0.1.img root@<address>:/tmp/boot.img
+ssh root@<address>
+```
+
+On the unit, check that the board is the one the image is for (`checkers` or `crown`) and that the
+checksum is the pinned one (`tools/jarvis_crown/install.py`, `BOOT_SHA256_BY_BOARD`), then write it to
+the boot partition and restart:
+
+```
+grep -o 'androidboot.product=[a-z]*' /proc/cmdline
+sha256sum /tmp/boot.img
+p=$(grep -l '^PARTNAME=boot$' /sys/class/block/mmcblk0p*/uevent); p=/dev/$(basename $(dirname $p))
+[ -b "$p" ] && dd if=/tmp/boot.img of=$p bs=1M conv=fsync && sync && reboot
+```
+
+Settings, slots and Home Assistant are kept; only the kernel and the rescue environment change. On a
+Show 8, `uname -v` then says `#4 SMP PREEMPT Mon Oct 5 11:47:04 UTC 2026`; the v0.8.0 kernel says
+`#1 SMP PREEMPT Tue Sep 22 12:16:37 UTC 2026`. `uname -r` stays `4.9.337-g8d928c5176cc`.
 
 ## Factory reset
 

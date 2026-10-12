@@ -23,7 +23,7 @@ from jarvis_crown.install import (  # noqa: E402
 )
 from jarvis_crown.recovery import BOOT_AREAS, SMALL_PARTITIONS  # noqa: E402
 
-PINNED_BOOT = ROOT / "build" / "release-techo5-v0.8.0" / "techo5-boot-crown-v0.8.0.img"
+PINNED_BOOT = ROOT / "build" / "release-techo5-v1.0.1" / "techo5-boot-crown-v1.0.1.img"
 
 
 def sha256(path):

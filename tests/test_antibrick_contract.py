@@ -34,7 +34,11 @@ class AntiBrickContractTests(unittest.TestCase):
         self.assertEqual(len(AMONET_UNLOCK_SHA256), 6)
         for digest in AMONET_UNLOCK_SHA256.values():
             self.assertRegex(digest, r"^[0-9a-f]{64}$")
-        self.assertRegex(BOOT_SHA256_BY_BOARD["crown"] or "", r"^[0-9a-f]{64}$")
+        # Upstream TECHO5 v1.0.1 techo5-boot-crown-v1.0.1.img, with the quick-tap unmute fix.
+        self.assertEqual(
+            BOOT_SHA256_BY_BOARD["crown"],
+            "e00bed964d9b2ce31df152d183d2aeb45a7839cc5f7460a93dd97d70715ad1b7",
+        )
         self.assertRegex(TWRP_SHA256_BY_BOARD["crown"] or "", r"^[0-9a-f]{64}$")
 
     def test_jarvis_hidden_prestaged_mode_cannot_enable_expdb_logo_patch(self):

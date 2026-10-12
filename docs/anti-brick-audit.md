@@ -34,7 +34,7 @@ The Checkers boot image is pinned to upstream TECHO5 v1.0.1 `techo5-boot-checker
 
 ## PASS — Crown destructive assets are pinned
 
-The known-good Crown Amonet v2.0.1 bundle, TWRP and boot image are SHA-256 pinned. A modified/missing asset aborts before execution. The Crown unlock wrapper also requires a readable `lk_build_desc` on locked devices before invoking Amonet.
+The known-good Crown Amonet v2.0.1 bundle, TWRP and boot image are SHA-256 pinned. A modified/missing asset aborts before execution. The boot image is upstream TECHO5 v1.0.1 `techo5-boot-crown-v1.0.1.img` (`e00bed964d9b2ce31df152d183d2aeb45a7839cc5f7460a93dd97d70715ad1b7`): listed in the v1.0.1 `manifest.json`, whose signature checks against the upstream release key, with kernel `4.9.337-g8d928c5176cc`. Its ramdisk is the earlier v0.8.0 image's byte for byte; the kernel only adds the quick-tap unmute fix, so the camera comes back on after a short tap of the mute button. The Crown unlock wrapper also requires a readable `lk_build_desc` on locked devices before invoking Amonet.
 
 ## WARN — the Amonet unlock itself is inherently destructive
 
