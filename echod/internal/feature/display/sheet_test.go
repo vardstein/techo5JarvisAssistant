@@ -480,3 +480,38 @@ func TestFactoryResetAsksFirst(t *testing.T) {
 		t.Error("back did not put the question away without erasing")
 	}
 }
+
+// The drawer is a shelf: a swipe to the left slides it a tile on and stops at its end, one to the right
+// slides it back, and at its start the same swipe puts the drawer away. Over a list of choices, the back
+// arrow is the shelf again; on the shelf, it closes the drawer.
+func TestTheShelfSlidesAndBackCloses(t *testing.T) {
+	d := &Display{r: testRenderer(), drawer: true}
+	step := d.r.shelfStep()
+	d.r.cardMax = step + step/2
+	for range 3 {
+		d.drawerGesture(touch.Gesture{Kind: touch.SwipeLeft, X: 600, Y: 300})
+	}
+	if d.drawerScroll != d.r.cardMax {
+		t.Fatalf("three swipes left = %d, want held at the end, %d", d.drawerScroll, d.r.cardMax)
+	}
+	d.drawerGesture(touch.Gesture{Kind: touch.SwipeRight, X: 600, Y: 300})
+	d.drawerGesture(touch.Gesture{Kind: touch.SwipeRight, X: 600, Y: 300})
+	if d.drawerScroll != 0 || !d.drawer {
+		t.Fatalf("two swipes back = %d, drawer %v, want the start with the drawer in", d.drawerScroll, d.drawer)
+	}
+	d.drawerGesture(touch.Gesture{Kind: touch.SwipeRight, X: 600, Y: 300})
+	if d.drawer {
+		t.Fatal("a swipe right at the start left the drawer in")
+	}
+
+	d.drawer, d.drawerPick = true, "radiosource"
+	d.r.zones = []zone{{r: image.Rect(0, 0, 100, 100), kind: zoneBack}}
+	d.drawerGesture(touch.Gesture{Kind: touch.Tap, X: 40, Y: 40})
+	if d.drawerPick != "" || !d.drawer {
+		t.Fatalf("back over a list: pick %q drawer %v, want the shelf", d.drawerPick, d.drawer)
+	}
+	d.drawerGesture(touch.Gesture{Kind: touch.Tap, X: 40, Y: 40})
+	if d.drawer {
+		t.Fatal("back on the shelf left the drawer in")
+	}
+}

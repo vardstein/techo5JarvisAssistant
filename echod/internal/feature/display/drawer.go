@@ -42,34 +42,58 @@ func (d *Display) closeDrawer() {
 	d.wake()
 }
 
-// drawerGesture is a finger on the drawer: taps on what it shows, vertical swipes scroll it, and a
-// swipe back to the right puts it away.
+// drawerGesture is a finger on the drawer: taps on what it shows, sideways swipes slide the shelf a tile
+// at a time, and a swipe back to the right at its start puts it away. Up and down scroll a list of
+// choices opened from it, and slide the shelf too, for a swipe that came out slanted.
 func (d *Display) drawerGesture(g touch.Gesture) {
 	if d.r == nil {
 		return
 	}
+	cardMax, pickMax := d.r.scrollLimits()
 	switch g.Kind {
-	case touch.SwipeRight:
-		d.closeDrawer()
-	case touch.SwipeUp, touch.SwipeDown:
-		by := notchPx
-		if g.Kind == touch.SwipeDown {
-			by = -notchPx
-		}
-		cardMax, pickMax := d.r.scrollLimits()
+	case touch.SwipeLeft, touch.SwipeRight, touch.SwipeUp, touch.SwipeDown:
+		forward := g.Kind == touch.SwipeLeft || g.Kind == touch.SwipeUp
 		d.mu.Lock()
-		if d.drawerPick != "" {
+		switch {
+		case d.drawerPick != "" && (g.Kind == touch.SwipeUp || g.Kind == touch.SwipeDown):
+			by := notchPx
+			if !forward {
+				by = -notchPx
+			}
 			d.pickScroll = min(max(d.pickScroll+by, 0), pickMax)
-		} else {
+			d.mu.Unlock()
+		case d.drawerPick != "":
+			// Sideways over a list of choices is back to the shelf.
+			if g.Kind == touch.SwipeRight {
+				d.drawerPick = ""
+			}
+			d.mu.Unlock()
+		case g.Kind == touch.SwipeRight && d.drawerScroll <= 0:
+			d.mu.Unlock()
+			d.closeDrawer()
+		default:
+			by := d.r.shelfStep()
+			if !forward {
+				by = -by
+			}
 			d.drawerScroll = min(max(d.drawerScroll+by, 0), cardMax)
+			d.mu.Unlock()
 		}
-		d.mu.Unlock()
 	case touch.Tap:
 		z, ok := d.r.zoneAt(g.X, g.Y)
 		if !ok {
 			return
 		}
 		switch z.kind {
+		case zoneBack:
+			// From a list of choices, back is the shelf; from the shelf, it puts the drawer away.
+			d.mu.Lock()
+			picking := d.drawerPick != ""
+			d.drawerPick = ""
+			d.mu.Unlock()
+			if !picking {
+				d.closeDrawer()
+			}
 		case zoneDone:
 			d.closeDrawer()
 		case zoneTab:

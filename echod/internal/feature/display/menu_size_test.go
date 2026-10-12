@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/home"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/phone"
 	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 )
@@ -75,6 +76,24 @@ func TestEveryMenuSizeFits(t *testing.T) {
 			announceReady: true, announcePeers: 3,
 			callees: []phone.Callee{{Name: "a", Device: true}, {Name: "b", Device: true}, {Name: "d", Number: "15551234567"}}}
 	}
+	// The shelf full: cameras, and stations with one playing, one starting and Stop, slid to its end.
+	full := scene{now: at, phase: "idle", showDrawer: true, demo: true,
+		cameras: []config.Camera{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}, {Name: "e"}},
+		radio: home.Radio{Configured: true, Source: config.RadioLocal, Sources: 3, Playing: true, Grouped: true,
+			Stations: []string{"101.1 A", "88.5 B", "93.3 C", "104.7 D"}, Now: "101.1 A", Chosen: "88.5 B"}}
+	for i, name := range drawerTabs[:drawerAnnounce] {
+		f := full
+		f.drawerTab = i
+		scenes["drawer-full-"+name] = f
+		f.drawerScroll = 1 << 20
+		scenes["drawer-full-"+name+"-end"] = f
+	}
+	recording := scenes["drawer-Announce"]
+	recording.announceRecording = true
+	scenes["drawer-Announce-recording"] = recording
+	pick := full
+	pick.drawerTab, pick.drawerPick = drawerRadio, "radiosource"
+	scenes["drawer-Radio-source"] = pick
 
 	config.Use(filepath.Join(t.TempDir(), "state.json"))
 	t.Cleanup(i18n.Changed)
