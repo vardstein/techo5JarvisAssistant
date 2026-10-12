@@ -290,7 +290,7 @@ var it = lang{
 		"Answer time":                                             "Durata risposte",
 		"How long an answer stays up; a tap clears it":            "Quanto resta una risposta sullo schermo; un tocco la toglie",
 		"Turn screen":                                             "Schermata di conversazione",
-		"Classic, or a wave or bars that move with the voice":     "Classica, oppure un'onda o barre che seguono la voce",
+		"What the screen shows while you speak":                   "Cosa mostra lo schermo mentre parli",
 		"Call button":                                             "Pulsante di chiamata",
 		"On the home screen: devices and contacts":                "Nella schermata iniziale: dispositivi e contatti",
 		"Weather animation":                                       "Animazione meteo",

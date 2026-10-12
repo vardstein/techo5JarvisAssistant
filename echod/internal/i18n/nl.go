@@ -283,7 +283,7 @@ var nl = lang{
 		"Answer time":                                             "Antwoordtijd",
 		"How long an answer stays up; a tap clears it":            "Hoelang een antwoord blijft staan; tikken haalt het weg",
 		"Turn screen":                                             "Gespreksweergave",
-		"Classic, or a wave or bars that move with the voice":     "Klassiek, of een golf of balken die met de stem meebewegen",
+		"What the screen shows while you speak":                   "Wat het scherm laat zien terwijl je praat",
 		"Call button":                                             "Belknop",
 		"On the home screen: devices and contacts":                "Op het beginscherm: apparaten en contacten",
 		"Weather animation":                                       "Weeranimatie",

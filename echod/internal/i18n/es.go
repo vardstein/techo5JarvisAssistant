@@ -295,7 +295,7 @@ var es = lang{
 		"Answer time":                                             "Tiempo de respuesta",
 		"How long an answer stays up; a tap clears it":            "Cuánto tiempo sigue una respuesta en pantalla; un toque la quita",
 		"Turn screen":                                             "Pantalla de conversación",
-		"Classic, or a wave or bars that move with the voice":     "Clásica, o una onda o barras que se mueven con la voz",
+		"What the screen shows while you speak":                   "Lo que muestra la pantalla mientras hablas",
 		"Call button":                                             "Botón de llamada",
 		"On the home screen: devices and contacts":                "En la pantalla de inicio: dispositivos y contactos",
 		"Weather animation":                                       "Animación del tiempo",
