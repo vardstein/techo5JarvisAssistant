@@ -3,9 +3,11 @@
 package display
 
 import (
+	"cmp"
 	"image"
 	"image/color"
 	"image/draw"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -216,7 +218,7 @@ func (r *renderer) shelfItem(row settingRow, left, top, art int) {
 	sub := row.sub
 	switch {
 	case row.label == "Stations":
-		sub = row.value
+		sub = cmp.Or(row.sub, row.value)
 	case row.value == "Listening":
 		sub = row.value
 	case strings.HasPrefix(row.id, "cam:"):
@@ -376,13 +378,23 @@ func drawerRows(s scene) ([]settingRow, string) {
 	if rd.Sources > 1 {
 		source.id, source.kind = "radiosource", ctlChoice
 	}
+	if rd.Via != "" {
+		// Radio Browser did not answer, and the list says whose stations it shows instead.
+		source.sub = i18n.F("{list}, from {source}", "list", i18n.T(source.value), "source", rd.Via)
+	}
 	rows := []settingRow{source}
 	stations := radioList(rd)
 	switch {
 	case rd.Loading:
 		return append(rows, settingRow{label: "Asking Home Assistant for stations…", kind: ctlValue}), ""
+	case len(stations) == 0 && rd.Problem != "" && rd.Source != config.RadioMA && slices.Contains(home.RadioSources(), config.RadioMA):
+		return append(rows, settingRow{label: "Could not list the stations", kind: ctlValue,
+			sub: i18n.F("{problem} · Music Assistant's stations still play", "problem", i18n.T(rd.Problem))}), ""
 	case len(stations) == 0 && rd.Problem != "":
 		return append(rows, settingRow{label: "Could not list the stations", sub: rd.Problem, kind: ctlValue}), ""
+	case len(stations) == 0 && rd.Source == config.RadioMA:
+		return append(rows, settingRow{label: "No radio stations in Music Assistant yet",
+			sub: "Add some in its app, or add TuneIn there", kind: ctlValue}), ""
 	case len(stations) == 0 && rd.Source == config.RadioLocal:
 		return append(rows, settingRow{label: "No stations within 100 km", sub: "Try Popular worldwide", kind: ctlValue}), ""
 	case len(stations) == 0:
@@ -407,7 +419,7 @@ func drawerRows(s scene) ([]settingRow, string) {
 		}
 		row := settingRow{id: id, label: label, kind: ctlButton, rowTap: true, pic: s.logos[name]}
 		switch {
-		case name == rd.Now && rd.Playing:
+		case name == rd.Now && rd.Playing, name == rd.Listed:
 			row.bold, row.sub = true, "Playing now"
 		case name == rd.Chosen && rd.Chosen != rd.Now:
 			row.sub = "Starting…"

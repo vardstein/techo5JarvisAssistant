@@ -46,7 +46,8 @@ type Weather struct {
 // Radio is what the radio page shows.
 type Radio struct {
 	Configured bool   // there is a list to show: favorites wired, or a token for Radio Browser
-	Source     string // the list shown, config.RadioFavorites, RadioLocal or RadioPopular
+	Source     string // the list shown, config.RadioFavorites, RadioOwn, RadioMA, RadioLocal or RadioPopular
+	Via        string // where the list's stations came from when Radio Browser did not answer: "TuneIn"
 	Sources    int    // how many lists there are to step through
 	Loading    bool   // the list is being fetched
 	Problem    string // why the list is empty, when fetching it failed
@@ -56,6 +57,9 @@ type Radio struct {
 	Paused     bool   // something is paused and still on the page: a held remote track counts
 	Chosen     string // the station tapped last, until Now catches up
 	Grouped    bool   // this room is playing along with a group, so a stop here stops the group
+	// Listed is the station of the list that Music Assistant is playing in this room, by its queue: such
+	// a station plays as Music Assistant's, so Now names Music Assistant rather than the station.
+	Listed string
 
 	// What the station is playing, when its service says: the song, and a picture for the
 	// background — the cover when there is one, else the station's logo (Logo true).
@@ -662,12 +666,14 @@ func (f *Feature) Radio() Radio {
 	}
 	if r.Source != config.RadioFavorites && r.Source != config.RadioOwn {
 		f.fetchList(r.Source)
+		playing := f.MusicPlayback()
 		f.mu.Lock()
 		l := f.list(r.Source)
 		for _, st := range l.stations {
 			r.Stations = append(r.Stations, st.Name)
 		}
-		r.Loading, r.Problem = l.busy && len(l.stations) == 0, l.err
+		r.Loading, r.Problem, r.Via = l.busy && len(l.stations) == 0, l.err, l.via
+		r.Listed = maPlaying(l.stations, playing)
 		f.mu.Unlock()
 	}
 	// Both from the music's own state, which is what the page is drawn from: a remote's track paused from

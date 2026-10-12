@@ -31,7 +31,8 @@ type Home struct {
 	Radio Radio `json:"radio"`
 
 	// RadioSource is the list the radio page shows: RadioFavorites (the stations wired with
-	// home_radio), RadioLocal or RadioPopular (Home Assistant's Radio Browser). Empty picks
+	// home_radio), RadioOwn, RadioMA (Music Assistant's library), or RadioLocal or RadioPopular
+	// (Home Assistant's Radio Browser). Empty picks
 	// favorites when they are wired, local stations otherwise.
 	RadioSource string `json:"radio_source,omitempty"`
 
@@ -218,6 +219,10 @@ const (
 	RadioFavorites = "favorites"
 	RadioLocal     = "local"
 	RadioPopular   = "popular"
+
+	// RadioMA is the radio stations in Music Assistant's library, whichever of its providers they come
+	// from, played through Music Assistant on this room's player.
+	RadioMA = "music_assistant"
 
 	// RadioOwn are the stations kept on the device itself, played straight from their stream
 	// address. They are the only ones a device without Home Assistant can play.

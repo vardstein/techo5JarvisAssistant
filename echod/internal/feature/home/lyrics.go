@@ -72,6 +72,8 @@ type queueSong struct {
 	URI  string
 	// Favorite is Music Assistant's own mark on the track, which its favorite button sets.
 	Favorite bool
+	// Station and StationURI are set instead of URI when what plays is a radio station.
+	Station, StationURI string
 }
 
 var lyrics struct {

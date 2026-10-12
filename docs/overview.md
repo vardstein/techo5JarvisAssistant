@@ -46,7 +46,9 @@ Android, with one Go daemon, `echod`, doing everything the device does:
   `home_radio` (Home Assistant `input_select` lists played through a script). With a Home Assistant
   token, Local stations (within 100 km of home) and Popular worldwide come from Home Assistant's
   Radio Browser integration and play through `media_player.play_media` on the device's own player,
-  with no setup. Stations play on the device's own speaker or on Bluetooth earbuds; song, artist and
+  with no setup. When Home Assistant has Music Assistant, its library's radio stations are a list too,
+  played through Music Assistant on the room's player; and when Radio Browser does not answer, the
+  stations near home come from TuneIn through Music Assistant, if it has TuneIn. Stations play on the device's own speaker or on Bluetooth earbuds; song, artist and
   cover come from iHeartRadio or TuneIn behind the page.
 - **Camera**: the front camera as a Home Assistant camera entity (plus JPEG and MJPEG over HTTP
   when switched on). Auto-exposure meters a center-weighted zone grid, so a window behind somebody

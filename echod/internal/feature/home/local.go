@@ -16,7 +16,8 @@ import (
 // adds on its own, lists the stations within 100 km of home and the most popular ones. The lists come
 // over Home Assistant's websocket API with the device's token, and a station plays through
 // media_player.play_media on this device's own player, which Home Assistant resolves and converts.
-// The stations wired with home_radio stay the Favorites list and play exactly as before.
+// The stations wired with home_radio stay the Favorites list and play exactly as before. Music
+// Assistant's library is a list of its own, and stands in for Radio Browser near home (radio_ma.go).
 
 const (
 	// listsEvery is how long a fetched list is kept.
@@ -39,10 +40,12 @@ type radioList struct {
 	at       time.Time
 	err      string
 	busy     bool
+	// via is where the stations came from when not where the list's name says: viaTuneIn.
+	via string
 }
 
 type radioLists struct {
-	local, popular radioList
+	local, popular, ma radioList
 }
 
 // RadioSources are the lists this device can show, in the order the sheet steps through them.
@@ -55,6 +58,9 @@ func RadioSources() []string {
 		out = append(out, config.RadioOwn)
 	}
 	if hass.Get().Ready() {
+		if maRadioOffered() {
+			out = append(out, config.RadioMA)
+		}
 		out = append(out, config.RadioLocal, config.RadioPopular)
 	}
 	return out
@@ -121,6 +127,8 @@ func SourceLabel(source string) string {
 		return "Popular worldwide"
 	case config.RadioOwn:
 		return "On this device"
+	case config.RadioMA:
+		return "Music Assistant"
 	}
 	return source
 }
@@ -131,17 +139,21 @@ func (f *Feature) list(source string) *radioList {
 		return &f.lists.local
 	case config.RadioPopular:
 		return &f.lists.popular
+	case config.RadioMA:
+		return &f.lists.ma
 	}
 	return nil
 }
 
-// fetchList gets a Radio Browser list in the background, unless a fresh one is at hand.
+// fetchList gets a list from Home Assistant in the background, unless a fresh one is at hand.
 func (f *Feature) fetchList(source string) {
 	f.mu.Lock()
 	l := f.list(source)
 	keep := listsEvery
 	if l != nil && l.err != "" {
 		keep = listRetry // the page asks every frame; a failing Home Assistant is not asked that often
+	} else if l != nil && l.via != "" {
+		keep = viaKeep // Radio Browser is asked again before long
 	}
 	if l == nil || l.busy || (!l.at.IsZero() && time.Since(l.at) < keep) {
 		f.mu.Unlock()
@@ -150,27 +162,43 @@ func (f *Feature) fetchList(source string) {
 	l.busy = true
 	f.mu.Unlock()
 	go func() {
-		stations, err := browseStations(source)
+		stations, via, err := browseStations(source)
 		f.mu.Lock()
 		l.busy, l.at = false, time.Now()
 		if err != nil {
 			l.err = err.Error()
-			slog.Warn("radio: listing stations", "list", source, "err", err)
 		} else {
-			l.stations, l.err = stations, ""
-			slog.Info("radio: stations listed", "list", source, "count", len(stations))
+			l.stations, l.err, l.via = stations, "", via
+			slog.Info("radio: stations listed", "list", source, "count", len(stations), "via", via)
 		}
 		f.mu.Unlock()
 		f.Changed.Emit(struct{}{})
 	}()
 }
 
-func browseStations(source string) ([]station, error) {
-	m, err := hass.Get().Browse(context.Background(), "media-source://radio_browser/"+source)
-	if err != nil {
-		return nil, err
+// browseStations is a list's stations, and where they came from when that is not the list's own source.
+func browseStations(source string) ([]station, string, error) {
+	if source == config.RadioMA {
+		stations, err := maLibraryStations()
+		if err != nil {
+			slog.Warn("radio: listing Music Assistant's stations", "err", err)
+		}
+		return stations, "", err
 	}
-	return stationsOf(m, source), nil
+	m, err := hass.Get().Browse(context.Background(), "media-source://radio_browser/"+source)
+	if err == nil {
+		return stationsOf(m, source), "", nil
+	}
+	slog.Warn("radio: listing stations", "list", source, "err", err)
+	if source != config.RadioLocal {
+		return nil, "", errRadioBrowser
+	}
+	stations, tuneErr := tuneInStandIn()
+	if tuneErr != nil {
+		slog.Info("radio: no TuneIn stand-in for the stations near home", "err", tuneErr)
+		return nil, "", errRadioBrowser
+	}
+	return stations, viaTuneIn, nil
 }
 
 // stationsOf is the playable entries of a listing, names tidied, the popular list cut short.
@@ -191,7 +219,8 @@ func stationsOf(m hass.Media, source string) []station {
 	return out
 }
 
-// playListed plays a Radio Browser station by its name in the list shown; false when it is not one.
+// playListed plays a station of a list from Home Assistant by its name in the list shown; false when it is
+// not one. Radio Browser's play on this device's own player, Music Assistant's on this room's player.
 func (f *Feature) playListed(source, name string) bool {
 	f.mu.Lock()
 	l := f.list(source)
@@ -206,6 +235,13 @@ func (f *Feature) playListed(source, name string) bool {
 	if st.ID == "" {
 		f.mu.Unlock()
 		return false
+	}
+	if st.Kind == maKind {
+		// The stream comes over Sendspin, or to another speaker, with its own name: listed is not needed.
+		f.chosen = name
+		f.mu.Unlock()
+		go f.playMA(st)
+		return true
 	}
 	f.chosen, f.listed, f.listedAt = name, name, time.Now()
 	f.mu.Unlock()

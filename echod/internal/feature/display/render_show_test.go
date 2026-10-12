@@ -62,7 +62,18 @@ func TestShowScenesDraw(t *testing.T) {
 				Stations: []string{"KXYZ 101.1", "Jazz Lounge", "Talk at Nine", "Nordic Pop", "No Picture Here"}},
 			logos: map[string]*image.RGBA{"KXYZ 101.1": testCover(192, true), "Jazz Lounge": testCover(192, false),
 				"Talk at Nine": testCover(64, true), "Nordic Pop": testCover(120, false)}},
-		"nowplaying": {now: at, phase: "idle", nowPlaying: true, playing: true, weather: sky,
+		// Music Assistant's stations, one of them playing through it.
+		"drawer-radio-ma": {now: at, phase: "idle", weather: sky, showDrawer: true, drawerTab: drawerRadio,
+			radio: home.Radio{Configured: true, Source: "music_assistant", Sources: 3, Playing: true, Music: true,
+				Now: "Music Assistant", Listed: "Hitradio FFH", Stations: []string{"Radio Paradise", "Hitradio FFH", "SWR3"}},
+			logos: map[string]*image.RGBA{"Radio Paradise": testCover(192, false)}},
+		"drawer-radio-ma-empty": {now: at, phase: "idle", weather: sky, showDrawer: true, drawerTab: drawerRadio,
+			radio: home.Radio{Configured: true, Source: "music_assistant", Sources: 3}},
+		// Radio Browser did not answer, and the stations near home came from TuneIn instead.
+		"drawer-radio-tunein": {now: at, phase: "idle", weather: sky, showDrawer: true, drawerTab: drawerRadio,
+			radio: home.Radio{Configured: true, Source: "local", Sources: 3, Via: "TuneIn",
+				Stations: []string{"Hitradio FFH", "hr3", "YOU FM"}}},
+		"nowplaying":{now: at, phase: "idle", nowPlaying: true, playing: true, weather: sky,
 			radio: home.Radio{Now: "KXYZ 101.1", Title: "Take It Easy", Artist: "Eagles"}},
 		// Music Assistant's track, carried over Sendspin: named, with the three buttons.
 		"nowplaying-music-assistant": {now: at, phase: "idle", nowPlaying: true, playing: true, weather: sky,
