@@ -72,6 +72,10 @@ type paint struct {
 
 	// over is drawing words over a photo (readable.go).
 	over overPhoto
+
+	// sliding is drawing things that slide past the panel's sides, as the drawer's tiles do: their
+	// words are cut by the side with them, not pulled in onto the next one.
+	sliding bool
 }
 
 // s scales a fixed size to this screen. Every size written as a literal in this package is in the
@@ -119,7 +123,7 @@ func (r *paint) text(face font.Face, s string, x, baseline int, c color.Color) {
 	s = inFont(face, i18n.T(s))
 	// Nothing runs off the panel. A line that would, centred wider than the panel or set too far
 	// right, starts inside the edge and is cut there with an ellipsis.
-	if r.w > 0 && s != "" {
+	if r.w > 0 && s != "" && !r.sliding {
 		if w := r.width(face, s); x < 0 || x+w > r.w {
 			edge := r.s(textEdge)
 			x = max(x, edge)

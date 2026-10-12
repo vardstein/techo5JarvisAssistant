@@ -129,6 +129,8 @@ func (r *renderer) shelf(s scene) int {
 
 	shelf := image.Rect(0, band, r.w, r.h)
 	from := len(r.pending)
+	r.sliding = true
+	defer func() { r.sliding = false }()
 	for i, row := range tiles {
 		left := x0 + i*step - scroll
 		if left >= r.w || left+art <= 0 {
