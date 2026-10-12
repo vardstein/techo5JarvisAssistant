@@ -29,6 +29,7 @@ type musicHAFake struct {
 	mu     sync.Mutex
 	states map[string]hass.State
 	calls  []musicServiceCall
+	queue  map[string]any // what get_queue answers for the player, when a test sets it
 }
 
 func newMusicHAFake() *musicHAFake {
@@ -105,6 +106,13 @@ func (f *musicHAFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		if parts[0] == "music_assistant" && parts[1] == "get_queue" {
 			entity, _ := data["entity_id"].(string)
+			f.mu.Lock()
+			queue := f.queue
+			f.mu.Unlock()
+			if queue != nil {
+				_ = json.NewEncoder(w).Encode(map[string]any{"service_response": map[string]any{entity: queue}})
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"service_response": map[string]any{
 					entity: map[string]any{"next_item": map[string]any{"name": "Next Track"}},

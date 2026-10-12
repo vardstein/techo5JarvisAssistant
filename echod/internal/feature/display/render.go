@@ -193,6 +193,8 @@ type scene struct {
 	// is the star having been pressed for what is playing.
 	strip bool
 	faved bool
+	// favNote is what the last press of the star did, said under it for a moment.
+	favNote string
 	// pressed is a music button just pressed, drawn lit so the finger sees it land.
 	pressed image.Rectangle
 

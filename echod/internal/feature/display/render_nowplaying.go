@@ -156,6 +156,7 @@ func (r *renderer) nowPlaying(s scene) {
 	// One row: the star, back, play or pause, forward, and stop. Sendspin routes these back to Music
 	// Assistant, so the page controls the real queue/group rather than a local shadow player.
 	_, back, play, next, stop := r.nowPlayingButtons()
+	defer r.favNotePill(s)
 	defer r.pressLight(s.pressed)
 	if ink.bare {
 		r.bareButtons(s, fav, back, play, next, stop)
@@ -271,6 +272,44 @@ func (r *renderer) glassPill(b image.Rectangle, page nowInk) {
 	mid := (y0 + y1) / 2
 	r.roundFillF(x0+rim, y0+rim, x1-rim, mid+rad/2, rad-rim, lerp(under, white, 0.17))
 	r.roundFillF(x0+rim, mid, x1-rim, y1-rim, rad-rim, lerp(under, white, 0.12))
+}
+
+// favNotePill says what a press of the star did, as the Car Thing said "Saved to Your Library": a
+// dark pill across the foot of the cover, clear of the library button, with the star lit when the
+// song was saved. The cover is the one place on the page with nothing to read under it.
+func (r *renderer) favNotePill(s scene) {
+	if s.favNote == "" {
+		return
+	}
+	cover, _ := r.nowPlayingLayout()
+	in, h := r.s(12), r.s(42)
+	left, right, bottom := cover.Min.X+in, cover.Max.X-in, cover.Max.Y-in
+	mark := 0
+	if s.faved {
+		mark = r.s(30)
+	}
+	pad := r.s(18)
+	need := r.width(r.small, s.favNote) + 2*pad + mark
+	// Beside the books when it fits there, else a row above them across the cover.
+	if lib := r.libraryButton(); s.library && need > lib.Min.X-in-left {
+		bottom = lib.Min.Y - r.s(8)
+	} else if s.library {
+		right = lib.Min.X - in
+	}
+	// A size down before any of it is cut: the longer languages run past the cover at full size.
+	face, base := r.small, r.s(31)
+	if r.width(face, s.favNote) > right-left-2*pad-mark {
+		face, base = r.tiny, r.s(29)
+	}
+	text := r.fit(face, s.favNote, right-left-2*pad-mark)
+	w := min(r.width(face, text)+2*pad+mark, right-left)
+	x := left + (right-left-w)/2
+	b := image.Rect(x, bottom-h, x+w, bottom)
+	r.roundFillF(float64(b.Min.X), float64(b.Min.Y), float64(b.Max.X), float64(b.Max.Y), float64(h)/2, lerp(r.pixel(b), color.RGBA{A: 255}, 0.72))
+	if mark > 0 {
+		r.aaStar(float64(b.Min.X+pad+r.s(10)), float64(b.Min.Y+b.Max.Y)/2, float64(r.s(11)), amber)
+	}
+	r.text(face, text, b.Min.X+pad+mark, b.Min.Y+base, white)
 }
 
 // libraryButton is the button for Music Assistant's own pages (the library, the queue, the groups): a
