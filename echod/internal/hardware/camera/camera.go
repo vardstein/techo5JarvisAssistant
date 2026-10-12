@@ -665,7 +665,10 @@ func (d *device) stream(stop chan struct{}, frame func(bayer []byte)) {
 		}
 		t := time.Now()
 		frame(d.buf[done*frameBytes : (done+1)*frameBytes])
-		tk.took(time.Since(t), d.shutter, d.gain)
+		if tk.took(time.Since(t), d.shutter, d.gain) {
+			fps, line, frame, _ := d.rate()
+			slog.Info("camera mode now", "fps", fps, "line_length", line, "frame_length", frame)
+		}
 	}
 }
 
@@ -677,7 +680,8 @@ type tickStats struct {
 	work, most    time.Duration
 }
 
-func (tk *tickStats) took(work time.Duration, shutter, gain int) {
+// took books one frame's work and says whether it just logged.
+func (tk *tickStats) took(work time.Duration, shutter, gain int) bool {
 	tk.frames++
 	tk.work += work
 	tk.most = max(tk.most, work)
@@ -689,7 +693,9 @@ func (tk *tickStats) took(work time.Duration, shutter, gain int) {
 			"work_max_ms", float64(tk.most.Microseconds())/1000,
 			"shutter", shutter, "gain", gain)
 		*tk = tickStats{from: time.Now()}
+		return true
 	}
+	return false
 }
 
 // tickEvery is how often a running sensor reports, the same as the stream does.
