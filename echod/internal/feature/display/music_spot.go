@@ -336,6 +336,10 @@ func shortSource(src string) string {
 		return "Local"
 	case "popular":
 		return "Popular"
+	case "music_assistant":
+		return "Music"
+	case "own":
+		return "Mine"
 	}
 	return "Favorites"
 }

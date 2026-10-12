@@ -306,7 +306,7 @@ Then:
 
 ## Radio
 
-There are three places a station can come from. Any of them works on its own.
+There are four places a station can come from. Any of them works on its own.
 
 **1. Radio Browser (needs the Home Assistant token).** On a Show, swipe in from the right edge of
 the clock and choose Radio; on a Spot, turn the dial to Radio. The device lists stations near home
@@ -314,7 +314,20 @@ and popular ones, from the Radio Browser integration Home Assistant sets up by i
 missing, add it under Devices & services. "Near home" is worked out from the location set in Home
 Assistant, so set that if the list looks like somebody else's country.
 
-**2. Stations kept on the device (needs nothing at all).** Open the setup page (Settings, Privacy,
+  When Radio Browser does not answer (its servers are down now and then), the stations near home come
+  from TuneIn instead, if Music Assistant has TuneIn added and the device has its Music Assistant token
+  (the `music_assistant` action). The list then says "Local stations, from TuneIn". Without either,
+  the page says Radio Browser is not answering, and Music Assistant's own list below still plays.
+
+**2. Music Assistant (needs the Home Assistant token and the Music Assistant integration).** When Home
+Assistant has Music Assistant, Radio gets a "Music Assistant" list: the radio stations in its library,
+starred ones first. That is whatever you added there: TuneIn's presets once TuneIn is added as a
+provider, Radio Browser stations, or a stream added by hand. Nothing on the device has to know the
+Music Assistant server for this; the list comes through Home Assistant, and a station plays through
+Music Assistant on the room's player, the way a song does, so it follows the room's output and groups.
+A station playing that way is marked "Playing now" in the list.
+
+**3. Stations kept on the device (needs nothing at all).** Open the setup page (Settings, Privacy,
 Setup page) and add a station as a name and the address of its stream. The device plays these
 itself, so they work with Home Assistant switched off, which is the point of them. Only an `http` or
 `https` address is kept. They appear under Radio as "On this device", beside the lists that need
@@ -323,7 +336,7 @@ Home Assistant.
   On a Dot these can be typed on the setup page but not yet started: the radio page belongs to the
   screen, and a Dot has none. Ask it for music through Home Assistant until that is fixed.
 
-**3. Your own favorites in Home Assistant.** If you already have an input_select of stations and a
+**4. Your own favorites in Home Assistant.** If you already have an input_select of stations and a
 script that plays one, wire them up with the `esphome.<device>_home_radio` action:
 
 | Argument | What it is |

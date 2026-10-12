@@ -123,9 +123,9 @@ func (f *Feature) fetchLogos() {
 	})
 }
 
-// listedThumb is the picture Radio Browser's lists give for name, if they list it. f.mu is held.
+// listedThumb is the picture the lists from Home Assistant give for name, if they list it. f.mu is held.
 func (f *Feature) listedThumb(name string) string {
-	for _, l := range []*radioList{&f.lists.local, &f.lists.popular} {
+	for _, l := range []*radioList{&f.lists.ma, &f.lists.local, &f.lists.popular} {
 		for _, st := range l.stations {
 			if st.Name == name && st.Thumb != "" {
 				return st.Thumb

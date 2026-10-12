@@ -53,6 +53,10 @@ type MusicPlaybackView struct {
 	// there, which taking it out again needs. Both from the queue, so a poll behind a new song.
 	Favorite bool
 	TrackURI string
+	// Station and StationURI are the radio station Music Assistant is playing, by its queue, when it is
+	// one: what lets the radio page mark the station of its list that plays.
+	Station    string
+	StationURI string
 
 	// PositionAt is when Position was true; a playing song has moved on since.
 	PositionAt time.Time
@@ -459,6 +463,7 @@ func (f *Feature) musicPlaybackTick() {
 		time.Since(musicPlayback.queueAt) >= 15*time.Second
 	if !needQueue {
 		view.Next, view.Favorite, view.TrackURI = musicPlayback.view.Next, musicPlayback.view.Favorite, musicPlayback.view.TrackURI
+		view.Station, view.StationURI = musicPlayback.view.Station, musicPlayback.view.StationURI
 	}
 	musicPlayback.Unlock()
 	var song *queueSong
@@ -466,6 +471,7 @@ func (f *Feature) musicPlaybackTick() {
 		if next, cur, err := musicQueue(active); err == nil {
 			view.Next, song = next, &cur
 			view.Favorite, view.TrackURI = cur.Favorite, cur.URI
+			view.Station, view.StationURI = cur.Station, cur.StationURI
 			musicPlayback.Lock()
 			musicPlayback.queueFor, musicPlayback.queueAt = active, time.Now()
 			musicPlayback.Unlock()
@@ -516,6 +522,9 @@ func musicQueue(entity string) (next string, cur queueSong, err error) {
 			// The bare song name, as the player reports it in media_title; the queue's own name has
 			// the artist in front.
 			cur.Name = strings.TrimSpace(c.MediaItem.Name)
+			if c.MediaItem.MediaType == "radio" {
+				cur.Station, cur.StationURI = cur.Name, c.MediaItem.URI
+			}
 			if c.MediaItem.MediaType == "track" {
 				cur.URI, cur.Favorite = c.MediaItem.URI, c.MediaItem.Favorite
 			}
