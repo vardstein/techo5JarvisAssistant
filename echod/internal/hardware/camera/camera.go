@@ -948,7 +948,9 @@ func renderNV12(raw []byte, t tone, yp, uv []byte, stride int) {
 		k.lp, k.lq = k.lq, k.lp
 		k.wp, k.cbp, k.crp, k.wq, k.cbq, k.crq = k.wq, k.cbq, k.crq, k.wp, k.cbp, k.crp
 	}
-	n := min(runtime.NumCPU(), renderBands)
+	// GOMAXPROCS, not NumCPU: the kernel hotplugs cores, NumCPU counts the ones online when the
+	// daemon started, and setup sizes GOMAXPROCS to all that are present.
+	n := min(runtime.GOMAXPROCS(0), renderBands)
 	if n < 2 {
 		renderNV12Rows(raw, &k, yp, uv, stride, 0, Height)
 		return
