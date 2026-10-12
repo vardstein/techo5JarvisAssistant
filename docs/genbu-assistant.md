@@ -152,6 +152,11 @@ among our signed releases, but cannot push its own files.
   ([blog](https://developers.home-assistant.io/blog/2026/02/24/brands-proxy-api)), so a new icon is just new
   files there: `icon.png` 256×256, `@2x` 512×512, and a `dark_` pair for each. The brands rules say a
   custom integration must not look like an official Home Assistant one.
+- **The icon stays.** Jade only meant the name. The tortoise and snake already has a dark pair: Home Assistant
+  shows the teal snake on a light theme and the silver one on a dark theme. A browser add-on like Dark Reader
+  only recolors the page and does not switch Home Assistant's theme, so the teal one stays there. The dark one
+  shows with Profile › Theme › Dark, or with "Auto" when the system is dark. (Checked on the live 1.3.0, both
+  files served and rendered.)
 
 ## 3. Everything in one place
 
@@ -192,3 +197,4 @@ Jade's answers on 2026-10-12:
 - **Updates (§1): yes, as proposed**, plus: make the card like Home Assistant Core's (release notes, backup
   before updating), let people switch channels, and make spoken update requests work by meaning, not fixed
   sentences. All three are written into §1.
+- **Name and icon (§2): name only.** "Genbu Assistant"; the tortoise and snake icon stays as it is.
