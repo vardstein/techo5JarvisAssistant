@@ -43,6 +43,8 @@ comes back under its new node name and stays main.
 
 1. Copy `ha/custom_components/genbu/` to `/config/custom_components/genbu/` on Home Assistant (the File
    editor or Samba add-on will do), and restart Home Assistant.
+   The folder brings the Genbu mark along in `brand/`; Home Assistant 2026.3 and later shows it in
+   Devices & services (older versions show a blank tile, nothing else changes).
 2. **Settings → Devices & services → Add integration → Genbu.** It lists the Shows it found, with their
    versions. Pick the main update Show, or leave it empty and pick it later in
    `select.genbu_main_update_show`. Until a main is picked, the Shows stay where they are, and Repairs
