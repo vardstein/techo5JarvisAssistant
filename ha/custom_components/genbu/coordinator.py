@@ -37,13 +37,14 @@ from .const import (CHANGED, CONF_SEARXNG, DOMAIN, MANUFACTURERS, NAME, NIGHT_AT
                     STORE_KEY, STORE_VERSION, UPDATE_ENTITY, VOICE_UPDATES)
 from .house import House, Show, manifest_url, newer, tag_url, valid
 from .keycare import ISSUE, KeyCare
-from .music import Player, falls_back_to, own_player, plays_on, room_player
+from .music import Player, falls_back_to, own_player, plays_on, room_player, route
 from .recipe import show_action
 
 LOGGER = logging.getLogger(__name__)
 LOOK_EVERY = timedelta(minutes=1)
 READ_EVERY = timedelta(hours=6)  # the channel's manifest
 SETTLE = timedelta(minutes=30)  # how long after an install the card shows how far the Shows are
+TELL_EVERY = timedelta(hours=1)  # how often a Show mentions a speaker that is off (GENBU-161)
 
 
 def find_shows(hass: HomeAssistant) -> list[Show]:
@@ -177,6 +178,8 @@ class GenbuHouse:
         self.players: list[Player] = []
         self.music: dict[str, str] = {}  # where each Show's music plays, by device id
         self.fallback: dict[str, str] = {}  # where it goes when that player is offline, by device id
+        # When each Show last said a speaker was off and it played elsewhere, by (device id, player).
+        self.told: dict[tuple[str, str], datetime] = {}
         self.cooking: set[str] = set()  # the Shows looking a recipe up right now, by device id
         self.had_search = False  # whether a recipe search was set up when the entry was
         self.release: dict = {}  # the channel's newest manifest, {} until it was read
@@ -425,9 +428,32 @@ class GenbuHouse:
         return (by.get(room_player(show.area, self.players)),
                 by.get(own_player([show.name, show.node], self.players, show.mac)))
 
+    def music_route(self, asker: str = "", player: str = "") -> dict:
+        """genbu.music_route: where music asked for on a Show (asker, its device or satellite) plays now,
+        as facts, with tell when the voice should mention the speakers passed over: the first time, and
+        then at most once an hour (GENBU-161). A named player works without a Show, which then has no
+        Show to offer instead. {} with neither."""
+        show = next((s for s in self.shows if asker and asker in (s.device, s.satellite)), None)
+        if show is None and not player:
+            return {}
+        if show is None:
+            return {**route("", "", [], self.players, asked=player), "tell": False}
+        facts = route(self.house.music_choice(show.device), show.area, [show.name, show.node], self.players,
+                      show.mac, player)
+        now, tell = dt_util.utcnow(), False
+        for p in facts["skipped"]:
+            key = (show.device, p["player"])
+            if key not in self.told or now - self.told[key] >= TELL_EVERY:
+                self.told[key], tell = now, True
+        facts["tell"] = tell
+        return facts
+
     async def async_refresh(self) -> None:
         self.shows = find_shows(self.hass)
         self.players = find_players(self.hass)
+        # A speaker that is back is mentioned again the next time it is off.
+        up = {p.entity for p in self.players if p.available}
+        self.told = {k: t for k, t in self.told.items() if k[1] not in up}
         self.music = {s.device: plays_on(self.house.music_choice(s.device), s.area, [s.name, s.node],
                                          self.players, s.mac) for s in self.shows if s.device}
         self.fallback = {s.device: falls_back_to(self.house.music_choice(s.device), s.area, [s.name, s.node],

@@ -5,7 +5,9 @@ as they are. main_missing_since is always empty. update_waiting is the house upd
 nobody skipped; update_asks is the one Show that asks about it out loud, so not every room asks at once.
 
 music_players is where music asked for at each Show plays, by the Show's device id and by its
-assist_satellite, for the music automation and scripts the installer makes.
+assist_satellite, for the music automation and scripts the installer makes. music_route is there while
+genbu.music_route is (1.4.3, GENBU-161), so those scripts ask it only where it is: an action Home Assistant
+doesn't know stops a script even with continue_on_error.
 
 And for each Show, "Music falls back to": where its music goes when the player it plays on now is
 offline. On the Show's genbu device, next to its "Music plays on" select.
@@ -78,6 +80,7 @@ class HouseVersion(SensorEntity):
             "music_players": {key: player for s in self.hub.shows
                               if (player := self.hub.music.get(s.device))
                               for key in (s.device, s.satellite) if key},
+            "music_route": True,
         }
         self.async_write_ha_state()
 

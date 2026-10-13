@@ -541,3 +541,122 @@ async def test_the_english_alarm_reads_the_time_as_it_is_spoken(hass: HomeAssist
         ("12 am", (None, "00:00")),
     ]:
         assert await heard(when) == want, when
+
+
+async def test_music_route_tells_about_an_off_speaker_once_an_hour(hass: HomeAssistant):
+    """GENBU-161: the room's speaker is off, so the music plays on the Show, and that is said the first
+    time and then at most once an hour."""
+    living = player(hass, "livingroom", "Wohnzimmer", "Living Room")
+    own = player(hass, "genbushow5", "Jarvis Show 5", maker="OpenJade")
+    device, sat = show(hass, "genbushow5", "Living Room")
+    await setup(hass)
+    hub = hass.config_entries.async_entries(DOMAIN)[0].runtime_data
+    assert hass.states.get("sensor.genbu_house_version").attributes["music_route"] is True
+
+    async def ask(**data) -> dict:
+        return await hass.services.async_call(DOMAIN, "music_route", data, blocking=True, return_response=True)
+
+    assert await ask(show=sat) == {"plays_on": living, "name": "Wohnzimmer", "own": False, "skipped": [],
+                                   "tell": False}
+    await flip(hass, living, "unavailable", "Wohnzimmer")
+    first = await ask(show=device)
+    assert (first["plays_on"], first["name"], first["own"], first["tell"]) == (own, "Jarvis Show 5", True, True)
+    assert first["skipped"] == [{"player": living, "name": "Wohnzimmer", "why": "offline"}]
+    assert (await ask(show=sat))["tell"] is False  # not on every request
+    hub.told[(device, living)] -= timedelta(hours=1)
+    assert (await ask(show=sat))["tell"] is True  # an hour later, once more
+    assert (await ask(show=sat))["tell"] is False
+
+    # Back and off again: said again the next time.
+    await flip(hass, living, "idle", "Wohnzimmer")
+    assert hub.told == {}
+    await flip(hass, living, "unavailable", "Wohnzimmer")
+    assert (await ask(show=sat))["tell"] is True
+
+    # A speaker somebody named that is off: nothing plays, and the Show is offered.
+    named = await ask(show=sat, player=living)
+    assert named["plays_on"] == ""
+    assert named["asked_off"] == {"player": living, "name": "Wohnzimmer", "why": "offline"}
+    assert named["offer"] == {"player": own, "name": "Jarvis Show 5"}
+    assert await ask() == {}
+
+
+async def test_the_local_music_says_once_that_the_speaker_is_off(hass: HomeAssistant):
+    from homeassistant.components import conversation
+    from homeassistant.core import Context, SupportsResponse
+    from homeassistant.setup import async_setup_component
+    from pytest_homeassistant_custom_component.common import async_mock_service
+
+    living = player(hass, "livingroom", "Wohnzimmer", "Living Room")
+    own = player(hass, "genbushow5", "Jarvis Show 5", maker="OpenJade")
+    device, _ = show(hass, "genbushow5", "Living Room")
+    await setup(hass)
+    hub = hass.config_entries.async_entries(DOMAIN)[0].runtime_data
+    started = async_mock_service(hass, "script", "play_random_music", supports_response=SupportsResponse.OPTIONAL,
+                                 response={"success": True, "title": "Yesterday", "artist": "",
+                                           "message": "Spiele Yesterday."})
+    house = voice_kit.House(german=True, english=True, music_entry="ma", players=[living, own])
+    assert await async_setup_component(hass, "homeassistant", {})
+    assert await async_setup_component(hass, "conversation", {})
+    assert await async_setup_component(hass, "automation", {"automation": [
+        {"id": "jarvis_local_random_music", **voice_kit.local_music(house)},
+        {"id": "jarvis_local_random_music_en", **voice_kit.local_music_en(house)}]})
+    await hass.async_block_till_done()
+
+    async def say(text: str, language: str = "de") -> str:
+        r = await conversation.async_converse(hass, text, None, Context(), language=language, device_id=device)
+        return r.response.speech["plain"]["speech"]
+
+    assert await say("Spiel Musik") == "Spiele Yesterday."
+    await flip(hass, living, "unavailable", "Wohnzimmer")
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=3))  # the look the request held back
+    await hass.async_block_till_done()
+    assert await say("Spiel Musik") == "Wohnzimmer ist gerade aus, deshalb spiele ich hier. Spiele Yesterday."
+    assert await say("Spiel Musik") == "Spiele Yesterday."
+    assert await say("Play some music", "en") == "Playing Yesterday and similar songs."
+    hub.told[(device, living)] -= timedelta(hours=1)
+    assert await say("Play some music", "en") == ("Wohnzimmer is off right now, so I'm playing here. "
+                                                  "Playing Yesterday and similar songs.")
+    assert [c.data["player"] for c in started] == [living, own, own, own, own]
+
+
+async def test_the_music_scripts_carry_the_speaker_facts(hass: HomeAssistant):
+    """What the model is handed: where the music went and whether to mention the speaker that is off; a
+    speaker it named that is off plays nothing and the Show is offered."""
+    from homeassistant.core import SupportsResponse
+    from homeassistant.setup import async_setup_component
+    from pytest_homeassistant_custom_component.common import async_mock_service
+
+    living = player(hass, "livingroom", "Wohnzimmer", "Living Room")
+    own = player(hass, "genbushow5", "Jarvis Show 5", maker="OpenJade")
+    _, sat = show(hass, "genbushow5", "Living Room")
+    await setup(hass)
+    async_mock_service(hass, "music_assistant", "get_library", supports_response=SupportsResponse.OPTIONAL,
+                       response={"items": [{"uri": "library://track/1", "name": "Yesterday",
+                                            "artists": [{"name": "The Beatles"}]}]})
+    played = async_mock_service(hass, "test", "played")
+    house = voice_kit.House(german=True, music_entry="ma", players=[living, own])
+    assert await async_setup_component(hass, "script", {"script": {
+        "play_random_music": voice_kit.play_random(house),
+        "jarvis_music_start": {"sequence": [{"action": "test.played", "data": {"player": "{{ player }}"}}]}}})
+    await hass.async_block_till_done()
+    await flip(hass, living, "unavailable", "Wohnzimmer")
+    hass.states.async_set(sat, "processing")  # the Show that asked is the one working on it
+
+    async def play(**data) -> dict:
+        r = await hass.services.async_call("script", "play_random_music", data, blocking=True, return_response=True)
+        await hass.async_block_till_done()
+        return r
+
+    r = await play()
+    assert r["success"] is True
+    assert r["speaker"]["tell"] is True and r["speaker"]["own"] is True
+    assert [s["name"] for s in r["speaker"]["skipped"]] == ["Wohnzimmer"]
+    assert [c.data["player"] for c in played] == [own]
+    assert (await play())["speaker"]["tell"] is False
+
+    r = await play(player=living)
+    assert r["success"] is False
+    assert r["message"] == "Wohnzimmer ist gerade nicht erreichbar."
+    assert r["speaker"]["offer"]["player"] == own
+    assert len(played) == 2

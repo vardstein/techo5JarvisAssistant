@@ -113,6 +113,49 @@ class FallsBackToTests(unittest.TestCase):
         self.assertEqual(music.falls_back_to("", "living_room", ["x"], [LIVING]), "")
 
 
+class RouteTests(unittest.TestCase):
+    """GENBU-161: where the music goes, as facts the assistant words itself."""
+
+    OFF = Player(LIVING.entity, LIVING.name, area="living_room", maker="Arylic", available=False)
+
+    def test_the_rooms_speaker_up_skips_nothing(self):
+        self.assertEqual(music.route("", "living_room", ["Jarvis Show 5"], [LIVING, SHOW5]),
+                         {"plays_on": LIVING.entity, "name": "Wohnzimmer", "own": False, "skipped": []})
+
+    def test_an_offline_room_speaker_is_skipped_for_the_show(self):
+        self.assertEqual(music.route("", "living_room", ["Jarvis Show 5"], [self.OFF, SHOW5]),
+                         {"plays_on": SHOW5.entity, "name": "Jarvis Show 5", "own": True,
+                          "skipped": [{"player": LIVING.entity, "name": "Wohnzimmer", "why": "offline"}]})
+
+    def test_an_offline_pick_is_skipped_for_the_rooms_speaker(self):
+        kitchen = Player("media_player.kitchen", "Küche", area="kitchen", available=False)
+        r = music.route(kitchen.entity, "living_room", ["Jarvis Show 5"], [kitchen, LIVING, SHOW5])
+        self.assertEqual((r["plays_on"], r["own"], [s["player"] for s in r["skipped"]]),
+                         (LIVING.entity, False, [kitchen.entity]))
+
+    def test_all_offline_plays_nowhere_and_says_which(self):
+        show = Player(SHOW5.entity, SHOW5.name, area="living_room", maker="OpenJade", device_name="Jarvis Show 5",
+                      available=False)
+        r = music.route("", "living_room", ["Jarvis Show 5"], [self.OFF, show])
+        self.assertEqual((r["plays_on"], r["own"], [s["player"] for s in r["skipped"]]),
+                         ("", False, [LIVING.entity, SHOW5.entity]))
+
+    def test_a_named_speaker_that_is_off_offers_the_show(self):
+        r = music.route("", "living_room", ["Jarvis Show 5"], [self.OFF, SHOW5], asked=LIVING.entity)
+        self.assertEqual(r["plays_on"], "")
+        self.assertEqual(r["asked_off"], {"player": LIVING.entity, "name": "Wohnzimmer", "why": "offline"})
+        self.assertEqual(r["offer"], {"player": SHOW5.entity, "name": "Jarvis Show 5"})
+
+    def test_a_named_speaker_that_is_up_plays_there(self):
+        r = music.route("", "bedroom", ["Jarvis Show 5"], [LIVING, SHOW5], asked=LIVING.entity)
+        self.assertEqual(r, {"plays_on": LIVING.entity, "name": "Wohnzimmer", "own": False, "skipped": []})
+
+    def test_a_named_speaker_off_without_a_show_offers_nothing(self):
+        r = music.route("", "", [], [self.OFF], asked=LIVING.entity)
+        self.assertIn("asked_off", r)
+        self.assertNotIn("offer", r)
+
+
 class HouseMusicTests(unittest.TestCase):
     def test_a_pick_is_kept_and_automatic_forgets_it(self):
         h = house.House()

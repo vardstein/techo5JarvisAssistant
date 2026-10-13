@@ -85,6 +85,20 @@
         }
       }
     },
+    "music_route": {
+      "name": "Where music plays",
+      "description": "What the voice kit asks before it plays music: where music asked for on a Show plays right now, which speakers were passed over because they are off, and whether the Show should mention them (the first time, then at most once an hour).",
+      "fields": {
+        "show": {
+          "name": "Show",
+          "description": "The Show's device or its voice satellite."
+        },
+        "player": {
+          "name": "Speaker",
+          "description": "A speaker somebody named. When it is off, nothing plays and the Show itself is offered instead."
+        }
+      }
+    },
     "show_key": {
       "name": "Give a Show a new key",
       "description": "Admins only. Makes a new Home Assistant key for the Show's user, and a user first if it has none (no admin, home only), and hands the key to the Show over its encrypted ESPHome connection. The user's old keys are deleted once the Show has stored the new one. The installer calls this.",

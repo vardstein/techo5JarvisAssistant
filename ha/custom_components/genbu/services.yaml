@@ -12,6 +12,19 @@ install_updates:
       example: kitchen-show
       selector:
         text:
+music_route:
+  fields:
+    show:
+      required: false
+      selector:
+        device:
+          integration: esphome
+    player:
+      required: false
+      selector:
+        entity:
+          integration: music_assistant
+          domain: media_player
 show_key:
   fields:
     node:

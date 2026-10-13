@@ -28,13 +28,16 @@ except ImportError:
 
 from . import claims
 from .const import (CARDS, CONF_SEARXNG, DOMAIN, FRESH, MANUFACTURERS, NAME, OLD_NAME, OLD_RECIPES, PANEL, PANEL_FILES,
-                    PANEL_TITLE, SERVICE_FORGET, SERVICE_INSTALL, SERVICE_SHOW_KEY, STORE_KEY, STORE_VERSION)
+                    PANEL_TITLE, SERVICE_FORGET, SERVICE_INSTALL, SERVICE_MUSIC_ROUTE, SERVICE_SHOW_KEY, STORE_KEY,
+                    STORE_VERSION)
 from .coordinator import GenbuHouse, unhide
 from .keycare import KeyRefused
 
 PLATFORMS = [Platform.SENSOR, Platform.SELECT, Platform.SWITCH, Platform.UPDATE]
 FORGET_SCHEMA = vol.Schema({vol.Required("node"): cv.string})
 INSTALL_SCHEMA = vol.Schema({vol.Optional("except_node", default=""): cv.string})
+MUSIC_ROUTE_SCHEMA = vol.Schema({vol.Optional("show", default=""): cv.string,
+                                 vol.Optional("player", default=""): cv.string})
 SHOW_KEY_SCHEMA = vol.Schema({vol.Required("node"): cv.string, vol.Optional("url", default=""): cv.string})
 
 
@@ -61,6 +64,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return await _install_updates(hass, call)
         hass.services.async_register(DOMAIN, SERVICE_INSTALL, install, schema=INSTALL_SCHEMA,
                                      supports_response=SupportsResponse.OPTIONAL)
+    if not hass.services.has_service(DOMAIN, SERVICE_MUSIC_ROUTE):
+        async def music_route(call: ServiceCall) -> ServiceResponse:
+            return _music_route(hass, call)
+        hass.services.async_register(DOMAIN, SERVICE_MUSIC_ROUTE, music_route, schema=MUSIC_ROUTE_SCHEMA,
+                                     supports_response=SupportsResponse.ONLY)
     if not hass.services.has_service(DOMAIN, SERVICE_SHOW_KEY):
         async def show_key(call: ServiceCall) -> ServiceResponse:
             return await _show_key(hass, call)
@@ -74,6 +82,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_remove(DOMAIN, SERVICE_FORGET)
     hass.services.async_remove(DOMAIN, SERVICE_INSTALL)
+    hass.services.async_remove(DOMAIN, SERVICE_MUSIC_ROUTE)
     hass.services.async_remove(DOMAIN, SERVICE_SHOW_KEY)
     if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         return False
@@ -187,6 +196,18 @@ async def _install_updates(hass: HomeAssistant, call: ServiceCall) -> ServiceRes
     if entry is None:
         raise ServiceValidationError("Genbu is not running")
     return await entry.runtime_data.async_install_updates(call.data.get("except_node", ""))
+
+
+def _music_route(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
+    """genbu.music_route {show, player}: where music asked for on a Show plays now, the speakers passed
+    over because they are off, and whether to mention them (GENBU-161). show is the Show's device or
+    satellite; player, a speaker somebody named. Only looks things up, which any user sees in the states
+    anyway, so it is no admin action."""
+    entry = next((e for e in hass.config_entries.async_entries(DOMAIN) if e.state is ConfigEntryState.LOADED),
+                 None)
+    if entry is None:
+        raise ServiceValidationError("Genbu is not running")
+    return entry.runtime_data.music_route(call.data.get("show", "").strip(), call.data.get("player", "").strip())
 
 
 async def _show_key(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
