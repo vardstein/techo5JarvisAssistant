@@ -1,14 +1,16 @@
 # Board catalogue
 
-GENBU-163. Design for a small board catalogue in the shape oddc uses, and the first slice of it.
+GENBU-163. Design for a small board catalogue in the shape oddc uses. Slices a (the catalogue) and b
+(the installer reads it) are done; the rest is below under "Migration, in order".
 What is proven, what is only claimed and what nobody knows yet is in
 [board-catalogue-evidence.md](board-catalogue-evidence.md). Read that before trusting any value here.
 
 ## Why
 
-Today the same board facts live in several places, and nothing keeps them equal:
+Before GENBU-163 the same board facts lived in several places, and nothing kept them equal. Stage b
+removed the installer's copies; the rest are under "Next owners to fold in".
 
-| Fact | Owners today |
+| Fact | Owners before GENBU-163 |
 |---|---|
 | Which boards exist | `tools/jarvis_crown/boards.py` `PROFILES`, `install.py` `SUPPORTED_BOARDS`, `tools/install-show.py:74` `BOARDS`, `echod/internal/update/manifest.go:88` `supportedBoards`, `echod/internal/layout/device_cronos.go`, `profiles/genbu-show-v1.json` `boards` |
 | Screen size | `boards.py`, `profiles/<board>-v1.json`, `dashcast/serve.go:86-89` (crown and checkers only; cronos falls through to the default) |
@@ -23,7 +25,8 @@ The catalogue gives each fact one owner. Code reads the resolved values and neve
 
 - One owner per fact. A board names shared things (assets) by id and never copies them.
 - No inheritance and no defaults. A missing value stays missing, and whoever needs it refuses.
-- Exact match or refuse. No case folding, no "closest board", no generic fallback board.
+- Exact match or refuse. No case folding, no "closest board", no generic fallback board. (One exception
+  is left on purpose for now: the installer's two lookups still fold case, see open question Q8.)
 - Policy fields take values from closed sets. An unknown value is an error, not a warning.
 - Behaviour comes from policy or quirk data, never from a hardware fact ("has a camera, so turn it on").
 - The resolver is Python and runs on the PC. The Show only reads the resolved file.
@@ -34,12 +37,38 @@ The catalogue gives each fact one owner. Code reads the resolved values and neve
 
 ```
 catalogue/
+  products/<product>.json one per product, file name = id
   boards/<board>.json     one per board, file name = id
   assets/<asset>.json     one per file you download and pin, file name = id
 ```
 
-There's no product entity in the catalogue yet. `profiles/genbu-show-v1.json` stays the product for now
-and lists the boards it ships on; boards never point back at the product. Moving it in is part of step b.
+Every board and asset may carry `notes`, free text for people: review history, why a pin is or isn't
+there. Code never reads it. The review comments that used to sit next to the pins in `assets.py`,
+`install.py`, `recovery.py`, `unlock.py` and `boards.py` live there now.
+
+### Product entity
+
+```json
+{
+  "id": "genbu-show-v1",
+  "version": 1,
+  "boards": ["crown", "checkers", "cronos"],
+  "assistant": { "...": "..." },
+  "display": { "...": "..." },
+  "security": { "...": "..." },
+  "music": { "...": "..." }
+}
+```
+
+The product lists the boards it ships on, and boards never point back at it. A board no product lists is
+an error. `boards` order is the order the installer offers them in. The four blocks are the product
+settings that `profiles/genbu-show-v1.json` held; the checker only makes sure each is a non-empty object.
+The id is also what the rootfs marker calls "product" (`install.PROFILE_ID`), and `mkrootfs.sh`,
+`techo5lib.py`, `release-jarvis-show.sh` and echod's `manifest.go` each spell `genbu-show-v1` themselves,
+so it can't be renamed in the catalogue alone.
+
+Exactly one product exists today. `Catalogue.product()` refuses if there are none or several, so a second
+product needs a decision about how the installer picks, not a silent first-one-wins.
 
 ### Board entity
 
@@ -127,15 +156,18 @@ order; the catalogue only feeds them parameters.
 | validate-install-inputs | no | `assets.boot`, `assets.lineage`, `display` |
 | stage-lineage, install | **yes** | `assets.boot`, `assets.lineage` |
 
-The confirmation words (`UNLOCK`, `ERASE`) belong to the step code. They're the same on every board
-today, and the parity test checks that before they leave the board profile.
+The confirmation words belong to the step code: `unlock.CONFIRM_PHRASE` (`UNLOCK`) and
+`install.FINAL_CONFIRM_PHRASE` (`ERASE`). They were the same on every board, and the parity test checks
+the old profiles against these constants.
 
 A destructive step may run on a unit only when all three hold:
 
 1. the unit matched exactly one board on the identity key for that stage;
 2. every asset and member the step uses is pinned and the local bytes hash to the pin;
 3. there is passing evidence for that step on that board, bound to the current catalogue data
-   (see Evidence). This part is new; today's code has no evidence check.
+   (see Evidence). This part is new and not built yet: adding it would change what the installer does
+   today, and stage b had to change nothing. Until it exists, `unlock.py` keeps its crown-only check in
+   code, so pinning more members in the catalogue does not by itself open unlock on another board.
 
 So whether a board may be unlocked is computed, not written down. Policy says *how* (all three boards say
 `amonet-kaeru`), the pins and evidence say *whether*. Checkers fails (2) today, because only its TWRP is
@@ -172,13 +204,22 @@ hardware or software misbehaviour, not for the state a unit happens to be in.
 
 ## Which module reads what
 
-Today almost nothing reads the catalogue; that's step b. Every change that reads a new field adds its row
-here in the same change.
+Every change that reads a new field adds its row here in the same change.
 
 | Module | Reads |
 |---|---|
-| `tests/test_board_catalogue.py` | everything (parity) |
-| everything else | nothing yet; still `boards.py`, `assets.py`, `install.py`, `recovery.py`, `unlock.py` |
+| `catalogue.py` `profile_for_board`, `profile_for_product`, `supported_boards` | product `boards`; board `id`, `model`, `profile_id`, `identity.fastboot_product`, `display`; `assets.amonet` `file` and `kaeru` (for the folder and kaeru names) |
+| `device_gate.py` | the profiles above: `SUPPORTED_PRODUCTS`, `SUPPORTED_SUMMARY`, the unsupported-product message |
+| `install.py` | product `id` (`PROFILE_ID`), product `boards`, `assets.boot.sha256` |
+| `recovery.py` | `assets.amonet.members["amonet/bin/twrp.img"]`; `identity.twrp_device` is checked equal to the board name by the test, the code still compares with the name |
+| `unlock.py` | crown's `assets.amonet.members` for the six unlock files; refuses to import if crown loses one |
+| `assets.py` | every board's `assets.*`: `file`, `url`, `source`, `manual`, `sha256`, `size` |
+| `preflight.py`, `amonet_upgrade.py`, `flow.py`, `jarvis-show.py`, `fetch-show-assets.py` | profiles and `supported_boards()` through `catalogue.py` |
+| `validate-jarvis-show.sh` | runs `catalogue.py check` |
+| `tests/test_board_catalogue.py` | everything (parity against the 7d601d0 baseline) |
+
+The catalogue loads once per process, on first use. A broken catalogue stops the installer at import
+with a `CatalogueError`, before any device is touched.
 
 ## board.json on the Show
 
@@ -255,11 +296,13 @@ Per step, per board: `catalogue/evidence/<board>/<step>.json`. Shape, following 
 - No name of who ran it; the git author already says that.
 - A hand-written record without a log is review material, not proof.
 
-Nothing in this slice reads evidence yet. The format and the check come with step b.
+Nothing reads evidence yet. The format is settled; the check is deferred because it would change what
+the installer does today (see the destructive-step rule above and open question Q9).
 
 ## Next owners to fold in
 
-Not part of slice a; they're listed so step b doesn't miss them.
+Stage b moved the installer (`tools/jarvis_crown/` and the two CLIs that use it). These still own a
+board fact of their own:
 
 - `boot_logo.py` `KAERU` and `install-show.py` `LOGO_KAERU`: kaeru offsets, lengths and hashes. The two
   disagree on crown's "with logo" hash, and `install-show.py` pins a stock cronos kaeru hash while the
@@ -267,21 +310,39 @@ Not part of slice a; they're listed so step b doesn't miss them.
 - `amonet_upgrade.py` `TARGETS`: the partition map, checkers only ("Only Checkers has been mapped on a
   real unit"). Partition layout is a board fact.
 - `dashcast/serve.go` geometry, `manifest.go` board list, `install-show.py` `BOARDS`.
-- `boards.profile_for_product` folds case and strips spaces; the catalogue doesn't. Step b has to pick
-  one, and exact is the rule.
+- `techo5lib.py` `JARVIS_SHOW_PRODUCT`, `JARVIS_SHOW_BOARDS`, `OWN_MANIFEST_BOARDS`.
+- `tools/linux/mkrootfs.sh:130-132`, the rootfs marker: product, `boards` crown and checkers,
+  `more_boards` cronos. The split is on purpose (older Shows refuse a marker naming a board they don't
+  know), so it can't simply be generated from the product's list.
+- `release-jarvis-show.sh:128` and `live-acceptance.py:133`, `:174`: crown and checkers only.
+- `assets.py` `AMONET_SOURCE`: the upstream repo and branch names per board.
 
 ## Migration, in order
 
-a. **Catalogue, checker, resolver, explain, parity test.** Done in this branch, nothing rewired.
-b. Installer reads the catalogue. `boards.py`, the duplicated parts of `profiles/*.json` and the pin
-   constants in `install.py`, `recovery.py`, `unlock.py` and `assets.py` go in the same PR. Product
-   entity moves in. Evidence format and check land here.
+a. **Catalogue, checker, resolver, explain, parity test.** Done.
+b. **Installer reads the catalogue.** Done. `boards.py`, `profiles/` and the pin constants in
+   `install.py`, `recovery.py`, `unlock.py` and `assets.py` are gone; the product entity moved in. Parity
+   against a baseline frozen before the move proves the installer gives the same answers. Two things
+   planned for b were held back because they'd change behaviour: the evidence check (Q9) and exact-match
+   lookups (Q8).
 c. board.json written at flash time. echod reads it next to its constants with a test that they match,
    then the constants go, the guess with them. Needs captured DT compatibles first.
 d. Product mains (`cmd/echod-show`, `-dot`, `-spot`) replace the build tags. Shell scripts get resolved
    values as arguments.
 e. CI grep for board names and build tags outside the catalogue and the mains, with a baseline count that
    may only go down.
+
+## Open questions
+
+For Jade. None of them is decided in code; the code keeps what it did before.
+
+- **Q8, case folding.** `profile_for_board` and `profile_for_product` still strip spaces and fold case
+  (`Crown` and ` CHECKERS ` work), as `boards.py` did. The rule says exact. Changing it changes what the
+  installer accepts, so it's left as is, marked in `catalogue.py`, and pinned by the parity test.
+- **Q9, evidence check.** Designed above, not built. Unlock stays crown-only in code until it exists.
+- **Asset licences.** Unknown for all nine assets.
+- **The remaining owners** above, especially `mkrootfs.sh`'s marker and `PROFILE_ID`, which several
+  scripts and echod spell out themselves.
 
 ## oddc answers
 
