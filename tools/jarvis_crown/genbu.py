@@ -11,11 +11,15 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
-from .home_assistant import Chooser, HomeAssistant, HomeAssistantError, NotFound, entry_entities
+from .home_assistant import Chooser, HomeAssistant, HomeAssistantError, NotFound, _entry_devices, entry_entities
 
 DOMAIN = "genbu"
 HOUSE = "sensor.genbu_house_version"
 UPDATE = "update.genbu_show_firmware"
+
+# The Show's optional features on Genbu's side: how the installer asks for each, and Genbu's switch key.
+FEATURES = (("recipes", "recipes"), ("voice updates", "voice_updates"))
+PAGE = "Everything is on the Genbu Control Center page in Home Assistant's sidebar"
 
 # What set_up came to.
 FOLLOW, SKIPPED = "follow", "skipped"
@@ -131,3 +135,40 @@ def _first(ha: HomeAssistant, choose: Chooser | None, progress: Callable[[str], 
         raise HomeAssistantError("Genbu's setup did not finish")
     progress("Genbu set up in Home Assistant")
     return True
+
+
+def features(ha: HomeAssistant, entry_id: str, given: dict[str, bool | None], *, choose: Chooser | None = None,
+             progress: Callable[[str], None] = print, sleep: Callable[[float], None] = time.sleep,
+             clock: Callable[[], float] = time.monotonic, wait: float = 30.0) -> None:
+    """Recipes and Updates by voice for this Show (docs/genbu-assistant.md, "Optional features"). Each is
+    taken from its switch, else asked; neither given nor asked, Genbu's own default stays. Recipes is there
+    only while a recipe search is set up in Genbu, so it is only asked then."""
+    entry = _entry(ha)
+    if entry is None:
+        return
+    devices = _entry_devices(ha, entry_id)
+    ids = {f"{entry['entry_id']}_{key}_{d}": label for label, key in FEATURES for d in devices}
+    until = clock() + wait
+    while True:
+        # Genbu adds a Show's switches once it has seen the Show, a moment after ESPHome has it.
+        found = {ids[e["unique_id"]]: e["entity_id"] for e in ha.ws({"type": "config/entity_registry/list"}) or []
+                 if isinstance(e, dict) and e.get("platform") == DOMAIN and e.get("unique_id") in ids}
+        if "voice updates" in found or clock() >= until:
+            break
+        sleep(2)
+    if not found:
+        progress("Genbu has not picked the Show up yet; Recipes and Updates by voice are on its card on the "
+                 "Genbu Control Center page")
+        return
+    for label, _ in FEATURES:
+        entity = found.get(label)
+        on = given.get(label)
+        if entity is None:
+            continue
+        if on is None and choose is not None:
+            picked = choose(label, "", ["yes", "no"], {})
+            on = None if picked is None else picked == "yes"
+        if on is None:
+            continue
+        ha.request("POST", f"/api/services/switch/turn_{'on' if on else 'off'}", {"entity_id": entity})
+        progress(f"{'Recipes' if label == 'recipes' else 'Updates by voice'} {'on' if on else 'off'} on this Show")

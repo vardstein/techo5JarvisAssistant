@@ -35,7 +35,7 @@ const RULES = [
   ["Voice", ["assist_satellite"], /wake|last heard|last reply|assistant|follow-up|listening|thinking|stop word|reply|speech|near miss|stranger/i],
   ["Music and radio", ["media_player"], /music|radio|white noise|sendspin|bluetooth audio|now playing|sleep timer|equalizer|bass|treble|speaker eq|ducking/i],
   ["Calls and alarms", [], /answer|hang up|snooze|alarm|phone|call|missed|drop in|intercom|timer|ring/i],
-  ["Screen", [], /dashboard|theme|clock|slideshow|screensaver|pop-up|pop up|weather|calendar|menu|screen|date color|logo|radar|events/i],
+  ["Screen", [], /recipe|dashboard|theme|clock|slideshow|screensaver|pop-up|pop up|weather|calendar|menu|screen|date color|logo|radar|events/i],
   ["Network and access", [], /bluetooth|ssh|web access|usb|setup page|wi-?fi|ip address|home assistant/i],
 ];
 

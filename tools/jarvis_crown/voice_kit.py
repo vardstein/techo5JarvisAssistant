@@ -45,6 +45,9 @@ VOLUME = "volume-where-the-music-is.yaml"
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 OURS = "techo5_turn_room_down_"   # our per-Show automation ids; the rest of the id is the Show's prefix
 CLIMATE = "jarvis_room_climate"   # the model's room-climate tool, the one script it needs exposed
+# The music scripts meant for the model, exposed on every run (decided, docs/genbu-assistant.md §4). Not
+# jarvis_music_start, which only they call.
+MUSIC_TOOLS = ("jarvis_play_radio", "jarvis_play_mood", "play_random_music")
 _ENTITY_RE = re.compile(r"^[a-z0-9_]+\.[a-z0-9_]+$")
 
 # Rooms the German sentences know: what an area may be called (its id or name, either language, as
@@ -1115,6 +1118,9 @@ def set_up(ha: HomeAssistant, show: str, entities: list[str], *, choose: Chooser
     if ("script", CLIMATE) in run.made:
         # The labels waited for Home Assistant's reload already; this waits out the rest of those 10 s.
         expose(ha, progress, CLIMATE, sleep=sleep, clock=clock, wait=max(0.0, start + 10 - clock()))
+    for script in MUSIC_TOOLS:
+        if ("script", script) in run.items:
+            expose(ha, progress, script, sleep=sleep, clock=clock, wait=max(0.0, start + 10 - clock()))
 
 
 def expose(ha: HomeAssistant, progress: Callable[[str], None], script: str, *,

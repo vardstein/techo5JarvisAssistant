@@ -1,4 +1,6 @@
 import json
+
+MUSIC = ["script.jarvis_play_radio", "script.jarvis_play_mood", "script.play_random_music"]
 import pathlib
 import re
 import sys
@@ -208,8 +210,8 @@ class SetUpTests(unittest.TestCase):
         self.assertIn(MA_ENTRY, radio)
         self.assertIn("media_player.living_ma", radio)
         self.assertNotIn("WARN", "\n".join(log))
-        # The model's room-climate tool is exposed to Assist, the others are left to the house.
-        self.assertEqual(fake.exposed, ["script.jarvis_room_climate"])
+        # The model's tools are exposed to Assist: room climate and the three music scripts, not the helper.
+        self.assertEqual(fake.exposed, ["script.jarvis_room_climate", *MUSIC])
         climate = json.dumps(fake.configs[("script", "jarvis_room_climate")], ensure_ascii=False)
         self.assertIn('\\"kitchen\\": \\"sensor.kitchen_humidity\\"', climate)
         self.assertNotIn("sensor.heater", climate)
@@ -306,14 +308,16 @@ class SetUpTests(unittest.TestCase):
         log = run(fake)
         self.assertEqual(fake.posts, [])
         self.assertEqual(sum("is already there" in line for line in log), 16)
-        self.assertEqual(fake.exposed, ["script.jarvis_room_climate"])
+        # The music scripts are exposed on every run (decided); room climate only by the run that made it.
+        self.assertEqual(fake.exposed, ["script.jarvis_room_climate", *MUSIC, *MUSIC])
 
     def test_one_taken_from_assist_by_hand_stays_that_way(self):
         fake = FakeHA()
         run(fake)
         fake.exposed.clear()
         run(fake)
-        self.assertEqual(fake.exposed, [])
+        self.assertNotIn("script.jarvis_room_climate", fake.exposed)
+        self.assertEqual(fake.exposed, MUSIC)
 
     def test_a_tool_home_assistant_has_not_loaded_is_said_and_nothing_hangs(self):
         fake = FakeHA()

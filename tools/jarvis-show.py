@@ -112,6 +112,12 @@ def parse_args() -> argparse.Namespace:
                        help="set up the Home Assistant pieces around the Shows: the room going quiet while a "
                             "Show listens, and with a German assistant local answers (room, temperature, "
                             "forecast, volume) and music by voice (default: ask; Enter is no)")
+    setup.add_argument("--recipes", action=argparse.BooleanOptionalAction, default=None,
+                       help="recipe search by voice on this Show, when one is set up in Genbu Assistant "
+                            "(default: ask; Enter is yes)")
+    setup.add_argument("--voice-updates", action=argparse.BooleanOptionalAction, default=None,
+                       help="let people ask this Show about firmware updates and install them by voice "
+                            "(default: ask; Enter is yes)")
     setup.add_argument("--genbu-assistant", action=argparse.BooleanOptionalAction, default=None,
                        help="call the Assist pipeline the Show talks to 'Genbu Assistant'; every device on it "
                             "follows the new name, and the pipeline is saved first (default: ask; Enter is no)")
@@ -312,6 +318,12 @@ QUESTIONS = {  # label: (question, help, names for the options, the answers Ente
                      "The room's music goes quiet while the Show listens. With a German assistant it also "
                      "answers about the room, the temperature, the weather and the volume, and plays music by "
                      "voice. Anything you made yourself is only replaced if you say so.", {}, ()),
+    "recipes": ("Recipes on this Show?",
+                "Ask it for a recipe and it searches the web and shows it on the screen. Best on a Show in the "
+                "kitchen.", {}, ("yes",)),
+    "voice updates": ("Ask this Show about updates by voice?",
+                      "\"Any updates?\" and \"install the update\" work at this Show. It always asks before "
+                      "installing.", {}, ("yes",)),
     "new name": ("The Show has a new name. Give its entities the new name too?",
                  "Its automations, scripts and dashboards follow, each saved first. The history stays.", {}, ()),
     "calendar account": ("Add a calendar account to Home Assistant?",
@@ -337,7 +349,8 @@ def _chooser(args):
              "room dashboard": args.room_dashboard,
              "jarvis dashboard": getattr(args, "jarvis_dashboard", None), "voice extras": args.voice_extras,
              "calendars": args.calendars, "new name": getattr(args, "rename_entities", None),
-             "assistant name": getattr(args, "genbu_assistant", None)}
+             "assistant name": getattr(args, "genbu_assistant", None),
+             "recipes": getattr(args, "recipes", None), "voice updates": getattr(args, "voice_updates", None)}
 
     def choose(label: str, current: str, options: list[str], shown: dict[str, str] | None = None) -> str | None:
         if given.get(label) is not None:
@@ -435,10 +448,19 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
         return 5
     ui.out.heading("Updates")
     try:
-        genbu.set_up(hc, entry_id, ha_api.node_name(hc, entry_id) or ha_api.node_slug(now_called[0]),
-                     choose=choose, progress=ui.out.progress)
+        joined = genbu.set_up(hc, entry_id, ha_api.node_name(hc, entry_id) or ha_api.node_slug(now_called[0]),
+                              choose=choose, progress=ui.out.progress)
     except ha_api.HomeAssistantError as exc:
+        joined = None
         ui.out.progress(f"WARN: the update setup stopped part way: {exc}")
+    if joined == genbu.FOLLOW:
+        try:
+            genbu.features(hc, entry_id, {"recipes": getattr(args, "recipes", None),
+                                          "voice updates": getattr(args, "voice_updates", None)},
+                           choose=choose, progress=ui.out.progress)
+        except ha_api.HomeAssistantError as exc:
+            ui.out.progress(f"WARN: Recipes and Updates by voice were not set: {exc}")
+        ui.out.note(f"{genbu.PAGE}.")
     ui.out.finish(f"{now_called[0]} is in Home Assistant and set up")
     return 0
 
