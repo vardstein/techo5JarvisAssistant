@@ -48,6 +48,25 @@ func TestAPauseBetweenWordsDoesNotEnd(t *testing.T) {
 	}
 }
 
+// A request barely begun is not over at a pause to think: "Wie warm ist es im" and then the room
+// (GENBU-131). A pause that long after a full sentence still ends it.
+func TestAPauseEarlyInTheTurnDoesNotEnd(t *testing.T) {
+	d := New(Default)
+	if feed(d, tone(8, 1500), tone(8, 30), tone(8, 1500)) {
+		t.Fatal("a 0.8 s pause after 0.8 s of speech ended the turn")
+	}
+	d = New(Default)
+	if !feed(d, tone(8, 1500), tone(10, 30)) {
+		t.Fatal("a second of quiet after a short request did not end the turn")
+	}
+	if got := d.EndedAt(); got != 8*Window {
+		t.Errorf("ended at %d samples, want the end of the speech at %d", got, 8*Window)
+	}
+	if got := d.SentTo(); got != 18*Window {
+		t.Errorf("decided at %d samples, want %d", got, 18*Window)
+	}
+}
+
 // A television across the room, well below the speaker, is where the speaker stopped.
 func TestTheRoomTalkingAfterTheSpeakerEnds(t *testing.T) {
 	d := New(Default)
@@ -71,7 +90,7 @@ func TestQuietAloneNeverEnds(t *testing.T) {
 // Recordings of real turns, when there are some: where the detector would have ended each one, and
 // the audio up to there written out for speech recognition to be run on. Only with ENDPOINT_CLIPS set
 // to a folder of 16 kHz mono WAVs; ENDPOINT_OUT is where the cut copies go, and ENDPOINT_SETTINGS
-// overrides the thresholds as "on,off,quiet,speech". The recordings are the household talking, so
+// overrides the thresholds as "on,off,quiet,speech[,short,shortquiet]". The recordings are the household talking, so
 // they live outside the repository and nothing here keeps them.
 func TestOnRecordings(t *testing.T) {
 	dir := os.Getenv("ENDPOINT_CLIPS")
@@ -85,6 +104,11 @@ func TestOnRecordings(t *testing.T) {
 		s.Off, _ = strconv.ParseFloat(f[1], 64)
 		s.Quiet, _ = strconv.Atoi(f[2])
 		s.Speech, _ = strconv.Atoi(f[3])
+		s.Short, s.ShortQuiet = 0, 0
+		if len(f) == 6 {
+			s.Short, _ = strconv.Atoi(f[4])
+			s.ShortQuiet, _ = strconv.Atoi(f[5])
+		}
 	}
 	out := os.Getenv("ENDPOINT_OUT")
 	if out != "" {
@@ -106,7 +130,7 @@ func TestOnRecordings(t *testing.T) {
 		if end > 0 {
 			// What the pipeline gets: everything sent until the detector decided, which is the quiet
 			// run after the last of the speech as well as the speech.
-			keep = pcm[:min(len(pcm), end+s.Quiet*Window)]
+			keep = pcm[:min(len(pcm), d.SentTo())]
 		}
 		fmt.Printf("%s %.1f s -> %s\n", filepath.Base(p), float64(len(pcm))/16000, endText(end))
 		if out != "" {
