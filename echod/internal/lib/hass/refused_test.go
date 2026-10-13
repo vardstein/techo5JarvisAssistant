@@ -17,9 +17,16 @@ import (
 // fakeAuth is a Home Assistant that knows one token: a 401 on REST and auth_invalid on the websocket
 // for any other. calls counts every request that reached it, the websocket's included.
 func fakeAuth(t *testing.T, good string, calls *atomic.Int32) *httptest.Server {
+	return fakeTurnAway(t, func() string { return good }, "Invalid access token or password", calls)
+}
+
+// fakeTurnAway is fakeAuth with the token it takes asked for at each request, and the words its websocket
+// turns any other away with.
+func fakeTurnAway(t *testing.T, takes func() string, why string, calls *atomic.Int32) *httptest.Server {
 	up := websocket.Upgrader{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
+		good := takes()
 		if r.URL.Path != "/api/websocket" {
 			if r.Header.Get("Authorization") != "Bearer "+good {
 				http.Error(w, "401: Unauthorized", http.StatusUnauthorized)
@@ -39,7 +46,7 @@ func fakeAuth(t *testing.T, good string, calls *atomic.Int32) *httptest.Server {
 			return
 		}
 		if auth["access_token"] != good {
-			_ = c.WriteJSON(map[string]string{"type": "auth_invalid", "message": "Invalid access token or password"})
+			_ = c.WriteJSON(map[string]string{"type": "auth_invalid", "message": why})
 			return
 		}
 		_ = c.WriteJSON(map[string]string{"type": "auth_ok"})
@@ -75,8 +82,9 @@ func TestATurnedAwayTokenIsNotSentAgain(t *testing.T) {
 	if _, err := c.Render("{{ 1 }}"); !errors.Is(err, ErrRefused) {
 		t.Fatalf("websocket: %v, want ErrRefused", err)
 	}
-	if n := calls.Load(); n != 1 {
-		t.Fatalf("%d requests reached Home Assistant, want the one that was turned away", n)
+	// The 401, and one websocket sign-in that asks why (GENBU-196).
+	if n := calls.Load(); n != 2 {
+		t.Fatalf("%d requests reached Home Assistant, want the one that was turned away and why", n)
 	}
 
 	// A restart reads the refusal back and still sends nothing.
@@ -93,7 +101,7 @@ func TestATurnedAwayTokenIsNotSentAgain(t *testing.T) {
 	if err := c.Set(srv.URL, "old"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.State("light.hall"); !errors.Is(err, ErrRefused) || calls.Load() != 1 {
+	if _, err := c.State("light.hall"); !errors.Is(err, ErrRefused) || calls.Load() != 2 {
 		t.Fatalf("the same token again: %v after %d requests", err, calls.Load())
 	}
 
@@ -101,7 +109,7 @@ func TestATurnedAwayTokenIsNotSentAgain(t *testing.T) {
 	if err := c.Set(srv.URL, "new"); err != nil {
 		t.Fatal(err)
 	}
-	c.refuse("old")
+	c.refuse("old", KeyGone)
 	if !c.Ready() || c.Refused() || c.Token() != "new" {
 		t.Fatalf("with a new token: ready %v, refused %v", c.Ready(), c.Refused())
 	}

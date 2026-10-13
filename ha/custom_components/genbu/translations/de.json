@@ -84,6 +84,103 @@
           "description": "Der ESPHome-Node-Name einer Show, die ausgelassen wird, weil sie schon installiert."
         }
       }
+    },
+    "show_key": {
+      "name": "Einem Show einen neuen Schlüssel geben",
+      "description": "Nur für Admins. Macht einen neuen Home-Assistant-Schlüssel für den Benutzer des Shows, und vorher einen Benutzer, falls er keinen hat (kein Admin, nur von zu Hause), und gibt den Schlüssel dem Show über seine verschlüsselte ESPHome-Verbindung. Die alten Schlüssel des Benutzers werden gelöscht, sobald der Show den neuen gespeichert hat. Der Installer ruft das auf.",
+      "fields": {
+        "node": {
+          "name": "Node-Name",
+          "description": "Der ESPHome-Node-Name des Shows."
+        },
+        "url": {
+          "name": "Home-Assistant-Adresse",
+          "description": "Wo der Show Home Assistant ab jetzt findet, innerhalb deines Zuhauses. Leer lassen, um die bisherige zu behalten."
+        }
+      }
+    }
+  },
+  "issues": {
+    "key_gone": {
+      "title": "{show} hat seinen Schlüssel zu Home Assistant verloren",
+      "description": "Home Assistant hat {show} abgewiesen: der Schlüssel, mit dem er sich anmeldet, wurde gelöscht. Das passiert, wenn jemand ihn beim Benutzer {user} löscht oder diesen Benutzer eine Weile deaktiviert, denn das löscht auch seine Schlüssel. Ist {show} verloren gegangen oder gestohlen worden, lass das hier, wie es ist: dann tut das Schloss genau seine Arbeit. Sonst kann Genbu ihm einen neuen Schlüssel geben.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "{show} einen neuen Schlüssel geben",
+            "description": "Genbu macht einen neuen Schlüssel für den Benutzer von {show}, gibt ihn {show} über seine verschlüsselte ESPHome-Verbindung und löscht die alten Schlüssel des Benutzers, sobald {show} den neuen gespeichert hat. Mach das nur für einen Show, der bei dir zu Hause ist."
+          }
+        },
+        "abort": {
+          "no_show": "Dieser Show ist gerade nicht in ESPHome.",
+          "still_away": "Der Show wurde wieder abgewiesen. Prüfe zuerst, wie er Home Assistant erreicht.",
+          "no_answer": "Der Show hat nicht geantwortet. Ist er an und verbunden?",
+          "not_stored": "Der Show hat den neuen Schlüssel nicht gespeichert. Es hat sich nichts geändert: der neue Schlüssel wurde wieder gelöscht.",
+          "not_encrypted": "Die ESPHome-Verbindung des Shows hat keinen Verschlüsselungsschlüssel, und ein Schlüssel geht nur über eine verschlüsselte. Führe den Installer für ihn noch einmal aus.",
+          "user_off": "Der Benutzer des Shows ist deaktiviert. Aktiviere ihn zuerst unter Einstellungen → Personen.",
+          "not_a_show_user": "Der Benutzer des Shows ist Admin oder darf sich von außerhalb deines Zuhauses anmelden. Beides darf der Benutzer eines Shows nicht.",
+          "no_provider": "Home Assistant hat keine Anmeldung mit Benutzernamen, mit der sich der Benutzer des Shows anlegen ließe.",
+          "name_taken": "Beide Anmeldenamen für den Benutzer des Shows gehören schon jemand anderem."
+        }
+      }
+    },
+    "no_user": {
+      "title": "{show} hat keinen Benutzer in Home Assistant",
+      "description": "Home Assistant hat {show} abgewiesen, und der Benutzer, mit dem er sich angemeldet hat, ist weg. Ist {show} verloren gegangen oder gestohlen worden, lass das hier, wie es ist. Sonst kann Genbu ihm wieder einen Benutzer anlegen, so wie der Installer, und ihm einen Schlüssel geben.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Einen Benutzer für {show} anlegen",
+            "description": "Genbu legt für {show} einen Benutzer an, der kein Admin ist und sich nur von zu Hause anmelden darf, macht ihm einen Schlüssel und gibt den {show} über seine verschlüsselte ESPHome-Verbindung. Mach das nur für einen Show, der bei dir zu Hause ist."
+          }
+        },
+        "abort": {
+          "no_show": "Dieser Show ist gerade nicht in ESPHome.",
+          "still_away": "Der Show wurde wieder abgewiesen. Prüfe zuerst, wie er Home Assistant erreicht.",
+          "no_answer": "Der Show hat nicht geantwortet. Ist er an und verbunden?",
+          "not_stored": "Der Show hat den neuen Schlüssel nicht gespeichert. Es hat sich nichts geändert: der neue Schlüssel wurde wieder gelöscht.",
+          "not_encrypted": "Die ESPHome-Verbindung des Shows hat keinen Verschlüsselungsschlüssel, und ein Schlüssel geht nur über eine verschlüsselte. Führe den Installer für ihn noch einmal aus.",
+          "user_off": "Der Benutzer des Shows ist deaktiviert. Aktiviere ihn zuerst unter Einstellungen → Personen.",
+          "not_a_show_user": "Der Benutzer des Shows ist Admin oder darf sich von außerhalb deines Zuhauses anmelden. Beides darf der Benutzer eines Shows nicht.",
+          "no_provider": "Home Assistant hat keine Anmeldung mit Benutzernamen, mit der sich der Benutzer des Shows anlegen ließe.",
+          "name_taken": "Beide Anmeldenamen für den Benutzer des Shows gehören schon jemand anderem."
+        }
+      }
+    },
+    "user_off": {
+      "title": "Der Benutzer von {show} ist deaktiviert",
+      "description": "Home Assistant hat {show} abgewiesen, weil sein Benutzer {user} deaktiviert ist. Ein Benutzer, der deaktiviert wird, verliert auch seine Schlüssel. Um {show} wieder hereinzulassen, aktiviere {user} unter Einstellungen → Personen. Danach bietet Genbu hier an, {show} einen neuen Schlüssel zu geben."
+    },
+    "not_a_show_user": {
+      "title": "{show} meldet sich mit einem falschen Benutzer an",
+      "description": "Home Assistant hat {show} abgewiesen, und sein Benutzer {user} ist Admin oder darf sich von außerhalb deines Zuhauses anmelden. Der Schlüssel eines Shows öffnet dein ganzes Zuhause, darum gibt Genbu so einem Benutzer keinen Schlüssel. Mach {user} unter Einstellungen → Personen zu einem normalen Benutzer, der sich nur von zu Hause anmelden darf, oder führe den Installer für {show} noch einmal aus."
+    },
+    "not_encrypted": {
+      "title": "Die ESPHome-Verbindung von {show} ist nicht verschlüsselt",
+      "description": "Home Assistant hat {show} abgewiesen. Genbu könnte ihm einen neuen Schlüssel geben, aber nur über eine verschlüsselte Verbindung, und die ESPHome-Verbindung von {show} hat keinen Verschlüsselungsschlüssel. Führe den Installer für {show} noch einmal aus: er richtet einen ein."
+    },
+    "home_only": {
+      "title": "{show} kommt von außerhalb deines Zuhauses",
+      "description": "Der Benutzer von {show} darf sich nur aus deinem Heimnetz anmelden, und Home Assistant hat {show} von außerhalb kommen sehen. Meist verdeckt etwas auf dem Weg, woher er kommt: ein VPN, das Adressen umschreibt (ein Tailscale-Subnet-Router behält sie mit --snat-subnet-routes=false), ein Reverse Proxy, dem Home Assistant nicht vertraut (trusted_proxies), oder eine Home-Assistant-Cloud-Adresse. Repariere den Weg, nicht den Benutzer: der Benutzer eines Shows bleibt nur für zu Hause. Lass {show} danach hier noch einmal versuchen.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "{show} noch einmal versuchen lassen",
+            "description": "{show} meldet sich noch einmal mit seinem Schlüssel an. Mach das, nachdem du repariert hast, wie er Home Assistant erreicht."
+          }
+        },
+        "abort": {
+          "no_show": "Dieser Show ist gerade nicht in ESPHome.",
+          "still_away": "Der Show wurde wieder abgewiesen. Prüfe zuerst, wie er Home Assistant erreicht.",
+          "no_answer": "Der Show hat nicht geantwortet. Ist er an und verbunden?",
+          "not_stored": "Der Show hat den neuen Schlüssel nicht gespeichert. Es hat sich nichts geändert: der neue Schlüssel wurde wieder gelöscht.",
+          "not_encrypted": "Die ESPHome-Verbindung des Shows hat keinen Verschlüsselungsschlüssel, und ein Schlüssel geht nur über eine verschlüsselte. Führe den Installer für ihn noch einmal aus.",
+          "user_off": "Der Benutzer des Shows ist deaktiviert. Aktiviere ihn zuerst unter Einstellungen → Personen.",
+          "not_a_show_user": "Der Benutzer des Shows ist Admin oder darf sich von außerhalb deines Zuhauses anmelden. Beides darf der Benutzer eines Shows nicht.",
+          "no_provider": "Home Assistant hat keine Anmeldung mit Benutzernamen, mit der sich der Benutzer des Shows anlegen ließe.",
+          "name_taken": "Beide Anmeldenamen für den Benutzer des Shows gehören schon jemand anderem."
+        }
+      }
     }
   }
 }

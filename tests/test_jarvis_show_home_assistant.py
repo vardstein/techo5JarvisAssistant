@@ -78,9 +78,13 @@ class AddressTests(unittest.TestCase):
         self.assertEqual(ha.normalize_ha_url("10.0.0.2"), "http://10.0.0.2:8123")
         self.assertEqual(ha.normalize_ha_url("10.0.0.2:8124"), "http://10.0.0.2:8124")
         self.assertEqual(ha.normalize_ha_url("homeassistant.local"), "http://homeassistant.local:8123")
-        for bad in ("ftp://ha", "http://u:p@ha", "http://ha/lovelace", "haos.example.org/lovelace"):
+        for bad in ("ftp://ha", "http://u:p@ha", "http://ha/lovelace", "haos.example.org/lovelace",
+                    "https://abc123.ui.nabu.casa", "abc123.UI.nabu.casa", "https://ui.nabu.casa"):
             with self.assertRaises(ValueError, msg=bad):
                 ha.normalize_ha_url(bad)
+        # Only the cloud's own name (GENBU-196: the Show's user is home only).
+        for fine in ("https://ui.nabu.casa.example.org", "https://notui.nabu.casa"):
+            self.assertEqual(ha.normalize_ha_url(fine), fine)
 
     def test_names(self):
         self.assertEqual(ha.node_slug("Jarvis Show 5"), "jarvis-show-5")
@@ -1895,6 +1899,62 @@ class OwnUserTests(unittest.TestCase):
         with self.assertRaisesRegex(SettingsError, "needs an admin"):
             gather(args(ha_url="http://ha:8123", own_ha_user=True), Asker(False), defaults={},
                    lookup=lambda secret, **attrs: None)
+
+    def genbu(self, answer):
+        """OwnUserHA with Genbu 1.4.2's genbu.show_key, which answers with answer (an exception raises)."""
+        fake = OwnUserHA()
+        listed, posted = FakeHA.request, OwnUserHA.request
+
+        def request(method, path, body=None, **kw):
+            if path == "/api/services" and method == "GET":
+                return listed(fake, method, path, body) + [{"domain": "genbu", "services": {"show_key": {}}}]
+            if path.startswith("/api/services/genbu/show_key"):
+                fake.calls.append((method, path, body))
+                if isinstance(answer, Exception):
+                    raise answer
+                return {"changed_states": [], "service_response": answer}
+            return posted(fake, method, path, body, **kw)
+        fake.request = request
+        return fake
+
+    def test_genbu_gives_the_key_when_it_can(self):
+        fake = self.genbu({"stored": True, "user": "Jarvis Show 5"})
+        log = self.deploy(fake)
+        self.assertEqual(fake.posted("/api/services/genbu/"),
+                         [("/api/services/genbu/show_key", {"node": "jarvis-show-5", "url": "http://ha:8123"})])
+        # The installer itself makes no user, no token, and gives the Show nothing.
+        self.assertEqual([m for m in fake.ws_calls if isinstance(m, dict) and m["type"].startswith("config/auth")], [])
+        self.assertNotIn("/api/services/esphome/jarvis_show_5_home_assistant",
+                         dict(fake.posted("/api/services/esphome/")))
+        self.assertEqual(fake.states["switch.jarvis_show_5_dashboard_as_this_device_s_own_user"]["state"], "on")
+        self.assertTrue(any("by Genbu" in line and "home network only" in line for line in log))
+
+    def test_genbu_without_an_answer_still_gave_it(self):
+        # Genbu raises whenever the Show did not store the key, so no answer is no reason to do it twice.
+        fake = self.genbu(None)
+        self.deploy(fake)
+        self.assertEqual(fake.users, [])
+        self.assertEqual(fake.states["switch.jarvis_show_5_dashboard_as_this_device_s_own_user"]["state"], "on")
+
+    def test_a_show_genbu_does_not_know_yet_gets_the_installers_user(self):
+        fake = self.genbu(ha.HomeAssistantError(
+            'POST /api/services/genbu/show_key: HTTP 400 {"message": "no Genbu Show called jarvis-show-5 in ESPHome"}'))
+        log = self.deploy(fake)
+        self.assertEqual(fake.users[0]["username"], "show_jarvis_show_5")
+        self.assertEqual(dict(fake.posted("/api/services/esphome/"))
+                         ["/api/services/esphome/jarvis_show_5_home_assistant"]["token"], "SHOW-USER-TOKEN")
+        self.assertTrue(any("Genbu does not know the Show yet" in line for line in log))
+
+    def test_genbu_saying_no_stops_the_install(self):
+        # Genbu said why; the installer does not go round it with a user of its own.
+        fake = self.genbu(ha.HomeAssistantError(
+            'POST /api/services/genbu/show_key: HTTP 400 {"message": "Jarvis Show 5 gets no new key: its user is '
+            'switched off"}'))
+        with self.assertRaisesRegex(ha.HomeAssistantError, "switched off"):
+            self.deploy(fake)
+        self.assertEqual(fake.users, [])
+        self.assertNotIn("/api/services/esphome/jarvis_show_5_home_assistant",
+                         dict(fake.posted("/api/services/esphome/")))
 
     def test_a_hand_made_token_file_wins_over_the_own_user(self):
         with tempfile.TemporaryDirectory() as td:

@@ -154,6 +154,11 @@ def normalize_ha_url(url: str) -> str:
         raise ValueError("a Home Assistant address has no user in it; the token is asked for separately")
     if u.path not in ("", "/") or u.query or u.fragment:
         raise ValueError("a Home Assistant address is only the scheme, host and port")
+    host = u.hostname.lower()
+    if host == "ui.nabu.casa" or host.endswith(".ui.nabu.casa"):
+        # The Show's user may only sign in from home (GENBU-196), and the cloud comes in from outside.
+        raise ValueError("that is the Home Assistant Cloud address; the Show is at home, so give it the one "
+                         "it reaches at home, like http://homeassistant.local:8123")
     return f"{scheme}://{u.netloc}"
 
 
@@ -1009,10 +1014,10 @@ def node_name(ha: HomeAssistant, entry_id: str) -> str | None:
     return node if isinstance(node, str) and node.strip() else None
 
 
-def _services(ha: HomeAssistant) -> set[str]:
-    for domain in ha.request("GET", "/api/services") or []:
-        if domain.get("domain") == "esphome":
-            return set((domain.get("services") or {}).keys())
+def _services(ha: HomeAssistant, domain: str = "esphome") -> set[str]:
+    for listed in ha.request("GET", "/api/services") or []:
+        if listed.get("domain") == domain:
+            return set((listed.get("services") or {}).keys())
     return set()
 
 
@@ -1494,6 +1499,20 @@ def hand_over_key(ha: HomeAssistant, svc: str, data: dict) -> bool:
     return (answer.get("service_response") or {}).get("stored") is True
 
 
+def genbu_show_key(ha: HomeAssistant, node: str, url: str) -> dict | None:
+    """Has Genbu give the Show its user and key (genbu.show_key, Genbu 1.4.2, GENBU-196): it does it inside
+    Home Assistant, the same way its Repairs button does for a Show whose key was lost, and deletes the
+    user's old keys once the Show has stored the new one. None when Genbu does not know the Show yet;
+    a refusal raises, with Genbu's reason."""
+    try:
+        answer = ha.request("POST", "/api/services/genbu/show_key?return_response", {"node": node, "url": url})
+    except HomeAssistantError as exc:
+        if "no Genbu Show called" in str(exc):
+            return None
+        raise
+    return (answer or {}).get("service_response") or {}
+
+
 @dataclass(frozen=True)
 class DeviceSettings:
     """What the Show itself is given through its actions. Any of them may be missing."""
@@ -1663,6 +1682,7 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
         except HomeAssistantError as exc:
             progress(f"WARN: the voice extras stopped part way: {exc}")
     services = _services(ha) if wanted else set()
+    genbu = _services(ha, "genbu") if wanted else set()
     own_given = False
     for svc, data, what in wanted:
         if svc not in services:
@@ -1676,6 +1696,14 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
                 continue
             data = {"token": token}
         elif data is None:
+            if "show_key" in genbu:
+                made = genbu_show_key(ha, node or node_slug(opts.name), s.ha_url)
+                if made is not None:
+                    progress(f"{what} given to the Show by Genbu, as {made.get('user')!r} "
+                             "(not an admin, home network only)")
+                    own_given = True
+                    continue
+                progress("Genbu does not know the Show yet, so the installer makes its user itself")
             key = make_show_user(ha, opts.name, progress=progress)
             data = {"url": s.ha_url, "token": key.token}
             try:
