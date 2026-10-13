@@ -136,6 +136,7 @@ async def _add_cards(hass: HomeAssistant) -> None:
     hass.data[f"{DOMAIN}_frontend"] = current
     if not hass.data.get(f"{DOMAIN}_ws"):
         websocket_api.async_register_command(hass, _ws_frontend)
+        websocket_api.async_register_command(hass, _ws_shows)
         hass.data[f"{DOMAIN}_ws"] = True
     urls = [f"{PANEL_FILES}/{name}?v={found[name]}" for name in CARDS] + [f"{PANEL_FILES}/{FRESH}?v={current}"]
     for url in urls:
@@ -149,6 +150,24 @@ def _ws_frontend(hass: HomeAssistant, connection: websocket_api.ActiveConnection
     """The hash genbu-fresh.js compares its own with; None while Genbu is not set up."""
     connection.send_result(msg["id"], {"version": hass.data.get(f"{DOMAIN}_frontend")
                                        if hass.data.get(f"{DOMAIN}_cards") else None})
+
+
+@websocket_api.websocket_command({vol.Required("type"): "genbu/shows"})
+@websocket_api.async_response
+async def _ws_shows(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict) -> None:
+    """The Shows a dashboard card is about (GENBU-164). On a Show, whose dashboard is signed in as the Show's
+    own user, only that Show; anywhere else every Show, and own is false. Each with its device id, name and
+    voice satellite, which any user can see on the Shows' own entities already."""
+    entry = next((e for e in hass.config_entries.async_entries(DOMAIN) if e.state is ConfigEntryState.LOADED),
+                 None)
+    if entry is None:
+        connection.send_result(msg["id"], {"own": False, "shows": []})
+        return
+    hub = entry.runtime_data
+    mine = await hub.keycare.show_of(connection.user.id, list(hub.shows))
+    shows = [mine] if mine else [s for s in hub.shows if s.device]
+    connection.send_result(msg["id"], {"own": mine is not None, "shows": [
+        {"device": s.device, "name": s.name, "satellite": s.satellite} for s in shows]})
 
 
 def _take_recipe_search(hass: HomeAssistant, entry: ConfigEntry) -> None:

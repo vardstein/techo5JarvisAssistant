@@ -748,8 +748,8 @@ class RoomTests(unittest.TestCase):
                                   "humidity_entity": "sensor.wohnzimmer_humidity"})
         self.assertEqual(top[1]["entity"], "weather.forecast_home")
         timer = zones["bottom-center"]["widgets"][0]["card"]
-        self.assertEqual(timer, {"type": "custom:jarvis-live-timer-card", "device_id": "D1",
-                                 "satellite_id": "assist_satellite.jarvis_show_5_assist_satellite"})
+        # No device: Genbu tells the card which Show it is on (GENBU-164).
+        self.assertEqual(timer, {"type": "custom:jarvis-live-timer-card", "title": "Timer"})
         self.assertIn("the Jarvis dashboard jarvis-display made; on the Show, pick it under Dashboard to show", log)
         # Again: it is there, nothing is asked or made.
         fake.boards = [{"url_path": "jarvis-display", "mode": "storage"}]
