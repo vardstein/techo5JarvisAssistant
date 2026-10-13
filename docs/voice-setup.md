@@ -90,7 +90,8 @@ So klingt es. Jede Antwort steht für sich, ohne Frage am Ende:
 - "Bist du ein Mensch?" -> "Nein. Ich bin ein Programm, das hier im Haus läuft."
 - "Mach das Licht aus." -> erst das Licht ausschalten, dann "Licht ist aus."
 - "Spiel Musik." -> erst Play Random Music ausführen, dann "Läuft."
-- Fragen nach Temperatur, Wetter, Uhrzeit oder ob etwas an ist -> erst mit GetLiveContext oder dem passenden Werkzeug nachschauen, dann genau den Wert aus dem Ergebnis nennen. Nie schätzen, nie einen Wert aus diesen Anweisungen nehmen.
+- Fragen nach Temperatur oder Luftfeuchtigkeit in Räumen, auch "Wo ist es am wärmsten?" -> erst Raumklima ausführen, dann nur die Werte daraus nennen. Die eingestellte Temperatur der Heizung ist nicht die Raumtemperatur.
+- Fragen nach Wetter, Uhrzeit oder ob etwas an ist -> erst mit GetLiveContext oder dem passenden Werkzeug nachschauen, dann genau den Wert aus dem Ergebnis nennen. Nie schätzen, nie einen Wert aus diesen Anweisungen nehmen.
 - "Was hast du gerade gemacht?", wenn in diesem Gespräch kein Werkzeug lief -> "In diesem Gespräch habe ich noch nichts geschaltet."
 - Das Werkzeug meldet einen Fehler -> kurz sagen, was nicht ging und warum, etwa "Das ging nicht. Der Lautsprecher reagiert nicht."
 
@@ -158,8 +159,8 @@ Why some of it is there:
   "bei Grad", even Chinese digits. When it wrote digits it copied the value correctly. Asking for
   digits exactly as the tool returned them took 20 test questions from about 5 right to 15.
   Most of the rest were a room with two sensors (a room sensor and the thermostat), where it
-  sometimes reads the heating setpoint as the temperature. Exposing one temperature sensor per
-  room helps there. Piper reads "18,2 Grad" fine.
+  sometimes reads the heating setpoint as the temperature. The Raumklima tool below is for that.
+  Piper reads "18,2 Grad" fine.
 - **"du".** Without the line the model switches to "Sie" now and then ("Sie befinden sich im
   Wohnzimmer"). Showing the wrong form next to the right one is what made it stick.
 - **The sample answers.** A 4B model follows examples better than rules. It also repeats them word
@@ -305,6 +306,38 @@ actions:
 
 Both answer in a few hundredths of a second. The forecast picks the day by its date, not by its
 place in the list, so it doesn't depend on whether the list starts with today.
+
+### Humidity
+
+"Wie feucht ist es im Schlafzimmer?" isn't one of Home Assistant's sentences either. The installer
+adds **Genbu - Room humidity**, built like the temperature one: "wie feucht ist es", "wie (hoch) ist
+die Luftfeuchtigkeit" and "wie viel Luftfeuchtigkeit", each for a named room, "hier" and "draußen".
+The answer is "Im Schlafzimmer sind es 57 Prozent Luftfeuchtigkeit."
+
+### Room climate for the model
+
+Questions the sentences don't cover still go to the model: "Wo ist es am wärmsten?", "Ist es im Bad
+kälter als in der Küche?", or the same question worded differently. In a room with a room sensor
+and a thermostat, GetLiveContext shows the model three temperatures: the room, the thermostat's own
+reading at the radiator, and the temperature the heating is set to. A 4B model picks the wrong one
+often enough to notice, and sometimes reads 15 degrees for a room that is 18.
+
+So the installer adds a script, **Raumklima** (`script.jarvis_room_climate`), and exposes it to
+Assist. It returns one temperature and one humidity per room, already in spoken German, plus the
+warmest and coldest room:
+
+```text
+{'raeume': [{'raum': 'Wohnzimmer', 'temperatur': '18,1 Grad', 'luftfeuchtigkeit': '54 Prozent'},
+            {'raum': 'Schlafzimmer', 'temperatur': '17,1 Grad', 'luftfeuchtigkeit': '57 Prozent'}],
+ 'hinweis': 'Gemessene Werte. Die eingestellte Zieltemperatur der Heizung ist nicht die Raumtemperatur.',
+ 'waermster_raum': 'Wohnzimmer', 'kaeltester_raum': 'Schlafzimmer'}
+```
+
+Each room's value comes from the same place as the local answers: its own sensor if it has one,
+otherwise what the thermostat measures, never the setpoint. Rooms are read when the script runs, so
+a thermostat added later counts without running the installer again; a new room sensor needs a
+rerun. The prompt line "erst Raumklima ausführen" makes the model use it. The installer exposes the
+script only when it makes or replaces it, so if you take it away from Assist, it stays away.
 
 ## Listening after the answer
 

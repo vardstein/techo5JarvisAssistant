@@ -44,6 +44,7 @@ TURN_ROOM_DOWN = "turn-room-down.yaml"
 VOLUME = "volume-where-the-music-is.yaml"
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 OURS = "techo5_turn_room_down_"   # our per-Show automation ids; the rest of the id is the Show's prefix
+CLIMATE = "jarvis_room_climate"   # the model's room-climate tool, the one script it needs exposed
 _ENTITY_RE = re.compile(r"^[a-z0-9_]+\.[a-z0-9_]+$")
 
 # Rooms the German sentences know: what an area may be called (its id or name, either language, as
@@ -73,6 +74,7 @@ class House:
     german: bool = False
     areas: dict[str, str] = field(default_factory=dict)          # id -> name
     temperatures: dict[str, str] = field(default_factory=dict)   # area id -> its temperature sensor
+    humidities: dict[str, str] = field(default_factory=dict)     # area id -> its humidity sensor
     weather: str | None = None
     music_entry: str | None = None                               # Music Assistant's config entry
     players: list[str] = field(default_factory=list)             # its players that are in a room
@@ -106,6 +108,7 @@ def look(ha: HomeAssistant) -> House:
     climate_devices = {e.get("device_id") for e in entities
                        if str(e.get("entity_id", "")).startswith("climate.") and e.get("device_id")}
     temps: dict[str, list[str]] = {}
+    hums: dict[str, list[str]] = {}
     ma_players: list[tuple[str, str]] = []
     for e in entities:
         eid = str(e.get("entity_id") or "")
@@ -124,9 +127,15 @@ def look(ha: HomeAssistant) -> House:
                 and attrs.get("unit_of_measurement") in ("°C", "°F") \
                 and e.get("device_id") not in climate_devices:
             temps.setdefault(area, []).append(eid)
+        # A thermostat's own sensors are left out: in a room that has one of its own, the thermostat sits
+        # at the radiator and reads it, not the room (GENBU-139). Its readings are the fallback.
+        if eid.startswith("sensor.") and area and attrs.get("device_class") == "humidity" \
+                and attrs.get("unit_of_measurement") == "%" and e.get("device_id") not in climate_devices:
+            hums.setdefault(area, []).append(eid)
         if eid.startswith("media_player.") and e.get("platform") == "music_assistant" and area:
             ma_players.append((house.areas.get(area, area).casefold(), eid))
     house.temperatures = {a: sorted(found)[0] for a, found in temps.items()}
+    house.humidities = {a: sorted(found)[0] for a, found in hums.items()}
     weathers = sorted(e for e in states if str(e).startswith("weather."))
     house.weather = "weather.forecast_home" if "weather.forecast_home" in weathers else \
         (weathers[0] if weathers else None)
@@ -181,7 +190,12 @@ def where_are_we(house: House) -> dict:
     }
 
 
-ROOM_TEMPERATURE = r"""{% set rooms = __WORDS__ %}{% set sensors = __SENSORS__ %}{% set de = __PHRASES__ %}{% if 'drau' in (trigger.sentence | lower) %}{% set t = state_attr(__WEATHER__, 'temperature') | float(none) %}{% if t is none %}Das Wetter weiß ich gerade nicht.{% else %}{% set v = '%.1f' | format(t) %}Draußen sind es {{ (v[:-2] if v.endswith('.0') else v) | replace('.', ',') }} Grad.{% endif %}{% else %}{% set raum = (trigger.slots.raum | default('')) | lower | trim %}{% set ns = namespace(a=rooms.get(raum) if raum else (area_id(trigger.device_id) if trigger.device_id else none)) %}{% for x in areas() if raum and ns.a is none and area_name(x) | lower == raum %}{% set ns.a = x %}{% endfor %}{% set a = ns.a %}{% set t = states(sensors[a]) | float(none) if a in sensors else none %}{% if t is none and a %}{% set t = area_entities(a) | select('match', 'climate\\.') | map('state_attr', 'current_temperature') | reject('none') | map('float') | list | first | default(none) %}{% endif %}{% if t is not none %}{% set v = '%.1f' | format(t) %}{% set v = v[:-2] if v.endswith('.0') else v %}{% set w = de.get(a, 'in ' ~ area_name(a)) %}{{ w[0] | upper }}{{ w[1:] }} sind es {{ v | replace('.', ',') }} Grad.{% elif a %}Für {{ area_name(a) }} hab ich gerade keinen Wert.{% else %}Den Raum kenne ich nicht.{% endif %}{% endif %}"""
+# The area a sentence means: the one named in {raum}, by its German word or its own name, or else
+# the room of the device that heard it. Leaves it in a, none when there is no such room.
+ROOM_PICK = r"""{% set raum = (trigger.slots.raum | default('')) | lower | trim %}{% set ns = namespace(a=rooms.get(raum) if raum else (area_id(trigger.device_id) if trigger.device_id else none)) %}{% for x in areas() if raum and ns.a is none and area_name(x) | lower == raum %}{% set ns.a = x %}{% endfor %}{% set a = ns.a %}"""
+
+ROOM_TEMPERATURE = (r"""{% set rooms = __WORDS__ %}{% set sensors = __SENSORS__ %}{% set de = __PHRASES__ %}{% if 'drau' in (trigger.sentence | lower) %}{% set t = state_attr(__WEATHER__, 'temperature') | float(none) %}{% if t is none %}Das Wetter weiß ich gerade nicht.{% else %}{% set v = '%.1f' | format(t) %}Draußen sind es {{ (v[:-2] if v.endswith('.0') else v) | replace('.', ',') }} Grad.{% endif %}{% else %}""" + ROOM_PICK
+                    + r"""{% set t = states(sensors[a]) | float(none) if a in sensors else none %}{% if t is none and a %}{% set t = area_entities(a) | select('match', 'climate\\.') | map('state_attr', 'current_temperature') | reject('none') | map('float') | list | first | default(none) %}{% endif %}{% if t is not none %}{% set v = '%.1f' | format(t) %}{% set v = v[:-2] if v.endswith('.0') else v %}{% set w = de.get(a, 'in ' ~ area_name(a)) %}{{ w[0] | upper }}{{ w[1:] }} sind es {{ v | replace('.', ',') }} Grad.{% elif a %}Für {{ area_name(a) }} hab ich gerade keinen Wert.{% else %}Den Raum kenne ich nicht.{% endif %}{% endif %}""")
 
 
 def room_temperature(house: House) -> dict:
@@ -209,7 +223,59 @@ def room_temperature(house: House) -> dict:
     }
 
 
-FORECAST = r"""{% set de = {'sunny': 'sonnig', 'clear-night': 'klar', 'partlycloudy': 'teils bewölkt', 'cloudy': 'bewölkt', 'rainy': 'Regen', 'pouring': 'starker Regen', 'snowy': 'Schnee', 'snowy-rainy': 'Schneeregen', 'fog': 'Nebel', 'hail': 'Hagel', 'lightning': 'Gewitter', 'lightning-rainy': 'Gewitter und Regen', 'windy': 'windig', 'windy-variant': 'windig und bewölkt', 'exceptional': 'Unwetter'} %}{% set s = trigger.sentence | lower %}{% set n = 2 if 'übermorgen' in s or 'uebermorgen' in s else 1 %}{% set day = (now() + timedelta(days=n)).date() %}{% set f = fc[__WEATHER__].forecast | selectattr('datetime', 'search', day | string) | list | first | default(none) %}{% set word = 'Übermorgen' if n == 2 else 'Morgen' %}{% if f is none %}Für {{ word | lower }} hab ich keine Vorhersage.{% else %}{{ word }} {{ de.get(f.condition, f.condition) }}, {{ f.templow | round(0) | int }} bis {{ f.temperature | round(0) | int }} Grad.{% set p = f.precipitation | float(0) %}{% if p >= 0.5 %} Etwa {{ p | round(0) | int if p >= 1.5 else 1 }} Millimeter Regen.{% elif 'regn' in s or 'schirm' in s %} Regen ist keiner angesagt.{% endif %}{% endif %}"""
+ROOM_HUMIDITY = (r"""{% set rooms = __WORDS__ %}{% set sensors = __SENSORS__ %}{% set de = __PHRASES__ %}{% if 'drau' in (trigger.sentence | lower) %}{% set h = state_attr(__WEATHER__, 'humidity') | float(none) %}{% if h is none %}Das Wetter weiß ich gerade nicht.{% else %}Draußen sind es {{ h | round(0) | int }} Prozent Luftfeuchtigkeit.{% endif %}{% else %}""" + ROOM_PICK
+                 + r"""{% set h = states(sensors[a]) | float(none) if a in sensors else none %}{% if h is none and a %}{% set h = area_entities(a) | select('match', 'climate\\.') | map('state_attr', 'current_humidity') | reject('none') | map('float') | list | first | default(none) %}{% endif %}{% if h is not none %}{% set w = de.get(a, 'in ' ~ area_name(a)) %}{{ w[0] | upper }}{{ w[1:] }} sind es {{ h | round(0) | int }} Prozent Luftfeuchtigkeit.{% elif a %}Für {{ area_name(a) }} hab ich gerade keine Luftfeuchtigkeit.{% else %}Den Raum kenne ich nicht.{% endif %}{% endif %}""")
+
+
+def room_humidity(house: House) -> dict:
+    phrases, words = room_words(house.areas)
+    places = ["(im|in der|in dem) {raum}", "hier [drin|drinnen]"]
+    if house.weather:
+        places.append("(draußen|draussen)")
+    command = [sentence.format(place=place) for place in places for sentence in (
+        "wie (feucht|trocken) ist es [gerade|jetzt] {place}",
+        "wie [hoch] ist die (luftfeuchtigkeit|luftfeuchte|feuchtigkeit) [gerade|jetzt] {place}",
+        "wie viel (luftfeuchtigkeit|luftfeuchte|feuchtigkeit) (ist|hat es|haben wir) [gerade|jetzt] {place}")]
+    return {
+        "alias": "Genbu - Room humidity",
+        "description": "Answers humidity questions locally from the room's own sensor, or the thermostat's "
+                       "reading where there is none.",
+        "triggers": [{"trigger": "conversation", "command": command}],
+        "actions": [{"set_conversation_response": _fill(
+            ROOM_HUMIDITY, words=words, sensors=house.humidities, phrases=phrases,
+            weather=house.weather or "")}],
+        "mode": "parallel",
+    }
+
+
+# For the model: what each room measures. A room's own sensor comes first, the thermostat's reading of
+# the room next, and the temperature the heating is set to never, because a 4B model asked how warm it
+# is took the setpoint or the thermostat at the radiator over the room sensor (GENBU-139). The values
+# are spoken German already, so the model only has to repeat them.
+ROOM_CLIMATE = r"""{% set temps = __TEMPERATURES__ %}{% set hums = __HUMIDITIES__ %}{% set de = __NAMES__ %}{% set ns = namespace(rooms=[], warm=[]) %}{% for a in areas() %}{% set cl = area_entities(a) | select('match', 'climate\\.') | list %}{% set t = states(temps[a]) | float(none) if a in temps else none %}{% if t is none %}{% set t = cl | map('state_attr', 'current_temperature') | reject('none') | map('float', none) | reject('none') | list | first | default(none) %}{% endif %}{% set h = states(hums[a]) | float(none) if a in hums else none %}{% if h is none %}{% set h = cl | map('state_attr', 'current_humidity') | reject('none') | map('float', none) | reject('none') | list | first | default(none) %}{% endif %}{% set n = de.get(a, area_name(a)) %}{% set r = dict(raum=n) %}{% if t is not none %}{% set v = '%.1f' | format(t) %}{% set r = dict(r, temperatur=(v[:-2] if v.endswith('.0') else v) | replace('.', ',') ~ ' Grad') %}{% set ns.warm = ns.warm + [[t, n]] %}{% endif %}{% if h is not none %}{% set r = dict(r, luftfeuchtigkeit=(h | round(0) | int) ~ ' Prozent') %}{% endif %}{% if t is not none or h is not none %}{% set ns.rooms = ns.rooms + [r] %}{% endif %}{% endfor %}{% set out = dict(raeume=ns.rooms, hinweis='Gemessene Werte. Die eingestellte Zieltemperatur der Heizung ist nicht die Raumtemperatur.') %}{% if ns.warm | count > 1 %}{% set w = ns.warm | sort %}{% set out = dict(out, waermster_raum=w[-1][1], kaeltester_raum=w[0][1]) %}{% endif %}{{ out }}"""
+
+
+def room_climate(house: House) -> dict:
+    phrases, _ = room_words(house.areas)
+    # The room as German names it, "Küche" from "in der Küche", so the model says the word it heard.
+    names = {area: phrase.rsplit(" ", 1)[1] for area, phrase in phrases.items()}
+    return {
+        "alias": "Raumklima",
+        "description": "Liefert für jeden Raum die gemessene Temperatur und Luftfeuchtigkeit, dazu den wärmsten "
+                       "und den kältesten Raum. Für jede Frage nach Temperatur, Wärme, Kälte oder "
+                       "Luftfeuchtigkeit in Räumen und für Vergleiche zwischen Räumen. Nenne die Werte genau so, "
+                       "wie sie im Ergebnis stehen. Die eingestellte Temperatur der Heizung ist nicht die "
+                       "Raumtemperatur.",
+        "mode": "parallel",
+        "sequence": [
+            {"variables": {"result": _fill(ROOM_CLIMATE, temperatures=house.temperatures,
+                                           humidities=house.humidities, names=names)}},
+            {"stop": "Raumklima gelesen.", "response_variable": "result"},
+        ],
+    }
+
+
+FORECAST =r"""{% set de = {'sunny': 'sonnig', 'clear-night': 'klar', 'partlycloudy': 'teils bewölkt', 'cloudy': 'bewölkt', 'rainy': 'Regen', 'pouring': 'starker Regen', 'snowy': 'Schnee', 'snowy-rainy': 'Schneeregen', 'fog': 'Nebel', 'hail': 'Hagel', 'lightning': 'Gewitter', 'lightning-rainy': 'Gewitter und Regen', 'windy': 'windig', 'windy-variant': 'windig und bewölkt', 'exceptional': 'Unwetter'} %}{% set s = trigger.sentence | lower %}{% set n = 2 if 'übermorgen' in s or 'uebermorgen' in s else 1 %}{% set day = (now() + timedelta(days=n)).date() %}{% set f = fc[__WEATHER__].forecast | selectattr('datetime', 'search', day | string) | list | first | default(none) %}{% set word = 'Übermorgen' if n == 2 else 'Morgen' %}{% if f is none %}Für {{ word | lower }} hab ich keine Vorhersage.{% else %}{{ word }} {{ de.get(f.condition, f.condition) }}, {{ f.templow | round(0) | int }} bis {{ f.temperature | round(0) | int }} Grad.{% set p = f.precipitation | float(0) %}{% if p >= 0.5 %} Etwa {{ p | round(0) | int if p >= 1.5 else 1 }} Millimeter Regen.{% elif 'regn' in s or 'schirm' in s %} Regen ist keiner angesagt.{% endif %}{% endif %}"""
 
 
 def forecast(house: House) -> dict:
@@ -743,6 +809,7 @@ class _Run:
 
     differ: list[tuple[str, str, dict, dict]] = field(default_factory=list)
     items: list[tuple[str, str]] = field(default_factory=list)   # every item put, for the labels
+    made: list[tuple[str, str]] = field(default_factory=list)    # the ones this run made or replaced
 
     def put(self, kind: str, item: str, config: dict) -> None:
         """Makes the automation or script item. One that is there and differs waits for settle()."""
@@ -762,6 +829,7 @@ class _Run:
                 self.differ.append((kind, item, config, old))
             return
         self.ha.request("POST", path, config)
+        self.made.append((kind, item))
         self.progress(f"{kind} {item} made")
 
     def settle(self) -> None:
@@ -796,6 +864,7 @@ class _Run:
                 continue
             saved = self.keep(f"{kind}-{item}", old)
             self.ha.request("POST", f"/api/config/{kind}/config/{item}", config)
+            self.made.append((kind, item))
             self.progress(f"{kind} {item} replaced; the old one is in {saved}")
         self.differ.clear()
 
@@ -885,8 +954,38 @@ def set_up(ha: HomeAssistant, show: str, entities: list[str], *, choose: Chooser
     _set_up(run, show, entities)
     run.settle()
     own = [(k, i) for k, i in run.items if i.startswith(OURS)]
+    start = clock()
     labels.mark(ha, progress, node=node or node_slug(show), show_items=own,
                 house_items=[x for x in run.items if x not in own], sleep=sleep, clock=clock)
+    if ("script", CLIMATE) in run.made:
+        # The labels waited for Home Assistant's reload already; this waits out the rest of those 10 s.
+        expose(ha, progress, CLIMATE, sleep=sleep, clock=clock, wait=max(0.0, start + 10 - clock()))
+
+
+def expose(ha: HomeAssistant, progress: Callable[[str], None], script: str, *,
+           sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic,
+           wait: float = 10) -> None:
+    """Exposes the script to Assist, so the model has it as a tool. Home Assistant leaves new scripts
+    unexposed. Only done when the run made it, so one taken away from Assist by hand stays that way."""
+    until = clock() + wait
+    while True:
+        try:
+            found = next((e["entity_id"] for e in ha.ws({"type": "config/entity_registry/list"}) or []
+                          if e.get("platform") == "script" and e.get("unique_id") == script), None)
+            if found:
+                ha.ws({"type": "homeassistant/expose_entity", "assistants": ["conversation"],
+                       "entity_ids": [found], "should_expose": True})
+                progress(f"script {script} is exposed to Assist")
+                return
+        except HomeAssistantError as exc:
+            progress(f"WARN: Home Assistant did not expose script {script} to Assist ({exc}). Expose it "
+                     "under Settings, Voice assistants, Expose, or the model can't use it")
+            return
+        if clock() >= until:
+            progress(f"WARN: Home Assistant had not loaded script {script} yet, so it isn't exposed to "
+                     "Assist. Running the installer again does that")
+            return
+        sleep(1)
 
 
 def _set_up(run: _Run, show: str, entities: list[str]) -> None:
@@ -901,6 +1000,8 @@ def _set_up(run: _Run, show: str, entities: list[str]) -> None:
     run.put("automation", "jarvis_local_volume", volume(house))
     run.put("automation", "jarvis_local_where_are_we", where_are_we(house))
     run.put("automation", "jarvis_local_room_temperature", room_temperature(house))
+    run.put("automation", "jarvis_local_room_humidity", room_humidity(house))
+    run.put("script", CLIMATE, room_climate(house))
     run.put("automation", "jarvis_local_wecker", wecker())
     if house.weather:
         run.put("automation", "jarvis_local_forecast", forecast(house))
