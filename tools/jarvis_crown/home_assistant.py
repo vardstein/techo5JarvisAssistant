@@ -980,11 +980,34 @@ def _card_calendars(card: dict) -> list[str]:
     return [str(c) for c in listed + [card.get("entity")] if c]
 
 
+def _card_reads_lists(ha: HomeAssistant) -> bool:
+    """Whether the calendar card file Home Assistant serves reads entities, a list of calendars. The
+    installer writes dashboards, not card files (ha-dashboard/README.md), and a file from before lists
+    throws on one, which Home Assistant draws as a red card with nothing in it. When it cannot tell, it
+    says yes."""
+    try:
+        listed = ha.ws({"type": "lovelace/resources"}) or []
+        url = next((str(r.get("url")) for r in listed
+                    if isinstance(r, dict) and "jarvis-calendar-card" in str(r.get("url"))), "")
+        source = ha.request("GET", url) if url.startswith("/") else None
+    except HomeAssistantError:
+        return True
+    return not isinstance(source, str) or "entities" in source
+
+
 def _point_calendar_cards(ha: HomeAssistant, chosen: list[str], have: set[str],
-                          keep: Callable[[str, Any], str] | None) -> list[str]:
+                          keep: Callable[[str, Any], str] | None,
+                          progress: Callable[[str], None] = lambda _: None) -> tuple[list[str], bool]:
     """Points every Jarvis calendar card that has a calendar Home Assistant does not have (the dashboard
     ships with calendar.personal as a stand-in) at the chosen calendars: one goes in entity, more in
-    entities. A card whose calendars are all there is left alone. Returns the dashboards changed."""
+    entities. A card whose calendars are all there is left alone, unless it has a list the card file
+    cannot read: then it, like any card pointed here, gets only the first, and the log says to update
+    the file. Returns the dashboards changed, and whether the cards could take all the chosen ones."""
+    lists = len(chosen) == 1 or _card_reads_lists(ha)
+    if not lists:
+        progress("WARN: the calendar card file on Home Assistant is older than this installer and shows only one "
+                 f"calendar, so the card shows {chosen[0]}; copy ha-dashboard/www/openjade/jarvis-calendar-card.js "
+                 "to /config/www/openjade/ and raise its ?v= for all of them (ha-dashboard/README.md)")
     changed = []
     boards = ha.ws({"type": "lovelace/dashboards/list"}) or []
     for path in [None] + [b.get("url_path") for b in boards if b.get("mode") == "storage"]:
@@ -993,13 +1016,13 @@ def _point_calendar_cards(ha: HomeAssistant, chosen: list[str], have: set[str],
         except HomeAssistantError:
             continue
         cards = [c for c in _calendar_cards(config) if not _card_calendars(c) or
-                 any(cal not in have for cal in _card_calendars(c))]
+                 any(cal not in have for cal in _card_calendars(c)) or (not lists and c.get("entities"))]
         if not cards:
             continue
         if keep:
             keep(f"dashboard-{path or 'lovelace'}", json.loads(json.dumps(config)))
         for card in cards:
-            if len(chosen) == 1:
+            if len(chosen) == 1 or not lists:
                 card["entity"] = chosen[0]
                 card.pop("entities", None)
             else:
@@ -1007,7 +1030,7 @@ def _point_calendar_cards(ha: HomeAssistant, chosen: list[str], have: set[str],
                 card.pop("entity", None)
         ha.ws({"type": "lovelace/config/save", "url_path": path, "config": config})
         changed.append(path or "lovelace")
-    return changed
+    return changed, lists
 
 
 def _check_calendars(ha: HomeAssistant, chosen: list[str], progress: Callable[[str], None]) -> None:
@@ -1135,12 +1158,12 @@ def _set_up_calendars(ha: HomeAssistant, prefix: str, opts: "DeployOptions", cho
         progress(f"WARN: the Show has no esphome.{action} action yet, so it was not given its calendars")
     _check_calendars(ha, chosen, progress)
     try:
-        boards = _point_calendar_cards(ha, chosen, set(have), opts.keep_replaced)
+        boards, lists = _point_calendar_cards(ha, chosen, set(have), opts.keep_replaced, progress)
     except HomeAssistantError as exc:
         progress(f"WARN: the dashboard's calendar card was not changed: {exc}")
         return
     for board in boards:
-        progress(f"the calendar card on {board} now shows {', '.join(chosen)}")
+        progress(f"the calendar card on {board} now shows {', '.join(chosen if lists else chosen[:1])}")
 
 
 def show_username(name: str) -> str:

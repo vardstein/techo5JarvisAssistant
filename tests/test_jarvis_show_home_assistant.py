@@ -743,8 +743,11 @@ class FakeCalendarHA(FakeHA):
         self.caldav_abort = caldav_abort
         self.caldav_brings = caldav_brings
         self.saved = []
+        self.card_file = None  # the calendar card's source as Home Assistant serves it; None: no resource
 
     def request(self, method, path, body=None):
+        if method == "GET" and path == "/local/openjade/jarvis-calendar-card.js?v=8":
+            return self.card_file
         if method == "GET" and path.startswith("/api/calendars/"):
             self.calls.append((method, path, body))
             calendar = urllib.parse.unquote(path[len("/api/calendars/"):].split("?", 1)[0])
@@ -788,6 +791,9 @@ class FakeCalendarHA(FakeHA):
         if message["type"] == "lovelace/config/save":
             self.saved.append(message)
             return {}
+        if message["type"] == "lovelace/resources" and self.card_file is not None:
+            return [{"url": "/local/openjade/jarvis-weather-card.js?v=10", "type": "module"},
+                    {"url": "/local/openjade/jarvis-calendar-card.js?v=8", "type": "module"}]
         if message["type"] == "config/entity_registry/list":
             return super().ws(message) + [{"entity_id": c, "config_entry_id": owner} for c, owner in self.owner.items()]
         if message["type"] == "config/entity_registry/update" and message["entity_id"] in self.owner:
@@ -950,6 +956,31 @@ class CalendarTests(unittest.TestCase):
                                     "entities": ["calendar.familie", "calendar.arbeit"]})
         self.assertEqual(cards[1]["entities"], ["calendar.arbeit", "calendar.familie"])  # all there: untouched
         self.assertIn("the calendar card on jarvis-display now shows calendar.familie, calendar.arbeit", log)
+
+    def test_a_card_file_from_before_lists_gets_one_calendar(self):
+        # It throws on entities, and Home Assistant draws a red card with nothing in it.
+        old = "setConfig(config) { if (!config.entity) { throw new Error('calendar entity required'); } }"
+        fake = FakeCalendarHA(calendars=("calendar.familie", "calendar.arbeit"))
+        fake.card_file = old
+        fake.boards = [{"url_path": "jarvis-display", "mode": "storage"}]
+        fake.views = {"jarvis-display": [{"cards": [
+            {"type": "custom:jarvis-calendar-card", "entity": "calendar.personal"},
+            {"type": "custom:jarvis-calendar-card", "entities": ["calendar.arbeit", "calendar.familie"]}]}]}
+        _, log = run_deploy(fake, host="10.0.0.9", calendars="calendar.familie, calendar.arbeit")
+        cards = fake.saved[0]["config"]["views"][0]["cards"]
+        self.assertEqual(cards, [{"type": "custom:jarvis-calendar-card", "entity": "calendar.familie"}] * 2)
+        self.assertTrue(any(line.startswith("WARN: the calendar card file on Home Assistant is older") for line in log))
+        self.assertIn("the calendar card on jarvis-display now shows calendar.familie", log)
+        self.assertEqual(fake.sources(), [{"calendars": "calendar.familie, calendar.arbeit"}])  # the Show: both
+
+        fake = FakeCalendarHA(calendars=("calendar.familie", "calendar.arbeit"))
+        fake.card_file = old.replace("config.entity", "config.entities || config.entity")
+        fake.boards = [{"url_path": "jarvis-display", "mode": "storage"}]
+        fake.views = {"jarvis-display": [{"cards": [{"type": "custom:jarvis-calendar-card", "entity": "calendar.personal"}]}]}
+        _, log = run_deploy(fake, host="10.0.0.9", calendars="calendar.familie, calendar.arbeit")
+        self.assertEqual(fake.saved[0]["config"]["views"][0]["cards"][0]["entities"],
+                         ["calendar.familie", "calendar.arbeit"])
+        self.assertFalse(any("older than this installer" in line for line in log))
 
     def test_each_chosen_calendar_is_tried_and_what_it_says_is_never_read_out(self):
         fake = FakeCalendarHA(calendars=("calendar.familie", "calendar.arbeit"), silent=("calendar.arbeit",))
