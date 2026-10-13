@@ -101,6 +101,8 @@ var nl = lang{
 		"turn the ring · tap when done":  "draai aan de ring · tik als je klaar bent",
 		"Update ready":                   "Update klaar",
 		"Update ready: {version} · Settings › Updates": "Update klaar: {version} · Instellingen › Updates",
+		"Key refused": "Sleutel geweigerd",
+		"Home Assistant refused this device · rerun the installer": "Home Assistant weigert dit apparaat · draai de installer",
 		"Missed: %s at %s":                   "Gemist: %s om %s",
 		"PLAYING":                            "SPEELT",
 		"PAUSED":                             "GEPAUZEERD",

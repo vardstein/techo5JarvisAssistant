@@ -108,6 +108,8 @@ var es = lang{
 		"turn the ring · tap when done":  "gira el anillo · toca al terminar",
 		"Update ready":                   "Actualización lista",
 		"Update ready: {version} · Settings › Updates": "Actualización lista: {version} · Configuración › Actualizaciones",
+		"Key refused": "Clave rechazada",
+		"Home Assistant refused this device · rerun the installer": "Home Assistant rechaza el equipo · repite el instalador",
 		"Missed: %s at %s":                   "Perdido: %s a las %s",
 		"PLAYING":                            "SONANDO",
 		"PAUSED":                             "EN PAUSA",

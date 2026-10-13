@@ -31,7 +31,7 @@ from typing import Any, Callable
 
 from . import genbu, labels
 from .home_assistant import (HomeAssistant, HomeAssistantError, NotFound, find_entry, node_name, node_slug,
-                             service_prefix, show_username)
+                             service_prefix, show_usernames)
 from .rename import _dashboards, device_name, show_devices, swap
 from .voice_kit import duck_existing
 
@@ -99,7 +99,7 @@ def _add(names: list[str], name: Any) -> None:
 
 
 def _users(ha: HomeAssistant, found: Found) -> None:
-    wanted = {show_username(n) for n in found.names}
+    wanted = {u for n in found.names for u in show_usernames(n)}
     for user in ha.ws({"type": "config/auth/list"}) or []:
         username = str(user.get("username") or "").lower()
         if username not in wanted:

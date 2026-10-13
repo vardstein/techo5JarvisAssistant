@@ -105,6 +105,8 @@ var fr = lang{
 		"turn the ring · tap when done":  "tournez la bague · touchez pour finir",
 		"Update ready":                   "Mise à jour prête",
 		"Update ready: {version} · Settings › Updates": "Mise à jour prête : {version} · Paramètres › Mises à jour",
+		"Key refused": "Clé refusée",
+		"Home Assistant refused this device · rerun the installer": "Home Assistant refuse l'appareil · relancez l'installateur",
 		"Missed: %s at %s":                   "Manqué : %s à %s",
 		"PLAYING":                            "EN LECTURE",
 		"PAUSED":                             "EN PAUSE",

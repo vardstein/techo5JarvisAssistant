@@ -574,18 +574,20 @@ func (f *Feature) rewire() {
 }
 
 // accessAction is the third action: the URL and a long-lived token for Home Assistant's REST
-// API, for the forecast and, later, pictures and cameras.
+// API, for the forecast and, later, pictures and cameras. It answers once the token is on disk, so the
+// installer deletes the old one only after that (GENBU-158); a failed write reaches it as a failure.
 func (f *Feature) accessAction() *esphome.Action {
 	return &esphome.Action{
-		Name: "home_assistant",
-		Args: []esphome.Arg{{Name: "url", Type: esphome.ArgString}, {Name: "token", Type: esphome.ArgString}},
+		Name:    "home_assistant",
+		Args:    []esphome.Arg{{Name: "url", Type: esphome.ArgString}, {Name: "token", Type: esphome.ArgString}},
+		Answers: true,
 		Run: func(c esphome.Call) (any, error) {
 			if err := hass.Get().Set(c.String("url"), c.String("token")); err != nil {
 				return nil, err
 			}
 			slog.Info("home: home assistant access stored")
 			f.wake()
-			return nil, nil
+			return map[string]any{"stored": true}, nil
 		},
 	}
 }

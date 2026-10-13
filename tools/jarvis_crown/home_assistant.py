@@ -1364,34 +1364,86 @@ def _sign_in(ha: HomeAssistant, username: str, password: str) -> dict:
         raise HomeAssistantError(f"the Show's user {username!r} could not sign in ({exc})") from None
 
 
-def make_show_user(ha: HomeAssistant, name: str, *, progress: Callable[[str], None] = print) -> str:
+def show_usernames(name: str) -> tuple[str, str]:
+    """The Show's user, and the second name it takes while an admin who is not the owner replaces it
+    (make_show_user). service_prefix never makes a "-", so the second name is nobody else's first."""
+    first = show_username(name)
+    return first, first + "-2"
+
+
+@dataclass
+class ShowKey:
+    """A new token of the Show's own user, and what it replaces: the user's older tokens and, when the
+    user had to be made again, the old user. They are deleted only once the Show says it has stored the
+    new token (retire), as until then they are what it uses (GENBU-158)."""
+
+    token: str
+    username: str
+    old_tokens: int = 0
+    old_users: list[dict] = field(default_factory=list)
+
+    def retire(self, ha: HomeAssistant, confirmed: bool, progress: Callable[[str], None]) -> None:
+        if not confirmed:
+            if self.old_tokens or self.old_users:
+                what = [f"{self.old_tokens} older token(s) of {self.username!r}"] if self.old_tokens else []
+                what += [f"the user {u.get('username')!r}" for u in self.old_users]
+                progress(f"WARN: the Show did not say it stored its new token, so {' and '.join(what)} "
+                         "stay in Home Assistant; run this again once the Show is up to date")
+            return
+        if self.old_tokens:
+            # Signed in with the new token itself, which is_current marks, so it cannot delete itself.
+            own = ha.as_user(self.token)
+            tokens = own.ws({"type": "auth/refresh_tokens"}) or []
+            if not any(t.get("is_current") for t in tokens):
+                progress(f"WARN: Home Assistant did not say which token of {self.username!r} is the new one, "
+                         "so the older ones stay")
+            else:
+                old = [t["id"] for t in tokens if t.get("type") == "long_lived_access_token"
+                       and not t.get("is_current") and t.get("id")]
+                for token_id in old:
+                    own.ws({"type": "auth/delete_refresh_token", "refresh_token_id": token_id})
+                if old:
+                    progress(f"{len(old)} older token(s) of {self.username!r} removed")
+        for user in self.old_users:
+            ha.ws({"type": "config/auth/delete", "user_id": user["id"]})
+            progress(f"Home Assistant user {user.get('username')!r} removed; the Show is {self.username!r} now")
+
+
+def make_show_user(ha: HomeAssistant, name: str, *, progress: Callable[[str], None] = print) -> ShowKey:
     """Makes the Show a Home Assistant user of its own, not an admin and only reachable from home,
-    and returns a new long-lived token of that user. Its password is random and kept nowhere, so
-    nobody signs in as it; the token is what the Show uses. Its older tokens are removed."""
-    username = show_username(name)
+    and a new long-lived token of that user. Its password is random and kept nowhere, so nobody signs
+    in as it; the token is what the Show uses. Nothing the Show may still be using is deleted here:
+    that waits for ShowKey.retire."""
+    names = show_usernames(name)
     password = secrets.token_urlsafe(32)
     users = ha.ws({"type": "config/auth/list"}) or []
-    user = next((u for u in users if (u.get("username") or "").lower() == username), None)
-    if user is not None:
-        if user.get("is_owner") or user.get("system_generated") or \
-                "system-admin" in (user.get("group_ids") or []):
-            raise HomeAssistantError(f"the Home Assistant user {username!r} is an admin or Home Assistant's "
-                                     "own; the Show does not take it over")
-        if not user.get("is_active", True):
-            raise HomeAssistantError(f"the Home Assistant user {username!r} is switched off")
+    found = sorted((u for u in users if (u.get("username") or "").lower() in names),
+                   key=lambda u: names.index((u.get("username") or "").lower()))
+    for u in found:
+        if u.get("is_owner") or u.get("system_generated") or "system-admin" in (u.get("group_ids") or []):
+            raise HomeAssistantError(f"the Home Assistant user {u.get('username')!r} is an admin or Home "
+                                     "Assistant's own; the Show does not take it over")
+        if not u.get("is_active", True):
+            raise HomeAssistantError(f"the Home Assistant user {u.get('username')!r} is switched off")
+    user = None
+    if found:
         try:
-            ha.ws({"type": "config/auth_provider/homeassistant/admin_change_password", "user_id": user["id"],
+            ha.ws({"type": "config/auth_provider/homeassistant/admin_change_password", "user_id": found[0]["id"],
                    "password": password})
-            progress(f"Home Assistant user {username!r} is already there")
+            user = found[0]
+            progress(f"Home Assistant user {user['username']!r} is already there")
         except HomeAssistantError as exc:
-            # Only the owner may set another user's password. Any admin may remove a user and make it
-            # again, which costs the Show nothing: its old tokens end either way.
+            # Only the owner may set another user's password. Any admin may make a second user and
+            # remove the first once the Show has the second one's token.
             if "unauthorized" not in str(exc).lower():
                 raise
-            ha.ws({"type": "config/auth/delete", "user_id": user["id"]})
-            progress(f"Home Assistant user {username!r} made again (only the owner may change its password)")
-            user = None
     if user is None:
+        taken = {(u.get("username") or "").lower() for u in found}
+        username = next((n for n in names if n not in taken), None)
+        if username is None:
+            raise HomeAssistantError(f"Home Assistant has both {names[0]!r} and {names[1]!r}, left by a run the "
+                                     "Show never confirmed, and only the owner may reuse one; remove the one "
+                                     "the Show does not use, or run this with the owner's token")
         made = ha.ws({"type": "config/auth/create", "name": name, "group_ids": ["system-users"],
                       "local_only": True})
         user_id = made["user"]["id"]
@@ -1401,8 +1453,14 @@ def make_show_user(ha: HomeAssistant, name: str, *, progress: Callable[[str], No
         except HomeAssistantError:
             ha.ws({"type": "config/auth/delete", "user_id": user_id})
             raise
-        progress(f"Home Assistant user {username!r} made (not an admin, home network only)")
+        user = {"id": user_id, "username": username}
+        if found:
+            progress(f"Home Assistant user {username!r} made next to {found[0]['username']!r}, which goes once "
+                     "the Show has the new token (only the owner may change a password)")
+        else:
+            progress(f"Home Assistant user {username!r} made (not an admin, home network only)")
 
+    username = user["username"]
     tokens = _sign_in(ha, username, password)
     try:
         own = ha.as_user(tokens["access_token"])
@@ -1410,18 +1468,30 @@ def make_show_user(ha: HomeAssistant, name: str, *, progress: Callable[[str], No
         token = own.ws({"type": "auth/long_lived_access_token", "client_name": label, "lifespan": 3650})
         if not isinstance(token, str) or not token:
             raise HomeAssistantError(f"Home Assistant made no token for {username!r}")
-        old = [t["id"] for t in own.ws({"type": "auth/refresh_tokens"}) or []
-               if t.get("type") == "long_lived_access_token" and t.get("client_name") != label and t.get("id")]
-        for token_id in old:
-            own.ws({"type": "auth/delete_refresh_token", "refresh_token_id": token_id})
-        progress(f"new token for {username!r}" + (f", {len(old)} older one(s) removed" if old else ""))
+        old = [t for t in own.ws({"type": "auth/refresh_tokens"}) or []
+               if t.get("type") == "long_lived_access_token" and t.get("client_name") != label]
+        progress(f"new token for {username!r}")
     finally:
         if tokens.get("refresh_token"):
             try:
                 ha.request("POST", "/auth/revoke", {"token": tokens["refresh_token"]}, auth=False, form=True)
             except HomeAssistantError as exc:
                 progress(f"WARN: the installer's own sign-in as {username!r} is left in Home Assistant: {exc}")
-    return token
+    return ShowKey(token, username, len(old), [u for u in found if u["id"] != user["id"]])
+
+
+def hand_over_key(ha: HomeAssistant, svc: str, data: dict) -> bool:
+    """Gives the Show its Home Assistant access and returns whether the Show said it stored it. A Show
+    from before GENBU-158 cannot say so: it is given the access all the same, and False keeps the old
+    tokens. A failure on the Show raises, as Home Assistant answers it with an error."""
+    try:
+        answer = ha.request("POST", f"/api/services/esphome/{svc}?return_response", data) or {}
+    except HomeAssistantError as exc:
+        if "does not support responses" not in str(exc):
+            raise
+        ha.request("POST", f"/api/services/esphome/{svc}", data)
+        return False
+    return (answer.get("service_response") or {}).get("stored") is True
 
 
 @dataclass(frozen=True)
@@ -1606,8 +1676,17 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
                 continue
             data = {"token": token}
         elif data is None:
-            data = {"url": s.ha_url, "token": make_show_user(ha, opts.name, progress=progress)}
+            key = make_show_user(ha, opts.name, progress=progress)
+            data = {"url": s.ha_url, "token": key.token}
+            try:
+                stored = hand_over_key(ha, svc, data)
+            except HomeAssistantError:
+                key.retire(ha, False, progress)
+                raise
+            progress(f"{what} given to the Show" + ("" if stored else ", which did not say it stored it"))
+            key.retire(ha, stored, progress)
             own_given = True
+            continue
         ha.request("POST", f"/api/services/esphome/{svc}", data)
         progress(f"{what} given to the Show")
     if s.music_assistant and f"{prefix}_sendspin_server" in services:

@@ -105,6 +105,8 @@ var it = lang{
 		"turn the ring · tap when done":  "ruota la ghiera · tocca per finire",
 		"Update ready":                   "Aggiornamento pronto",
 		"Update ready: {version} · Settings › Updates": "Aggiornamento pronto: {version} · Impostazioni › Aggiornamenti",
+		"Key refused": "Chiave rifiutata",
+		"Home Assistant refused this device · rerun the installer": "Home Assistant rifiuta il dispositivo · riesegui l'installer",
 		"Missed: %s at %s":                   "Perso: %s alle %s",
 		"PLAYING":                            "IN RIPRODUZIONE",
 		"PAUSED":                             "IN PAUSA",

@@ -189,6 +189,12 @@ class FindTests(unittest.TestCase):
         self.assertNotIn("U2", [u["id"] for u in found.users])
         self.assertNotIn("techo5_turn_room_down_livingroomecho8", [i for i, _ in found.automations])
 
+    def test_the_second_user_an_admin_run_made_is_found_too(self):
+        house = FakeHA()
+        house.users.append({"id": "U3", "username": "show_genbushow5-2", "group_ids": ["system-users"]})
+        found = remove.find(house, "genbuShow5")
+        self.assertEqual([u["id"] for u in found.users], ["U1", "U3"])
+
     def test_an_owner_named_like_the_show_is_never_taken(self):
         house = FakeHA()
         house.users.append({"id": "U9", "username": "show_old", "is_owner": True})

@@ -278,6 +278,20 @@ class FollowTests(unittest.TestCase):
         self.assertIn("WARN: the Show's user stays 'show_jarvis_show_5': only Home Assistant's owner may rename "
                       "users", log)
 
+    def test_the_second_user_is_renamed_in_its_own_name(self):
+        fake = FakeHA()
+        fake.users[0]["username"] = "show_jarvis_show_5-2"
+        follow(fake)
+        self.assertEqual(fake.users[0]["username"], "show_genbushow5-2")
+        self.assertEqual(fake.users[0]["name"], "genbuShow5")
+
+    def test_both_users_left_keep_their_names(self):
+        fake = FakeHA()
+        fake.users.insert(1, {"id": "U2", "username": "show_genbushow5", "name": "genbuShow5"})
+        _, log, _ = follow(fake)
+        self.assertEqual(fake.users[0]["username"], "show_jarvis_show_5")
+        self.assertTrue(any(line.startswith("WARN:") and "show_genbushow5" in line for line in log))
+
 
 class FollowRenameTests(unittest.TestCase):
     """The step in deploy() that asks and then calls follow(); deploy around it is in

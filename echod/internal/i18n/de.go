@@ -105,6 +105,8 @@ var de = lang{
 		"turn the ring · tap when done":  "Ring drehen · zum Beenden tippen",
 		"Update ready":                   "Update bereit",
 		"Update ready: {version} · Settings › Updates": "Update bereit: {version} · Einstellungen › Updates",
+		"Key refused": "Schlüssel abgelehnt",
+		"Home Assistant refused this device · rerun the installer": "Home Assistant lehnt ab · Installer neu ausführen",
 		"Missed: %s at %s":                   "Verpasst: %s um %s",
 		"PLAYING":                            "LÄUFT",
 		"PAUSED":                             "PAUSIERT",

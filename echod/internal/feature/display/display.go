@@ -2068,7 +2068,9 @@ func (d *Display) frame() time.Duration {
 	}
 	s.missed = missedNote(now, false)
 	if s.missed == "" {
-		s.update = updateNote(false)
+		if s.update = keyNote(false); s.update == "" {
+			s.update = updateNote(false)
+		}
 	}
 	s.install, s.installAt, _ = installNote()
 
