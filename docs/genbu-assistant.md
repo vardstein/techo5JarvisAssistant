@@ -171,7 +171,7 @@ What the installer adds to a Home Assistant today:
 - each Show's ESPHome entry and devices;
 - Genbu's settings device per Show;
 - the per-Show "turn the room down" automation;
-- the German sentence automations and the radio and music scripts (house-wide);
+- the German and English sentence automations and the radio and music scripts (house-wide);
 - the shared Music Assistant script;
 - the Assist pipeline;
 - the labels;
@@ -317,7 +317,12 @@ Jade's answers on 2026-10-12:
     (§4, "Optional features").
   - The voice extras stay per house, for the reason given there.
   - The voice extras also come in English: the same pieces with English sentences and answers, set up
-    when the house has an English pipeline. Built with 1.4.0, after the open tests.
+    when the house has an English pipeline (GENBU-120, built for 1.4.0). They are their own automations
+    (ids ending in `_en`) and a second volume blueprint, and they call the same music scripts as the
+    German ones, so a house with both languages has one set of scripts. Words both languages share
+    ("hi", "hey", "stop stop") stay German in such a house. Not in English yet: the genre named in
+    the random-music answer, the "found nothing, playing this instead" wording, and the model's
+    room-climate tool, which still answers in German words for the model to translate.
 
 ### Groups on a Show's card
 

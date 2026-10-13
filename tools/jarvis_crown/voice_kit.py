@@ -11,10 +11,12 @@ What the Shows use in Home Assistant beyond their own device, set up the same wa
   model and answered with what plays; and stopping it in the words Home Assistant's own sentences miss
   ("Stopp, stopp", "Hör auf", "Mach die Musik aus").
 
-The sentences are German, so all but the per-Show automation are only set up when an Assist pipeline
-speaks German. What the house has is looked up: rooms and how German says "in" them, each room's
-temperature sensor, the weather entity, Music Assistant's entry and players. Nothing is made for what
-the house lacks.
+The sentences come in German and in English (GENBU-120), each set made when an Assist pipeline speaks
+that language; a house with neither gets only the per-Show automation. The English ones are their own
+automations (ids ending in _en) and a second volume blueprint, and they use the same music scripts as
+the German ones, saying what those found in English. What the house has is looked up: rooms and how each
+language says "in" them, each room's temperature sensor, the weather entity, Music Assistant's entry
+and players. Nothing is made for what the house lacks.
 
 Every item is looked at first: missing is made, the same is left, and one that differs (edited by hand,
 or from an older installer) is only replaced when the person says so, after its old configuration was
@@ -42,6 +44,7 @@ _OUR_BLUEPRINT = re.compile(r"^https://github[.]com/vardstein/techo5JarvisAssist
 BLUEPRINT_DIR = Path(__file__).resolve().parents[2] / "blueprints" / "automation"
 TURN_ROOM_DOWN = "turn-room-down.yaml"
 VOLUME = "volume-where-the-music-is.yaml"
+VOLUME_EN = "volume-where-the-music-is-en.yaml"
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 OURS = "techo5_turn_room_down_"   # our per-Show automation ids; the rest of the id is the Show's prefix
 CLIMATE = "jarvis_room_climate"   # the model's room-climate tool, the one script it needs exposed
@@ -69,12 +72,32 @@ ROOMS = (
     (("terrace", "patio", "terrasse"), "auf der Terrasse", ("terrasse",)),
 )
 
+# The same rooms for the English sentences: how English says "in" them, and what someone says for them.
+EN_ROOMS = (
+    (("livingroom", "wohnzimmer", "wohnbereich", "lounge"), "in the living room", ("living room", "lounge")),
+    (("kitchen", "kuche", "kueche"), "in the kitchen", ("kitchen",)),
+    (("bedroom", "schlafzimmer"), "in the bedroom", ("bedroom",)),
+    (("bath", "bathroom", "bad", "badezimmer"), "in the bathroom", ("bathroom", "bath")),
+    (("office", "study", "buro", "buero", "arbeitszimmer"), "in the office", ("office", "study")),
+    (("floor", "hall", "hallway", "corridor", "flur", "diele"), "in the hallway", ("hallway", "hall", "corridor")),
+    (("balcony", "balkon"), "on the balcony", ("balcony",)),
+    (("kidsroom", "childrensroom", "nursery", "kinderzimmer"), "in the kids' room",
+     ("kids room", "kids' room", "kid's room", "children's room", "nursery")),
+    (("diningroom", "esszimmer"), "in the dining room", ("dining room",)),
+    (("guestroom", "gastezimmer", "gaestezimmer"), "in the guest room", ("guest room",)),
+    (("garden", "garten"), "in the garden", ("garden",)),
+    (("garage",), "in the garage", ("garage",)),
+    (("basement", "cellar", "keller"), "in the basement", ("basement", "cellar")),
+    (("terrace", "patio", "terrasse"), "on the terrace", ("terrace", "patio")),
+)
+
 
 @dataclass
 class House:
     """What the pieces need to know about the house."""
 
     german: bool = False
+    english: bool = False
     areas: dict[str, str] = field(default_factory=dict)          # id -> name
     temperatures: dict[str, str] = field(default_factory=dict)   # area id -> its temperature sensor
     humidities: dict[str, str] = field(default_factory=dict)     # area id -> its humidity sensor
@@ -103,8 +126,9 @@ def look(ha: HomeAssistant) -> House:
         listed = ha.ws({"type": "assist_pipeline/pipeline/list"}) or {}
     except HomeAssistantError:
         listed = {}
-    house.german = any(str(p.get("language") or "").lower().startswith("de")
-                       for p in listed.get("pipelines") or [] if isinstance(p, dict))
+    languages = [str(p.get("language") or "").lower() for p in listed.get("pipelines") or [] if isinstance(p, dict)]
+    house.german = any(lang.startswith("de") for lang in languages)
+    house.english = any(lang.startswith("en") for lang in languages)
     house.agent = assistant_agent(listed)
     house.areas = {a.get("area_id"): a.get("name") or a.get("area_id")
                    for a in ha.ws({"type": "config/area_registry/list"}) or [] if a.get("area_id")}
@@ -166,13 +190,14 @@ def assistant_agent(listed: dict) -> str | None:
     return None if agent in ("conversation.home_assistant", "homeassistant") else agent
 
 
-def room_words(areas: dict[str, str]) -> tuple[dict[str, str], dict[str, str]]:
-    """For the house's areas: how German says "in" each one it knows, and the words for them."""
+def room_words(areas: dict[str, str], rooms: tuple = ROOMS) -> tuple[dict[str, str], dict[str, str]]:
+    """For the house's areas: how German (or English, with EN_ROOMS) says "in" each one it knows, and
+    the words for them."""
     phrases: dict[str, str] = {}
     words: dict[str, str] = {}
     for area, name in sorted(areas.items()):
         keys = {slug_key(area), slug_key(name), slug_key(name, True)}
-        for names, phrase, said in ROOMS:
+        for names, phrase, said in rooms:
             if keys & set(names):
                 phrases[area] = phrase
                 for w in said:
@@ -459,6 +484,229 @@ def genbu_update() -> dict:
              "default": [
                  {"action": "genbu.install_updates", "data": {}, "response_variable": "started"},
                  {"set_conversation_response": GENBU_UPDATING}]}],
+        "mode": "single",
+    }
+
+
+# ------------------------------------------------------------------------------- answers in English
+
+# The same answers for a house with an English pipeline. Each English sentence differs from every German
+# one, so a house with both languages has both sets side by side; the few words both languages share
+# ("hi", "hey", "stop stop") are only in the English set when there is no German one.
+
+WHERE_ARE_WE_EN = r"""{% set en = __PHRASES__ %}{% set a = area_id(trigger.device_id) if trigger.device_id else none %}{% if a in en %}We're {{ en[a] }}.{% elif a %}We're in {{ area_name(a) }}.{% else %}I don't know, I'm not assigned to a room.{% endif %}"""
+
+
+def where_are_we_en(house: House) -> dict:
+    phrases, _ = room_words(house.areas, EN_ROOMS)
+    return {
+        "alias": "Genbu - Where are we (English)",
+        "description": 'Answers "Where are we?" locally with the room of the device that was asked.',
+        "triggers": [{"trigger": "conversation", "command": [
+            "where (are we|am i) [right now|now]",
+            "(which|what) room (are we|am i|are you) in [right now|now]",
+            "where are you [right now|now]",
+            "(which|what) room is this"]}],
+        "actions": [{"set_conversation_response": _fill(WHERE_ARE_WE_EN, phrases=phrases)}],
+        "mode": "parallel",
+    }
+
+
+def greeting_en(house: House) -> dict:
+    words = "hello|good morning|good afternoon|good evening" + ("" if house.german else "|hi|hey")
+    return {
+        "alias": "Genbu - Greeting (English)",
+        "description": "Hands greetings like \"Hello\" to the assistant's model. Home Assistant would answer "
+                       "them itself otherwise.",
+        "triggers": [{"trigger": "conversation", "command": [f"({words}) [genbu|home assistant]"]}],
+        "actions": [
+            {"action": "conversation.process", "data": {
+                "agent_id": house.agent, "text": "{{ trigger.sentence }}",
+                "language": "{{ trigger.user_input.language | default('en', true) }}"},
+             "response_variable": "said", "continue_on_error": True},
+            {"set_conversation_response":
+                "{{ said.response.speech.plain.speech | default('Hello.', true) if said is defined else 'Hello.' }}"}],
+        "mode": "parallel",
+    }
+
+
+ROOM_TEMPERATURE_EN = (r"""{% set rooms = __WORDS__ %}{% set sensors = __SENSORS__ %}{% set en = __PHRASES__ %}{% if 'outside' in (trigger.sentence | lower) %}{% set t = state_attr(__WEATHER__, 'temperature') | float(none) %}{% if t is none %}I don't know the weather right now.{% else %}{% set v = '%.1f' | format(t) %}It's {{ v[:-2] if v.endswith('.0') else v }} degrees outside.{% endif %}{% else %}""" + ROOM_PICK
+                       + r"""{% set t = states(sensors[a]) | float(none) if a in sensors else none %}{% if t is none and a %}{% set t = area_entities(a) | select('match', 'climate\\.') | map('state_attr', 'current_temperature') | reject('none') | map('float') | list | first | default(none) %}{% endif %}{% if t is not none %}{% set v = '%.1f' | format(t) %}It's {{ v[:-2] if v.endswith('.0') else v }} degrees {{ en.get(a, 'in ' ~ area_name(a)) }}.{% elif a %}I don't have a reading for {{ area_name(a) }} right now.{% else %}I don't know that room.{% endif %}{% endif %}""")
+
+
+def room_temperature_en(house: House) -> dict:
+    phrases, words = room_words(house.areas, EN_ROOMS)
+    asked = ("how (warm|cold|hot) is it [right now|now] {place}",
+             "(what's|what is) the temperature [right now|now] {place}",
+             "how many degrees is it [right now|now] {place}")
+    places = ["(in|on) the {raum}", "in here"] + (["outside"] if house.weather else [])
+    command = [sentence.format(place=place) for place in places for sentence in asked]
+    # No place named means the Show's room, as "in here" does.
+    command += ["how (warm|cold|hot) is it [right now|now]", "(what's|what is) the temperature [right now|now]"]
+    return {
+        "alias": "Genbu - Room temperature (English)",
+        "description": "Answers room temperature questions locally from the room sensor and names the room, "
+                       "so it can't be mistaken for the weather.",
+        "triggers": [{"trigger": "conversation", "command": command}],
+        "actions": [{"set_conversation_response": _fill(
+            ROOM_TEMPERATURE_EN, words=words, sensors=house.temperatures, phrases=phrases,
+            weather=house.weather or "")}],
+        "mode": "parallel",
+    }
+
+
+ROOM_HUMIDITY_EN = (r"""{% set rooms = __WORDS__ %}{% set sensors = __SENSORS__ %}{% set en = __PHRASES__ %}{% if 'outside' in (trigger.sentence | lower) %}{% set h = state_attr(__WEATHER__, 'humidity') | float(none) %}{% if h is none %}I don't know the weather right now.{% else %}It's {{ h | round(0) | int }} percent humidity outside.{% endif %}{% else %}""" + ROOM_PICK
+                    + r"""{% set h = states(sensors[a]) | float(none) if a in sensors else none %}{% if h is none and a %}{% set h = area_entities(a) | select('match', 'climate\\.') | map('state_attr', 'current_humidity') | reject('none') | map('float') | list | first | default(none) %}{% endif %}{% if h is not none %}It's {{ h | round(0) | int }} percent humidity {{ en.get(a, 'in ' ~ area_name(a)) }}.{% elif a %}I don't have a humidity reading for {{ area_name(a) }} right now.{% else %}I don't know that room.{% endif %}{% endif %}""")
+
+
+def room_humidity_en(house: House) -> dict:
+    phrases, words = room_words(house.areas, EN_ROOMS)
+    asked = ("how (humid|dry) is it [right now|now] {place}",
+             "(what's|what is) the humidity [right now|now] {place}",
+             "how high is the humidity [right now|now] {place}")
+    places = ["(in|on) the {raum}", "in here"] + (["outside"] if house.weather else [])
+    command = [sentence.format(place=place) for place in places for sentence in asked]
+    command += ["how (humid|dry) is it [right now|now]", "(what's|what is) the humidity [right now|now]",
+                "how high is the humidity [right now|now]"]
+    return {
+        "alias": "Genbu - Room humidity (English)",
+        "description": "Answers humidity questions locally from the room's own sensor, or the thermostat's "
+                       "reading where there is none.",
+        "triggers": [{"trigger": "conversation", "command": command}],
+        "actions": [{"set_conversation_response": _fill(
+            ROOM_HUMIDITY_EN, words=words, sensors=house.humidities, phrases=phrases,
+            weather=house.weather or "")}],
+        "mode": "parallel",
+    }
+
+
+FORECAST_EN = r"""{% set en = {'sunny': 'sunny', 'clear-night': 'clear', 'partlycloudy': 'partly cloudy', 'cloudy': 'cloudy', 'rainy': 'rain', 'pouring': 'heavy rain', 'snowy': 'snow', 'snowy-rainy': 'sleet', 'fog': 'fog', 'hail': 'hail', 'lightning': 'thunderstorms', 'lightning-rainy': 'thunderstorms and rain', 'windy': 'windy', 'windy-variant': 'windy and cloudy', 'exceptional': 'severe weather'} %}{% set s = trigger.sentence | lower %}{% set n = 2 if 'day after' in s else 1 %}{% set day = (now() + timedelta(days=n)).date() %}{% set f = fc[__WEATHER__].forecast | selectattr('datetime', 'search', day | string) | list | first | default(none) %}{% set word = 'The day after tomorrow' if n == 2 else 'Tomorrow' %}{% if f is none %}I don't have a forecast for {{ word | lower }}.{% else %}{{ word }}: {{ en.get(f.condition, f.condition) }}, {{ f.templow | round(0) | int }} to {{ f.temperature | round(0) | int }} degrees.{% set p = f.precipitation | float(0) %}{% set mm = p | round(0) | int if p >= 1.5 else 1 %}{% if p >= 0.5 %} About {{ mm }} {{ 'millimeter' if mm == 1 else 'millimeters' }} of rain.{% elif 'rain' in s or 'umbrella' in s %} No rain expected.{% endif %}{% endif %}"""
+
+
+def forecast_en(house: House) -> dict:
+    day = "(tomorrow|the day after tomorrow)"
+    return {
+        "alias": "Genbu - Forecast (English)",
+        "description": "Answers tomorrow's and the day after's weather locally from the forecast, instead of "
+                       "the model guessing it.",
+        "triggers": [{"trigger": "conversation", "command": [
+            f"(what's|what is|how's|how is) the weather [going to be] [like] {day}",
+            f"(what's|what is) the (forecast|weather forecast) for {day}",
+            f"(will it|is it going to) rain {day}",
+            f"how (warm|cold|hot) (will it be|is it going to be) {day}",
+            f"do i need an umbrella {day}"]}],
+        "actions": [
+            {"action": "weather.get_forecasts", "target": {"entity_id": house.weather},
+             "data": {"type": "daily"}, "response_variable": "fc"},
+            {"set_conversation_response": _fill(FORECAST_EN, weather=house.weather)}],
+        "mode": "parallel",
+    }
+
+
+def volume_en(house: House) -> dict:
+    _, words = room_words(house.areas, EN_ROOMS)
+    return {
+        "alias": "Genbu - Volume (English)",
+        "description": f"Blueprint {BLUEPRINT_FOLDER}/{VOLUME_EN}.",
+        "use_blueprint": {"path": f"{BLUEPRINT_FOLDER}/{VOLUME_EN}", "input": {"rooms": words}},
+    }
+
+
+def _number_words_en() -> dict[str, int]:
+    """English number words up to fifty, and "a"/"an" as one ("in an hour", "a quarter past"). Twenty-one
+    and the like come as two words, joined in the template."""
+    words = {w: n for n, w in enumerate(
+        "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen "
+        "sixteen seventeen eighteen nineteen".split())}
+    words.update({"a": 1, "an": 1, "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50})
+    return words
+
+
+NUMBER_WORDS_EN = _number_words_en()
+
+# The alarm for English: the Show is found as for the Wecker, the time is read the English way. "half past
+# seven" is 7:30, "quarter to eight" 7:45, "ten past seven" 7:10, "7 pm" and "seven in the evening" 19:00.
+WECKER_VARIABLES_EN = {
+    "techo5": WECKER_VARIABLES["techo5"],
+    "node": WECKER_VARIABLES["node"],
+    # What was said for the time, with number words as digits: "in a minute" is "in 1 minute", "seven
+    # thirty five" is "7 35", "7.30pm" is "7:30 pm".
+    "spoken": r"{%- set words = " + repr(NUMBER_WORDS_EN) + r" -%}{%- set ns = namespace(out=[]) -%}"
+              r"{%- set w = (trigger.slots.when | default('')) | string | lower"
+              r" | regex_replace('([0-9])([ap])[.]?\\s?m\\b[.]?', '\\1 \\2m')"
+              r" | regex_replace('\\b([ap])[.]\\s?m\\b[.]?', '\\1m') | replace('.', ':') | replace('-', ' ') -%}"
+              r"{%- for t in w.split() -%}{%- set ns.out = ns.out + [words.get(t | trim(',:;!?'), t) | string] -%}"
+              r"{%- endfor -%}{{ ns.out | join(' ') | regex_replace('\\b([2-5])0 ([1-9])\\b', '\\1\\2') }}",
+    "nums": "{{ spoken | regex_findall('[0-9]{1,2}') | map('int') | list }}",
+    "length": "{{ spoken is search('minute|hour') }}",
+    # A length of time in minutes, or -1 when none was heard.
+    "minutes": r"{%- if spoken is search('(3|three) quarters? of (1 )?hour') -%}45"
+               r"{%- elif spoken is search('quarter (of (1 )?)?hour') -%}15"
+               r"{%- elif 'hour' in spoken and spoken is search('and (1 )?half') -%}{{ (nums[0] if nums else 1) * 60 + 30 }}"
+               r"{%- elif spoken is search('half (1 )?hour') -%}30"
+               r"{%- elif not nums and 'hour' in spoken -%}60{%- elif not nums -%}-1{%- elif 'hour' in spoken -%}"
+               r"{{ nums[0] * 60 + (nums[1] if nums | count > 1 else 0) }}{%- else -%}{{ nums[0] }}{%- endif -%}",
+    "before": r"{{ spoken is search('\\b(to|till|before)\\b') }}",
+    # Minutes counted from the hour: "half past", "quarter to", "ten past"; "half seven" is 7:30 as well.
+    "rel": r"{{ before or spoken is search('\\b(past|after|half)\\b') }}",
+    "q": "{{ 15 if 'quarter' in spoken else 30 if 'half' in spoken else (nums[0] if nums | count > 1 else 0) }}",
+    "pm": r"{{ spoken is search('\\bpm\\b|evening|afternoon|tonight|night') }}",
+    "am": r"{{ spoken is search('\\bam\\b|morning') }}",
+    "h": "{{ (nums[-1] - 1 if before else nums[-1]) if rel and nums else nums[0] if nums else -1 }}",
+    "m": "{{ (60 - q | int if before else q | int) if rel and nums else (nums[1] if nums | count > 1 else 0) }}",
+    "hh": "{{ h + 12 if pm and 0 <= h < 12 else 0 if am and h == 12 else h }}",
+    "at": WECKER_VARIABLES["at"],
+}
+
+
+def alarm_en() -> dict:
+    return {
+        "alias": "Genbu - Alarm (English)",
+        "description": 'Sets the alarm on the device that was asked, without the language model: "set an alarm '
+                       'for 7 am", "wake me up in 20 minutes". The model would only say it had set one.',
+        "triggers": [{"trigger": "conversation", "command": [
+            "(set|make|create) [me] [(an|a|the|my)] alarm (for|at|to|in) {when}",
+            "wake me [up] [please] (at|in) {when}",
+            "alarm (for|at|in) {when}"]}],
+        "actions": [
+            {"variables": dict(WECKER_VARIABLES_EN)},
+            {"choose": [
+                {"conditions": "{{ not techo5 }}", "sequence": [
+                    {"set_conversation_response": "Please say that to the device the alarm should ring on."}]},
+                {"conditions": "{{ length and not (1 <= minutes | int <= 1440) }}", "sequence": [
+                    {"set_conversation_response": "I didn't catch that. For how long?"}]},
+                {"conditions": "{{ not length and (h < 0 or hh > 23 or m > 59) }}", "sequence": [
+                    {"set_conversation_response": "I didn't catch the time. For when?"}]}],
+             "default": [
+                 {"action": "esphome.{{ node }}_alarm_set",
+                  "data": {"time": "{{ at }}", "days": "once", "label": "Alarm"}},
+                 {"set_conversation_response":
+                  "{%- if length -%}The alarm goes off in {{ minutes }} "
+                  "{{ 'minute' if minutes | int == 1 else 'minutes' }}, at {{ at }}."
+                  "{%- else -%}Alarm set for {{ at }}.{%- endif -%}"}]}],
+        "mode": "queued",
+    }
+
+
+GENBU_UPDATING_EN = r"""{%- set u = started.updating if started is mapping else [] -%}{%- if u -%}Updates are starting on {% if u | count == 1 %}{{ u[0] }}{% else %}{{ u[:-1] | join(', ') }} and {{ u[-1] }}{% endif %}.{%- else -%}All Shows are up to date.{%- endif -%}"""
+
+
+def genbu_update_en() -> dict:
+    return {
+        "alias": "Genbu - Install updates (English)",
+        "description": 'Starts the update on every Show that has one, whichever was asked: "install the '
+                       'updates", "update the Shows". Needs the Genbu integration.',
+        "triggers": [{"trigger": "conversation", "command": [
+            "[please] (install|start|run) [all] [the] updates [please]",
+            "[please] update [all] [the] shows [please]"]}],
+        "actions": [
+            {"choose": [
+                {"conditions": "{{ states('sensor.genbu_house_version') in ['unknown', 'unavailable'] }}",
+                 "sequence": [{"set_conversation_response":
+                               "Genbu isn't running in Home Assistant right now, so I can't start updates."}]}],
+             "default": [
+                 {"action": "genbu.install_updates", "data": {}, "response_variable": "started"},
+                 {"set_conversation_response": GENBU_UPDATING_EN}]}],
         "mode": "single",
     }
 
@@ -918,6 +1166,105 @@ def local_music_stop(house: House) -> dict:
     }
 
 
+# ------------------------------------------------------------------------------------- music in English
+
+# The English sentences call the same scripts as the German ones, so a house with both languages has one
+# set of scripts. A mood is passed on as the German word MOOD_PLAN knows ("upbeat" is "flott", "music by
+# Queen" is "von queen"); a station name without the words around it. The scripts answer in German, so
+# the English answer is phrased from what they found.
+MOOD_EN = r"""{% set m = (trigger.slots.mood | default('')) | string | lower | regex_replace('[^a-z0-9 ]+', ' ') | trim %}{% set stop = ['some', 'any', 'a', 'little', 'bit', 'of', 'something', 'anything', 'more', 'my', 'the', 'music', 'songs', 'song', 'please', 'good', 'nice', 'new'] %}{% if said is search('\\b(music|songs|something|anything) by ') or m is search('^by ') %}von {{ m | regex_replace('^by ', '') }}{% elif m is search('\\b(upbeat|fast|danc|party|happy|cheerful|disco|energ)') %}flott{% elif m is search('\\b(calm|relax|chill|quiet|soft|slow|sleep|romantic|cosy|cozy)') %}ruhig{% elif m is search('\\b(loud|hard|heavy|angry|rock)|\\bmetal(?!lica)') %}laut{% elif m is search('\\b90|nineties') %}90er{% elif m is search('favou?rite') %}lieblings{% else %}{{ m.split() | reject('in', stop) | join(' ') }}{% endif %}"""
+
+LOCAL_MUSIC_KIND_EN = r"""{% if trigger.id == 'toggle' %}toggle{% elif 'station' in trigger.slots or said is search('\\b(radio|station)\\b') %}radio{% elif query | trim %}mood{% else %}random{% endif %}"""
+
+# "play the station rock antenne please" is "rock antenne".
+STATION_EN = r"""{{ said | regex_replace('^(please )?(play|turn on|turn|put on|listen to)( the)?( station)?\\s*', '') | regex_replace('\\s*(on|please)$', '') }}"""
+
+MUSIC_ANSWER_EN = (r"""{% if r is not defined or r is not mapping %}__FALLBACK__{% elif r.message is defined and r.message == '""" + NO_PLAYER + r"""' %}There's no music speaker here. Pick one in Home Assistant under the Show's Music plays on.{% elif kind == 'radio' %}{% if r.success | default(false) %}Playing {{ r.station }}.{% elif r.stations is defined and r.stations %}I don't know that station. I have {{ r.stations | join(', ') }}.{% elif r.stations is defined %}I don't have any radio stations.{% else %}__FALLBACK__{% endif %}{% elif not r.success | default(false) %}I can't find any music in the library right now.{% elif r.title and (r.artist or kind != 'mood') %}Playing {{ r.title }}{{ ' by ' ~ r.artist if r.artist }} and similar songs.{% elif r.title %}Playing the playlist {{ r.title }}.{% elif r.artist %}Playing music by {{ r.artist }}.{% else %}__FALLBACK__{% endif %}""")
+
+NOW_PLAYING_EN = (r"""{% set t = state_attr(playing[0], 'media_title') or '' %}{% set ar = state_attr(playing[0], 'media_artist') or '' %}{% set t = (t | """
+                  + SPOKEN + r""") or t %}{% if t %}Now playing {{ t }}{{ ' by ' ~ ar if ar }}.{% else %}Music is already playing here.{% endif %}""")
+
+
+def local_music_en(house: House) -> dict:
+    def answered(script: str, data: dict, fallback: str) -> list[dict]:
+        return [{"action": script, "data": {**data, "player": "{{ room_player }}"}, "response_variable": "r",
+                 "continue_on_error": True},
+                {"set_conversation_response": MUSIC_ANSWER_EN.replace("__FALLBACK__", fallback)}]
+    return {
+        "alias": "Genbu - Local Music (English)",
+        "description": 'Music without the language model: random, by mood ("play something upbeat", "play '
+                       'music by ..."), or radio ("play Rock Antenne radio"), in the room of the device that '
+                       'was asked. Says what plays now. All sentences are in one trigger, so two runs never '
+                       'start at once. Just "the music" has its own trigger: when something already plays '
+                       'here, it only says what.',
+        "mode": "single",
+        "triggers": [{"trigger": "conversation", "command": [
+            "[please] play [(some|any)] music [please]",
+            "play (something|anything) [please]",
+            "put [some] music on",
+            "put on [some] music",
+            "(start|turn on) [(the|some)] music",
+            "turn [the] music on",
+            "play (something|anything) {mood}",
+            "play [(some|a bit of|a little)] {mood} music",
+            "play [some] (music|songs) by {mood}",
+            "play something by {mood}",
+            "(play|turn on|put on) [the] radio",
+            "turn the radio on",
+            "play {station} radio",
+            "play {station} radio {rest}",
+            "play radio {station}",
+            "play [the] station {station}",
+            "listen to {station} radio",
+            "listen to radio {station}",
+            "listen to [the] radio"]},
+            {"trigger": "conversation", "id": "toggle", "command": ["[please] [the] music [please]"]}],
+        "actions": [
+            {"variables": {"said": "{{ trigger.sentence | lower | regex_replace('[^a-z0-9 ]+', ' ') "
+                                   "| regex_replace(' +', ' ') | trim }}",
+                           "query": MOOD_EN, "kind": LOCAL_MUSIC_KIND_EN,
+                           "room_player": ROOM_PLAYER, "players": house.players,
+                           "target_player": LOCAL_TARGET}},
+            {"choose": [
+                {"conditions": "{{ kind == 'toggle' }}", "sequence": [
+                    {"variables": {"playing": ROOM_PLAYING}},
+                    {"if": "{{ playing | count > 0 }}",
+                     "then": [{"set_conversation_response": NOW_PLAYING_EN}],
+                     "else": answered("script.play_random_music", {}, "Music's on.")}]},
+                {"conditions": "{{ kind == 'radio' }}", "sequence": answered(
+                    "script.jarvis_play_radio", {"name": STATION_EN}, "The radio isn't working right now.")},
+                {"conditions": "{{ kind == 'mood' }}", "sequence": answered(
+                    "script.jarvis_play_mood", {"query": "{{ query }}"}, "That didn't work right now.")}],
+             "default": answered("script.play_random_music", {}, "Music's on.")},
+        ],
+    }
+
+
+def local_music_stop_en(house: House) -> dict:
+    """Stopping the music in the words the built-in English sentences miss. "Stop" and "pause" are Home
+    Assistant's own; "stop stop" is German as well, so it is only here in a house without German."""
+    command = ["[please] (turn|switch) (off the music|the music off) [please]",
+               "[please] stop it [please]"]
+    if not house.german:
+        command.append("(stop|pause) (stop|pause) [(stop|pause)]")
+    return {
+        "alias": "Genbu - Local Music Stop (English)",
+        "description": 'Pauses the music in the room of the device that was asked, without the language model: '
+                       '"turn off the music", "stop it". Plain "stop" is left to Home Assistant itself.',
+        "mode": "single",
+        "triggers": [{"trigger": "conversation", "command": command}],
+        "actions": [
+            {"variables": {"room_player": ROOM_PLAYER, "players": house.players, "target_player": LOCAL_TARGET}},
+            {"variables": {"playing": ROOM_PLAYING}},
+            {"if": "{{ playing | count > 0 }}",
+             "then": [{"action": "media_player.media_pause", "target": {"entity_id": "{{ playing }}"},
+                       "continue_on_error": True},
+                      {"set_conversation_response": "Paused."}],
+             "else": [{"set_conversation_response": "Nothing's playing here."}]},
+        ],
+    }
+
+
 # ------------------------------------------------------------------------------------------ per Show
 
 def show_speakers(house: House, satellite: str) -> tuple[str, list[str]]:
@@ -1155,24 +1502,39 @@ def _set_up(run: _Run, show: str, entities: list[str], genres: dict[str, str]) -
     house.genres = genres
     run.blueprint(TURN_ROOM_DOWN)
     _per_show(run, house, show, entities)
-    if not house.german:
-        progress("no Assist pipeline speaks German, so the local answers and music sentences were left out")
+    if not (house.german or house.english):
+        progress("no Assist pipeline speaks German or English, so the local answers and music sentences "
+                 "were left out")
         return
-    run.blueprint(VOLUME)
-    run.put("automation", "jarvis_local_volume", volume(house))
-    run.put("automation", "jarvis_local_where_are_we", where_are_we(house))
-    if house.agent:
-        run.put("automation", "jarvis_local_greeting", greeting(house))
-    else:
-        progress("the assistant's agent is Home Assistant's own, so greetings stay with it")
-    run.put("automation", "jarvis_local_room_temperature", room_temperature(house))
-    run.put("automation", "jarvis_local_room_humidity", room_humidity(house))
+    if house.german:
+        run.blueprint(VOLUME)
+        run.put("automation", "jarvis_local_volume", volume(house))
+        run.put("automation", "jarvis_local_where_are_we", where_are_we(house))
+        if house.agent:
+            run.put("automation", "jarvis_local_greeting", greeting(house))
+        run.put("automation", "jarvis_local_room_temperature", room_temperature(house))
+        run.put("automation", "jarvis_local_room_humidity", room_humidity(house))
+        run.put("automation", "jarvis_local_wecker", wecker())
+        run.put("automation", "jarvis_local_genbu_update", genbu_update())
+        if house.weather:
+            run.put("automation", "jarvis_local_forecast", forecast(house))
+    if house.english:
+        run.blueprint(VOLUME_EN)
+        run.put("automation", "jarvis_local_volume_en", volume_en(house))
+        run.put("automation", "jarvis_local_where_are_we_en", where_are_we_en(house))
+        if house.agent:
+            run.put("automation", "jarvis_local_greeting_en", greeting_en(house))
+        run.put("automation", "jarvis_local_room_temperature_en", room_temperature_en(house))
+        run.put("automation", "jarvis_local_room_humidity_en", room_humidity_en(house))
+        run.put("automation", "jarvis_local_alarm_en", alarm_en())
+        run.put("automation", "jarvis_local_genbu_update_en", genbu_update_en())
+        if house.weather:
+            run.put("automation", "jarvis_local_forecast_en", forecast_en(house))
+    # The model's room-climate tool answers in German words; the model says it in the asker's language.
     run.put("script", CLIMATE, room_climate(house))
-    run.put("automation", "jarvis_local_wecker", wecker())
-    run.put("automation", "jarvis_local_genbu_update", genbu_update())
-    if house.weather:
-        run.put("automation", "jarvis_local_forecast", forecast(house))
-    else:
+    if not house.agent:
+        progress("the assistant's agent is Home Assistant's own, so greetings stay with it")
+    if not house.weather:
         progress("no weather entity, so no local forecast")
     if not house.music_entry:
         progress("no Music Assistant in Home Assistant, so no music sentences")
@@ -1184,5 +1546,9 @@ def _set_up(run: _Run, show: str, entities: list[str], genres: dict[str, str]) -
     run.put("script", "jarvis_play_radio", play_radio(house))
     run.put("script", "jarvis_play_mood", play_mood(house))
     run.put("script", "play_random_music", play_random(house))
-    run.put("automation", "jarvis_local_random_music", local_music(house))
-    run.put("automation", "jarvis_local_music_stop", local_music_stop(house))
+    if house.german:
+        run.put("automation", "jarvis_local_random_music", local_music(house))
+        run.put("automation", "jarvis_local_music_stop", local_music_stop(house))
+    if house.english:
+        run.put("automation", "jarvis_local_random_music_en", local_music_en(house))
+        run.put("automation", "jarvis_local_music_stop_en", local_music_stop_en(house))

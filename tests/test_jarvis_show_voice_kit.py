@@ -27,7 +27,7 @@ class FakeHA:
     weather."""
 
     def __init__(self, language="de"):
-        self.language = language
+        self.languages = [language] if isinstance(language, str) else list(language)
         self.agent = "conversation.ollama"
         self.areas = [{"area_id": "living_room", "name": "Living Room"}, {"area_id": "kitchen", "name": "Küche"},
                       {"area_id": "mamas", "name": "Mamas Zuhause"}]
@@ -72,8 +72,9 @@ class FakeHA:
         self.ws_calls.append(msg)
         t = msg["type"]
         if t == "assist_pipeline/pipeline/list":
-            return {"pipelines": [{"id": "p1", "name": "Genbu Assistant", "language": self.language,
-                                   "conversation_engine": self.agent}], "preferred_pipeline": "p1"}
+            return {"pipelines": [{"id": f"p{n}", "name": "Genbu Assistant" if n == 1 else f"Genbu {lang}",
+                                   "language": lang, "conversation_engine": self.agent}
+                                  for n, lang in enumerate(self.languages, 1)], "preferred_pipeline": "p1"}
         if t == "config/area_registry/list":
             return self.areas
         if t == "config/device_registry/list":
@@ -165,6 +166,13 @@ class LookTests(unittest.TestCase):
         self.assertFalse(kit.look(FakeHA(language="en")).german)
         self.assertTrue(kit.look(FakeHA(language="de-CH")).german)
 
+    def test_english_is_any_pipelines_language(self):
+        self.assertFalse(kit.look(FakeHA()).english)
+        self.assertTrue(kit.look(FakeHA(language="en-GB")).english)
+        both = kit.look(FakeHA(language=["de", "en"]))
+        self.assertTrue(both.german and both.english)
+        self.assertFalse(kit.look(FakeHA(language="fr")).english)
+
     def test_an_odd_music_assistant_entry_is_not_used(self):
         fake = FakeHA()
         fake.entries = [{"domain": "music_assistant", "state": "loaded", "entry_id": "x'}}{{"}]
@@ -177,6 +185,15 @@ class LookTests(unittest.TestCase):
         self.assertEqual(words["wohnzimmer"], "living_room")
         self.assertEqual(words["kueche"], "kitchen")
         self.assertEqual(words["arbeitszimmer"], "office")
+
+    def test_rooms_get_their_english(self):
+        phrases, words = kit.room_words({"living_room": "Living Room", "kitchen": "Küche", "x": "Mamas Zuhause",
+                                         "garden": "Garten"}, kit.EN_ROOMS)
+        # Known by its id as well as its name, so a kitchen named "Küche" is still "in the kitchen".
+        self.assertEqual(phrases, {"living_room": "in the living room", "kitchen": "in the kitchen",
+                                   "garden": "in the garden"})
+        self.assertEqual(words["lounge"], "living_room")
+        self.assertEqual(words["garden"], "garden")
 
     def test_the_speakers_to_turn_down_are_the_rooms_own(self):
         house = kit.look(FakeHA())
@@ -437,12 +454,55 @@ class SetUpTests(unittest.TestCase):
         log = run(fake)
         self.assertIn("blueprint techo5/turn-room-down.yaml is there and is not this installer's; left alone", log)
 
-    def test_a_house_without_german_gets_only_the_turn_down(self):
-        fake = FakeHA(language="en")
+    def test_a_house_without_german_or_english_gets_only_the_turn_down(self):
+        fake = FakeHA(language="fr")
         log = run(fake)
         self.assertEqual(list(fake.blueprints), ["techo5/turn-room-down.yaml"])
         self.assertEqual(sorted(fake.configs), [("automation", "techo5_turn_room_down_jarvis_show_5")])
-        self.assertIn("no Assist pipeline speaks German, so the local answers and music sentences were left out", log)
+        self.assertIn("no Assist pipeline speaks German or English, so the local answers and music sentences "
+                      "were left out", log)
+
+    def test_an_english_house_gets_the_english_set(self):
+        fake = FakeHA(language="en")
+        log = run(fake)
+        self.assertEqual(set(fake.blueprints), {"techo5/turn-room-down.yaml",
+                                                "techo5/volume-where-the-music-is-en.yaml"})
+        self.assertEqual(sorted(fake.configs), [
+            ("automation", "jarvis_local_alarm_en"), ("automation", "jarvis_local_forecast_en"),
+            ("automation", "jarvis_local_genbu_update_en"), ("automation", "jarvis_local_greeting_en"),
+            ("automation", "jarvis_local_music_stop_en"), ("automation", "jarvis_local_random_music_en"),
+            ("automation", "jarvis_local_room_humidity_en"), ("automation", "jarvis_local_room_temperature_en"),
+            ("automation", "jarvis_local_volume_en"), ("automation", "jarvis_local_where_are_we_en"),
+            ("automation", "techo5_turn_room_down_jarvis_show_5"),
+            ("script", "jarvis_music_start"), ("script", "jarvis_play_mood"), ("script", "jarvis_play_radio"),
+            ("script", "jarvis_room_climate"), ("script", "play_random_music")])
+        volume = fake.configs[("automation", "jarvis_local_volume_en")]["use_blueprint"]
+        self.assertEqual(volume["path"], "techo5/volume-where-the-music-is-en.yaml")
+        self.assertEqual(volume["input"]["rooms"]["lounge"], "living_room")
+        self.assertEqual(fake.exposed, ["script.jarvis_room_climate", *MUSIC])
+        self.assertNotIn("WARN", "\n".join(log))
+        # Alone, English gets the words it shares with German.
+        greeting = fake.configs[("automation", "jarvis_local_greeting_en")]["triggers"][0]["command"][0]
+        self.assertIn("|hi|hey", greeting)
+        stop = fake.configs[("automation", "jarvis_local_music_stop_en")]["triggers"][0]["command"]
+        self.assertIn("(stop|pause) (stop|pause) [(stop|pause)]", stop)
+
+    def test_a_house_with_both_gets_both_and_one_set_of_scripts(self):
+        fake = FakeHA(language=["de", "en"])
+        log = run(fake)
+        self.assertEqual(set(fake.blueprints), {"techo5/turn-room-down.yaml", "techo5/volume-where-the-music-is.yaml",
+                                                "techo5/volume-where-the-music-is-en.yaml"})
+        made = {item for _, item in fake.configs}
+        for item in ("jarvis_local_wecker", "jarvis_local_alarm_en", "jarvis_local_random_music",
+                     "jarvis_local_random_music_en", "jarvis_local_forecast", "jarvis_local_forecast_en"):
+            self.assertIn(item, made)
+        self.assertEqual(len(fake.configs), 26)
+        self.assertEqual(fake.exposed, ["script.jarvis_room_climate", *MUSIC])
+        greeting = fake.configs[("automation", "jarvis_local_greeting_en")]["triggers"][0]["command"][0]
+        self.assertNotIn("hi", greeting.split("|"))
+        stop = fake.configs[("automation", "jarvis_local_music_stop_en")]["triggers"][0]["command"]
+        self.assertFalse([c for c in stop if c.startswith("(stop|pause)")])
+        self.assertEqual(log.count("no weather entity, so no local forecast"), 0)
 
     def test_without_music_assistant_or_weather_those_are_left_out(self):
         fake = FakeHA()
@@ -582,6 +642,7 @@ class WeckerTests(unittest.TestCase):
         fake = FakeHA(language="en")
         run(fake)
         self.assertNotIn(("automation", "jarvis_local_wecker"), fake.configs)
+        self.assertIn(("automation", "jarvis_local_alarm_en"), fake.configs)
 
 
 class TemplateTests(unittest.TestCase):
@@ -602,6 +663,16 @@ except ImportError:
     hassil = None
 
 
+def _blueprint(name: str) -> dict:
+    """A volume blueprint's triggers, as the automations above have theirs."""
+    import yaml
+
+    class Loader(yaml.SafeLoader):
+        pass
+    Loader.add_constructor("!input", lambda loader, node: loader.construct_scalar(node))
+    return yaml.load((kit.BLUEPRINT_DIR / name).read_text(encoding="utf-8"), Loader=Loader)
+
+
 @unittest.skipUnless(hassil, "hassil is not installed")
 class SentenceTests(unittest.TestCase):
     """The sentences matched the way Home Assistant matches sentence triggers: every trigger whose
@@ -612,13 +683,20 @@ class SentenceTests(unittest.TestCase):
         from hassil import Intents, recognize_all
         from hassil.expression import Group, ListReference
         from hassil.intents import WildcardSlotList
-        house = kit.House(german=True, areas={"living_room": "Wohnzimmer"}, weather="weather.home",
+        house = kit.House(german=True, english=True, areas={"living_room": "Wohnzimmer"}, weather="weather.home",
                           music_entry=MA_ENTRY, players=["media_player.living_ma"], agent="conversation.ollama")
         intents = {}
         for name, item in {"music": kit.local_music(house), "stop": kit.local_music_stop(house),
                            "wecker": kit.wecker(), "where": kit.where_are_we(house),
                            "temperature": kit.room_temperature(house), "humidity": kit.room_humidity(house),
-                           "forecast": kit.forecast(house), "greeting": kit.greeting(house)}.items():
+                           "forecast": kit.forecast(house), "greeting": kit.greeting(house),
+                           "update": kit.genbu_update(),
+                           "music_en": kit.local_music_en(house), "stop_en": kit.local_music_stop_en(house),
+                           "alarm_en": kit.alarm_en(), "where_en": kit.where_are_we_en(house),
+                           "temperature_en": kit.room_temperature_en(house),
+                           "humidity_en": kit.room_humidity_en(house), "forecast_en": kit.forecast_en(house),
+                           "greeting_en": kit.greeting_en(house), "update_en": kit.genbu_update_en(),
+                           "volume": _blueprint(kit.VOLUME), "volume_en": _blueprint(kit.VOLUME_EN)}.items():
             for t in item["triggers"]:
                 intents[f"{name}:{t.get('id', '')}"] = {"data": [{"sentences": t["command"]}]}
         found = Intents.from_dict({"language": "de", "intents": intents})
@@ -699,6 +777,40 @@ class SentenceTests(unittest.TestCase):
         for text in ("Wie warm ist es", "Wie kalt ist es jetzt", "Wie ist die Temperatur"):
             self.assertEqual(self.heard(text), [("temperature:", "{}")], text)
 
+    def test_english_is_heard_by_the_english_set_only(self):
+        for text, want in [
+                ("Play some music", ("music_en:", "{}")), ("Play music please", ("music_en:", "{}")),
+                ("Put some music on", ("music_en:", "{}")), ("Turn on the music", ("music_en:", "{}")),
+                ("Play something upbeat", ("music_en:", "{'mood': 'upbeat'}")),
+                ("Play some calm music", ("music_en:", "{'mood': 'calm'}")),
+                ("Play music by Queen", ("music_en:", "{'mood': 'Queen'}")),
+                ("Play the radio", ("music_en:", "{}")),
+                ("Play Rock Antenne radio", ("music_en:", "{'station': 'Rock Antenne'}")),
+                ("Listen to radio Bob", ("music_en:", "{'station': 'Bob'}")),
+                ("The music", ("music_en:toggle", "{}")), ("Music please", ("music_en:toggle", "{}")),
+                ("Turn off the music", ("stop_en:", "{}")), ("Stop it", ("stop_en:", "{}")),
+                ("Set an alarm for 7 am", ("alarm_en:", "{'when': '7 am'}")),
+                ("Wake me up in 20 minutes", ("alarm_en:", "{'when': '20 minutes'}")),
+                ("Where are we", ("where_en:", "{}")), ("Which room is this", ("where_en:", "{}")),
+                ("How warm is it in the kitchen", ("temperature_en:", "{'raum': 'kitchen'}")),
+                ("What's the temperature in here", ("temperature_en:", "{}")),
+                ("How cold is it outside", ("temperature_en:", "{}")),
+                ("How humid is it", ("humidity_en:", "{}")),
+                ("What is the humidity in the bedroom", ("humidity_en:", "{'raum': 'bedroom'}")),
+                ("What's the weather like tomorrow", ("forecast_en:", "{}")),
+                ("Will it rain the day after tomorrow", ("forecast_en:", "{}")),
+                ("Good morning", ("greeting_en:", "{}")), ("Hello Genbu", ("greeting_en:", "{}")),
+                ("Install the updates", ("update_en:", "{}")), ("Update all shows", ("update_en:", "{}")),
+                ("Volume to 30", ("volume_en:room", "{'value': '30'}")),
+                ("Turn the music up", ("volume_en:room", "{}")),
+                ("Speak louder", ("volume_en:own", "{}")), ("You're too loud", ("volume_en:own", "{}"))]:
+            self.assertEqual(self.heard(text), [want], text)
+        # Shared with German, so in a house with both they stay German, and English leaves them alone.
+        self.assertEqual(self.heard("Hey"), [("greeting:", "{}")])
+        self.assertEqual(self.heard("Stop stop"), [("stop:", "{}")])
+        for text in ("Stop", "Pause", "Hello, turn on the light", "What time is it"):
+            self.assertEqual(self.heard(text), [], text)
+
 
 class GenbuUpdateTests(unittest.TestCase):
     """GENBU-125: "installiere die Updates" at any Show starts every Show's update through Genbu."""
@@ -770,6 +882,93 @@ class MisheardTemplateTests(unittest.TestCase):
         self.assertEqual(kind.render(trigger={"id": "", "slots": {}}, said="spielmusik"), "random")
         self.assertEqual(kind.render(trigger={"id": "", "slots": {"mood": "radiohead"}},
                                      said="spiel musik von radiohead"), "mood")
+
+
+class EnglishTemplateTests(unittest.TestCase):
+    """GENBU-120: the English sentences read what was said the English way."""
+
+    def setUp(self):
+        try:
+            self.env = _ha_env()
+        except ImportError:
+            self.skipTest("no jinja2 here")
+
+    def alarm(self, when: str) -> tuple[str, int]:
+        ctx = {"trigger": {"slots": {"when": when}}}
+        for name in ("spoken", "nums", "length", "minutes", "before", "rel", "q", "pm", "am", "h", "m", "hh"):
+            out = self.env.from_string(kit.WECKER_VARIABLES_EN[name]).render(**ctx).strip()
+            if name == "nums":
+                ctx[name] = [int(n) for n in re.findall(r"[0-9]+", out)]
+            elif name in ("minutes", "q", "h", "m", "hh"):
+                ctx[name] = int(out)
+            else:
+                ctx[name] = {"True": True, "False": False}.get(out, out)
+        return ("%02d:%02d" % (ctx["hh"], ctx["m"]), ctx["minutes"] if ctx["length"] else None)
+
+    def test_times_of_day(self):
+        for when, want in [("7 am", "07:00"), ("7:30 pm", "19:30"), ("7.30pm", "19:30"), ("7 p.m.", "19:00"),
+                           ("half past seven", "07:30"), ("half seven", "07:30"), ("quarter to eight", "07:45"),
+                           ("a quarter past seven", "07:15"), ("ten past seven", "07:10"),
+                           ("twenty five to eight", "07:35"), ("seven thirty", "07:30"),
+                           ("seven forty-five", "07:45"), ("six in the morning", "06:00"),
+                           ("seven in the evening", "19:00"), ("12 am", "00:00"), ("12 pm", "12:00")]:
+            self.assertEqual(self.alarm(when)[0], want, when)
+
+    def test_lengths_of_time(self):
+        for when, want in [("20 minutes", 20), ("a minute", 1), ("twenty five minutes", 25), ("an hour", 60),
+                           ("half an hour", 30), ("a quarter of an hour", 15), ("three quarters of an hour", 45),
+                           ("an hour and a half", 90), ("two and a half hours", 150), ("2 hours", 120),
+                           ("1 hour 15 minutes", 75)]:
+            self.assertEqual(self.alarm(when)[1], want, when)
+
+    def music(self, sentence: str, slots: dict, tid: str = "") -> dict:
+        said = re.sub(" +", " ", re.sub("[^a-z0-9 ]+", " ", sentence.lower())).strip()
+        ctx = {"trigger": {"id": tid, "slots": slots, "sentence": sentence}, "said": said}
+        ctx["query"] = self.env.from_string(kit.MOOD_EN).render(**ctx).strip()
+        ctx["kind"] = self.env.from_string(kit.LOCAL_MUSIC_KIND_EN).render(**ctx).strip()
+        ctx["station"] = self.env.from_string(kit.STATION_EN).render(**ctx).strip()
+        return ctx
+
+    def test_moods_become_the_words_the_mood_script_knows(self):
+        for sentence, mood, query in [("Play something upbeat", "upbeat", "flott"),
+                                      ("Play some relaxing music", "relaxing", "ruhig"),
+                                      ("Play some heavy metal", "heavy metal", "laut"),
+                                      ("Play music by Queen", "Queen", "von queen"),
+                                      ("Play something by Radiohead", "by Radiohead", "von radiohead"),
+                                      ("Play some nineties music", "nineties", "90er"),
+                                      ("Play my favourite music", "my favourite", "lieblings"),
+                                      ("Play some jazz music", "jazz", "jazz")]:
+            ctx = self.music(sentence, {"mood": mood})
+            self.assertEqual((ctx["kind"], ctx["query"]), ("mood", query), sentence)
+
+    def test_radio_and_plain_music(self):
+        ctx = self.music("Play the station Rock Antenne please", {"station": "Rock Antenne"})
+        self.assertEqual((ctx["kind"], ctx["station"]), ("radio", "rock antenne"))
+        self.assertEqual(self.music("Listen to radio Bob", {"station": "Bob"})["station"], "radio bob")
+        self.assertEqual(self.music("Play the radio", {})["kind"], "radio")
+        self.assertEqual(self.music("Play some music", {})["kind"], "random")
+        self.assertEqual(self.music("The music", {}, "toggle")["kind"], "toggle")
+
+    def test_the_answer_is_said_from_what_the_script_found(self):
+        said = self.env.from_string(kit.MUSIC_ANSWER_EN.replace("__FALLBACK__", "Music's on."))
+        for kind, r, want in [
+                ("random", {"success": True, "title": "Song", "artist": "Band"}, "Playing Song by Band and similar songs."),
+                ("mood", {"success": True, "title": "Rock Mix", "artist": ""}, "Playing the playlist Rock Mix."),
+                ("mood", {"success": True, "title": "", "artist": "Queen"}, "Playing music by Queen."),
+                ("radio", {"success": True, "station": "Radio Bob"}, "Playing Radio Bob."),
+                ("radio", {"success": False, "stations": ["Bob", "FFH"]}, "I don't know that station. I have Bob, FFH."),
+                ("radio", {"success": False, "stations": []}, "I don't have any radio stations."),
+                ("random", {"success": False, "message": kit.NO_PLAYER}, "There's no music speaker here. Pick one "
+                 "in Home Assistant under the Show's Music plays on."),
+                ("random", {"success": False, "message": "Keine Musik."}, "I can't find any music in the library right now.")]:
+            self.assertEqual(said.render(kind=kind, r=r), want, r)
+        self.assertEqual(said.render(kind="random"), "Music's on.")
+
+    def test_updates_are_said_in_english(self):
+        said = self.env.from_string(kit.GENBU_UPDATING_EN)
+        for updating, want in (([], "All Shows are up to date."), (["Kitchen"], "Updates are starting on Kitchen."),
+                               (["Kitchen", "Hall", "Bath"], "Updates are starting on Kitchen, Hall and Bath.")):
+            self.assertEqual(said.render(started={"updating": updating, "current": []}), want)
 
 
 if __name__ == "__main__":

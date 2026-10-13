@@ -468,13 +468,20 @@ What happens with the answers:
        One made by hand from the blueprint, whatever it is called, is kept; it only gets the
        near-miss event added when that is missing. An older one of the installer's with fixed
        speakers is asked about at the end like any other that differs;
-     - when one of the Assist pipelines speaks German, answers that never reach the language model:
+     - when one of the Assist pipelines speaks German or English, answers that never reach the language
+       model. German ones:
        the [volume](voice-setup.md#volume-the-music-or-the-show) blueprint with an automation from it,
        "Wo sind wir?", "Wie warm ist es in der Küche?" (each room's temperature sensor, or "draußen"
        from the weather), "Wie wird das Wetter morgen?", and "Stell einen Wecker auf 7 Uhr" or "Weck
-       mich in 20 Minuten", which sets the alarm on the Show that was asked;
+       mich in 20 Minuten", which sets the alarm on the Show that was asked. English ones, the same
+       pieces with `_en` at the end of their ids and their own volume blueprint
+       (`volume-where-the-music-is-en.yaml`): "Where are we?", "How warm is it in the kitchen?",
+       "What's the weather like tomorrow?", "Set an alarm for 7 am", "Wake me up in 20 minutes",
+       "Install the updates". A house with both pipelines gets both sets;
      - with Music Assistant in Home Assistant as well, music by voice without the model: "Spiel
-       Musik", "Spiel was Ruhiges", "Musik von Queen", "Hör Radio FFH". It plays where the Show that
+       Musik", "Spiel was Ruhiges", "Musik von Queen", "Hör Radio FFH", or in English "Play some
+       music", "Play something calm", "Play music by Queen", "Play Radio Bob". Both languages use
+       the same scripts. It plays where the Show that
        was asked plays music (its "Music plays on" in the Genbu integration: the room's speaker, else
        the Show itself, never another room's; the Show itself too while that speaker is offline), and says so when there is nowhere. The scripts behind it (`play_random_music`, `jarvis_play_mood`,
        `jarvis_play_radio`) are there for the model too. Moods find playlists by words in their
@@ -488,7 +495,7 @@ What happens with the answers:
 
      The rooms are matched by their names in English or German (Living Room, Wohnzimmer, Küche,
      Bad, Büro, Flur and so on); a room the sentences don't know is still answered with its own name.
-     What the house lacks (no weather, no Music Assistant, no German pipeline) is left out and said
+     What the house lacks (no weather, no Music Assistant, no German or English pipeline) is left out and said
      so. Every automation and script is looked at first. Missing ones are made and identical ones
      left alone. One that differs, because you changed it or an older installer made it, is only
      replaced when you say yes. When several differ, you're asked once (keep all, replace all, or
