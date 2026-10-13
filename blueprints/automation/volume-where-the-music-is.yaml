@@ -14,7 +14,7 @@ blueprint:
     integration have an entity for is set through its own one only. Numbers can be digits or German
     words up to hundert. One automation from this covers every Show.
   domain: automation
-  source_url: https://github.com/vardstein/techo5JarvisAssistant/blob/genbuShowCrown/blueprints/automation/volume-where-the-music-is.yaml
+  source_url: https://github.com/vardstein/techo5JarvisAssistant/blob/stable/blueprints/automation/volume-where-the-music-is.yaml
   input:
     rooms:
       name: Room words

@@ -14,7 +14,7 @@ blueprint:
     own one only. Numbers can be digits or English words up to a hundred. One automation from this
     covers every Show.
   domain: automation
-  source_url: https://github.com/vardstein/techo5JarvisAssistant/blob/genbuShowCrown/blueprints/automation/volume-where-the-music-is-en.yaml
+  source_url: https://github.com/vardstein/techo5JarvisAssistant/blob/stable/blueprints/automation/volume-where-the-music-is-en.yaml
   input:
     rooms:
       name: Room words

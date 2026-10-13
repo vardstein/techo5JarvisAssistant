@@ -2,7 +2,7 @@ name: Jarvis Show CI
 
 on:
   push:
-    branches: ['feature/**', 'task/**', 'fix/**', genbuShowCrown]
+    branches: ['feature/**', 'task/**', 'fix/**']
     tags: ['v*.*.*']
   pull_request:
   workflow_dispatch:

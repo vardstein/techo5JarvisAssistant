@@ -467,7 +467,7 @@ class SetUpTests(unittest.TestCase):
 
     def test_our_blueprint_from_an_older_branch_name_is_still_ours(self):
         fake = FakeHA()
-        old = SOURCE.replace("/genbuShowCrown/", "/jarvis-crown-v1/") + "turn-room-down.yaml"
+        old = SOURCE.replace("/stable/", "/jarvis-crown-v1/") + "turn-room-down.yaml"
         fake.blueprints["techo5/turn-room-down.yaml"] = {"metadata": {"source_url": old}}
         log = run(fake)
         self.assertIn("blueprint techo5/turn-room-down.yaml brought up to date", log)
