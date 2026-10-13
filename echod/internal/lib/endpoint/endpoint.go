@@ -30,10 +30,15 @@ type Settings struct {
 	// Speech is how many windows at or above On have to have been heard before anything can end:
 	// a cough, a door, or the tail of the wake word is not a request.
 	Speech int
+	// Short is how many windows of speech a turn is still only starting at, and ShortQuiet the quiet run
+	// that ends it until then. Someone who has said "Wie warm ist es im" stops to think of the room, and
+	// a pause that ends a finished sentence cuts that one off (GENBU-131). Past Short, Quiet is enough.
+	Short, ShortQuiet int
 }
 
-// Default is what the recordings of real turns were measured at.
-var Default = Settings{On: 0.5, Off: 0.3, Quiet: 6, Speech: 3}
+// Default is what the recordings of real turns were measured at. ShortQuiet is the second Home
+// Assistant gives a speaker in its relaxed setting; a short command ends that much later.
+var Default = Settings{On: 0.5, Off: 0.3, Quiet: 6, Speech: 3, Short: 15, ShortQuiet: 10}
 
 // Detector follows one turn's audio. Feed it what is sent, in any size of frame.
 type Detector struct {
@@ -48,6 +53,7 @@ type Detector struct {
 	quiet  int     // windows in a row below Off since the last speech
 
 	ended int // the window the turn ended at, or 0
+	after int // the quiet run it ended on
 }
 
 // New starts a turn.
@@ -80,9 +86,17 @@ func (d *Detector) window(rms float64) {
 	case rms < d.s.Off*d.peak:
 		d.quiet++
 	}
-	if d.speech >= d.s.Speech && d.quiet >= d.s.Quiet {
-		d.ended = d.windows
+	if need := d.need(); d.speech >= d.s.Speech && d.quiet >= need {
+		d.ended, d.after = d.windows, need
 	}
+}
+
+// need is the quiet run that ends the turn now: longer while it has barely started.
+func (d *Detector) need() int {
+	if d.speech < d.s.Short {
+		return max(d.s.Quiet, d.s.ShortQuiet)
+	}
+	return d.s.Quiet
 }
 
 // EndedAt is how far into the turn the speaker finished, in samples, or 0 if they have not: the end of
@@ -91,5 +105,9 @@ func (d *Detector) EndedAt() int {
 	if d.ended == 0 {
 		return 0
 	}
-	return (d.ended - d.s.Quiet) * Window
+	return (d.ended - d.after) * Window
 }
+
+// SentTo is how far into the turn the audio went before the end was decided, in samples, or 0 if it has
+// not been: the end of the speech and the quiet run after it.
+func (d *Detector) SentTo() int { return d.ended * Window }
