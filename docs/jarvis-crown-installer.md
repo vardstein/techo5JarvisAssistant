@@ -514,7 +514,8 @@ What happens with the answers:
      its own actions, and turns its Sendspin switch on;
   8. with a Music Assistant admin, makes the Show's own Music Assistant user (`jarvis-show-5` for
      "Jarvis Show 5", not an admin, with a random password nobody keeps) and gives the Show a token
-     for it, replacing the one made last time. See [Lyrics](lyrics.md);
+     for it. A token the Show still holds and Music Assistant still takes is kept, unless it ends
+     within a month; otherwise a new one replaces it. See [Lyrics](lyrics.md);
   9. sets up the calendars ([Calendars](calendars.md)). When there's someone at the terminal, it
      first asks whether to add a calendar account to Home Assistant. An account never comes in next
      to one Home Assistant has (its calendars would all turn up twice, as `calendar.<name>_2`). When

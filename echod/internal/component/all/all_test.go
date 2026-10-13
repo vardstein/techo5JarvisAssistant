@@ -88,6 +88,7 @@ var registered = []string{
 	"microphone_sensitivity",
 	"min_cores",
 	"missed_ring",
+	"music_assistant_key",
 	"mute_led_brightness",
 	"next_alarm",
 	"noise_layer_1",

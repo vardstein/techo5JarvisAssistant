@@ -19,8 +19,8 @@ func TestTheAccessActionSaysWhetherTheTokenIsStored(t *testing.T) {
 	}
 }
 
-// Which key a Show holds is told over the encrypted API only, and only Genbu's two names are taken
-// (GENBU-196). The test machine has no API key, so both refuse.
+// Which key a Show holds is told over the encrypted API only, and only Genbu's two names and the
+// installer's one are taken (GENBU-196, GENBU-137). The test machine has no API key, so all refuse.
 func TestTheKeyActionsWantTheEncryptedAPI(t *testing.T) {
 	names := map[string]bool{}
 	for _, a := range keyActions() {
@@ -32,7 +32,7 @@ func TestTheKeyActionsWantTheEncryptedAPI(t *testing.T) {
 			t.Errorf("%s answered %v without an API key", a.Name, got)
 		}
 	}
-	if !names["home_assistant_key"] || !names["home_assistant_retry"] || len(names) != 2 {
+	if !names["home_assistant_key"] || !names["home_assistant_retry"] || !names["music_assistant_key"] || len(names) != 3 {
 		t.Fatalf("actions %v", names)
 	}
 }

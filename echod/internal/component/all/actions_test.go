@@ -21,6 +21,8 @@ var actions = []string{
 	// Genbu in Home Assistant asks why a key was refused and has the Show try again (GENBU-196).
 	"home_assistant_key",
 	"home_assistant_retry",
+	// The installer asks whether the lyrics token still works before it makes a new one (GENBU-137).
+	"music_assistant_key",
 }
 
 // The actions other devices depend on still register.

@@ -516,14 +516,19 @@ def _music_assistant_login(settings: Settings):
     if not (settings.music_assistant and settings.music_assistant_token):
         return None
 
-    def login(name: str) -> str | None:
+    def login(name: str, held: str) -> str | None:
         try:
-            token, made = ma_api.show_token(settings.music_assistant, settings.music_assistant_token, name)
+            token, how = ma_api.show_token(settings.music_assistant, settings.music_assistant_token, name,
+                                           held=held)
         except ma_api.MusicAssistantError as exc:
             ui.out.warn(f"Music Assistant: {exc}; lyrics won't work on the Show until this runs again")
             return None
-        ui.out.done(f"Music Assistant user {ma_api.show_username(name)!r} "
-                    + ("made, for the lyrics" if made else "was there; its token renewed"))
+        user = ma_api.show_username(name)
+        if how == ma_api.KEPT:
+            ui.out.done(f"Music Assistant user {user!r} was there, and the Show's token still works; kept")
+            return ""
+        ui.out.done(f"Music Assistant user {user!r} "
+                    + ("made, for the lyrics" if how == ma_api.MADE else "was there; its token renewed"))
         return token
     return login
 
