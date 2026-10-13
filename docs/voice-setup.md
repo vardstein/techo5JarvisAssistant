@@ -87,6 +87,7 @@ So klingt es. Jede Antwort steht für sich, ohne Frage am Ende:
 - "Was kannst du?" -> "Licht, Heizung, Musik, Timer und Wetter. Und ich kann im Netz nachschauen."
 - "Wie geht es dir?" -> "Gut, danke."
 - "Danke." -> "Bitte."
+- "Hallo.", "Hi." oder "Guten Morgen." -> kurz zurückgrüßen, etwa "Hallo." oder "Morgen.", ohne Frage.
 - "Bist du ein Mensch?" -> "Nein. Ich bin ein Programm, das hier im Haus läuft."
 - "Mach das Licht aus." -> erst das Licht ausschalten, dann "Licht ist aus."
 - "Spiel Musik." -> erst Play Random Music ausführen, dann "Läuft."
@@ -225,6 +226,37 @@ The map is there for the grammar (im, in der, auf dem) and because our areas hav
 with German aliases. Put your own area ids in it. Note that calling the agent directly, for
 example with `conversation.process` and the Ollama agent's id, skips this step; only the pipeline
 tries local sentences first.
+
+### Greetings
+
+It goes the other way for "Hallo", "Hi", "Hey", "Servus" and "Moin". Home Assistant has its own
+answer to those ("Hallo vom Home Assistant."), so with local sentences preferred the model never
+hears them. A sentence trigger comes before Home Assistant's sentences and hands the greeting on to
+the model, which answers as Genbu, in under a second:
+
+```yaml
+alias: Genbu - Greeting
+mode: parallel
+triggers:
+  - trigger: conversation
+    command:
+      - "(hallo|hi|hey|guten tag|guten morgen|guten abend|servus|moin) [genbu|home assistant]"
+actions:
+  - action: conversation.process
+    data:
+      agent_id: conversation.jarvis   # your pipeline's conversation agent
+      text: "{{ trigger.sentence }}"
+      language: "{{ trigger.user_input.language | default('de', true) }}"
+    response_variable: said
+    continue_on_error: true
+  - set_conversation_response: >-
+      {{ said.response.speech.plain.speech | default('Hallo.', true) if said is defined else 'Hallo.' }}
+```
+
+The installer makes it with the Genbu Assistant pipeline's agent, and leaves it out when that is
+Home Assistant's own. The model is asked without the device, so it doesn't know the room here;
+a greeting doesn't need it. The greeting line in the instructions keeps it from asking something
+back, which would make the Show listen again.
 
 ### Room temperatures
 

@@ -26,6 +26,7 @@ class FakeHA:
 
     def __init__(self, language="de"):
         self.language = language
+        self.agent = "conversation.ollama"
         self.areas = [{"area_id": "living_room", "name": "Living Room"}, {"area_id": "kitchen", "name": "Küche"},
                       {"area_id": "mamas", "name": "Mamas Zuhause"}]
         self.devices = [{"id": "dev-show", "area_id": "living_room"}, {"id": "dev-speaker", "area_id": "living_room"},
@@ -69,7 +70,8 @@ class FakeHA:
         self.ws_calls.append(msg)
         t = msg["type"]
         if t == "assist_pipeline/pipeline/list":
-            return {"pipelines": [{"name": "Jarvis", "language": self.language}]}
+            return {"pipelines": [{"id": "p1", "name": "Genbu Assistant", "language": self.language,
+                                   "conversation_engine": self.agent}], "preferred_pipeline": "p1"}
         if t == "config/area_registry/list":
             return self.areas
         if t == "config/device_registry/list":
@@ -146,6 +148,17 @@ class LookTests(unittest.TestCase):
         self.assertEqual(house.music_entry, MA_ENTRY)
         self.assertEqual(house.players, ["media_player.living_ma"])
 
+    def test_the_assistants_agent_is_its_pipelines(self):
+        self.assertEqual(kit.look(FakeHA()).agent, "conversation.ollama")
+        listed = {"pipelines": [{"id": "a", "name": "Other", "conversation_engine": "conversation.other"},
+                                {"id": "b", "name": "Mine", "conversation_engine": "conversation.mine"}],
+                  "preferred_pipeline": "b"}
+        self.assertEqual(kit.assistant_agent(listed), "conversation.mine")
+        listed["pipelines"].append({"id": "c", "name": "Genbu Assistant", "conversation_engine": "conversation.genbu"})
+        self.assertEqual(kit.assistant_agent(listed), "conversation.genbu")
+        for own in ("conversation.home_assistant", "homeassistant", "x'}}{{", None):
+            self.assertIsNone(kit.assistant_agent({"pipelines": [{"name": "Genbu Assistant", "conversation_engine": own}]}))
+
     def test_german_is_the_assistants_language(self):
         self.assertFalse(kit.look(FakeHA(language="en")).german)
         self.assertTrue(kit.look(FakeHA(language="de-CH")).german)
@@ -177,7 +190,8 @@ class SetUpTests(unittest.TestCase):
         log = run(fake)
         self.assertEqual(set(fake.blueprints), {"techo5/turn-room-down.yaml", "techo5/volume-where-the-music-is.yaml"})
         self.assertEqual(sorted(fake.configs), [
-            ("automation", "jarvis_local_forecast"), ("automation", "jarvis_local_music_stop"),
+            ("automation", "jarvis_local_forecast"), ("automation", "jarvis_local_greeting"),
+            ("automation", "jarvis_local_music_stop"),
             ("automation", "jarvis_local_random_music"), ("automation", "jarvis_local_room_humidity"),
             ("automation", "jarvis_local_room_temperature"), ("automation", "jarvis_local_volume"),
             ("automation", "jarvis_local_wecker"), ("automation", "jarvis_local_where_are_we"), ("automation", "techo5_turn_room_down_jarvis_show_5"),
@@ -231,13 +245,30 @@ class SetUpTests(unittest.TestCase):
             self.assertTrue(wait["continue_on_timeout"])
         self.assertTrue(any("delay" in s for s in first["then"]))
 
+    def test_greetings_go_to_the_assistants_model(self):
+        fake = FakeHA()
+        run(fake)
+        greeting = fake.configs[("automation", "jarvis_local_greeting")]
+        call = greeting["actions"][0]
+        self.assertEqual(call["action"], "conversation.process")
+        self.assertEqual(call["data"]["agent_id"], "conversation.ollama")
+        self.assertIn("trigger.sentence", call["data"]["text"])
+        self.assertIn("said.response.speech.plain.speech", greeting["actions"][1]["set_conversation_response"])
+
+    def test_greetings_stay_with_home_assistant_when_it_is_the_agent(self):
+        fake = FakeHA()
+        fake.agent = "conversation.home_assistant"
+        log = run(fake)
+        self.assertNotIn(("automation", "jarvis_local_greeting"), fake.configs)
+        self.assertIn("the assistant's agent is Home Assistant's own, so greetings stay with it", log)
+
     def test_a_second_run_changes_nothing(self):
         fake = FakeHA()
         run(fake)
         fake.posts.clear()
         log = run(fake)
         self.assertEqual(fake.posts, [])
-        self.assertEqual(sum("is already there" in line for line in log), 14)
+        self.assertEqual(sum("is already there" in line for line in log), 15)
         self.assertEqual(fake.exposed, ["script.jarvis_room_climate"])
 
     def test_one_taken_from_assist_by_hand_stays_that_way(self):
@@ -474,7 +505,7 @@ class LabelTests(unittest.TestCase):
             return real(msg)
         fake.ws = ws
         log = run(fake, node="jarvis-show-5")
-        self.assertEqual(len(fake.configs), 14)
+        self.assertEqual(len(fake.configs), 15)
         self.assertTrue(any(line.startswith("WARN: Home Assistant did not take the labels") for line in log))
 
     def test_a_hand_made_turn_down_gets_no_label(self):
@@ -541,12 +572,12 @@ class SentenceTests(unittest.TestCase):
         from hassil.expression import Group, ListReference
         from hassil.intents import WildcardSlotList
         house = kit.House(german=True, areas={"living_room": "Wohnzimmer"}, weather="weather.home",
-                          music_entry=MA_ENTRY, players=["media_player.living_ma"])
+                          music_entry=MA_ENTRY, players=["media_player.living_ma"], agent="conversation.ollama")
         intents = {}
         for name, item in {"music": kit.local_music(house), "stop": kit.local_music_stop(house),
                            "wecker": kit.wecker(), "where": kit.where_are_we(house),
                            "temperature": kit.room_temperature(house), "humidity": kit.room_humidity(house),
-                           "forecast": kit.forecast(house)}.items():
+                           "forecast": kit.forecast(house), "greeting": kit.greeting(house)}.items():
             for t in item["triggers"]:
                 intents[f"{name}:{t.get('id', '')}"] = {"data": [{"sentences": t["command"]}]}
         found = Intents.from_dict({"language": "de", "intents": intents})
@@ -597,6 +628,12 @@ class SentenceTests(unittest.TestCase):
         self.assertEqual(self.heard("Hör Radio Bob"), [("music:", "{'station': 'Bob'}")])
         self.assertEqual(self.heard("Spiel etwas leiser"), [("music:", "{'mood': 'leiser'}")])
         self.assertEqual(self.heard("Wo sind wir"), [("where:", "{}")])
+
+    def test_a_greeting_is_heard_and_nothing_more(self):
+        for text in ["Hi.", "Hallo", "Hey Genbu", "Guten Morgen", "Moin!", "Servus", "Hallo Home Assistant"]:
+            self.assertEqual(self.heard(text), [("greeting:", "{}")], text)
+        for text in ["Hallo, mach das Licht an", "Hi, wie spät ist es"]:
+            self.assertEqual(self.heard(text), [], text)
 
     def test_humidity_is_heard_and_not_taken_for_temperature(self):
         for text, slots in [("Wie feucht ist es im Wohnzimmer", "{'raum': 'Wohnzimmer'}"),
