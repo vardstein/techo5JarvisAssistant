@@ -44,7 +44,10 @@ Genbu 1.3.1 or newer and wall-clock-card are in ([docs/jarvis-crown-installer.md
    hand from its releases. The dashboard was built against v3.17.3.
 2. Add Genbu 1.3.1 or newer ([docs/update-leader.md](../docs/update-leader.md)). It brings the cards
    and loads them on every page, so there is nothing to copy and no resource to add. When Genbu is
-   updated, browsers pick up any card that changed on their next reload.
+   updated, browsers pick up any card that changed on their next reload. From Genbu 1.4.1 a page
+   that still has the old cards reloads itself, once nobody has touched it for two minutes: Home
+   Assistant's service worker hands out the page it kept the first time, so a Show's dashboard would
+   otherwise go on with the old ones.
 
    Cards copied to `/config/www/openjade/` by hand before this can go, with their resources. Until
    they do they are harmless: Genbu's cards load first, and a card is only defined once.

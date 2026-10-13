@@ -84,6 +84,25 @@ async def test_dashboard_cards_load_on_every_page(hass: HomeAssistant, hass_clie
     assert "entities" in await (await client.get("/genbu_panel/jarvis-calendar-card.js")).text()
 
 
+async def test_pages_with_old_cards_can_tell(hass: HomeAssistant, hass_client, hass_ws_client):
+    """GENBU-147: Home Assistant's service worker hands out the page it kept, cards and all, so
+    genbu-fresh.js comes with a hash of all the cards and compares it with genbu/frontend's."""
+    entry = await setup(hass)
+    fresh = [u for u in hass.data[DATA_EXTRA_MODULE_URL].urls if "/genbu-fresh.js" in u]
+    assert len(fresh) == 1
+    ws = await hass_ws_client(hass)
+    await ws.send_json({"id": 1, "type": "genbu/frontend"})
+    msg = await ws.receive_json()
+    assert msg["success"] and msg["result"]["version"] == fresh[0].split("?v=")[1]
+    text = await (await (await hass_client()).get("/genbu_panel/genbu-fresh.js")).text()
+    assert '{ type: "genbu/frontend" }' in text and "location.reload()" in text
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert not [u for u in hass.data[DATA_EXTRA_MODULE_URL].urls if "/genbu-fresh.js" in u]
+    await ws.send_json({"id": 2, "type": "genbu/frontend"})
+    assert (await ws.receive_json())["result"] == {"version": None}
+
+
 async def test_page_goes_with_genbu_and_comes_back(hass: HomeAssistant):
     add_show(hass)
     entry = await setup(hass)
