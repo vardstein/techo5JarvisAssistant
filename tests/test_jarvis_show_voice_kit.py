@@ -659,6 +659,16 @@ class SentenceTests(unittest.TestCase):
                      "Nächstes Lied"]:
             self.assertEqual(self.heard(text), [], text)
 
+    def test_merged_and_misheard_words_still_hit_the_local_sentences(self):
+        # GENBU-130: Whisper writes two words as one, or a near word, and these went to the model.
+        for text in ["Spielmusik", "Spielmusik!", "Spielemusik bitte"]:
+            self.assertEqual(self.heard(text), [("music:", "{}")], text)
+        self.assertEqual(self.heard("Spielradio FFH"), [("music:", "{'station': 'FFH'}")])
+        self.assertEqual(self.heard("Hörradio Bob"), [("music:", "{'station': 'Bob'}")])
+        self.assertEqual(self.heard("Spielradio"), [("music:", "{}")])
+        self.assertEqual(self.heard("Weg mich um Viertel nach Sieben"),
+                         [("wecker:", "{'when': 'Viertel nach Sieben'}")])
+
     def test_the_other_sentences_are_heard_as_before(self):
         self.assertEqual(self.heard("Spiel was Flottes"), [("music:", "{'mood': 'Flottes'}")])
         self.assertEqual(self.heard("Spiel Musik von Queen"), [("music:", "{'mood': 'Queen'}")])
@@ -686,10 +696,6 @@ class SentenceTests(unittest.TestCase):
             self.assertEqual(self.heard(text), [("temperature:", "{}")], text)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class GenbuUpdateTests(unittest.TestCase):
     """GENBU-125: "installiere die Updates" at any Show starts every Show's update through Genbu."""
 
@@ -706,3 +712,61 @@ class GenbuUpdateTests(unittest.TestCase):
                                (["Küche", "Flur"], "Die Updates starten auf Küche und Flur."),
                                (["Küche", "Flur", "Bad"], "Die Updates starten auf Küche, Flur und Bad.")):
             self.assertEqual(said.render(started={"updating": updating, "current": []}), want)
+
+
+def _ha_env():
+    """Jinja with the regex filters and tests Home Assistant adds, enough to render these templates."""
+    import re
+    import jinja2
+    env = jinja2.Environment()
+    env.filters["regex_replace"] = lambda v, find="", rep="": re.sub(find, rep, v)
+    env.filters["regex_findall"] = lambda v, find="": re.findall(find, v)
+    env.filters["regex_search"] = lambda v, find="": bool(re.search(find, v))
+    env.tests["search"] = lambda v, find="": bool(re.search(find, v))
+    return env
+
+
+class MisheardTemplateTests(unittest.TestCase):
+    """GENBU-130: what the local sentences take in is read the same as the words meant."""
+
+    def setUp(self):
+        try:
+            self.env = _ha_env()
+        except ImportError:
+            self.skipTest("no jinja2 here")
+
+    def at(self, when: str) -> str:
+        names = ["spoken", "nums", "half", "before", "past", "evening", "h", "m", "hh"]
+        ctx = {"trigger": {"slots": {"when": when}}}
+        for name in names:
+            out = self.env.from_string(kit.WECKER_VARIABLES[name]).render(**ctx).strip()
+            ctx[name] = {"True": True, "False": False}.get(out, out)
+            if name == "nums":
+                ctx[name] = [int(n) for n in re.findall(r"[0-9]+", out)]
+            elif name in ("h", "m", "hh"):
+                ctx[name] = int(out)
+        return "%02d:%02d" % (ctx["hh"], ctx["m"])
+
+    def test_vierte_nacht_is_viertel_nach(self):
+        self.assertEqual(self.at("Viertel nach sieben"), "07:15")
+        self.assertEqual(self.at("vierte Nacht sieben"), "07:15")
+        self.assertEqual(self.at("Viertel vor acht"), "07:45")
+        self.assertEqual(self.at("vierte vor acht"), "07:45")
+        self.assertEqual(self.at("halb acht"), "07:30")
+        self.assertEqual(self.at("sieben Uhr nachts"), "19:00")
+
+    def test_a_merged_radio_is_heard_as_radio(self):
+        heard = self.env.from_string(kit.RADIO_HEARD)
+        self.assertEqual(heard.render(name="spielradio ffh").strip(), "radio ffh")
+        self.assertEqual(heard.render(name="Hörradio Bob").strip(), "radio bob")
+        self.assertEqual(heard.render(name="biele hit radio ffh").strip(), "hit radio ffh")
+        self.assertEqual(heard.render(name="spiel hitradio ffh").strip(), "hitradio ffh")
+        kind = self.env.from_string(kit.LOCAL_MUSIC_KIND)
+        self.assertEqual(kind.render(trigger={"id": "", "slots": {}}, said="spielradio"), "radio")
+        self.assertEqual(kind.render(trigger={"id": "", "slots": {}}, said="spielmusik"), "random")
+        self.assertEqual(kind.render(trigger={"id": "", "slots": {"mood": "radiohead"}},
+                                     said="spiel musik von radiohead"), "mood")
+
+
+if __name__ == "__main__":
+    unittest.main()
