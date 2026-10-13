@@ -61,6 +61,14 @@ When it was the only main update Show, the Show Genbu recommends becomes main, a
 (`mains`, `new_main`). The installer's `--remove-show` calls it after removing the Show's ESPHome entry, so
 Genbu does not find it again first.
 
+**Updating the whole house** (from 1.3.2). The action `genbu.install_updates` starts the update on every
+Show that has one waiting, and answers with who started (`updating`) and who has nothing to install
+(`current`); a Show that is offline is left out. A main update Show calls it when somebody says yes to its
+"Want me to install it now?", leaving itself out (`except_node`) since it installs already, so one yes
+updates every Show. The voice kit's sentence calls it too: "installiere die Updates" or "aktualisiere die
+Shows" at any Show starts every update, even when that Show has none of its own, and says which Shows
+started.
+
 **The dashboard cards** (from 1.3.1). Genbu brings the Jarvis dashboard's cards (weather, room, timer,
 calendar, recipe) and loads them on every page, so a dashboard that uses them needs nothing copied and no
 resource. See [ha-dashboard](../ha-dashboard/README.md).

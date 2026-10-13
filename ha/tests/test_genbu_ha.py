@@ -240,3 +240,31 @@ async def test_a_renamed_main_stays_main(hass: HomeAssistant, freezer):
     state = hass.states.get("sensor.genbu_house_version")
     assert (state.state, state.attributes["main_shows"]) == ("v1.0.3-stable.52", ["flur"])
     assert not [i for (d, i) in ir.async_get(hass).issues if d == DOMAIN]
+
+
+async def test_install_updates_starts_every_show_with_one(hass: HomeAssistant):
+    """GENBU-125: yes on one Show updates the house. The Show that asked is left out, it installs already;
+    one with nothing waiting and one offline are not touched."""
+    from pytest_homeassistant_custom_component.common import async_mock_service
+
+    kitchen = add_show(hass, "kitchen", "1.0.0")
+    hall = add_show(hass, "hall", "1.0.0")
+    add_show(hass, "bed", "1.1.0")
+    attic = add_show(hass, "attic", "1.0.0")
+    await setup(hass)
+    installs = async_mock_service(hass, "update", "install")
+    for up in (kitchen, hall):
+        hass.states.async_set(up, "on", {"installed_version": "1.0.0", "latest_version": "1.1.0"})
+    hass.states.async_set(attic, "unavailable", {"installed_version": "1.0.0"})
+
+    answer = await hass.services.async_call("genbu", "install_updates", {"except_node": "Kitchen"},
+                                            blocking=True, return_response=True)
+    await hass.async_block_till_done()
+    assert [c.data["entity_id"] for c in installs] == [hall]
+    assert answer == {"updating": ["Hall"], "current": ["Bed"]}
+
+    # Nobody left out, as the voice kit calls it.
+    answer = await hass.services.async_call("genbu", "install_updates", {}, blocking=True, return_response=True)
+    await hass.async_block_till_done()
+    assert sorted(c.data["entity_id"] for c in installs[1:]) == sorted([kitchen, hall])
+    assert sorted(answer["updating"]) == ["Hall", "Kitchen"]

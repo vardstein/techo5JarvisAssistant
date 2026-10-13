@@ -130,6 +130,16 @@
           "description": "Der ESPHome-Node-Name der Show, wie in main_shows am Hausversion-Sensor."
         }
       }
+    },
+    "install_updates": {
+      "name": "Updates auf allen Shows installieren",
+      "description": "Jede Show, für die ein Update bereitliegt, installiert es. Eine Show ruft das auf, wenn jemand bei ihrem Update Ja sagt, damit das ganze Haus aktualisiert, auch wenn sie selbst keins hat; das \"installiere die Updates\" des Voice Kits ruft es auch auf.",
+      "fields": {
+        "except_node": {
+          "name": "Außer Node",
+          "description": "Der ESPHome-Node-Name einer Show, die ausgelassen wird, weil sie schon installiert."
+        }
+      }
     }
   }
 }

@@ -190,7 +190,8 @@ class SetUpTests(unittest.TestCase):
         log = run(fake)
         self.assertEqual(set(fake.blueprints), {"techo5/turn-room-down.yaml", "techo5/volume-where-the-music-is.yaml"})
         self.assertEqual(sorted(fake.configs), [
-            ("automation", "jarvis_local_forecast"), ("automation", "jarvis_local_greeting"),
+            ("automation", "jarvis_local_forecast"), ("automation", "jarvis_local_genbu_update"),
+            ("automation", "jarvis_local_greeting"),
             ("automation", "jarvis_local_music_stop"),
             ("automation", "jarvis_local_random_music"), ("automation", "jarvis_local_room_humidity"),
             ("automation", "jarvis_local_room_temperature"), ("automation", "jarvis_local_volume"),
@@ -304,7 +305,7 @@ class SetUpTests(unittest.TestCase):
         fake.posts.clear()
         log = run(fake)
         self.assertEqual(fake.posts, [])
-        self.assertEqual(sum("is already there" in line for line in log), 15)
+        self.assertEqual(sum("is already there" in line for line in log), 16)
         self.assertEqual(fake.exposed, ["script.jarvis_room_climate"])
 
     def test_one_taken_from_assist_by_hand_stays_that_way(self):
@@ -541,7 +542,7 @@ class LabelTests(unittest.TestCase):
             return real(msg)
         fake.ws = ws
         log = run(fake, node="jarvis-show-5")
-        self.assertEqual(len(fake.configs), 15)
+        self.assertEqual(len(fake.configs), 16)
         self.assertTrue(any(line.startswith("WARN: Home Assistant did not take the labels") for line in log))
 
     def test_a_hand_made_turn_down_gets_no_label(self):
@@ -687,3 +688,21 @@ class SentenceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GenbuUpdateTests(unittest.TestCase):
+    """GENBU-125: "installiere die Updates" at any Show starts every Show's update through Genbu."""
+
+    def test_calls_genbu_and_says_who_started(self):
+        auto = kit.genbu_update()
+        self.assertEqual(auto["actions"][0]["default"][0]["action"], "genbu.install_updates")
+        try:
+            import jinja2
+        except ImportError:
+            self.skipTest("no jinja2 here")
+        said = jinja2.Environment().from_string(kit.GENBU_UPDATING)
+        for updating, want in (([], "Alle Shows sind auf dem neuesten Stand."),
+                               (["Küche"], "Die Updates starten auf Küche."),
+                               (["Küche", "Flur"], "Die Updates starten auf Küche und Flur."),
+                               (["Küche", "Flur", "Bad"], "Die Updates starten auf Küche, Flur und Bad.")):
+            self.assertEqual(said.render(started={"updating": updating, "current": []}), want)

@@ -11,6 +11,7 @@ CHANGED = f"{DOMAIN}_changed"  # dispatcher signal: the house was looked at agai
 STORE_KEY = f"{DOMAIN}.house"
 STORE_VERSION = 1
 SERVICE_FORGET = "forget_show"  # the installer's --remove-show, once the Show is out of ESPHome
+SERVICE_INSTALL = "install_updates"  # "yes" on one Show, or the voice kit: every Show with an update installs it
 PANEL = "genbu"  # the sidebar page with a card per Show, at /genbu
 PANEL_FILES = "/genbu_panel"  # where its script is served from (frontend/), and the dashboard cards
 # The dashboard's cards (ha-dashboard/), in frontend/ too. Genbu loads them on every page, so a dashboard
