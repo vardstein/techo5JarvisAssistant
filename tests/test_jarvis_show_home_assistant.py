@@ -1212,10 +1212,14 @@ class GatherTests(unittest.TestCase):
         self.assertIn("  │   1  the usual  ← now", said)
 
     def test_everything_asked(self):
-        asker, _ = self.asker(["Home", "http://ha:8123/", "jade", "10.0.0.5", "10.0.0.6", "jade"],
+        asker, _ = self.asker(["Home", "http://ha:8123/", "jade", "10.0.0.5", "10.0.0.6", "jade", "radiofan"],
                               ["wifi-pass", "wifi-pass", "ha-pass", DASH_KEY, "ma-pass"])
         signed = FakeSignedIn()
         logins = []
+
+        def tunein_there(host, token):
+            logins.append(("tunein?", host, token))
+            return False
 
         def ha_login(url, user, password, code=None):
             logins.append(("ha", url, user, password))
@@ -1227,14 +1231,17 @@ class GatherTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             run = SignIns(lambda: pathlib.Path(td) / "sign-ins.json")
             s = gather(args(), asker, defaults={}, lookup=lambda *a, **k: None, nearby=lambda: [],
-                       ha_login=ha_login, ma_login=ma_login, ma_logout=lambda *a: None, run=run)
+                       ha_login=ha_login, ma_login=ma_login, ma_logout=lambda *a: None,
+                       ma_tunein_there=tunein_there, run=run)
             self.assertTrue(run.active)
         self.assertEqual(s, Settings(wifi="Home", wifi_passphrase="wifi-pass", ha_url="http://ha:8123",
                                      dashcast="10.0.0.5:9555", dashcast_key=DASH_KEY, music_assistant="10.0.0.6",
                                      music_assistant_token="ma-session", own_ha_user=True, ha_user="jade",
-                                     music_assistant_user="jade"))
+                                     music_assistant_user="jade", music_assistant_tunein="radiofan"))
         self.assertIs(s.ha_sign_in, signed)
-        self.assertEqual(logins, [("ha", "http://ha:8123", "jade", "ha-pass"), ("ma", "10.0.0.6", "jade", "ma-pass")])
+        self.assertEqual(logins, [("ha", "http://ha:8123", "jade", "ha-pass"), ("ma", "10.0.0.6", "jade", "ma-pass"),
+                                  ("tunein?", "10.0.0.6", "ma-session")])
+        self.assertIn("Music Assistant: TuneIn added as radiofan, unless it is there", s.summary())
         self.assertIn("added to Home Assistant automatically, signed in as jade until the run ends", s.summary())
         for line in s.summary():
             for secret in ("wifi-pass", "ha-pass", DASH_KEY, "ma-pass", "ma-session"):
@@ -1246,7 +1253,8 @@ class GatherTests(unittest.TestCase):
         asker, _ = self.asker(["", "", "", ""], [])
         defaults = {"wifi": "Home", "ha_url": "http://ha:8123", "dashcast": "10.0.0.5:9555", "music_assistant": "10.0.0.6"}
         s = gather(args(), asker, defaults=defaults, lookup=lambda secret, **attrs: keyring.get(secret),
-                   nearby=lambda: [])
+                   nearby=lambda: [], ma_tunein_there=lambda host, token: True)
+        self.assertIsNone(s.music_assistant_tunein, "a Music Assistant with TuneIn is not asked about it")
         self.assertEqual((s.wifi, s.ha_url, s.dashcast, s.music_assistant),
                          ("Home", "http://ha:8123", "10.0.0.5:9555", "10.0.0.6"))
         self.assertEqual((s.wifi_passphrase, s.ha_token, s.dashcast_key, s.music_assistant_token),
@@ -1321,6 +1329,53 @@ class GatherTests(unittest.TestCase):
         s = gather(args(music_assistant_local_metadata=True), Asker(False), defaults={},
                    lookup=lambda secret, **attrs: keyring.get(secret))
         self.assertIsNone(s.music_assistant_token)
+
+    def test_tunein_by_switch_is_checked_and_needs_no_question(self):
+        keyring = {"music-assistant-token": "ma-token"}
+
+        def never(host, token):
+            raise AssertionError("a switch needs no look at Music Assistant")
+        s = gather(args(music_assistant="10.0.0.6", music_assistant_tunein=" radiofan "), Asker(False), defaults={},
+                   lookup=lambda secret, **attrs: keyring.get(secret), ma_tunein_there=never)
+        self.assertEqual(s.music_assistant_tunein, "radiofan")
+        s = gather(args(music_assistant="10.0.0.6", music_assistant_tunein=""), Asker(False), defaults={},
+                   lookup=lambda secret, **attrs: keyring.get(secret), ma_tunein_there=never)
+        self.assertIsNone(s.music_assistant_tunein)
+        for bad in ("fan@example.org", "radio fan"):
+            with self.assertRaises(SettingsError):
+                gather(args(music_assistant="10.0.0.6", music_assistant_tunein=bad), Asker(False), defaults={},
+                       lookup=lambda secret, **attrs: keyring.get(secret), ma_tunein_there=never)
+        # Without a Music Assistant admin nothing could add it, so the switch is dropped.
+        s = gather(args(music_assistant="10.0.0.6", music_assistant_tunein="radiofan"), Asker(False), defaults={},
+                   lookup=lambda *a, **k: None, ma_tunein_there=never)
+        self.assertIsNone(s.music_assistant_tunein)
+
+    def test_tunein_asked_only_when_music_assistant_has_none(self):
+        keyring = {"music-assistant-token": "ma-token"}
+        asker, said = self.asker(["-", "-", "-", "10.0.0.6", "fan@example.org", "radiofan"], [])
+        s = gather(args(), asker, defaults={}, lookup=lambda secret, **attrs: keyring.get(secret), nearby=lambda: [],
+                   ma_tunein_there=lambda host, token: False)
+        self.assertEqual(s.music_assistant_tunein, "radiofan")
+        self.assertTrue(any("email address" in line for line in said))
+        self.assertTrue(any("your TuneIn username" in line for line in said))
+        asker, said = self.asker(["-", "-", "-", "10.0.0.6", ""], [])
+        s = gather(args(), asker, defaults={}, lookup=lambda secret, **attrs: keyring.get(secret), nearby=lambda: [],
+                   ma_tunein_there=lambda host, token: False)
+        self.assertIsNone(s.music_assistant_tunein)
+
+        def unreachable(host, token):
+            raise ma.MusicAssistantError("cannot reach Music Assistant")
+        for there in (unreachable, lambda host, token: True):
+            asker, said = self.asker(["-", "-", "-", "10.0.0.6"], [])
+            s = gather(args(), asker, defaults={}, lookup=lambda secret, **attrs: keyring.get(secret),
+                       nearby=lambda: [], ma_tunein_there=there)
+            self.assertIsNone(s.music_assistant_tunein)
+            self.assertFalse(any("TuneIn" in line for line in said))
+        # Taking a Show out asks nothing about the radio.
+        asker, said = self.asker(["-", "10.0.0.6"], [])
+        s = gather(args(), asker, defaults={}, lookup=lambda secret, **attrs: keyring.get(secret), want_wifi=False,
+                   want_show=False, ma_tunein_there=lambda host, token: False)
+        self.assertIsNone(s.music_assistant_tunein)
 
     def test_a_typed_root_password_has_to_be_saved(self):
         # Nobody answers yes: the install stops rather than go on with a password nobody kept.
@@ -1525,6 +1580,87 @@ class MusicAssistantTests(unittest.TestCase):
                                                         "music/tracks/library_items", "music/tracks/library_items"])
         # Only reads, and the genre filter as numbers: Music Assistant ignores it given as text.
         self.assertEqual(sent[2]["args"], {"genre": [29], "limit": ma.GENRE_LEAST_TRACKS})
+
+    def tunein_server(self, *answers):
+        return self.server({"message_id": "1", "result": {"authenticated": True}}, *answers)
+
+    FORM = {"flow_id": "f1", "step_id": "user", "type": "form",
+            "entries": [{"key": "username", "type": "string", "required": True}]}
+
+    def tunein(self, sock, username="radiofan", **kw):
+        return ma.tunein_exchange(sock, "10.0.0.6:8095", "ma-token", username, key="dGhlIHNhbXBsZSBub25jZQ==", **kw)
+
+    def test_tunein_added_through_its_setup_flow(self):
+        sock = self.tunein_server({"message_id": "2", "result": [{"domain": "spotify", "instance_id": "s"}]},
+                                  {"message_id": "3", "result": self.FORM},
+                                  {"message_id": "4", "result": {"flow_id": "f1", "step_id": "finish", "type": "finish",
+                                                                 "result": {"instance_id": "tunein--abc"}}})
+        self.assertEqual(self.tunein(sock), "TuneIn added")
+        self.assertEqual([(m["command"], m["args"]) for m in sock.messages()], [
+            ("auth", {"token": "ma-token"}),
+            ("config/providers", {"provider_domain": "tunein"}),
+            ("config/providers/setup", {"provider_domain": "tunein"}),
+            ("config/flows/submit", {"flow_id": "f1", "values": {"username": "radiofan"}}),
+        ])
+
+    def test_tunein_there_is_left_alone(self):
+        for enabled, said in ((True, "TuneIn was there already"), (False, "switched off")):
+            sock = self.tunein_server({"message_id": "2", "result": [{"domain": "tunein", "instance_id": "tunein--x",
+                                                                      "enabled": enabled}]})
+            self.assertIn(said, self.tunein(sock))
+            self.assertEqual([m["command"] for m in sock.messages()], ["auth", "config/providers"])
+        sock = self.tunein_server({"message_id": "2", "result": [{"domain": "tunein", "instance_id": "tunein--x"}]})
+        self.assertTrue(ma.tunein_there_exchange(sock, "10.0.0.6:8095", "ma-token", key="dGhlIHNhbXBsZSBub25jZQ=="))
+
+    def test_tunein_refused_username_leaves_no_flow_open(self):
+        refused = dict(self.FORM, errors={"base": "Invalid username"})
+        sock = self.tunein_server({"message_id": "2", "result": []},
+                                  {"message_id": "3", "result": self.FORM},
+                                  {"message_id": "4", "result": refused},
+                                  {"message_id": "5", "result": None})
+        with self.assertRaises(ma.MusicAssistantError) as cm:
+            self.tunein(sock)
+        self.assertIn("Invalid username", str(cm.exception))
+        self.assertEqual([(m["command"], m["args"]) for m in sock.messages()][-1],
+                         ("config/flows/abort", {"flow_id": "f1"}))
+
+    def test_tunein_flow_that_asks_more_is_left_to_music_assistant(self):
+        more = dict(self.FORM, entries=self.FORM["entries"] + [{"key": "password", "type": "secure_string"}])
+        sock = self.tunein_server({"message_id": "2", "result": []},
+                                  {"message_id": "3", "result": more},
+                                  {"message_id": "4", "result": None})
+        with self.assertRaises(ma.MusicAssistantError) as cm:
+            self.tunein(sock)
+        self.assertIn("add it in its settings", str(cm.exception))
+        self.assertEqual([m["command"] for m in sock.messages()],
+                         ["auth", "config/providers", "config/providers/setup", "config/flows/abort"])
+
+    def test_tunein_aborted_by_music_assistant(self):
+        sock = self.tunein_server({"message_id": "2", "result": []},
+                                  {"message_id": "3", "result": {"flow_id": "f0", "step_id": "abort", "type": "abort",
+                                                                 "reason": "provider_retired"}})
+        with self.assertRaises(ma.MusicAssistantError) as cm:
+            self.tunein(sock)
+        self.assertIn("provider_retired", str(cm.exception))
+        self.assertNotIn("config/flows/abort", [m["command"] for m in sock.messages()])
+
+    def test_tunein_still_being_added_is_waited_for(self):
+        progress = {"flow_id": "f1", "step_id": "working", "type": "progress"}
+        sock = self.tunein_server({"message_id": "2", "result": []},
+                                  {"message_id": "3", "result": self.FORM},
+                                  {"message_id": "4", "result": progress},
+                                  {"message_id": "5", "result": progress},
+                                  {"message_id": "6", "result": {"flow_id": "f1", "step_id": "done", "type": "finish"}})
+        paused = []
+        self.assertEqual(self.tunein(sock, pause=paused.append), "TuneIn added")
+        self.assertEqual(len(paused), 2)
+        self.assertEqual([m["command"] for m in sock.messages()][-2:], ["config/flows/get", "config/flows/get"])
+
+    def test_tunein_username(self):
+        self.assertEqual(ma.check_tunein_username(" radiofan "), "radiofan")
+        for bad in ("", "fan@example.org", "radio fan", "fan\x00"):
+            with self.assertRaises(ValueError):
+                ma.check_tunein_username(bad)
 
     def test_show_username(self):
         self.assertEqual(ma.show_username("Jarvis Show 5"), "jarvis-show-5")

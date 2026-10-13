@@ -96,6 +96,9 @@ def parse_args() -> argparse.Namespace:
     setup.add_argument("--music-assistant-local-metadata", action="store_true",
                        help="switch Music Assistant's online metadata lookups off, for a library that is already "
                             "tagged; off unless given")
+    setup.add_argument("--music-assistant-tunein", metavar="USERNAME",
+                       help="add Music Assistant's TuneIn with this TuneIn username, for the radio, unless it has "
+                            "TuneIn already (default: ask; '' leaves it alone)")
     setup.add_argument("--music-assistant-token-file", type=Path,
                        help="a file holding a Music Assistant admin's token, used once to give the Show a "
                             "user of its own there (for lyrics) and kept nowhere; default the keyring, then ask")
@@ -553,6 +556,22 @@ def music_assistant_metadata(settings: Settings) -> None:
     ui.out.done(f"Music Assistant: {', '.join(done)}")
 
 
+def music_assistant_tunein(settings: Settings) -> None:
+    """--music-assistant-tunein, or the question: Music Assistant gets TuneIn for the radio. A failure
+    leaves it as it was and does not stop anything else."""
+    if not (settings.music_assistant and settings.music_assistant_token and settings.music_assistant_tunein):
+        return
+    try:
+        done = ma_api.add_tunein(settings.music_assistant, settings.music_assistant_token,
+                                 settings.music_assistant_tunein)
+    except ma_api.MusicAssistantError as exc:
+        ui.out.warn(f"Music Assistant: {exc}; the radio has no TuneIn")
+        ui.out.note("later, or in Music Assistant under Settings, Music providers:")
+        ui.out.command("python3 tools/jarvis-show.py home-assistant --name NAME --music-assistant-tunein USERNAME")
+        return
+    ui.out.done(f"Music Assistant: {done}")
+
+
 def home_assistant_command(args, backups: Path) -> int:
     if not args.name:
         ui.out.fail("home-assistant requires --name, the Show's name as installed")
@@ -568,6 +587,7 @@ def home_assistant_command(args, backups: Path) -> int:
         return 1
     save_defaults(settings, asked=asker.interactive)
     music_assistant_metadata(settings)
+    music_assistant_tunein(settings)
     if not settings.ha_admin:
         ui.out.fail("adding the Show needs a Home Assistant admin: sign in as one when asked, "
                     "or give a token (--ha-admin-token-file or the keyring)")
@@ -964,6 +984,7 @@ def _main() -> int:
                 return 4
         ui.out.done(f"{result.profile.product_id} is installed")
         music_assistant_metadata(settings)
+        music_assistant_tunein(settings)
         if not settings.wifi:
             ui.out.note("Join Wi-Fi on the Show's screen, then add it to Home Assistant with:", indent=2)
             ui.out.command(f"python3 tools/jarvis-show.py home-assistant --name {shlex.quote(args.name)}")
