@@ -477,3 +477,67 @@ async def test_the_wecker_reads_the_time_as_it_is_spoken(hass: HomeAssistant):
     ]:
         assert await heard(when) == want, when
     assert (await heard("in Minuten"))[0] == -1
+
+
+async def test_english_music_calls_the_same_scripts_and_answers_in_english(hass: HomeAssistant):
+    """GENBU-120: the English sentences hand the German scripts what they know and say what they found."""
+    from homeassistant.components import conversation
+    from homeassistant.core import Context, SupportsResponse
+    from homeassistant.setup import async_setup_component
+    from pytest_homeassistant_custom_component.common import async_mock_service
+
+    living = player(hass, "livingroom", "Wohnzimmer", "Living Room")
+    device, _ = show(hass, "hall", "Living Room")
+    await setup(hass)
+    mood = async_mock_service(hass, "script", "jarvis_play_mood", supports_response=SupportsResponse.OPTIONAL,
+                              response={"success": True, "title": "", "artist": "Queen",
+                                        "message": "Spiele Musik von Queen."})
+    radio = async_mock_service(hass, "script", "jarvis_play_radio", supports_response=SupportsResponse.OPTIONAL,
+                               response={"success": False, "stations": ["Radio Bob", "FFH"],
+                                         "message": "Den Sender kenne ich nicht."})
+    house = voice_kit.House(german=True, english=True, music_entry="ma", players=[living])
+    assert await async_setup_component(hass, "homeassistant", {})
+    assert await async_setup_component(hass, "conversation", {})
+    assert await async_setup_component(hass, "automation", {"automation": [
+        {"id": "jarvis_local_random_music_en", **voice_kit.local_music_en(house)},
+        {"id": "jarvis_local_music_stop_en", **voice_kit.local_music_stop_en(house)}]})
+    await hass.async_block_till_done()
+
+    async def say(text: str) -> str:
+        r = await conversation.async_converse(hass, text, None, Context(), language="en", device_id=device)
+        return r.response.speech["plain"]["speech"]
+
+    assert await say("Play music by Queen") == "Playing music by Queen."
+    assert await say("Play something upbeat!") == "Playing music by Queen."
+    assert [c.data["query"] for c in mood] == ["von queen", "flott"]
+    assert [c.data["player"] for c in mood] == [living, living]
+    assert await say("Play the station Rock Antenne, please") == "I don't know that station. I have Radio Bob, FFH."
+    assert radio[0].data["name"] == "rock antenne"
+    paused = async_mock_service(hass, "media_player", "media_pause")
+    hass.states.async_set(living, "playing")
+    assert await say("Turn off the music") == "Paused."
+    assert [c.data["entity_id"] for c in paused] == [[living]]
+
+
+async def test_the_english_alarm_reads_the_time_as_it_is_spoken(hass: HomeAssistant):
+    async def heard(when: str) -> tuple:
+        variables = {"trigger": {"slots": {"when": when}, "device_id": None}}
+        for name, text in voice_kit.WECKER_VARIABLES_EN.items():
+            variables[name] = Template(text, hass).async_render(variables)
+        return (variables["minutes"], None) if variables["length"] else (None, variables["at"])
+
+    for when, want in [
+        ("a minute", (1, None)),
+        ("twenty-five minutes", (25, None)),
+        ("half an hour", (30, None)),
+        ("an hour and a half", (90, None)),
+        ("two and a half hours", (150, None)),
+        ("7 am", (None, "07:00")),
+        ("7:30 p.m.", (None, "19:30")),
+        ("half past seven", (None, "07:30")),
+        ("a quarter to eight", (None, "07:45")),
+        ("ten past seven in the evening", (None, "19:10")),
+        ("seven thirty", (None, "07:30")),
+        ("12 am", (None, "00:00")),
+    ]:
+        assert await heard(when) == want, when
