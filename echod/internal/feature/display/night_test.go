@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	esphome "github.com/ygelfand/go-esphome-device"
-
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/voice"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/touch"
@@ -32,17 +30,14 @@ func TestNightSeesAFreshConversationFromTheOtherGoroutine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The light entity as build() makes it: night can decide to work the screen, and apply sets the
-	// light without asking whether there is one. A Display put together by hand in a test has to
-	// carry it, or the test passes or dies depending on what the tests before it left in the
+	// The screen entities as build() makes them: night can decide to work the screen, and apply sets the
+	// entities without asking whether there are any. A Display put together by hand in a test has to
+	// carry them, or the test passes or dies depending on what the tests before it left in the
 	// configuration - which is how this one first behaved.
 	d := &Display{
-		poke: make(chan struct{}, 1),
-		view: voice.State{Phase: "idle"},
-		light: &esphome.Light{
-			Base:                esphome.Base{ObjectID: "screen", Name: "Screen", Icon: "mdi:monitor"},
-			SupportedColorModes: []esphome.ColorMode{esphome.ColorModeBrightness},
-		},
+		poke:  make(chan struct{}, 1),
+		view:  voice.State{Phase: "idle"},
+		power: newPower(), bright: newLevel(),
 	}
 	// A finger long enough ago that only the conversation can be what keeps the screen on.
 	d.touchedAt = time.Now().Add(-time.Hour)
@@ -95,12 +90,9 @@ func TestTheNightDoesNotRelightAScreenSwitchedOffByHand(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := &Display{
-		poke: make(chan struct{}, 1),
-		view: voice.State{Phase: "idle"},
-		light: &esphome.Light{
-			Base:                esphome.Base{ObjectID: "screen", Name: "Screen", Icon: "mdi:monitor"},
-			SupportedColorModes: []esphome.ColorMode{esphome.ColorModeBrightness},
-		},
+		poke:  make(chan struct{}, 1),
+		view:  voice.State{Phase: "idle"},
+		power: newPower(), bright: newLevel(),
 	}
 	d.nightDark = true
 	d.apply(false, 50, true) // switched off by hand
@@ -122,12 +114,9 @@ func TestTheNightLightStaysForATouchAndATurn(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := &Display{
-		poke: make(chan struct{}, 1),
-		view: voice.State{Phase: "idle"},
-		light: &esphome.Light{
-			Base:                esphome.Base{ObjectID: "screen", Name: "Screen", Icon: "mdi:monitor"},
-			SupportedColorModes: []esphome.ColorMode{esphome.ColorModeBrightness},
-		},
+		poke:  make(chan struct{}, 1),
+		view:  voice.State{Phase: "idle"},
+		power: newPower(), bright: newLevel(),
 		on: true, ceiling: 60,
 	}
 	d.touchedAt = time.Now().Add(-time.Hour)

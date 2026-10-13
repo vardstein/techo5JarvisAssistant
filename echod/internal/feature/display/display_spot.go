@@ -19,8 +19,8 @@
 // brightness in percent spans backlightMin to the top. From 22:00 to 07:00 (config Screen.Night) it is
 // held to nightCeiling.
 //
-// To Home Assistant the screen is a light with brightness, and a switch for auto-brightness, the
-// same entities the Show has.
+// To Home Assistant the screen is a switch and a brightness number, and a switch for
+// auto-brightness, the same entities the Show has.
 package display
 
 import (
@@ -109,9 +109,10 @@ const (
 )
 
 type Display struct {
-	light *esphome.Light
-	auto  *esphome.Switch
-	clock *esphome.Select
+	power  *esphome.Switch // the screen on Home Assistant (screen_entities.go)
+	bright *esphome.Number
+	auto   *esphome.Switch
+	clock  *esphome.Select
 	// camTime is how long a camera opened from the screen stays up, and answerTime how long a turn's
 	// words do once it is over.
 	camTime    *esphome.Select
@@ -244,10 +245,7 @@ func Get() *Display {
 
 func build() *Display {
 	d := &Display{
-		light: &esphome.Light{
-			Base:                esphome.Base{ObjectID: "screen", Name: "Screen", Icon: "mdi:monitor"},
-			SupportedColorModes: []esphome.ColorMode{esphome.ColorModeBrightness},
-		},
+
 		auto: &esphome.Switch{
 			Base: esphome.Base{
 				ObjectID: "screen_auto_brightness",
@@ -260,7 +258,9 @@ func build() *Display {
 		shots: make(chan chan *image.RGBA, 4),
 		view:  voice.State{Phase: "idle"},
 	}
-	d.light.OnCommand = d.command
+	d.power, d.bright = screenEntities()
+	d.power.OnCommand = func(on bool) { d.apply(on, d.screenLevel(), true) }
+	d.bright.OnCommand = func(v float32) { d.apply(d.screenOn(), int(math.Round(float64(v))), true) }
 	d.auto.OnCommand = func(on bool) { d.setAuto(on, true) }
 	d.clock = clockSelect(d.wake)
 	d.camTime = cameraTimeSelect()
@@ -311,7 +311,7 @@ func (d *Display) Name() string { return "screen" }
 func (d *Display) turnStyleSel() *esphome.Select { return d.turnStyle }
 
 func (d *Display) Entities() []esphome.Entity {
-	return []esphome.Entity{d.light, d.auto, d.clock, d.camTime, d.answerTime, d.turnStyle, d.callBtn, d.weatherFx, d.lang}
+	return []esphome.Entity{d.power, d.bright, d.auto, d.clock, d.camTime, d.answerTime, d.turnStyle, d.callBtn, d.weatherFx, d.lang}
 }
 
 // Restore lights the panel the way it was left.
@@ -326,17 +326,6 @@ func (d *Display) Restore(c config.Config) {
 	d.apply(c.Screen.On, c.Screen.Brightness, false)
 }
 
-func (d *Display) command(s esphome.LightState) {
-	pct := int(math.Round(float64(s.Brightness) * 100))
-	if s.On && s.Brightness == 0 {
-		pct = int(math.Round(float64(d.light.Get().Brightness) * 100))
-		if pct == 0 {
-			pct = config.DefaultScreenBrightness
-		}
-	}
-	d.apply(s.On, pct, true)
-}
-
 func (d *Display) apply(on bool, pct int, save bool) {
 	pct = min(max(pct, 0), 100)
 	d.mu.Lock()
@@ -344,7 +333,8 @@ func (d *Display) apply(on bool, pct int, save bool) {
 	d.mu.Unlock()
 	d.relight(true)
 
-	d.light.Set(esphome.LightState{On: on, Brightness: float32(pct) / 100, ColorMode: esphome.ColorModeBrightness})
+	d.power.Set(on)
+	d.bright.Set(float32(pct))
 	d.wake()
 
 	if save {

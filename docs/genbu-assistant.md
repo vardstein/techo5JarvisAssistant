@@ -325,7 +325,7 @@ other firmware or new features land in the right group or in "More" without a pa
 
    | Group | What lands there |
    |---|---|
-   | On the device | screen light, night mode, the main LED ring light, microphone mute, camera, speaker volume |
+   | On the device | screen switch and brightness, night mode, the main LED ring light, microphone mute, camera, speaker volume |
    | Voice | assist satellite, wake buttons, "Last heard", "Last reply", "Last wake word", wake word and assistant selects |
    | Music and radio | media player, "Music plays on", white noise, radio sensors |
    | Calls and alarms | answer, hang up, snooze, stop, next alarm, phone, missed ring, drop in, intercom |

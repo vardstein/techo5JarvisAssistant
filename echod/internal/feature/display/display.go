@@ -13,8 +13,8 @@
 // swipes do nothing, since they kept getting in the way of the sideways ones. The room's light dims the panel when auto-brightness is on; what Home Assistant
 // sets is the ceiling.
 //
-// To Home Assistant the screen is a light with brightness only — on/off and how bright, which is
-// what people automate — plus a switch for auto-brightness.
+// To Home Assistant the screen is a switch and a brightness number — on/off and how bright, which is
+// what people automate — plus a switch for auto-brightness. Not a light (screen_entities.go).
 package display
 
 import (
@@ -96,9 +96,10 @@ const (
 )
 
 type Display struct {
-	light *esphome.Light
-	auto  *esphome.Switch
-	clock *esphome.Select
+	power  *esphome.Switch // the screen on Home Assistant (screen_entities.go)
+	bright *esphome.Number
+	auto   *esphome.Switch
+	clock  *esphome.Select
 	// camTime is how long a camera opened from the screen stays up, and answerTime how long a turn's
 	// words do once it is over.
 	camTime    *esphome.Select
@@ -339,10 +340,7 @@ func Get() *Display {
 
 func build() *Display {
 	d := &Display{
-		light: &esphome.Light{
-			Base:                esphome.Base{ObjectID: "screen", Name: "Screen", Icon: "mdi:monitor"},
-			SupportedColorModes: []esphome.ColorMode{esphome.ColorModeBrightness},
-		},
+
 		auto: &esphome.Switch{
 			Base: esphome.Base{
 				ObjectID: "screen_auto_brightness",
@@ -355,7 +353,9 @@ func build() *Display {
 		shots: make(chan chan *image.RGBA, 4),
 		view:  voice.State{Phase: "idle"},
 	}
-	d.light.OnCommand = d.command
+	d.power, d.bright = screenEntities()
+	d.power.OnCommand = func(on bool) { d.apply(on, d.screenLevel(), true) }
+	d.bright.OnCommand = func(v float32) { d.apply(d.screenOn(), int(math.Round(float64(v))), true) }
 	d.auto.OnCommand = func(on bool) { d.setAuto(on, true) }
 	d.clock = clockSelect(d.wake)
 	d.camTime = cameraTimeSelect()
@@ -438,7 +438,7 @@ func turnShown(s scene) bool {
 func (d *Display) turnStyleSel() *esphome.Select { return d.turnStyle }
 
 func (d *Display) Entities() []esphome.Entity {
-	return []esphome.Entity{d.light, d.auto, d.clock, d.clockPos, d.dateCol, d.camTime, d.answerTime, d.menuSize, d.turnStyle, d.callBtn, d.weatherFx, d.lang, d.strip, d.themeSel, d.nightHours, d.nightStart, d.nightEnd, d.nightMode, d.atNight, d.nightStyle, d.glowLevel,
+	return []esphome.Entity{d.power, d.bright, d.auto, d.clock, d.clockPos, d.dateCol, d.camTime, d.answerTime, d.menuSize, d.turnStyle, d.callBtn, d.weatherFx, d.lang, d.strip, d.themeSel, d.nightHours, d.nightStart, d.nightEnd, d.nightMode, d.atNight, d.nightStyle, d.glowLevel,
 		d.pop.on, d.pop.lead, d.pop.chime, d.pop.allDay}
 }
 
@@ -465,19 +465,7 @@ func (d *Display) Restore(c config.Config) {
 	d.apply(c.Screen.On, c.Screen.Brightness, false)
 }
 
-// command is Home Assistant changing the light. A bare "on" carries no brightness; the last one stays.
-func (d *Display) command(s esphome.LightState) {
-	pct := int(math.Round(float64(s.Brightness) * 100))
-	if s.On && s.Brightness == 0 {
-		pct = int(math.Round(float64(d.light.Get().Brightness) * 100))
-		if pct == 0 {
-			pct = config.DefaultScreenBrightness
-		}
-	}
-	d.apply(s.On, pct, true)
-}
-
-// apply sets the light's state: the ceiling, and whether the panel is lit at all.
+// apply sets the screen: the ceiling, and whether the panel is lit at all.
 func (d *Display) apply(on bool, pct int, save bool) {
 	pct = min(max(pct, 0), 100)
 	d.mu.Lock()
@@ -490,7 +478,8 @@ func (d *Display) apply(on bool, pct int, save bool) {
 	d.mu.Unlock()
 	d.relight(true)
 
-	d.light.Set(esphome.LightState{On: on, Brightness: float32(pct) / 100, ColorMode: esphome.ColorModeBrightness})
+	d.power.Set(on)
+	d.bright.Set(float32(pct))
 	d.wake()
 
 	if save {

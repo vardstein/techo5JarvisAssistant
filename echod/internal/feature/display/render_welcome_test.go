@@ -15,7 +15,6 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/feature/voice"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/touch"
 	"github.com/HuskerMinion/techo5/echod/internal/i18n"
-	esphome "github.com/ygelfand/go-esphome-device"
 )
 
 // Every page of the starter guide fits its card on both panels in every language the screen speaks:
@@ -108,12 +107,9 @@ func TestStarterGuideTapsThrough(t *testing.T) {
 	newDisplay := func() *Display {
 		config.Use(filepath.Join(t.TempDir(), "state.json"))
 		return &Display{
-			poke: make(chan struct{}, 1),
-			view: voice.State{Phase: "idle"},
-			light: &esphome.Light{
-				Base:                esphome.Base{ObjectID: "screen", Name: "Screen", Icon: "mdi:monitor"},
-				SupportedColorModes: []esphome.ColorMode{esphome.ColorModeBrightness},
-			},
+			poke:  make(chan struct{}, 1),
+			view:  voice.State{Phase: "idle"},
+			power: newPower(), bright: newLevel(),
 			on: true, ceiling: 60,
 			r: newRenderer(image.NewRGBA(image.Rect(0, 0, showWide, showHigh))),
 		}
