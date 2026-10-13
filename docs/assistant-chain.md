@@ -27,7 +27,8 @@ This page is the list we checked that against (GENBU-110), and what changed.
 
 | Piece | Kind | Which device or room |
 | --- | --- | --- |
-| Genbu - Where are we, Room temperature, Wecker, Local Music, Local Music Stop | sentence triggers | `trigger.device_id`: the area of the device that asked, or that device itself |
+| Genbu - Where are we, Room temperature, Wecker, Local Music | sentence triggers | `trigger.device_id`: the area of the device that asked, or that device itself |
+| Genbu - Local Music Stop | sentence triggers | `trigger.device_id`, or the room said; there it also pauses the music player of each Show in that room, which often has no room itself |
 | Genbu - Forecast | sentence trigger | none needed, the house's weather |
 | Genbu - Volume | sentence trigger, blueprint `volume-where-the-music-is` | `trigger.device_id`, or the room said |
 | `play_random_music`, `jarvis_play_radio`, `jarvis_play_mood` | scripts the agent may call | the player the agent names, else the one satellite that is busy, else the house's players in order |

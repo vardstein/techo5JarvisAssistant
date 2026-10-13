@@ -736,6 +736,14 @@ class SentenceTests(unittest.TestCase):
                      "Hör auf mit der Musik", "Mach die Musik aus", "Mach bitte die Musik aus"]:
             self.assertEqual(self.heard(text), [("stop:", "{}")], text)
 
+    def test_stop_in_a_room_named(self):
+        # GENBU-139: this one went to the model, which said it had stopped the music and had not.
+        for text in ["Macht die Musik im Schlafzimmer aus", "Mach die Musik in der Küche aus",
+                     "Mach bitte im Schlafzimmer die Musik aus", "Stopp die Musik im Schlafzimmer"]:
+            got = self.heard(text)
+            self.assertEqual([n for n, _ in got], ["stop:room"], text)
+        self.assertEqual(self.heard("Macht die Musik aus"), [("stop:", "{}")])
+
     def test_what_home_assistant_gets_right_is_left_to_it(self):
         for text in ["Stopp", "Pause", "Halt", "Musik aus", "Stopp die Musik", "Musik pausieren", "Weiter",
                      "Nächstes Lied"]:
@@ -789,6 +797,8 @@ class SentenceTests(unittest.TestCase):
                 ("Listen to radio Bob", ("music_en:", "{'station': 'Bob'}")),
                 ("The music", ("music_en:toggle", "{}")), ("Music please", ("music_en:toggle", "{}")),
                 ("Turn off the music", ("stop_en:", "{}")), ("Stop it", ("stop_en:", "{}")),
+                ("Turn off the music in the bedroom", ("stop_en:room", "{'raum': 'bedroom'}")),
+                ("Stop the music in the living room", ("stop_en:room", "{'raum': 'living room'}")),
                 ("Set an alarm for 7 am", ("alarm_en:", "{'when': '7 am'}")),
                 ("Wake me up in 20 minutes", ("alarm_en:", "{'when': '20 minutes'}")),
                 ("Where are we", ("where_en:", "{}")), ("Which room is this", ("where_en:", "{}")),
@@ -973,3 +983,59 @@ class EnglishTemplateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StopInARoomTests(unittest.TestCase):
+    """GENBU-139: "Mach die Musik im Schlafzimmer aus" pauses what plays there, a Show's music player
+    standing there too, though Music Assistant's players often have no room."""
+
+    def setUp(self):
+        try:
+            self.env = _ha_env()
+        except ImportError:
+            self.skipTest("no jinja2 here")
+        area = {"media_player.bed_speaker": "bedroom", "media_player.kitchen_radio": "kitchen",
+                "dev-bed-show": "bedroom", "assist_satellite.bed_show": "bedroom"}
+        self.states = {"media_player.bed_speaker": "idle", "media_player.bed_ma": "playing",
+                       "media_player.kitchen_radio": "playing"}
+        names = {"bedroom": "Schlafzimmer", "kitchen": "Küche", "attic": "Dachboden"}
+        g = self.env.globals
+        g["area_id"] = area.get
+        g["area_entities"] = lambda a: [e for e, x in area.items() if x == a]
+        g["areas"] = lambda: list(names)
+        g["area_name"] = names.get
+        g["integration_entities"] = lambda i: ["media_player.bed_ma"] if i == "music_assistant" else []
+        g["state_attr"] = lambda e, k: ({"dev-bed-show": "media_player.bed_ma",
+                                         "assist_satellite.bed_show": "media_player.bed_ma"}
+                                        if (e, k) == ("sensor.genbu_house_version", "music_players") else None)
+        self.env.tests["match"] = lambda v, find: re.match(find, v) is not None
+        self.env.tests["is_state"] = lambda e, st: self.states.get(e) == st
+        house = kit.House(german=True, english=True, areas={"bedroom": "Schlafzimmer", "kitchen": "Küche"},
+                          weather="weather.home", music_entry=MA_ENTRY, players=[], agent="conversation.ollama")
+        self.de = kit.local_music_stop(house)
+        self.en = kit.local_music_stop_en(house)
+
+    def run_stop(self, automation: dict, raum: str) -> tuple[list, str]:
+        steps = automation["actions"]
+        ctx = {"trigger": {"id": "room", "slots": {"raum": raum}, "device_id": None}}
+        for name, template in steps[1]["variables"].items():
+            out = self.env.from_string(template).render(**ctx).strip()
+            ctx[name] = eval(out) if out.startswith("[") else out
+        if ctx["playing"]:
+            return ctx["playing"], steps[2]["then"][1]["set_conversation_response"]
+        return [], self.env.from_string(steps[2]["else"][0]["set_conversation_response"]).render(**ctx)
+
+    def test_the_shows_music_player_in_that_room_is_paused(self):
+        self.assertEqual(self.run_stop(self.de, "Schlafzimmer"), (["media_player.bed_ma"], "Pausiert."))
+        self.assertEqual(self.run_stop(self.en, "bedroom"), (["media_player.bed_ma"], "Paused."))
+
+    def test_only_that_room(self):
+        self.assertEqual(self.run_stop(self.de, "Küche"), (["media_player.kitchen_radio"], "Pausiert."))
+
+    def test_nothing_playing_or_no_such_room_is_said(self):
+        self.states["media_player.bed_ma"] = "paused"
+        self.assertEqual(self.run_stop(self.de, "Schlafzimmer"), ([], "Im Schlafzimmer läuft gerade nichts."))
+        self.assertEqual(self.run_stop(self.en, "bedroom"), ([], "Nothing's playing in the bedroom."))
+        self.assertEqual(self.run_stop(self.de, "Dachboden"), ([], "In Dachboden läuft gerade nichts."))
+        self.assertEqual(self.run_stop(self.de, "Mond"), ([], "Den Raum kenne ich nicht."))
+        self.assertEqual(self.run_stop(self.en, "moon"), ([], "I don't know that room."))

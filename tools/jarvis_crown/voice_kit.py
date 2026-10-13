@@ -1068,6 +1068,35 @@ ROOM_PLAYING = r"""{% set a = area_id(trigger.device_id) if trigger.device_id el
 NOW_PLAYING = (r"""{% set t = state_attr(playing[0], 'media_title') or '' %}{% set ar = state_attr(playing[0], 'media_artist') or '' %}{% set t = (t | """
                + SPOKEN + r""") or t %}{% if t %}Gerade läuft {{ t }}{{ ' von ' ~ ar if ar }}.{% else %}Hier läuft schon Musik.{% endif %}""")
 
+IN_ROOM = "(im|in der|in dem|auf der|auf dem) {raum}"
+
+# "Mach die Musik im Schlafzimmer aus": the room named, '' when there is no such room.
+STOP_AREA = "{% set rooms = __WORDS__ %}" + ROOM_PICK + "{{ a or '' }}"
+
+# What plays in the room named: its media players, and the music player of each Show standing there
+# (a Music Assistant player often has no room of its own); Music Assistant's own first, as above.
+NAMED_PLAYING = r"""{% set m = state_attr('sensor.genbu_house_version', 'music_players') or {} %}{% set ns = namespace(p=[]) %}{% for k, v in (m.items() if m is mapping else []) if area and v and area_id(k) == area %}{% set ns.p = ns.p + [v] %}{% endfor %}{% set p = ((area_entities(area) if area else []) | select('match', 'media_player\\.') | list) + ns.p %}{% set p = p | unique | select('is_state', 'playing') | list %}{% set ma = p | select('in', integration_entities('music_assistant')) | list %}{{ ma or p }}"""
+
+STOP_NOTHING = r"""{% set de = __PHRASES__ %}{% if trigger.id != 'room' %}Hier läuft gerade nichts.{% elif not area %}Den Raum kenne ich nicht.{% else %}{% set w = de.get(area, 'in ' ~ area_name(area)) %}{{ w[0] | upper }}{{ w[1:] }} läuft gerade nichts.{% endif %}"""
+
+STOP_NOTHING_EN = r"""{% set en = __PHRASES__ %}{% if trigger.id != 'room' %}Nothing's playing here.{% elif not area %}I don't know that room.{% else %}Nothing's playing {{ en.get(area, 'in ' ~ area_name(area)) }}.{% endif %}"""
+
+
+def _stop_actions(house: House, words: dict, phrases: dict, paused: str, nothing: str) -> list[dict]:
+    return [
+        {"variables": {"room_player": ROOM_PLAYER, "players": house.players, "target_player": LOCAL_TARGET}},
+        # One step, so both are set for what follows: a variable set inside an if stays there.
+        {"variables": {"area": "{% if trigger.id == 'room' %}" + _fill(STOP_AREA, words=words) + "{% endif %}",
+                       "playing": "{% if trigger.id == 'room' %}" + NAMED_PLAYING + "{% else %}" + ROOM_PLAYING
+                                  + "{% endif %}"}},
+        {"if": "{{ playing | count > 0 }}",
+         "then": [{"action": "media_player.media_pause", "target": {"entity_id": "{{ playing }}"},
+                   "continue_on_error": True},
+                  {"set_conversation_response": paused}],
+         "else": [{"set_conversation_response": _fill(nothing, phrases=phrases)}]},
+    ]
+
+
 # Asked at a device, only its own player; typed, the house's usual one.
 LOCAL_TARGET = ("{% set ok = players | select('has_value') | list %}"
                 "{{ room_player if trigger.device_id else room_player or (ok + players) | first | default('') }}")
@@ -1142,27 +1171,27 @@ def local_music(house: House) -> dict:
 def local_music_stop(house: House) -> dict:
     """Stopping the music in the words the built-in sentences miss. "Stopp", "Musik aus" or "Stopp die
     Musik" are left to Home Assistant's own pause, which already gets them right; a sentence here would
-    win over it, since sentence triggers are tried first."""
+    win over it, since sentence triggers are tried first. A room named is this one's, as Home Assistant
+    misses the Shows' music players, which often have no room."""
+    phrases, words = room_words(house.areas)
     return {
         "alias": "Genbu - Local Music Stop",
         "description": 'Hält die Musik im Raum des Geräts an, das gefragt wurde, ohne das Sprachmodell: '
-                       '"Stopp, stopp", "Hör auf", "Mach die Musik aus". Einfaches "Stopp" oder "Musik aus" '
-                       'erledigt Home Assistant selbst.',
+                       '"Stopp, stopp", "Hör auf", "Mach die Musik aus", oder in dem Raum, der genannt wird: '
+                       '"Mach die Musik im Schlafzimmer aus". Einfaches "Stopp" oder "Musik aus" erledigt Home '
+                       'Assistant selbst.',
         "mode": "single",
         "triggers": [{"trigger": "conversation", "command": [
             "(stopp|stop|halt|pause) (stopp|stop|halt|pause) [(stopp|stop|halt|pause)]",
             "[bitte] (hör|höre|hoer) [doch] [mal] [bitte] auf [mit der musik] [bitte]",
             "[bitte] aufhören [bitte]",
-            "(mach|mache) [doch] [mal] [bitte] [die] musik aus [bitte]"]}],
-        "actions": [
-            {"variables": {"room_player": ROOM_PLAYER, "players": house.players, "target_player": LOCAL_TARGET}},
-            {"variables": {"playing": ROOM_PLAYING}},
-            {"if": "{{ playing | count > 0 }}",
-             "then": [{"action": "media_player.media_pause", "target": {"entity_id": "{{ playing }}"},
-                       "continue_on_error": True},
-                      {"set_conversation_response": "Pausiert."}],
-             "else": [{"set_conversation_response": "Hier läuft gerade nichts."}]},
-        ],
+            "(mach|mache|macht) [doch] [mal] [bitte] [die] musik aus [bitte]"]},
+            # GENBU-139: "Macht die Musik im Schlafzimmer aus" went to the model, which said it had.
+            {"trigger": "conversation", "id": "room", "command": [
+                "(mach|mache|macht) [doch] [mal] [bitte] [die] musik " + IN_ROOM + " aus [bitte]",
+                "(mach|mache|macht) [doch] [mal] [bitte] " + IN_ROOM + " [die] musik aus [bitte]",
+                "[bitte] (stopp|stoppe|pausier|pausiere) [bitte] die musik " + IN_ROOM + " [bitte]"]}],
+        "actions": _stop_actions(house, words, phrases, "Pausiert.", STOP_NOTHING),
     }
 
 
@@ -1247,21 +1276,18 @@ def local_music_stop_en(house: House) -> dict:
                "[please] stop it [please]"]
     if not house.german:
         command.append("(stop|pause) (stop|pause) [(stop|pause)]")
+    phrases, words = room_words(house.areas, EN_ROOMS)
     return {
         "alias": "Genbu - Local Music Stop (English)",
         "description": 'Pauses the music in the room of the device that was asked, without the language model: '
-                       '"turn off the music", "stop it". Plain "stop" is left to Home Assistant itself.',
+                       '"turn off the music", "stop it", or in the room named: "turn off the music in the bedroom". '
+                       'Plain "stop" is left to Home Assistant itself.',
         "mode": "single",
-        "triggers": [{"trigger": "conversation", "command": command}],
-        "actions": [
-            {"variables": {"room_player": ROOM_PLAYER, "players": house.players, "target_player": LOCAL_TARGET}},
-            {"variables": {"playing": ROOM_PLAYING}},
-            {"if": "{{ playing | count > 0 }}",
-             "then": [{"action": "media_player.media_pause", "target": {"entity_id": "{{ playing }}"},
-                       "continue_on_error": True},
-                      {"set_conversation_response": "Paused."}],
-             "else": [{"set_conversation_response": "Nothing's playing here."}]},
-        ],
+        "triggers": [{"trigger": "conversation", "command": command},
+                     {"trigger": "conversation", "id": "room", "command": [
+                         "[please] (turn|switch) (off the music|the music off) (in|on) the {raum} [please]",
+                         "[please] (stop|pause) the music (in|on) the {raum} [please]"]}],
+        "actions": _stop_actions(house, words, phrases, "Paused.", STOP_NOTHING_EN),
     }
 
 
