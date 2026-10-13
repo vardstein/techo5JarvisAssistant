@@ -1306,6 +1306,7 @@ class DeployOptions:
     room: str | None = None        # the area it is in, by name or id; None as above
     room_dashboard: bool | None = None  # make a small one for the room if it has none; None: ask
     voice_extras: bool | None = None    # the house's answers and music sentences (voice_kit); None: ask
+    music_genres: dict[str, str] | None = None  # Music Assistant's genres for the random music, URI -> name
     assistant_name: bool | None = None  # call the Show's pipeline ASSISTANT_NAME; None: ask
     calendars: str | None = None   # the calendar entities the Show shows, "a, b"; '': leave them; None: ask
     caldav: CalDAVAccount | None = None  # a calendar account to add to Home Assistant, without asking
@@ -1438,7 +1439,7 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
         from . import voice_kit
         try:
             voice_kit.set_up(ha, opts.name, entities, choose=choose, keep=opts.keep_replaced, progress=progress,
-                             node=node or node_slug(opts.name), sleep=sleep, clock=clock)
+                             node=node or node_slug(opts.name), sleep=sleep, clock=clock, genres=opts.music_genres)
         except HomeAssistantError as exc:
             progress(f"WARN: the voice extras stopped part way: {exc}")
     services = _services(ha) if wanted else set()

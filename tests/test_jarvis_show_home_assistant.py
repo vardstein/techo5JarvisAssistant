@@ -1368,6 +1368,24 @@ class MusicAssistantTests(unittest.TestCase):
             ma.show_exchange(sock, "10.0.0.6:8095", "ma-token", "Jarvis Show 5", key="dGhlIHNhbXBsZSBub25jZQ==")
         self.assertEqual([m["command"] for m in sock.messages()], ["auth", "auth/users"])
 
+    def test_genres_with_enough_songs_by_their_numeric_ids(self):
+        few = [{"item_id": str(i)} for i in range(3)]
+        enough = [{"item_id": str(i)} for i in range(ma.GENRE_LEAST_TRACKS)]
+        sock = self.server({"message_id": "1", "result": {"authenticated": True}},
+                           {"message_id": "2", "result": [
+                               {"item_id": "29", "name": "Jazz", "uri": "library://genre/29"},
+                               {"item_id": "36", "name": "New Age", "uri": "library://genre/36"},
+                               {"item_id": "x", "name": "Odd", "uri": "spotify://genre/x"}]},
+                           {"message_id": "3", "result": enough},
+                           {"message_id": "4", "result": few})
+        self.assertEqual(ma.genres_exchange(sock, "10.0.0.6:8095", "ma-token", key="dGhlIHNhbXBsZSBub25jZQ=="),
+                         {"library://genre/29": "Jazz"})
+        sent = sock.messages()
+        self.assertEqual([m["command"] for m in sent], ["auth", "music/genres/library_items",
+                                                        "music/tracks/library_items", "music/tracks/library_items"])
+        # Only reads, and the genre filter as numbers: Music Assistant ignores it given as text.
+        self.assertEqual(sent[2]["args"], {"genre": [29], "limit": ma.GENRE_LEAST_TRACKS})
+
     def test_show_username(self):
         self.assertEqual(ma.show_username("Jarvis Show 5"), "jarvis-show-5")
         self.assertEqual(ma.show_username("  Küche/Show "), "k-che-show")
