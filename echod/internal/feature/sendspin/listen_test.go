@@ -1,8 +1,10 @@
 package sendspin
 
 import (
+	"context"
 	"net"
 	"testing"
+	"time"
 )
 
 func mustIP(t *testing.T, s string) net.IP {
@@ -62,5 +64,42 @@ func TestNormalizeServerIPAcceptsOnlyLiteralAddresses(t *testing.T) {
 	}
 	if got, err := normalizeServerIP(" "); err != nil || got != "" {
 		t.Errorf("unpair = %q, %v", got, err)
+	}
+}
+
+// A port still held by the listener being replaced is waited for, not given up on (GENBU-133).
+func TestBindWaitsForThePortToComeFree(t *testing.T) {
+	old, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := old.Addr().String()
+	time.AfterFunc(300*time.Millisecond, func() { old.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ln, err := bind(ctx, addr)
+	if err != nil {
+		t.Fatalf("bind gave up on a port that came free: %v", err)
+	}
+	ln.Close()
+}
+
+// Stopping while it waits ends the wait.
+func TestBindStopsWaitingWhenStopped(t *testing.T) {
+	held, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	if ln, err := bind(ctx, held.Addr().String()); err == nil {
+		ln.Close()
+		t.Fatal("bind took a port that was held the whole time")
+	}
+	if ctx.Err() == nil {
+		t.Fatal("bind returned before it was stopped")
 	}
 }
