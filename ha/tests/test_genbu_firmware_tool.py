@@ -6,8 +6,10 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import llm
 
 from custom_components.genbu import llm as genbu_llm
+from custom_components.genbu.house import manifest_url, tag_url
 
-from test_genbu_ha import add_show
+from conftest import RELEASES
+from test_genbu_ha import add_show, read, set_show
 from test_genbu_recipe_tool import device_of, setup, tool_names
 
 DOMAIN = "genbu"
@@ -50,40 +52,95 @@ async def test_in_the_app_only_an_admin(hass: HomeAssistant, hass_admin_user, ha
 
 async def test_status_says_versions_and_whats_new(hass: HomeAssistant):
     kitchen_up = add_show(hass, "kitchen", "v1.4.0-staging.60")
-    hall_up = add_show(hass, "hall", "v1.4.0-staging.60")
+    add_show(hass, "hall", "v1.4.0-staging.60")
     kitchen = device_of(hass, kitchen_up)
     entry = await setup(hass)
-    waiting(hass, hall_up, "v1.4.0-staging.60", "v1.4.1-staging.61", "Calendar fixed, see https://example.org/n")
+    RELEASES[manifest_url("staging")] = {"version": "v1.4.1-staging.61",
+                                         "title": "Calendar fixed, see https://example.org/n"}
+    await read(hass, entry)
     tool = genbu_llm.FirmwareTool(entry.runtime_data.show(kitchen))
     data = (await tool.async_call(hass, *ask(kitchen, "status"))).data
+    assert (data["house_version"], data["channel"]) == ("v1.4.0-staging.60", "staging")
     assert data["update_waiting"] == "v1.4.1-staging.61"
     assert data["whats_new"] == "Calendar fixed, see"
+    assert (data["install_at_night"], data["version_before"]) == (False, None)
     shows = {s["name"]: s for s in data["shows"]}
     assert shows["Kitchen"] == {"name": "Kitchen", "version": "v1.4.0-staging.60", "channel": "staging",
                                 "online": True, "this_is_you": True}
-    assert shows["Hall"]["update_to"] == "v1.4.1-staging.61"
 
 
-async def test_install_asks_first_then_starts_every_show(hass: HomeAssistant):
-    kitchen_up = add_show(hass, "kitchen", "v1.4.0-stable.60")
+async def test_a_show_behind_the_house_catches_up(hass: HomeAssistant):
+    """No house update, but one Show is still behind: its own update is the one waiting."""
+    add_show(hass, "kitchen", "v1.4.1-stable.61")
     hall_up = add_show(hass, "hall", "v1.4.0-stable.60")
+    entry = await setup(hass)
+    waiting(hass, hall_up, "v1.4.0-stable.60", "v1.4.1-stable.61", "Calendar fixed")
+    kitchen = entry.runtime_data.shows[0]
+    data = (await genbu_llm.FirmwareTool(kitchen).async_call(hass, *ask(kitchen.device, "status"))).data
+    assert data["update_waiting"] == "v1.4.1-stable.61"
+    assert {s["name"]: s.get("update_to") for s in data["shows"]}["Hall"] == "v1.4.1-stable.61"
+
+
+async def test_install_asks_first_then_moves_the_house(hass: HomeAssistant):
+    kitchen_up = add_show(hass, "kitchen", "v1.4.0-stable.60")
+    add_show(hass, "hall", "v1.4.0-stable.60")
     kitchen = device_of(hass, kitchen_up)
     entry = await setup(hass)
-    installs = []
-    hass.services.async_register("update", "install", lambda call: installs.append(call.data["entity_id"]))
     tool = genbu_llm.FirmwareTool(entry.runtime_data.show(kitchen))
 
     data = (await tool.async_call(hass, *ask(kitchen, "install", confirm=True))).data
     assert "up to date" in data["installed"]
 
-    waiting(hass, kitchen_up, "v1.4.0-stable.60", "v1.4.1-stable.61")
-    waiting(hass, hall_up, "v1.4.0-stable.60", "v1.4.1-stable.61")
+    RELEASES[manifest_url("stable")] = {"version": "v1.4.1-stable.61"}
+    await read(hass, entry)
     data = (await tool.async_call(hass, *ask(kitchen, "install"))).data
     assert "v1.4.1-stable.61" in data["ask_first"]
-    await hass.async_block_till_done()
-    assert installs == []
+    assert entry.runtime_data.house.version == "v1.4.0-stable.60"
 
     data = (await tool.async_call(hass, *ask(kitchen, "install", confirm=True))).data
     await hass.async_block_till_done()
     assert sorted(data["installing_on"]) == ["Hall", "Kitchen"]
-    assert sorted(installs) == sorted([kitchen_up, hall_up])
+    assert entry.runtime_data.house.version == "v1.4.1-stable.61"
+
+
+async def test_go_back_skip_channel_and_night(hass: HomeAssistant):
+    kitchen_up = add_show(hass, "kitchen", "v1.4.0-stable.60")
+    kitchen = device_of(hass, kitchen_up)
+    entry = await setup(hass)
+    hub = entry.runtime_data
+    tool = genbu_llm.FirmwareTool(hub.show(kitchen))
+
+    async def say(action, **args):
+        result = await tool.async_call(hass, *ask(kitchen, action, **args))
+        await hass.async_block_till_done()
+        return result.data
+
+    assert "name one" in (await say("go_back", confirm=True))["went_back"]
+    assert "nothing" in (await say("skip"))["skipped"]
+
+    RELEASES[manifest_url("stable")] = {"version": "v1.4.1-stable.61"}
+    await read(hass, entry)
+    assert (await say("skip"))["skipped"] == "v1.4.1-stable.61"
+    assert hub.waiting == ""
+
+    RELEASES[manifest_url("stable")] = {"version": "v1.4.2-stable.62"}
+    await read(hass, entry)
+    await say("install", confirm=True)
+    set_show(hass, kitchen_up, kitchen_up.replace("update.", "sensor.").replace("_firmware", "_committed_version"),
+             "v1.4.2-stable.62")
+    await hub.async_refresh()
+    await hass.async_block_till_done()
+
+    RELEASES[tag_url("v1.4.0-stable.60")] = {"version": "v1.4.0-stable.60"}
+    assert "v1.4.0-stable.60" in (await say("go_back"))["ask_first"]
+    data = await say("go_back", confirm=True)
+    assert data["house_version"] == "v1.4.0-stable.60" and hub.waiting == ""
+
+    RELEASES[manifest_url("dev")] = {"version": "v1.4.3-dev.70"}
+    assert "dev" in (await say("channel", channel="dev"))["ask_first"]
+    data = await say("channel", channel="dev", confirm=True)
+    assert data == {"channel": "dev", "update_waiting": "v1.4.3-dev.70"}
+    assert hass.states.get("select.genbu_release_channel").state == "dev"
+
+    assert (await say("night", on=True)) == {"install_at_night": True}
+    assert hass.states.get("switch.genbu_install_at_night").state == "on"

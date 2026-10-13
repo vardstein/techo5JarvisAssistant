@@ -6,9 +6,10 @@ these hold, asked anew for every request: a recipe search is set up in Genbu Ass
 request comes from a Genbu Show, and that Show has Recipes on. A phone, a Voice PE or the chat in the app
 never see it.
 
-genbu__firmware answers questions about the Shows' software and installs a waiting update after asking. A
-Show with Updates by voice on gets it, and so does an admin typing in the app; another voice device never
-does. See docs/genbu-assistant.md §1 and §4."""
+genbu__firmware answers questions about the Shows' software and does what the house's update card does:
+installs a waiting update or goes back to the version before, after asking, skips an update, picks the
+release channel and turns Install at night on or off. A Show with Updates by voice on gets it, and so does
+an admin typing in the app; another voice device never does. See docs/genbu-assistant.md §1 and §4."""
 
 from __future__ import annotations
 
@@ -23,6 +24,7 @@ from aiohttp.abc import AbstractResolver, ResolveResult
 from homeassistant.components.llm import LLMTools
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import llm
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -34,9 +36,8 @@ except ImportError:
     import voluptuous as vol
 
 from . import recipe as rec
-from .const import DOMAIN, NEW_RECIPE, RECIPES, SHOW_RECIPE, VOICE_UPDATES
-from .coordinator import install_waiting
-from .house import Show
+from .const import DOMAIN, NEW_RECIPE, RECIPES, SHOW_RECIPE, UPDATE_ENTITY, VOICE_UPDATES
+from .house import CHANNELS, Show, channel_of, newer, valid
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -52,9 +53,9 @@ PROMPT = {
 }
 FIRMWARE_PROMPT = {
     "de": ("Fragen zur Software oder Version der Genbu Shows beantwortet genbu__firmware. Bevor ein Update "
-           "installiert wird, frag immer erst nach."),
+           "installiert, zurückgegangen oder der Kanal gewechselt wird, frag immer erst nach."),
     "en": ("genbu__firmware answers questions about the Genbu Shows' software or version. Always ask before an "
-           "update is installed."),
+           "update is installed, a version is gone back to or the channel changes."),
 }
 
 
@@ -209,24 +210,30 @@ async def _show(hass: HomeAssistant, show: Show) -> bool:
     return True
 
 
-def _channel(version: str) -> str:
-    """stable, staging or dev, from a version like v1.4.0-staging.55."""
-    rest = version.partition("-")[2]
-    return rest.partition(".")[0] or "stable"
+ACTIONS = ["status", "install", "go_back", "skip", "channel", "night"]
+NEEDS_YES = {"install": "install {version} on all Shows now", "go_back": "go back to {version} on all Shows",
+             "channel": "switch the Shows to the {channel} channel"}
 
 
 class FirmwareTool(llm.Tool):
     name = f"{DOMAIN}__firmware"
     title = "Genbu Show software"
     description = (
-        "The software (firmware) of the Genbu Shows: you are one of them. Use it when someone asks about your or "
-        "the Shows' version, whether there is an update, what is new in it, or wants the update installed. "
-        "Not for other devices, their settings or readings, and not for news, weather or lists. "
-        "action status: versions and the waiting update. action install: installs the waiting update on all "
-        "Shows. Ask first and set confirm only after the person said yes to installing it.")
+        "The software (firmware) of the Genbu Shows: you are one of them. All Shows run one version, the house "
+        "version. Use it when someone asks about your or the Shows' version, whether there is an update, what is "
+        "new in it, or wants it installed, skipped, or to go back to the version before; also for the release "
+        "channel and whether updates install at night. Not for other devices, their settings or readings, and "
+        "not for news, weather or lists. "
+        "action status: versions, channel and the waiting update. install: installs the waiting update on all "
+        "Shows. go_back: back to the version before (or the one given). skip: no more asking about the waiting "
+        "update. channel: stable, staging or dev. night: on or off. For install, go_back and channel, ask first "
+        "and set confirm only after the person said yes.")
     parameters = vol.Schema({
-        vol.Required("action", description="status, or install"): vol.In(["status", "install"]),
-        vol.Optional("confirm", description="True only after the person said yes to installing"): bool,
+        vol.Required("action", description="status, install, go_back, skip, channel or night"): vol.In(ACTIONS),
+        vol.Optional("confirm", description="True only after the person said yes"): bool,
+        vol.Optional("version", description="go_back only: the version to go to, if one was named"): str,
+        vol.Optional("channel", description="channel only: stable, staging or dev"): vol.In(list(CHANNELS)),
+        vol.Optional("on", description="night only: true to install updates at night"): bool,
     })
     integration = DOMAIN
     annotations = llm.ToolAnnotations(read_only=False, destructive=False, idempotent=True, open_world=False)
@@ -243,32 +250,81 @@ class FirmwareTool(llm.Tool):
         hub = _hub(hass)
         if hub is None:
             return llm.ToolResult(data={"error": "Genbu Assistant is not running"}, error=True)
-        status = self._status(hass, hub.shows)
-        if tool_input.tool_args.get("action") != "install":
+        args = tool_input.tool_args
+        action = args.get("action", "status")
+        status = self._status(hass, hub)
+        if action == "status":
             return llm.ToolResult(data=status)
-        if not status["update_waiting"]:
-            return llm.ToolResult(data={**status, "installed": "nothing, every Show is up to date"})
-        if not tool_input.tool_args.get("confirm"):
-            return llm.ToolResult(data={**status, "ask_first": f"Ask whether to install {status['update_waiting']} "
-                                        "on all Shows now. Install only after a yes."})
-        started = await install_waiting(hass)
-        return llm.ToolResult(data={"installing_on": started["updating"], "up_to_date": started["current"],
-                                    "note": "Each Show restarts when its update is in."})
+        if action == "night":
+            await hub.async_set_night(bool(args.get("on")))
+            return llm.ToolResult(data={"install_at_night": hub.house.night})
+        if action == "skip":
+            if not hub.waiting:
+                return llm.ToolResult(data={**status, "skipped": "nothing, no update is waiting"})
+            await hass.services.async_call("update", "skip", {"entity_id": UPDATE_ENTITY}, blocking=True)
+            return llm.ToolResult(data={"skipped": status["update_waiting"],
+                                        "note": "A newer update will be offered again."})
+        try:
+            return await self._change(hass, hub, action, args, status)
+        except HomeAssistantError as err:
+            return llm.ToolResult(data={"error": str(err)}, error=True)
 
-    def _status(self, hass: HomeAssistant, shows: list[Show]) -> dict:
-        """What the update entities say: each Show's version, and the release waiting with its summary."""
-        out: dict = {"shows": [], "update_waiting": None, "whats_new": None}
-        for show in shows:
+    async def _change(self, hass: HomeAssistant, hub, action: str, args: dict, status: dict) -> llm.ToolResult:
+        """install, go_back and channel: each asks first."""
+        if action == "install":
+            if not status["update_waiting"]:
+                return llm.ToolResult(data={**status, "installed": "nothing, every Show is up to date"})
+            words = {"version": status["update_waiting"]}
+        elif action == "go_back":
+            target = str(args.get("version") or hub.house.before or "").strip()
+            if not valid(target) or target == hub.house.version:
+                return llm.ToolResult(data={**status, "went_back": "nothing, there is no version before to go "
+                                            "back to; name one"})
+            words = {"version": target}
+        else:
+            channel = args.get("channel")
+            if channel not in CHANNELS:
+                return llm.ToolResult(data={**status, "error": "say which channel: stable, staging or dev"},
+                                      error=True)
+            if channel == hub.house.channel:
+                return llm.ToolResult(data={**status, "channel": f"already {channel}"})
+            words = {"channel": channel}
+        if not args.get("confirm"):
+            return llm.ToolResult(data={**status, "ask_first": "Ask whether to " + NEEDS_YES[action].format(**words)
+                                        + ". Do it only after a yes."})
+        if action == "install":
+            started = await hub.async_install_updates()
+            return llm.ToolResult(data={"installing_on": started["updating"], "up_to_date": started["current"],
+                                        "note": "Each Show restarts when its update is in."})
+        if action == "go_back":
+            await hass.services.async_call("update", "install", {"entity_id": UPDATE_ENTITY,
+                                                                 "version": words["version"]}, blocking=True)
+            return llm.ToolResult(data={"house_version": hub.house.version,
+                                        "note": "Each Show goes back and restarts. The newer one is skipped."})
+        await hub.async_pick_channel(words["channel"])
+        return llm.ToolResult(data={"channel": hub.house.channel, "update_waiting": hub.waiting or None})
+
+    def _status(self, hass: HomeAssistant, hub) -> dict:
+        """The house version and channel, the update waiting with its summary, and each Show's version. A
+        Show still behind the house can have an update of its own waiting too."""
+        house = hub.house
+        out: dict = {"house_version": house.version or None, "channel": house.channel,
+                     "update_waiting": hub.waiting or None, "whats_new": None,
+                     "install_at_night": house.night, "version_before": house.before or None, "shows": []}
+        if hub.waiting:
+            out["whats_new"] = rec._line(str(hub.release.get("title") or "")) or None
+        for show in hub.shows:
             state = hass.states.get(show.watch[0]) if show.watch else None
             attrs = state.attributes if state else {}
             installed = str(attrs.get("installed_version") or show.installed or "")
-            item = {"name": show.name, "version": installed, "channel": _channel(installed),
+            item = {"name": show.name, "version": installed, "channel": channel_of(installed),
                     "online": state is not None and state.state in ("on", "off")}
             if self.show is not None and show.device == self.show.device:
                 item["this_is_you"] = True
             if state is not None and state.state == "on":
                 item["update_to"] = latest = str(attrs.get("latest_version") or "")
-                out["update_waiting"] = out["update_waiting"] or latest
-                out["whats_new"] = out["whats_new"] or rec._line(str(attrs.get("release_summary") or "")) or None
+                if not out["update_waiting"] and (not house.version or not newer(latest, house.version)):
+                    out["update_waiting"] = latest  # catching up with the house
+                    out["whats_new"] = out["whats_new"] or rec._line(str(attrs.get("release_summary") or "")) or None
             out["shows"].append(item)
         return out

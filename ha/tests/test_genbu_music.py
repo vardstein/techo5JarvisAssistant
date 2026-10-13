@@ -88,7 +88,7 @@ async def test_a_show_plays_in_its_own_room(hass: HomeAssistant):
     living = player(hass, "livingroom", "Wohnzimmer", "Living Room")
     own = player(hass, "bedroomecho8", "bedroomEcho8", maker="TECHO5")
     device, sat = show(hass, "bedroomecho8", "Bedroom")
-    await setup(hass, main="bedroomecho8")
+    await setup(hass)
 
     # Nothing else in the bedroom: the Show itself, never the living room.
     assert music(hass) == {device: own, sat: own}
@@ -108,7 +108,7 @@ async def test_a_show_moved_to_another_room_plays_there(hass: HomeAssistant):
     living = player(hass, "livingroom", "Wohnzimmer", "Living Room")
     player(hass, "kitchen", "Küche", "Kitchen")
     device, sat = show(hass, "hall", "Kitchen")
-    await setup(hass, main="hall")
+    await setup(hass)
     assert music(hass)[sat] == "media_player.kitchen"
     dr.async_get(hass).async_update_device(device, area_id=room(hass, "Living Room"))
     await look(hass)
@@ -120,7 +120,7 @@ async def test_picked_by_hand_and_back_to_automatic(hass: HomeAssistant):
     living = player(hass, "livingroom", "Wohnzimmer", "Living Room")
     kitchen = player(hass, "kitchen", "Küche", "Kitchen")
     device, sat = show(hass, "hall", "Kitchen")
-    await setup(hass, main="hall")
+    await setup(hass)
     await hass.services.async_call("select", "select_option", {
         "entity_id": "select.hall_music_plays_on", "option": "Wohnzimmer"}, blocking=True)
     await hass.async_block_till_done()
@@ -136,7 +136,7 @@ async def test_an_offline_speaker_falls_back_to_the_show_at_once(hass: HomeAssis
     living = player(hass, "livingroom", "Wohnzimmer", "Living Room")
     own = player(hass, "genbushow5", "Jarvis Show 5", maker="OpenJade")
     _, sat = show(hass, "genbushow5", "Living Room")
-    await setup(hass, main="genbushow5")
+    await setup(hass)
     select = "select.genbushow5_music_plays_on"
     fallback = "sensor.genbushow5_music_falls_back_to"
     assert music(hass)[sat] == living
@@ -167,7 +167,7 @@ async def test_an_offline_speaker_falls_back_to_the_show_at_once(hass: HomeAssis
 async def test_the_select_follows_the_show(hass: HomeAssistant):
     player(hass, "kitchen", "Küche", "Kitchen")
     device, _ = show(hass, "hall", "Kitchen")
-    await setup(hass, main="hall")
+    await setup(hass)
     devices = dr.async_get(hass)
     mine = devices.async_get_device_by_identifier((DOMAIN, device), hass.config_entries.async_entries(DOMAIN)[0].entry_id)
     assert mine.via_device_id == device
@@ -198,7 +198,7 @@ async def test_a_renamed_show_still_falls_back_to_itself(hass: HomeAssistant):
     device, _ = show(hass, "genbushow5", "Living Room")
     devices = dr.async_get(hass)
     devices.async_update_device(device, new_connections={(dr.CONNECTION_NETWORK_MAC, "aa:bb:cc:2c:1e:d7")})
-    await setup(hass, main="genbushow5")
+    await setup(hass)
     fallback = "sensor.genbushow5_music_falls_back_to"
     assert hass.states.get(fallback).attributes["player"] == own
 
@@ -225,7 +225,7 @@ async def test_the_scripts_play_where_the_show_was_asked(hass: HomeAssistant):
     own = player(hass, "bedroomecho8", "bedroomEcho8", maker="TECHO5")
     device, sat = show(hass, "bedroomecho8", "Bedroom")
     _, other = show(hass, "hall", "Living Room")
-    await setup(hass, main="hall")
+    await setup(hass)
 
     # The automations: whichever Show heard the sentence.
     assert render(hass, voice_kit.ROOM_PLAYER, trigger={"device_id": device}) == own
@@ -243,7 +243,7 @@ async def test_the_scripts_play_where_the_show_was_asked(hass: HomeAssistant):
 async def test_a_show_with_no_speaker_anywhere_gets_none(hass: HomeAssistant):
     living = player(hass, "livingroom", "Wohnzimmer", "Living Room")
     _, sat = show(hass, "bedroomecho8", "Bedroom")
-    await setup(hass, main="bedroomecho8")
+    await setup(hass)
     hass.states.async_set(sat, "listening")
     # Not the living room: the script says so instead.
     assert render(hass, voice_kit.TARGET_PLAYER, players=[living], player="") == ""
@@ -269,7 +269,7 @@ async def test_the_turn_down_follows_the_room(hass: HomeAssistant):
                                                     device_id=d.id, suggested_object_id="wohnzimmer")
     hass.states.async_set(native.entity_id, "playing")
     _, sat = show(hass, "hall", "Living Room")
-    await setup(hass, main="hall")
+    await setup(hass)
 
     got = Template(speakers, hass).async_render({"satellite": sat, "picked": []})
     assert got == [native.entity_id]  # the speaker's own entity, not the Show, not Music Assistant's copy
@@ -313,7 +313,7 @@ async def test_what_plays_in_the_room_is_what_stop_pauses(hass: HomeAssistant):
     native = er.async_get(hass).async_get_or_create("media_player", "linkplay", "x", config_entry=linkplay,
                                                     device_id=d.id, suggested_object_id="wohnzimmer_native").entity_id
     device, _ = show(hass, "hall", "Living Room")
-    await setup(hass, main="hall")
+    await setup(hass)
 
     def playing(**trigger) -> list:
         return Template(voice_kit.ROOM_PLAYING, hass).async_render(
@@ -352,7 +352,7 @@ async def test_stop_stop_pauses_the_music_in_the_room(hass: HomeAssistant):
     living = player(hass, "livingroom", "Wohnzimmer", "Living Room")
     kitchen = player(hass, "kitchen", "Küche", "Kitchen")
     device, _ = show(hass, "hall", "Living Room")
-    await setup(hass, main="hall")
+    await setup(hass)
     paused = async_mock_service(hass, "media_player", "media_pause")
     house = voice_kit.House(german=True, music_entry="ma", players=[living, kitchen])
     assert await async_setup_component(hass, "homeassistant", {})
@@ -382,7 +382,7 @@ async def test_die_musik_starts_some_or_says_what_plays(hass: HomeAssistant):
 
     living = player(hass, "livingroom", "Wohnzimmer", "Living Room")
     device, _ = show(hass, "hall", "Living Room")
-    await setup(hass, main="hall")
+    await setup(hass)
     started = async_mock_service(hass, "script", "play_random_music", supports_response=SupportsResponse.OPTIONAL,
                                  response={"message": "Spiele Yesterday von The Beatles und ähnliche Lieder."})
     house = voice_kit.House(german=True, music_entry="ma", players=[living])
@@ -420,7 +420,7 @@ async def test_the_wecker_asks_back_and_keeps_listening(hass: HomeAssistant):
     entities = er.async_get(hass)
     entities.async_get_or_create("button", "esphome", "aa:hall-stop_alarm", device_id=device,
                                  suggested_object_id="hall_stop_alarm")
-    await setup(hass, main="hall")
+    await setup(hass)
     assert await async_setup_component(hass, "homeassistant", {})
     assert await async_setup_component(hass, "conversation", {})
     assert await async_setup_component(hass, "automation", {"automation": [

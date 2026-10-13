@@ -1,6 +1,7 @@
 """GenbuHouse: looks at the Genbu Shows every minute and whenever one of them changes, feeds that to
-house.House, and does what it answers: Repairs issues, the push, the pick after 7 days. It is the only
-thing that ever changes which Shows are main update Shows, so nothing can race for the job.
+house.House, and keeps the house version: the one every Show follows, which only an install on the house's
+update card (update.py), the night install or the voice moves (GENBU-119). It reads the release channel's
+manifest every few hours for what that card offers.
 
 Each look also works out where each Show's music plays (music.py), so a Show moved to another room
 plays there without anything being set up again. And it keeps each Show's Recipes and Updates by voice,
@@ -8,32 +9,38 @@ which decide what the voice assistant is offered on that Show (llm.py)."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from datetime import datetime, timedelta
+
+import aiohttp
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_STATE_CHANGED, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import async_track_time_change, async_track_time_interval
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import (CHANGED, CONF_MAIN, CONF_NOTIFY, CONF_SEARXNG, DOMAIN, ISSUE_MISSING, ISSUE_NO_MAIN,
-                    ISSUE_PICKED, MAIN_SELECT, MANUFACTURERS, PUSH, RECIPES, SHOW_RECIPE, STORE_KEY,
-                    STORE_VERSION, VOICE_UPDATES)
-from .house import ASK, PICK, House, Show, recommend
+from .const import (CHANGED, CONF_SEARXNG, DOMAIN, MANUFACTURERS, NAME, NIGHT_AT, RECIPES, SHOW_RECIPE,
+                    STORE_KEY, STORE_VERSION, UPDATE_ENTITY, VOICE_UPDATES)
+from .house import House, Show, manifest_url, newer, tag_url, valid
 from .music import Player, falls_back_to, own_player, plays_on, room_player
 from .recipe import show_action
 
 LOGGER = logging.getLogger(__name__)
 LOOK_EVERY = timedelta(minutes=1)
+READ_EVERY = timedelta(hours=6)  # the channel's manifest
+SETTLE = timedelta(minutes=30)  # how long after an install the card shows how far the Shows are
 
 
 def find_shows(hass: HomeAssistant) -> list[Show]:
@@ -147,6 +154,12 @@ def show_device(show: Show) -> DeviceInfo:
                       via_device_id=show.device)
 
 
+def house_device(entry: ConfigEntry) -> DeviceInfo:
+    """The device the house's own controls sit on: the update card, the channel, the night install."""
+    return DeviceInfo(identifiers={(DOMAIN, entry.entry_id)}, name=NAME, manufacturer="OpenJade",
+                      model="Genbu Shows", entry_type=dr.DeviceEntryType.SERVICE)
+
+
 class GenbuHouse:
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.hass, self.entry = hass, entry
@@ -158,6 +171,8 @@ class GenbuHouse:
         self.fallback: dict[str, str] = {}  # where it goes when that player is offline, by device id
         self.cooking: set[str] = set()  # the Shows looking a recipe up right now, by device id
         self.had_search = False  # whether a recipe search was set up when the entry was
+        self.release: dict = {}  # the channel's newest manifest, {} until it was read
+        self.installed_at: datetime | None = None  # the last install, for how far the Shows are
         self._watched: set[str] = set()
         self._player_ids: set[str] = set()
         self._stops: list = []
@@ -165,17 +180,20 @@ class GenbuHouse:
 
     async def async_start(self) -> None:
         self.house = House(await self.store.async_load() or {})
-        if not self.house.data.get("seeded"):
-            # The installer or the setup form named the first main update Show.
-            if main := self.entry.data.get(CONF_MAIN):
-                self.house.make_main(main, dt_util.utcnow())
-            self.house.data["seeded"] = True
-            self._save()
+        self._save()  # without the main update Shows of before 1.4.0, if there were any
         if hidden := self.house.data.pop("hidden", None):
             # Left by 1.2.0, whose copies are gone (GENBU-114): the Shows' own entities come back.
             unhide(self.hass, hidden)
-            self._save()
+        for domain, issue in list(ir.async_get(self.hass).issues):
+            if domain == DOMAIN:  # the main update Show's issues of before 1.4.0
+                ir.async_delete_issue(self.hass, DOMAIN, issue)
+        entities = er.async_get(self.hass)
+        if old := entities.async_get_entity_id("select", DOMAIN, f"{self.entry.entry_id}_main_update_show"):
+            entities.async_remove(old)  # and its select
         self._stops.append(async_track_time_interval(self.hass, self._tick, LOOK_EVERY))
+        self._stops.append(async_track_time_interval(self.hass, self._read, READ_EVERY))
+        hour, minute = NIGHT_AT
+        self._stops.append(async_track_time_change(self.hass, self._night, hour=hour, minute=minute, second=0))
         self._stops.append(self.hass.bus.async_listen(EVENT_STATE_CHANGED, self._changed,
                                                       event_filter=self._watching))
         self._stops.append(self.hass.bus.async_listen(dr.EVENT_DEVICE_REGISTRY_UPDATED, self._changed,
@@ -184,6 +202,8 @@ class GenbuHouse:
         self._stops.append(self.hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, self._changed,
                                                       event_filter=self._player_or_satellite))
         await self.async_refresh()
+        # Not waited for: a slow GitHub must not hold Home Assistant's start up.
+        self.entry.async_create_background_task(self.hass, self.async_read_release(), f"{DOMAIN} release")
 
     @callback
     def async_stop(self) -> None:
@@ -219,42 +239,121 @@ class GenbuHouse:
     def name(self, node: str) -> str:
         return next((s.name for s in self.shows if s.node == node), node)
 
-    def recommended(self, leaving: str | None = None) -> str | None:
-        return recommend(self.shows, self.house.version, leaving)
+    # The house's update.
 
-    def missing_words(self, node: str) -> dict[str, str]:
-        """What the issue, its fix flow and the push say about a missing main update Show."""
-        pick = self.recommended(leaving=node)
-        return {"name": self.name(node), "since": _local(self.house.gone_since(node)),
-                "pick": self.name(pick) if pick else "-", "pick_at": _local(self.house.pick_at(node))}
+    @property
+    def offered(self) -> str:
+        """The version the channel has, when it is newer than the house; else ""."""
+        latest = str(self.release.get("version") or "")
+        return latest if valid(latest) and self.house.version and newer(latest, self.house.version) else ""
 
-    # What the select, the options and the fix flow do.
+    @property
+    def waiting(self) -> str:
+        """The update waiting for the house: offered, unless somebody skipped it on the card."""
+        offered = self.offered
+        state = self.hass.states.get(UPDATE_ENTITY)
+        # The skipped version, not the card's state: that one may not be written yet when this is read.
+        if offered and state is not None and state.attributes.get("skipped_version") == offered:
+            return ""
+        return offered
 
-    async def async_make_main(self, node: str) -> None:
-        self.house.make_main(node, dt_util.utcnow())
-        await self._changed_by_hand()
+    def progress(self) -> int | None:
+        """How many of the Shows that are online run the house version, in percent, for a while after an
+        install; None otherwise."""
+        if self.installed_at is None or dt_util.utcnow() - self.installed_at > SETTLE:
+            return None
+        online = [s for s in self.shows if s.online]
+        if not online:
+            return None
+        done = sum(1 for s in online if s.installed == self.house.version)
+        if done == len(online):
+            self.installed_at = None
+            return None
+        return round(100 * done / len(online))
 
-    async def async_set_extra(self, nodes: list[str]) -> None:
-        self.house.set_extra(nodes, dt_util.utcnow())
-        await self._changed_by_hand()
+    async def _read(self, _now: datetime) -> None:
+        await self.async_read_release()
 
-    async def async_replace(self, gone: str, new: str | None) -> None:
-        self.house.replace(gone, new, dt_util.utcnow())
-        await self._changed_by_hand()
+    async def async_read_release(self) -> None:
+        """Reads the channel's newest manifest; what was read before stays when GitHub doesn't answer."""
+        try:
+            self.release = await self._manifest(manifest_url(self.house.channel))
+        except HomeAssistantError as err:
+            LOGGER.info("Could not read the %s channel: %s", self.house.channel, err)
+        async_dispatcher_send(self.hass, CHANGED)
 
-    async def async_wait_more(self, node: str) -> None:
-        self.house.wait_more(node, dt_util.utcnow())
-        await self._changed_by_hand()
+    async def _manifest(self, url: str) -> dict:
+        try:
+            async with asyncio.timeout(30):
+                resp = await async_get_clientsession(self.hass).get(url)
+                if resp.status == 404:
+                    raise HomeAssistantError(f"no release there ({url})")
+                resp.raise_for_status()
+                data = await resp.json(content_type=None)
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+            raise HomeAssistantError(f"{url}: {err}") from err
+        if not isinstance(data, dict) or not valid(str(data.get("version") or "")):
+            raise HomeAssistantError(f"{url} is no Genbu manifest")
+        return data
+
+    async def async_install_house(self, version: str | None = None, backup: bool = False) -> str:
+        """Moves the house to version, or to the one waiting; every Show follows. Going to a version the
+        channel doesn't offer (back, or a build of its own) first checks that the release is there.
+        Answers with the version the house moved to, "" when there was nothing to install."""
+        version = (version or "").strip()
+        if version and not valid(version):
+            raise HomeAssistantError(f"{version} is no version")
+        target = version or self.offered
+        if not target:
+            return ""
+        if target != str(self.release.get("version") or ""):
+            await self._manifest(tag_url(target))
+        if backup:
+            await self.store.async_save(self.house.data)
+            if self.hass.services.has_service("backup", "create_automatic"):
+                await self.hass.services.async_call("backup", "create_automatic", blocking=True)
+        self.house.move(target, dt_util.utcnow())
+        self.installed_at = dt_util.utcnow()
+        LOGGER.info("The house moves to %s; the Shows follow", target)
+        await self.store.async_save(self.house.data)
+        await self.async_refresh()
+        return target
+
+    async def async_pick_channel(self, channel: str) -> None:
+        self.house.pick_channel(channel)
+        self.release = {}
+        self._save()
+        await self.async_read_release()
+
+    async def async_set_night(self, on: bool) -> None:
+        self.house.set_night(on)
+        self._save()
+        async_dispatcher_send(self.hass, CHANGED)
+
+    async def _night(self, _now: datetime) -> None:
+        if not self.house.night:
+            return
+        await self.async_read_release()
+        if self.waiting:
+            await self.async_install_house()
+
+    async def async_install_updates(self, skip: str = "") -> dict[str, list[str]]:
+        """genbu.install_updates and the voice: a waiting house update moves the house, and every Show
+        follows it; without one, any Show still behind the house is started on its own update."""
+        if waiting := self.waiting:
+            await self.async_install_house(waiting)
+            names = [s.name for s in self.shows if s.online]
+            return {"updating": names, "current": []}
+        return await install_waiting(self.hass, skip)
+
+    # What the services and the selects do.
 
     async def async_forget(self, node: str) -> dict:
-        """genbu.forget_show: the Show is gone for good. When it was the only main update Show, the
-        recommended one takes over at once rather than after 7 days."""
-        new = self.recommended(leaving=node) if self.house.mains == [node] else None
-        self.house.forget(node, dt_util.utcnow(), new)
-        ir.async_delete_issue(self.hass, DOMAIN, ISSUE_MISSING + node)
-        ir.async_delete_issue(self.hass, DOMAIN, ISSUE_PICKED + node)
-        await self._changed_by_hand()
-        return {"mains": self.house.mains, "new_main": new or ""}
+        """genbu.forget_show: the Show is gone for good."""
+        self.house.forget(node)
+        self._save()
+        await self.async_refresh()
+        return {}
 
     async def async_choose_music(self, device: str, player: str) -> None:
         self.house.choose_music(device, player)
@@ -298,32 +397,18 @@ class GenbuHouse:
         return (by.get(room_player(show.area, self.players)),
                 by.get(own_player([show.name, show.node], self.players, show.mac)))
 
-    async def _changed_by_hand(self) -> None:
-        for node in self.house.mains:
-            ir.async_delete_issue(self.hass, DOMAIN, ISSUE_PICKED + node)
-        self._save()
-        await self.async_refresh()
-
     async def async_refresh(self) -> None:
-        now = dt_util.utcnow()
         self.shows = find_shows(self.hass)
         self.players = find_players(self.hass)
         self.music = {s.device: plays_on(self.house.music_choice(s.device), s.area, [s.name, s.node],
                                          self.players, s.mac) for s in self.shows if s.device}
         self.fallback = {s.device: falls_back_to(self.house.music_choice(s.device), s.area, [s.name, s.node],
                                                  self.players, s.mac) for s in self.shows if s.device}
-        self._watched = {e for s in self.shows for e in s.watch if e}
+        # The house's card too: skipping its update there tells the Shows to stop asking.
+        self._watched = {e for s in self.shows for e in s.watch if e} | {UPDATE_ENTITY}
         self._player_ids = {p.entity for p in self.players}
         changed = self._tidy()
-        changed = self.house.see(self.shows, now) or changed
-        for node, step in self.house.missing(now).items():
-            if step == PICK:
-                new = self.house.auto_pick(node, self.shows, now)
-                if new is not None:
-                    changed = True
-                    self._picked(node, new)
-        self._issues(now)
-        await self._push(now)
+        changed = self.house.see(self.shows, dt_util.utcnow()) or changed
         if changed:
             self._save()
         async_dispatcher_send(self.hass, CHANGED)
@@ -337,7 +422,7 @@ class GenbuHouse:
         forgot = False
         for device in dr.async_entries_for_config_entry(devices, self.entry.entry_id):
             show = next((i for d, i in device.identifiers if d == DOMAIN), None)
-            if show is None:
+            if show is None or show == self.entry.entry_id:  # the house's own device
                 continue
             if devices.async_get(show) is None:
                 devices.async_remove_device(device.id)
@@ -351,62 +436,8 @@ class GenbuHouse:
     def _save(self) -> None:
         self.store.async_delay_save(lambda: self.house.data, 5)
 
-    def _picked(self, gone: str, new: str) -> None:
-        LOGGER.warning("Main update Show %s was gone 7 days; %s", gone,
-                       f"{new} took its place" if new else "the other main update Show carries on")
-        ir.async_create_issue(
-            self.hass, DOMAIN, ISSUE_PICKED + (new or gone), is_fixable=True, is_persistent=True,
-            severity=ir.IssueSeverity.WARNING,
-            translation_key="main_picked" if new else "main_dropped",
-            translation_placeholders={"gone": self.name(gone), "new": self.name(new) if new else "",
-                                      "select": MAIN_SELECT},
-            data={"kind": "picked"},
-        )
-
-    def _issues(self, now: datetime) -> None:
-        want: set[str] = set()
-        for node, step in self.house.missing(now).items():
-            if step != ASK:
-                continue
-            issue = ISSUE_MISSING + node
-            want.add(issue)
-            ir.async_create_issue(
-                self.hass, DOMAIN, issue, is_fixable=True, severity=ir.IssueSeverity.WARNING,
-                translation_key="main_missing", translation_placeholders=self.missing_words(node),
-                data={"node": node},
-            )
-        if not self.house.mains and self.shows:
-            want.add(ISSUE_NO_MAIN)
-            ir.async_create_issue(self.hass, DOMAIN, ISSUE_NO_MAIN, is_fixable=True,
-                                  severity=ir.IssueSeverity.WARNING, translation_key="no_main",
-                                  translation_placeholders={"select": MAIN_SELECT}, data={"node": ""})
-        for domain, issue in list(ir.async_get(self.hass).issues):
-            if domain == DOMAIN and issue not in want and not issue.startswith(ISSUE_PICKED):
-                ir.async_delete_issue(self.hass, DOMAIN, issue)
-
-    async def _push(self, now: datetime) -> None:
-        service = (self.entry.options.get(CONF_NOTIFY) or "").removeprefix("notify.")
-        if not service:
-            return
-        for node, step in self.house.missing(now).items():
-            if step != ASK or not self.house.tell_once(node):
-                continue
-            self._save()
-            title, text = PUSH.get(self.hass.config.language[:2], PUSH["en"])
-            text = text.format(**self.missing_words(node))
-            try:
-                await self.hass.services.async_call("notify", service, {
-                    "title": title, "message": text,
-                    "data": {"url": "/config/repairs", "clickAction": "/config/repairs"},
-                }, blocking=True)
-            except Exception as err:  # a phone that is gone must not stop the house
-                LOGGER.warning("Could not push to notify.%s: %s", service, err)
-
 
 def _slug(name: str) -> str:
     """The node name echod gives itself from its display name (layout.Slug)."""
     return re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
 
-
-def _local(t: datetime | None) -> str:
-    return dt_util.as_local(t).strftime("%d.%m. %H:%M") if t else "-"
