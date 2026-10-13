@@ -268,7 +268,7 @@ def fetch_board(board: str, cache: Path, *, check_only: bool = False, downloads:
 
 def main():
     p = argparse.ArgumentParser(prog='fetch-show-assets')
-    p.add_argument('--board', required=True, choices=('crown', 'checkers'))
+    p.add_argument('--board', required=True, choices=('crown', 'checkers', 'cronos'))
     p.add_argument('--cache', type=Path, default=None, help='default: $JARVIS_SHOW_ASSETS or ~/.cache/jarvis-show')
     p.add_argument('--from', dest='downloads', type=Path, default=None,
                    help='where browser downloads (Amonet) go; default ~/Downloads')

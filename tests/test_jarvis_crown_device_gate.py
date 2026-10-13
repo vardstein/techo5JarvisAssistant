@@ -51,9 +51,12 @@ class DeviceGateTests(unittest.TestCase):
             gate.identify_crown(run=self.runner(product="CHECKERS"))
 
 
-    def test_cronos_second_gen_is_explicitly_refused(self):
-        with self.assertRaisesRegex(gate.DeviceGateError, "2nd gen.*intentionally unsupported.*no write was attempted"):
-            gate.identify_show(run=self.runner(product="CRONOS"))
+    def test_cronos_second_gen_is_identified(self):
+        identity = gate.identify_show(run=self.runner(product="CRONOS", lk="lk-cronos"))
+        self.assertEqual(identity.product, "CRONOS")
+        self.assertFalse(identity.unlocked)
+        with self.assertRaisesRegex(gate.DeviceGateError, "expected crown"):
+            gate.identify_crown(run=self.runner(product="CRONOS"))
 
     def test_unknown_product_warns_newer_generation_and_fails_closed(self):
         with self.assertRaisesRegex(gate.DeviceGateError, "newer generation.*do not flash.*No write was attempted"):

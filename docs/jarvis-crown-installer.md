@@ -24,7 +24,7 @@ The preflight requires:
 The LineageOS zip and the board boot image are fetched rather than hunted for by hand:
 
 ```sh
-python3 tools/fetch-show-assets.py --board checkers     # or crown
+python3 tools/fetch-show-assets.py --board checkers     # or crown, or cronos
 ```
 
 It downloads both from GitHub (amazon-oss/releases for LineageOS, the upstream TECHO5 release for the
@@ -59,6 +59,12 @@ compares every file in it with the public source (R0rt1z2/amonet) and sorts them
 
 Then it stops. The hash goes into `tools/jarvis_crown/assets.py` only after someone has read that
 list. The crown and checkers 2.0.1 zips went through this on 2026-10-09 and are pinned.
+The cronos (Echo Show 5 2nd gen) zip has not been through it yet. Until it has, there is no pin for
+it or for its TWRP, so `unlock` refuses a cronos unless you pass reviewed hashes with `--amonet-hashes`,
+and recovery refuses to boot any TWRP on it. Its boot image is pinned: upstream TECHO5 stopped making
+cronos boot images after v0.7.16, and that is the one used. A cronos install also needs a Genbu release
+whose root filesystem lists cronos; releases up to v1.2.2 don't. The OpenJade boot logo isn't there for
+cronos yet, so it keeps the stock one.
 
 ### Amonet 1.x units
 
@@ -649,7 +655,7 @@ has the default given here.
 | Switch | Used by | Meaning |
 | --- | --- | --- |
 | `--name NAME` | install, home-assistant, boot-logo, --remove-show | The Show's name, as Home Assistant shows it. The installer records it in `backups/<serial>/show.json`, and the other commands find the unit by it. |
-| `--board crown\|checkers` | all | Cross-checks the board. Normally it is detected; `amonet-upgrade` needs it, and `install` needs it to carry on from TWRP. |
+| `--board crown\|checkers\|cronos` | all | Cross-checks the board. Normally it is detected; `amonet-upgrade` needs it, and `install` needs it to carry on from TWRP. |
 | `--serial SERIAL` | wifi, home-assistant | Which unit. `wifi` talks to that Show on USB (not needed when only one is attached); `home-assistant` takes its key from `backups/<serial>/`. |
 | `--host ADDRESS` | home-assistant, boot-logo, install, unlock | The Show's address, when `backups/<serial>/address`, mDNS and Home Assistant cannot find it (a Show on another VLAN, say). For `install` and `unlock`, where a Show running Jarvis is reached over SSH to send it to fastboot. |
 | `--ssh-identity FILE` | boot-logo, install, unlock | The private key that logs in to the Show over SSH. Default `~/.ssh/genbu_<name>` when it is there: each Show has a key of its own, which no other Show lets in. Without either, ssh picks a key the usual way. |

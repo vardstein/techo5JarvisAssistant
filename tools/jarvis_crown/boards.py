@@ -48,15 +48,32 @@ PROFILES = {
         unlock_confirmation="UNLOCK",
         install_confirmation="ERASE",
     ),
+    # The 2nd gen Echo Show 5 (2021). Same MT8163 and MT7668 as checkers, its own panel and
+    # codec. Its amonet zip and TWRP are not pinned yet, so unlock and recovery stay closed
+    # until they are reviewed (see unlock.py and recovery.py).
+    "cronos": BoardProfile(
+        board="cronos",
+        fastboot_product="CRONOS",
+        model="Echo Show 5 2nd gen",
+        product_id="genbu-cronos-v1",
+        display_width=960,
+        display_height=480,
+        amonet_dir_name="amonet-cronos-v2.0.1",
+        amonet_kaeru_name="cronos-kaeru.bin",
+        unlock_confirmation="UNLOCK",
+        install_confirmation="ERASE",
+    ),
 }
 
 PRODUCT_TO_BOARD = {profile.fastboot_product: board for board, profile in PROFILES.items()}
 
 # Products upstream may know about but Jarvis Show v1 intentionally refuses.
 # Keep this list descriptive only: no destructive code path may select these profiles.
-KNOWN_UNSUPPORTED_PRODUCTS = {
-    "CRONOS": "Echo Show 5 2nd gen",
-}
+KNOWN_UNSUPPORTED_PRODUCTS: dict[str, str] = {}
+
+SUPPORTED_SUMMARY = (
+    "CHECKERS (Echo Show 5 1st gen), CRONOS (Echo Show 5 2nd gen) and CROWN (Echo Show 8 1st gen)"
+)
 
 
 def unsupported_product_message(product: str) -> str:
@@ -64,14 +81,13 @@ def unsupported_product_message(product: str) -> str:
     if key in KNOWN_UNSUPPORTED_PRODUCTS:
         return (
             f"{key} is {KNOWN_UNSUPPORTED_PRODUCTS[key]}, which is intentionally unsupported by "
-            "Jarvis Show v1. Only Echo Show 5 1st gen (CHECKERS) and Echo Show 8 1st gen "
-            "(CROWN) are supported. Do not flash this device; no write was attempted."
+            f"Jarvis Show v1. Only {SUPPORTED_SUMMARY} are supported. Do not flash this "
+            "device; no write was attempted."
         )
     return (
-        f"{key or product!r} is not a supported first-generation Jarvis Show target. "
-        "Jarvis Show v1 supports only CHECKERS (Echo Show 5 1st gen) and CROWN "
-        "(Echo Show 8 1st gen). This may be a newer generation; do not flash it. "
-        "No write was attempted."
+        f"{key or product!r} is not a supported Jarvis Show target. "
+        f"Jarvis Show v1 supports only {SUPPORTED_SUMMARY}. This may be a newer "
+        "generation; do not flash it. No write was attempted."
     )
 
 
@@ -80,7 +96,7 @@ def profile_for_board(board: str) -> BoardProfile:
     try:
         return PROFILES[key]
     except KeyError as exc:
-        raise ValueError(f"unsupported Jarvis Show board {board!r}; choose crown or checkers") from exc
+        raise ValueError(f"unsupported Jarvis Show board {board!r}; choose crown, checkers or cronos") from exc
 
 
 def profile_for_product(product: str) -> BoardProfile:

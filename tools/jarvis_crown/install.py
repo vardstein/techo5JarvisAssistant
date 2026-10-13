@@ -21,6 +21,7 @@ from jarvis_crown.recovery import RecoveryError, verify_backup
 
 CHECKERS_BOOT_SHA256 = "6fd696dce2592d2237a432e23ed7c032f1643bd1fe475d3094eccd9f7d2079b2"
 CROWN_BOOT_SHA256 = "e00bed964d9b2ce31df152d183d2aeb45a7839cc5f7460a93dd97d70715ad1b7"
+CRONOS_BOOT_SHA256 = "7e9ce93a54fc613cbfab5d15929aa06bfd6f63c2c432d6f8261b3599fc3cd791"
 BOOT_SHA256_BY_BOARD: dict[str, str | None] = {
     # Upstream TECHO5 v1.0.1 techo5-boot-crown-v1.0.1.img, for the same reasons as checkers below. Its
     # ramdisk is v0.8.0's byte for byte; the kernel only adds the quick-tap unmute fix (upstream #17).
@@ -28,10 +29,14 @@ BOOT_SHA256_BY_BOARD: dict[str, str | None] = {
     # Upstream TECHO5 v1.0.1 techo5-boot-checkers-v1.0.1.img: listed in the v1.0.1 manifest signed by
     # the upstream release key, kernel 4.9.337-g8d928c5176cc (the Jarvis vendor-module ABI).
     "checkers": CHECKERS_BOOT_SHA256,
+    # Upstream TECHO5 v0.7.16 techo5-boot-v0.7.16.img, the last release with a cronos boot image (its
+    # 11 DTBs are all cronos) and the one upstream's own install-show.py picks for cronos. Same kernel
+    # 4.9.337-g8d928c5176cc as checkers v1.0.1, and the same init; only four ramdisk tools differ.
+    "cronos": CRONOS_BOOT_SHA256,
 }
 ROOTFS_MARKER = "etc/jarvis-show-release.json"
 PROFILE_ID = "genbu-show-v1"
-SUPPORTED_BOARDS = ("crown", "checkers")
+SUPPORTED_BOARDS = ("crown", "checkers", "cronos")
 UPDATE_CHANNELS = ("stable", "staging", "dev")  # echod/internal/update/channel.go
 FINAL_CONFIRM_PHRASE = "ERASE"  # compatibility alias
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -141,7 +146,12 @@ def verify_jarvis_rootfs(path: Path, expected_sha256: str, *, board: str = "crow
         raise InstallError(
             f"rootfs marker is not {PROFILE_ID!r} with an explicit boards list"
         )
-    boards = tuple(str(value).lower() for value in raw_boards)
+    # Boards newer than the first release go in "more_boards", which Shows from before them
+    # ignore: they refuse a marker whose "boards" names a board they don't know.
+    more_boards = payload.get("more_boards", [])
+    if not isinstance(more_boards, list):
+        raise InstallError("rootfs marker has an invalid more_boards list")
+    boards = tuple(str(value).lower() for value in raw_boards + more_boards)
     if not boards or any(value not in SUPPORTED_BOARDS for value in boards):
         raise InstallError(f"rootfs marker has invalid supported boards: {boards!r}")
     if len(set(boards)) != len(boards):
