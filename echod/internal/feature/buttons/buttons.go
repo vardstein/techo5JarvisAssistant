@@ -65,6 +65,10 @@ func (e *Events) Name() string { return "button events" }
 func (e *Events) Entities() []esphome.Entity {
 	out := make([]esphome.Entity, 0, len(order))
 	for _, name := range order {
+		// No event for a button the board doesn't have: the first-generation Shows have no action button.
+		if name == buttons.Action && !buttons.HasAction() {
+			continue
+		}
 		out = append(out, e.events[name])
 	}
 	return out

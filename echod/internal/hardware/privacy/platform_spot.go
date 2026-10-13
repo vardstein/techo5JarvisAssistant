@@ -38,6 +38,9 @@ func platformMute() (Mute, error) { return software{}, nil }
 
 func platformLight() (LED, error) { return noLED{}, nil }
 
+// LightDims is whether the mute LED's brightness can be set.
+const LightDims = false
+
 // The Spot's cut is the daemon's own, so a mute saved from last time has to be in force before
 // capture opens rather than when the mute feature starts. See privacy.Seed.
 func seedSoftwareCut(muted bool) { softwareCut.Store(muted) }

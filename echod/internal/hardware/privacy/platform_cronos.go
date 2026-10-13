@@ -120,6 +120,9 @@ func platformMute() (Mute, error) {
 
 func platformLight() (LED, error) { return noLED{}, nil }
 
+// LightDims is whether the mute LED's brightness can be set. Here the privacy circuit lights it.
+const LightDims = false
+
 func write(path, value string) error { return os.WriteFile(path, []byte(value), 0o644) }
 
 func reads(path, value string) (bool, error) {
