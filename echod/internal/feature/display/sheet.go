@@ -613,12 +613,11 @@ func (d *Display) choose(id string, i int) {
 	case "menusize":
 		d.chooseMenuSize(i)
 	case "clock":
-		on := i == 1
-		if err := config.Set().Screen().Clock24(on); err != nil {
+		if err := config.Set().Screen().Clock24(i == 1); err != nil {
 			slog.Warn("saving the clock format failed", "err", err)
 			return
 		}
-		setClock24(d.clock, on)
+		setClock24(d.clock)
 	case "camtime":
 		setCameraTime(d.camTime, i)
 	case "answertime":

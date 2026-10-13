@@ -449,7 +449,7 @@ func (d *Display) Entities() []esphome.Entity {
 // Restore lights the panel the way it was left. Before the framebuffer is opened: the backlight is
 // its own device.
 func (d *Display) Restore(c config.Config) {
-	setClock24(d.clock, c.Screen.Clock24)
+	setClock24(d.clock)
 	d.camTime.Set(cameraTimes[cameraTimeIndex()].label)
 	d.answerTime.Set(answerTimes[answerTimeIndex()].label)
 	useMenuSize(menuSizeIndex())
@@ -1770,6 +1770,7 @@ func (d *Display) frame() time.Duration {
 	t := current()
 	applyTheme(t)
 	d.syncThemeSelect(t.name)
+	followClock(d.clock)
 
 	now := time.Now()
 	// The buttons' factory reset count goes over everything, the splash and a dark night included.

@@ -316,7 +316,7 @@ func (d *Display) Entities() []esphome.Entity {
 
 // Restore lights the panel the way it was left.
 func (d *Display) Restore(c config.Config) {
-	setClock24(d.clock, c.Screen.Clock24)
+	setClock24(d.clock)
 	d.camTime.Set(cameraTimes[cameraTimeIndex()].label)
 	d.answerTime.Set(answerTimes[answerTimeIndex()].label)
 	d.turnStyle.Set(turnStyles[turnStyleIndex()].label)
@@ -1037,6 +1037,7 @@ func (d *Display) Run(ctx context.Context) error {
 }
 
 func (d *Display) frame() time.Duration {
+	followClock(d.clock)
 	now := time.Now()
 	d.mu.Lock()
 	nightChanged := d.wasNight != inNight(now)

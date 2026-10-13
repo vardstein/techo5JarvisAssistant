@@ -410,3 +410,13 @@ func TestFloorIsPublishedForOtherGoroutines(t *testing.T) {
 		t.Errorf("after forgetting the floor is %.1f dB, want full scale", back)
 	}
 }
+
+// TestAQuietRoomReadsZero: the smoothed level only halves its way down, and Home Assistant showed a
+// silent room as 5.6e-45.
+func TestAQuietRoomReadsZero(t *testing.T) {
+	for in, want := range map[float64]float64{5.6e-45: 0, 1e-7: 0, 0: 0, 1e-6: 1e-6, 0.25: 0.25} {
+		if got := quiet(in); got != want {
+			t.Errorf("quiet(%g) = %g, want %g", in, got, want)
+		}
+	}
+}

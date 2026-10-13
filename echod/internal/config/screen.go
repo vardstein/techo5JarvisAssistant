@@ -33,8 +33,9 @@ type Screen struct {
 	// Welcomed is the first-run card having been seen and put away.
 	Welcomed bool `json:"welcomed,omitempty"`
 
-	// Clock24 shows times on the screen as 15:04 instead of 3:04 PM.
-	Clock24 bool `json:"clock_24,omitempty"`
+	// Clock24 shows times on the screen as 15:04 instead of 3:04 PM. Unset, the screen's language
+	// decides (i18n.Clock24): a German Show says 15:04 without anybody choosing it.
+	Clock24 *bool `json:"clock_24,omitempty"`
 
 	// CameraMinutes is how long a camera opened from the screen stays up: 0 for the default minute,
 	// -1 until it is tapped closed.
@@ -160,7 +161,7 @@ func (w ScreenWriter) Welcomed(v bool) error {
 }
 
 func (w ScreenWriter) Clock24(v bool) error {
-	return w.st.Update(func(c *Config) { c.Screen.Clock24 = v })
+	return w.st.Update(func(c *Config) { c.Screen.Clock24 = &v })
 }
 
 func (w ScreenWriter) CameraMinutes(v int) error {
