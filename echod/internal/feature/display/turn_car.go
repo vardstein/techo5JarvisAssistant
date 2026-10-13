@@ -15,16 +15,16 @@ import (
 )
 
 // The Classic turn page, laid out like the Car Thing's voice screen: the theme's ground, three rings in
-// the bottom corner that ripple with the voice being heard, pull in and pulse while the answer is
-// worked out and breathe with the answer being spoken, and the words in big bold type from the top
-// corner. Sizes are the Car Thing's own (its screen is 800 by 480, near enough a Show 5's), at the
+// the bottom corner, and the words in big bold type from the top corner. The rings' motion is our own
+// (see rings): they wave with the voice being heard, breathe while the answer is worked out and swell
+// with the answer being spoken. Sizes are the Car Thing's own (its screen is 800 by 480, near enough a Show 5's), at the
 // panel's scale rather than the menu size, since nobody reaches for this page.
 
-// turnFaces is the Car Thing's type scale, largest first: the question while it is all there is, then
+// turnFaces is the page's type scale, at the Car Thing's sizes, largest first: the question while it is all there is, then
 // the steps the answer is fitted down through.
 type turnFaces struct {
-	forte, brio, alto, canon, cello font.Face
-	label                           font.Face // canon in bold, for what the page is doing
+	huge, big, mid, body, small font.Face
+	label                       font.Face // body in bold, for what the page is doing
 }
 
 // turnType is the page's type at this panel's size, made once.
@@ -37,7 +37,7 @@ func (r *renderer) turnType() *turnFaces {
 		fc, _ := opentype.NewFace(fn, &opentype.FaceOptions{Size: float64(r.s(size)), DPI: 72, Hinting: font.HintingFull})
 		return fc
 	}
-	r.turnFc = &turnFaces{forte: f(bold, 72), brio: f(bold, 52), alto: f(bold, 44), canon: f(regular, 36), cello: f(regular, 32), label: f(bold, 36)}
+	r.turnFc = &turnFaces{huge: f(bold, 72), big: f(bold, 52), mid: f(bold, 44), body: f(regular, 36), small: f(regular, 32), label: f(bold, 36)}
 	return r.turnFc
 }
 
@@ -81,16 +81,16 @@ func (r *renderer) carTurn(s scene) {
 	case "thinking":
 		label = "Thinking…"
 	}
-	lineFace := tf.alto
+	lineFace := tf.mid
 	if answer {
-		lineFace = tf.canon
+		lineFace = tf.body
 	}
 	base := mid(lineFace, int(cy))
 	if label != "" {
 		r.text(lineFace, label, pad+int(boxW)+r.s(24), base, softInk())
 	}
 	clock := clockText(s.now)
-	r.text(tf.canon, clock, r.w-pad-r.width(tf.canon, clock), mid(tf.canon, int(cy)), subInk())
+	r.text(tf.body, clock, r.w-pad-r.width(tf.body, clock), mid(tf.body, int(cy)), subInk())
 
 	top := pad
 	bottom := int(boxTop) - r.s(20)
@@ -101,19 +101,19 @@ func (r *renderer) carTurn(s scene) {
 	if !answer {
 		// The question, as big as three lines allow.
 		if heard != "" {
-			r.turnWords(heard, top, bottom, maxW, 3, cream, turnStep{tf.forte, r.s(72)}, turnStep{tf.brio, r.s(60)})
+			r.turnWords(heard, top, bottom, maxW, 3, cream, turnStep{tf.huge, r.s(72)}, turnStep{tf.big, r.s(60)})
 		}
 		return
 	}
 
 	// The question a line in quiet type, and the answer under it as big as it fits.
 	if heard != "" {
-		r.text(tf.canon, r.fit(tf.canon, heard, maxW), pad, top+r.s(36), softInk())
+		r.text(tf.body, r.fit(tf.body, heard, maxW), pad, top+r.s(36), softInk())
 		top += r.s(48) + r.s(16)
 	}
 	if s.reply != "" {
 		r.turnWords(s.reply, top, bottom, maxW, 0, cream,
-			turnStep{tf.brio, r.s(60)}, turnStep{tf.alto, r.s(49)}, turnStep{tf.canon, r.s(48)}, turnStep{tf.cello, r.s(40)})
+			turnStep{tf.big, r.s(60)}, turnStep{tf.mid, r.s(49)}, turnStep{tf.body, r.s(48)}, turnStep{tf.small, r.s(40)})
 	}
 }
 
@@ -169,10 +169,10 @@ var ringAlpha = [3]float64{1, 0.8, 0.5}
 
 // rings draws the three rings around (cx, cy) at scale.
 //
-// While it listens all three lie on one circle, and the part of it facing the page ripples with the
-// voice: the Car Thing's jellyfish, whose ripple is the radius pulled in by an amount that rides a sine
-// and fades out away from one point of the circle. While it thinks they part into three circles that
-// swell and settle together. While the answer is spoken they keep those circles and swell with it.
+// While it listens the three lie close together and the voice pushes them out: two waves run round each
+// ring in opposite directions, every ring with its own count of lobes, so they cross and part as the
+// voice rises. While it thinks they draw apart into three circles that breathe one after another. While
+// the answer is spoken they keep those circles and swell with it.
 func (r *renderer) rings(s scene, cx, cy, scale float64) {
 	level := 0.0
 	if s.eq != nil && s.eq.level != nil && !s.eq.thinking {
@@ -182,23 +182,19 @@ func (r *renderer) rings(s scene, cx, cy, scale float64) {
 		level /= float64(len(s.eq.level))
 	}
 	secs := float64(s.now.UnixMilli()%1_000_000) / 1000
-	// The ripple turns at the Car Thing's 0.02π a frame at sixty frames a second.
-	phase := math.Mod(secs*1.2*math.Pi, 2*math.Pi)
-	// The thinking pulse: out by up to 8 and back, at the Car Thing's 0.18 a frame.
-	tick := math.Mod(secs*60*0.18, 16)
-	pulse := tick
-	if tick > 8 {
-		pulse = 16 - tick
-	}
 	// A phase just begun moves from where the last one left the rings.
 	into := 1.0
 	if !s.since.IsZero() {
 		into = easeOutExpo(min(1, float64(s.now.Sub(s.since))/float64(ringShift)))
 	}
 
-	type ring struct{ radius, amp, freq float64 }
-	listen := [3]ring{{72, 14, 3.3}, {72, 6, 3.3}, {72, 1, 1}}
-	think := [3]float64{62, 47, 30}
+	type ring struct {
+		radius, amp float64
+		lobes       int
+		turn        float64 // how fast its waves run round, radians a second; the sign is the way
+	}
+	listen := [3]ring{{70, 12, 5, 1.1}, {64, 8, 4, -0.8}, {58, 4, 6, 0.6}}
+	think := [3]float64{64, 48, 32}
 	u := float64(r.s(100)) / 100 * scale
 	w := 6 * u
 	var radius [3]func(a float64) float64
@@ -206,13 +202,14 @@ func (r *renderer) rings(s scene, cx, cy, scale float64) {
 		switch s.phase {
 		case "listening":
 			l := listen[i]
-			// The Car Thing's level is a running average that rarely passes a third; the bands' mean
-			// runs higher, so it counts for less here.
-			amp := l.amp * (1 + level*1.2) * into
-			radius[i] = func(a float64) float64 { return jellyRadius(a, l.radius, l.freq, phase, amp) }
+			// The bands' mean seldom passes a half, so it counts double; a quiet room still stirs them.
+			amp := l.amp * (0.25 + min(1, level*2)) * into
+			t := secs * l.turn
+			radius[i] = func(a float64) float64 { return voiceWave(a, l.radius, l.lobes, t, amp) }
 		case "thinking":
-			// From the one listening circle to three, eased.
-			rad := 72 + (think[i]+pulse-72)*into
+			// Out to three circles, eased, each breathing a third of a breath after the last.
+			breath := 5 * math.Sin(secs*2.4-float64(i)*2*math.Pi/3)
+			rad := listen[i].radius + (think[i]+breath-listen[i].radius)*into
 			radius[i] = func(float64) float64 { return rad }
 		default:
 			rad := think[i] + 10*level
@@ -222,15 +219,13 @@ func (r *renderer) rings(s scene, cx, cy, scale float64) {
 	r.warpRings(cx, cy, u, w, radius, ringInk(), s.phase == "listening")
 }
 
-// jellyRadius is the listening ring's radius at angle a (degrees, y down): the Car Thing's warpedRadius,
-// with its turn for the microphone facing straight ahead.
-func jellyRadius(a, radius, freq, phase, amp float64) float64 {
-	x := (a + 102 - 100) / radius
-	for x > 180/radius {
-		x -= 360 / radius
-	}
-	act := 20 / (20 + math.Pow(x*2.8, 4))
-	return radius - act*act*(amp+amp*math.Sin(x*freq-phase))
+// voiceWave is a listening ring's radius at angle a (degrees): radius, pushed out by up to amp by two
+// waves running round it at t radians in opposite directions, one with lobes lobes and one with two
+// fewer, the first the stronger.
+func voiceWave(a, radius float64, lobes int, t, amp float64) float64 {
+	rad := a * math.Pi / 180
+	wave := 0.6*math.Sin(float64(lobes)*rad+t) + 0.4*math.Sin(float64(lobes-2)*rad-0.7*t)
+	return radius + amp*(0.5+0.5*wave)
 }
 
 // warpRings draws three closed lines of width w around (cx, cy) whose radius at each angle (degrees, y
