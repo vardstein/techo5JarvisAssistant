@@ -30,7 +30,7 @@ The cards live in the Genbu integration, in
 | `jarvis-weather-card.js` | Current weather: condition, temperature, feels-like, humidity, wind |
 | `jarvis-live-timer-card.js` | The voice satellite's timer that runs out first, counting down. Takes no space when no timer runs |
 | `jarvis-calendar-card.js` | The next event from one calendar (`entity`) or several (`entities`), however far off: it looks two weeks ahead first, then further, up to a year (`maxDaysAhead`). A missing or unreadable calendar is said, not shown as "Keine Termine" |
-| `jarvis-recipe-card.js` | The recipe Jarvis last looked up (`sensor.jarvis_recipe`): ingredients left, steps right, a long one scrolls. For the recipe page, see [docs/recipes.md](../docs/recipes.md) |
+| `jarvis-recipe-card.js` | The recipe Jarvis last looked up (`sensor.genbu_recipe`): ingredients left, steps right, a long one scrolls. For the recipe page, see [docs/recipes.md](../docs/recipes.md) |
 | `jarvis-dashboard.yaml` | The dashboard itself, with example entity ids |
 | `jarvis-recipe-dashboard.yaml` | The recipe page, a dashboard of its own at `jarvis-rezept` |
 
