@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -38,7 +39,7 @@ func newListener(o *out, bg *speaker.Arbiter, report func(string), server string
 
 // serve holds the port until ctx ends.
 func (l *listener) serve(ctx context.Context, name string) error {
-	ln, err := net.Listen("tcp", net.JoinHostPort("", strconv.Itoa(Port)))
+	ln, err := bind(ctx, net.JoinHostPort("", strconv.Itoa(Port)))
 	if err != nil {
 		return err
 	}
@@ -97,6 +98,29 @@ func (l *listener) serve(ctx context.Context, name string) error {
 		return err
 	}
 	return nil
+}
+
+// bind takes the port, waiting while something else still holds it: a listener closing as this one
+// starts, or the last run's socket on its way out. Giving up there would leave the Show out of Music
+// Assistant until a reboot, so it waits until ctx ends, trying less often as it goes.
+func bind(ctx context.Context, addr string) (net.Listener, error) {
+	wait := 100 * time.Millisecond
+	for told := false; ; {
+		ln, err := net.Listen("tcp", addr)
+		if err == nil || !errors.Is(err, syscall.EADDRINUSE) {
+			return ln, err
+		}
+		if !told {
+			slog.Info("sendspin: the port is still in use, waiting for it", "addr", addr)
+			told = true
+		}
+		select {
+		case <-ctx.Done():
+			return nil, err
+		case <-time.After(wait):
+		}
+		wait = min(2*wait, 5*time.Second)
+	}
 }
 
 func (l *listener) allowed(remote string) bool {

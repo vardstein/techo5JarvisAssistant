@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	esphome "github.com/ygelfand/go-esphome-device"
 
@@ -32,6 +33,7 @@ type Player struct {
 
 	mu      sync.Mutex
 	running context.CancelFunc
+	done    chan struct{} // closed once the running listener has let go of the port
 	wake    chan struct{}
 }
 
@@ -95,6 +97,9 @@ const (
 	stateJoined   = "joined"
 	statePlaying  = "playing"
 )
+
+// releaseWithin is how long stopping waits for the listener to let go of the port.
+const releaseWithin = 5 * time.Second
 
 func (p *Player) Name() string { return "sendspin" }
 
@@ -216,8 +221,9 @@ func (p *Player) settle(parent context.Context) {
 	}
 
 	ctx, cancel := context.WithCancel(parent)
+	done := make(chan struct{})
 	p.mu.Lock()
-	p.running = cancel
+	p.running, p.done = cancel, done
 	p.mu.Unlock()
 
 	// The vendor's chain drops what it was not told about.
@@ -229,6 +235,7 @@ func (p *Player) settle(parent context.Context) {
 	l := newListener(p.out, speaker.Sound().Backgrounds(), p.state.Set, pairedServer())
 
 	safe.Go("sendspin listen", func() {
+		defer close(done)
 		if err := l.serve(ctx, name); err != nil {
 			slog.Error("sendspin listener stopped", "err", err)
 		}
@@ -241,14 +248,23 @@ func (p *Player) settle(parent context.Context) {
 
 func (p *Player) stop() {
 	p.mu.Lock()
-	cancel := p.running
-	p.running = nil
+	cancel, done := p.running, p.done
+	p.running, p.done = nil, nil
 	p.mu.Unlock()
 
 	if cancel == nil {
 		return
 	}
 	cancel()
+
+	// Pairing stops the listener and starts it again at once, and the new one cannot have the port
+	// while the old one still holds it (GENBU-133). Closing takes moments; a stuck one is not waited
+	// out, and the new one's bind waits for the port instead.
+	select {
+	case <-done:
+	case <-time.After(releaseWithin):
+		slog.Warn("sendspin: the old listener is slow to let go of the port")
+	}
 
 	if err := firewall.Close(firewall.Sendspin); err != nil {
 		slog.Warn("closing the sendspin port failed", "port", Port, "err", err)
