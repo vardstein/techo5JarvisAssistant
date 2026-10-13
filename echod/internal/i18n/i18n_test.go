@@ -124,3 +124,43 @@ func TestTranslationsKeepPlaceholders(t *testing.T) {
 		}
 	}
 }
+
+// TestTheClockFollowsTheLanguageUntilChosen: an Echo Show set up in German said 7:43 PM, as nobody had
+// picked a clock format. Unset, the language decides; a choice on the Show wins either way.
+func TestTheClockFollowsTheLanguageUntilChosen(t *testing.T) {
+	defer func(was *string) { assistant.Store(was) }(assistant.Load())
+	for _, english := range []string{"", "en"} {
+		speak(t, english)
+		if Clock24() {
+			t.Errorf("English (%q) without a choice is 24-hour", english)
+		}
+	}
+	if err := config.Set().Screen().Language("de"); err != nil {
+		t.Fatal(err)
+	}
+	Changed()
+	if !Clock24() {
+		t.Error("German without a choice is 12-hour")
+	}
+	if err := config.Set().Screen().Clock24(false); err != nil {
+		t.Fatal(err)
+	}
+	Changed()
+	if Clock24() {
+		t.Error("12-hour chosen on a German screen did not hold")
+	}
+
+	// A screen that matches the assistant follows the pipeline's language too.
+	speak(t, "")
+	SetAssistant("de-CH")
+	if !Clock24() {
+		t.Error("a screen following a German assistant is 12-hour")
+	}
+	if err := config.Set().Screen().Clock24(true); err != nil {
+		t.Fatal(err)
+	}
+	SetAssistant("en-US")
+	if !Clock24() {
+		t.Error("24-hour chosen did not hold in English")
+	}
+}

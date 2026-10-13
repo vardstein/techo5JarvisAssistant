@@ -14,6 +14,7 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/feature/ring"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/timer"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/speaker"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 )
 
 // The Alarms & Timers tab: everything on the device that goes off, each in a drawer that opens to
@@ -417,7 +418,7 @@ func contains(list []int, v int) bool {
 // clockTime is a time of day in the device's own clock format.
 func clockTime(hour, minute int) string {
 	t := time.Date(2000, 1, 1, hour, minute, 0, 0, time.UTC)
-	if config.Get().Screen.Clock24 {
+	if i18n.Clock24() {
 		return t.Format("15:04")
 	}
 	return strings.ToLower(t.Format("3:04 PM"))

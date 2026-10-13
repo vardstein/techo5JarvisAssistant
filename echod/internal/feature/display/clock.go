@@ -8,10 +8,11 @@ import (
 	esphome "github.com/ygelfand/go-esphome-device"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 )
 
-// clock24 is the screen showing 15:04 rather than 3:04 PM. It lives here so every page drawn reads it
-// without taking the config's lock each frame.
+// clock24 is the screen showing 15:04 rather than 3:04 PM, i18n.Clock24 as the last frame saw it. It
+// lives here so every page drawn reads it without taking the config's lock.
 var clock24 atomic.Bool
 
 const (
@@ -31,18 +32,30 @@ func clockSelect(wake func()) *esphome.Select {
 		Options: []string{clock12Label, clock24Label},
 	}
 	s.OnCommand = func(v string) {
-		on := v == clock24Label
-		if err := config.Set().Screen().Clock24(on); err != nil {
+		if err := config.Set().Screen().Clock24(v == clock24Label); err != nil {
 			slog.Error("saving the clock format failed", "err", err)
 			return
 		}
-		setClock24(s, on)
+		setClock24(s)
 		wake()
 	}
 	return s
 }
 
-func setClock24(s *esphome.Select, on bool) {
+// setClock24 takes up the clock format the config and the screen's language give, here and in Home
+// Assistant.
+func setClock24(s *esphome.Select) {
+	i18n.Changed()
+	followClock(s)
+}
+
+// followClock is setClock24 for each frame: the language may have come from Home Assistant's
+// pipeline since, and i18n reads the config again only once a second.
+func followClock(s *esphome.Select) {
+	on := i18n.Clock24()
+	if on == clock24.Load() && s.Get() != "" {
+		return
+	}
 	clock24.Store(on)
 	if on {
 		s.Set(clock24Label)

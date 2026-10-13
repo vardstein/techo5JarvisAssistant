@@ -90,16 +90,19 @@ func In(lang, s string) string {
 var (
 	cachedAt   atomic.Int64
 	cachedLang atomic.Pointer[lang]
+	cached24   atomic.Bool
 )
 
 // current is the screen language's table, nil for English.
 func current() *lang {
 	if now := time.Now().UnixNano(); now-cachedAt.Load() > int64(time.Second) {
+		code := Lang()
 		var l *lang
-		if found, ok := langs[Lang()]; ok {
+		if found, ok := langs[code]; ok {
 			l = &found
 		}
 		cachedLang.Store(l)
+		cached24.Store(clock24(config.Get().Screen.Clock24, code))
 		cachedAt.Store(now)
 	}
 	return cachedLang.Load()
@@ -107,6 +110,20 @@ func current() *lang {
 
 // Changed drops the cached language: call it after setting a new one, for the next frame to be in it.
 func Changed() { cachedAt.Store(0) }
+
+// Clock24 is the screen showing 15:04 rather than 3:04 PM: as chosen on the Show, or else as its
+// language writes the time. Of the screen's languages only English uses 3:04 PM.
+func Clock24() bool {
+	current()
+	return cached24.Load()
+}
+
+func clock24(chosen *bool, code string) bool {
+	if chosen != nil {
+		return *chosen
+	}
+	return code != "" && code != "en"
+}
 
 func fill(s string, pairs []string) string {
 	if len(pairs) < 2 {
