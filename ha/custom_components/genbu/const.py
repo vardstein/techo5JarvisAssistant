@@ -12,7 +12,11 @@ STORE_KEY = f"{DOMAIN}.house"
 STORE_VERSION = 1
 SERVICE_FORGET = "forget_show"  # the installer's --remove-show, once the Show is out of ESPHome
 PANEL = "genbu"  # the sidebar page with a card per Show, at /genbu
-PANEL_FILES = "/genbu_panel"  # where its script is served from (frontend/)
+PANEL_FILES = "/genbu_panel"  # where its script is served from (frontend/), and the dashboard cards
+# The dashboard's cards (ha-dashboard/), in frontend/ too. Genbu loads them on every page, so a dashboard
+# that uses them needs no resource and nothing copied to /config/www.
+CARDS = ("jarvis-calendar-card.js", "jarvis-live-timer-card.js", "jarvis-recipe-card.js",
+         "jarvis-room-environment-card.js", "jarvis-weather-card.js")
 
 # Repairs issue ids; the missing one gets the node name added, so one issue per main update Show.
 ISSUE_MISSING = "main_missing_"

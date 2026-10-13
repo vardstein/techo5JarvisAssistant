@@ -40,14 +40,8 @@ later ([The recipe page](dashboards.md#the-recipe-page)).
 3. **Settings → Voice assistants**, open your assistant, then the conversation agent's options
    (the cog next to it). Where it lets the assistant control Home Assistant, tick **Genbu Rezepte** as
    well as **Assist**, and save.
-4. Copy `ha-dashboard/www/openjade/jarvis-recipe-card.js` to `/config/www/openjade/` and add it as a
-   resource, type *JavaScript module*, the same way as the other cards
-   ([ha-dashboard](../ha-dashboard/README.md)):
-
-   ```yaml
-   - url: /local/openjade/jarvis-recipe-card.js?v=1
-     type: module
-   ```
+4. Make sure Genbu is 1.3.1 or newer: it brings the recipe card along with the others
+   ([ha-dashboard](../ha-dashboard/README.md)).
 5. **Settings → Dashboards → Add dashboard → New dashboard from scratch.** Call it "Rezept", and
    set its URL to `jarvis-rezept`: the Show finds the page by that address. Open it, **⋮ → Edit
    dashboard → ⋮ → Raw configuration editor**, and paste

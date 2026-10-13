@@ -981,10 +981,16 @@ def _card_calendars(card: dict) -> list[str]:
 
 
 def _card_reads_lists(ha: HomeAssistant) -> bool:
-    """Whether the calendar card file Home Assistant serves reads entities, a list of calendars. The
-    installer writes dashboards, not card files (ha-dashboard/README.md), and a file from before lists
-    throws on one, which Home Assistant draws as a red card with nothing in it. When it cannot tell, it
-    says yes."""
+    """Whether the calendar card Home Assistant serves reads entities, a list of calendars. Genbu 1.3.1
+    and newer brings the cards and loads them on every page (ha-dashboard/README.md); without it the card
+    is a file copied to /config/www and named as a resource, and a copy from before lists throws on one,
+    which Home Assistant draws as a red card with nothing in it. When it cannot tell, it says yes."""
+    try:
+        source = ha.request("GET", "/genbu_panel/jarvis-calendar-card.js")
+    except HomeAssistantError:
+        source = None
+    if isinstance(source, str):
+        return "entities" in source
     try:
         listed = ha.ws({"type": "lovelace/resources"}) or []
         url = next((str(r.get("url")) for r in listed
@@ -1006,8 +1012,8 @@ def _point_calendar_cards(ha: HomeAssistant, chosen: list[str], have: set[str],
     lists = len(chosen) == 1 or _card_reads_lists(ha)
     if not lists:
         progress("WARN: the calendar card file on Home Assistant is older than this installer and shows only one "
-                 f"calendar, so the card shows {chosen[0]}; copy ha-dashboard/www/openjade/jarvis-calendar-card.js "
-                 "to /config/www/openjade/ and raise its ?v= for all of them (ha-dashboard/README.md)")
+                 f"calendar, so the card shows {chosen[0]}; add Genbu 1.3.1 or newer, which brings the cards "
+                 "(ha-dashboard/README.md), then run this again")
     changed = []
     boards = ha.ws({"type": "lovelace/dashboards/list"}) or []
     for path in [None] + [b.get("url_path") for b in boards if b.get("mode") == "storage"]:
