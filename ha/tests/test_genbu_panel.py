@@ -143,3 +143,45 @@ async def test_house_device_visit_opens_the_page(hass: HomeAssistant):
     device = next(iter(dr.async_get(hass).async_get_devices(identifiers={(DOMAIN, entry.entry_id)})))
     assert device.configuration_url == "homeassistant://genbu"
     assert device.model == "Genbu Shows"  # the page tells the house card from the Shows by this
+
+
+async def test_the_timer_card_learns_which_show_it_is_on(hass: HomeAssistant, hass_ws_client, hass_admin_user):
+    """GENBU-164: one dashboard for every Show; signed in as a Show's own user, genbu/shows names only that
+    Show, so its timer card shows only its timers. Anyone else gets every Show, and own is false."""
+    for node in ("hall", "attic"):
+        entry = MockConfigEntry(domain="esphome", data={"device_name": node, "host": "10.0.0.9"},
+                                unique_id=node, title=node)
+        entry.add_to_hass(hass)
+        device = dr.async_get(hass).async_get_or_create(
+            config_entry_id=entry.entry_id, identifiers={("esphome", node)}, manufacturer="OpenJade",
+            name=node.title(), model="Genbu Show")
+        for domain, kind in (("update", "firmware"), ("assist_satellite", "assist_satellite")):
+            er.async_get(hass).async_get_or_create(domain, "esphome", f"aa:{node}-{domain}-{kind}",
+                                                   config_entry=entry, device_id=device.id,
+                                                   suggested_object_id=f"{node}_{kind}")
+    entry = await setup(hass)
+    hub = entry.runtime_data
+    hall = next(s for s in hub.shows if s.node == "hall")
+    assert hall.satellite.startswith("assist_satellite.")
+    show_user = await hass.auth.async_create_user("Hall Show", local_only=True)
+    hub.keycare.recorded[hall.device] = {"user": show_user.id}
+
+    async def ask(user):
+        refresh = await hass.auth.async_create_refresh_token(
+            user, client_name="Genbu test", token_type="long_lived_access_token")
+        client = await hass_ws_client(hass, hass.auth.async_create_access_token(refresh))
+        await client.send_json({"id": 1, "type": "genbu/shows"})
+        answer = await client.receive_json()
+        assert answer["success"], answer
+        return answer["result"]
+
+    mine = await ask(show_user)
+    assert mine == {"own": True, "shows": [{"device": hall.device, "name": hall.name, "satellite": hall.satellite}]}
+
+    everyone = await ask(hass_admin_user)
+    assert everyone["own"] is False
+    assert sorted(s["device"] for s in everyone["shows"]) == sorted(s.device for s in hub.shows)
+
+    # Not an admin either, and not a Show's: still every Show, nothing more than their entities say.
+    other = await hass.auth.async_create_user("Someone")
+    assert (await ask(other))["own"] is False

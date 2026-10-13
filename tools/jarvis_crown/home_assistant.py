@@ -886,9 +886,10 @@ RECIPE_SENSORS = ("sensor.genbu_recipe", "sensor.jarvis_recipe")
 
 
 def _jarvis_cards(room: str, temperature: str | None, humidity: str | None, weather: str | None,
-                  satellite: str | None, device: str, calendar: str) -> dict:
+                  calendar: str) -> dict:
     """ha-dashboard/jarvis-dashboard.yaml with the house's entities in it; keep the two alike. A corner
-    with nothing to show is left out."""
+    with nothing to show is left out. The timer card needs no device: Genbu tells it which Show it is on
+    (GENBU-164), so every Show can share the one dashboard."""
     def widget(card: dict, **style: Any) -> dict:
         return {"type": "ha-card", "transparent": True, "style": style, "card": card}
     top = []
@@ -900,10 +901,7 @@ def _jarvis_cards(room: str, temperature: str | None, humidity: str | None, weat
     if weather:
         top.append(widget({"type": "custom:jarvis-weather-card", "title": "Wetter", "entity": weather},
                           widthMode="content", margin="0 0 0 auto"))
-    bottom = []
-    if satellite and device:
-        bottom.append(widget({"type": "custom:jarvis-live-timer-card", "device_id": device,
-                              "satellite_id": satellite}, widthMode="fill", grow=1))
+    bottom = [widget({"type": "custom:jarvis-live-timer-card", "title": "Timer"}, widthMode="fill", grow=1)]
     bottom.append(widget({"type": "custom:jarvis-calendar-card", "entity": calendar, "title": "Kalender",
                           "daysAhead": 14}, widthMode="fill", grow=2))
     zones: dict[str, Any] = {}
@@ -986,7 +984,7 @@ def _jarvis_dashboard(ha: HomeAssistant, entities: list[str], make: bool | None,
         weather = "weather.forecast_home" if "weather.forecast_home" in weathers else next(iter(weathers), None)
         calendar = next(iter(sorted(e for e in states if e.startswith("calendar."))), "calendar.personal")
         config = _jarvis_cards(_areas(ha).get(area, area) if area else "Zimmer", measured("temperature", ("°C", "°F")),
-                               measured("humidity", ("%",)), weather, satellite, device, calendar)
+                               measured("humidity", ("%",)), weather, calendar)
         ha.ws({"type": "lovelace/dashboards/create", "url_path": JARVIS_BOARD, "title": "Jarvis",
                "icon": "mdi:tablet-dashboard", "require_admin": False, "show_in_sidebar": True, "mode": "storage"})
         ha.ws({"type": "lovelace/config/save", "url_path": JARVIS_BOARD, "config": config})

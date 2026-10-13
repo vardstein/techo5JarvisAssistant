@@ -2,7 +2,7 @@
 # weather in the top corners, the next timer and calendar event along the
 # bottom. See README.md for what to install first.
 #
-# Replace the entity ids and the device_id with your own. The installer
+# Replace the entity ids with your own. The installer
 # makes this from the house (_jarvis_cards in tools/jarvis_crown/
 # home_assistant.py); keep the two alike.
 #
@@ -97,10 +97,9 @@ views:
                     grow: 1
                   card:
                     type: custom:jarvis-live-timer-card
-                    # The voice satellite whose timers to show: its device
-                    # id from the device page's address, and its entity.
-                    device_id: your-satellite-device-id
-                    satellite_id: assist_satellite.living_room
+                    # Genbu tells the card which Show it is on, so each Show
+                    # shows its own timers; opened elsewhere, all of them.
+                    title: Timer
                 - type: ha-card
                   transparent: true
                   style:

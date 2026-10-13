@@ -111,6 +111,18 @@ class KeyCare:
             return found[0]
         return keys.show_user(users, self.recorded.get(show.device, {}).get("user", ""), show_prefix(show.node))
 
+    async def show_of(self, user_id: str, shows: list[Show]) -> Show | None:
+        """The Show whose own Home Assistant user user_id is, found the way its key's user is (GENBU-164):
+        a Show's dashboard runs signed in as that user."""
+        users = [_user(u) for u in await self._users()]
+        for show in shows:
+            if not show.device:
+                continue
+            user = keys.show_user(users, self.recorded.get(show.device, {}).get("user", ""), show_prefix(show.node))
+            if user is not None and user.id == user_id:
+                return show
+        return None
+
     def _record(self, show: Show, user_id: str) -> None:
         if self.recorded.get(show.device, {}).get("user") != user_id:
             self.recorded[show.device] = {"user": user_id}
