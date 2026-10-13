@@ -8,6 +8,7 @@ import (
 	esphome "github.com/ygelfand/go-esphome-device"
 
 	"github.com/HuskerMinion/techo5/echod/internal/component"
+	"github.com/HuskerMinion/techo5/echod/internal/hardware/led"
 )
 
 // registered is every entity the components put up, by object id.
@@ -191,6 +192,10 @@ func TestEveryComponentStillRegisters(t *testing.T) {
 	slices.Sort(got)
 
 	want := slices.DeleteFunc(slices.Clone(registered), func(id string) bool { return slices.Contains(notOnThisDevice, id) })
+	// With no ring where the tests run, the ring's light and its segments are not put up either.
+	if !led.Get().Present() {
+		want = slices.DeleteFunc(want, func(id string) bool { return id == "ring" || strings.HasPrefix(id, "segment_") })
+	}
 	if !slices.Equal(got, want) {
 		t.Errorf("registered entities changed\n got: %s\nwant: %s",
 			strings.Join(got, " "), strings.Join(want, " "))

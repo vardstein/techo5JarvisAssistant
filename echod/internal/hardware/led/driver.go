@@ -138,6 +138,9 @@ func Get() *Driver {
 	return shared
 }
 
+// Present reports whether this device has a ring at all.
+func (d *Driver) Present() bool { return d.ring.Present() }
+
 // Start takes the ring off the kernel driver, which otherwise animates it and repaints over
 // everything written to it.
 //
