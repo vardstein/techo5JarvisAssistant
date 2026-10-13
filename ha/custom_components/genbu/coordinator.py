@@ -31,7 +31,7 @@ from homeassistant.helpers.event import async_track_time_change, async_track_tim
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import (CHANGED, CONF_SEARXNG, DOMAIN, MANUFACTURERS, NAME, NIGHT_AT, RECIPES, SHOW_RECIPE,
+from .const import (CHANGED, CONF_SEARXNG, DOMAIN, MANUFACTURERS, NAME, NIGHT_AT, PANEL, RECIPES, SHOW_RECIPE,
                     STORE_KEY, STORE_VERSION, UPDATE_ENTITY, VOICE_UPDATES)
 from .house import House, Show, manifest_url, newer, tag_url, valid
 from .music import Player, falls_back_to, own_player, plays_on, room_player
@@ -157,7 +157,8 @@ def show_device(show: Show) -> DeviceInfo:
 def house_device(entry: ConfigEntry) -> DeviceInfo:
     """The device the house's own controls sit on: the update card, the channel, the night install."""
     return DeviceInfo(identifiers={(DOMAIN, entry.entry_id)}, name=NAME, manufacturer="OpenJade",
-                      model="Genbu Shows", entry_type=dr.DeviceEntryType.SERVICE)
+                      model="Genbu Shows", entry_type=dr.DeviceEntryType.SERVICE,
+                      configuration_url=f"homeassistant://{PANEL}")  # "Visit" opens the Control Center
 
 
 class GenbuHouse:

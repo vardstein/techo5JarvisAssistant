@@ -111,3 +111,11 @@ async def test_after_1_2_0_copies_go_and_originals_come_back(hass: HomeAssistant
     assert entities.async_get(kept.entity_id) is not None
     assert entities.async_get(light).hidden_by is None
     assert "hidden" not in entry.runtime_data.house.data
+
+
+async def test_house_device_visit_opens_the_page(hass: HomeAssistant):
+    """GENBU-121: the integration's device page has a Visit link to the Control Center."""
+    entry = await setup(hass)
+    device = next(iter(dr.async_get(hass).async_get_devices(identifiers={(DOMAIN, entry.entry_id)})))
+    assert device.configuration_url == "homeassistant://genbu"
+    assert device.model == "Genbu Shows"  # the page tells the house card from the Shows by this
