@@ -605,6 +605,9 @@ func musicQueue(entity string) (next string, cur queueSong, err error) {
 			cur.Name = strings.TrimSpace(c.MediaItem.Name)
 			if c.MediaItem.MediaType == "radio" {
 				cur.Station, cur.StationURI = cur.Name, c.MediaItem.URI
+				// A live stream has no next song: the queue names the station itself again, which read
+				// "Next · Hitradio FFH" on the page (GENBU-152).
+				next = ""
 			}
 			if c.MediaItem.MediaType == "track" {
 				cur.URI, cur.Favorite = c.MediaItem.URI, c.MediaItem.Favorite

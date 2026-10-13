@@ -1051,6 +1051,7 @@ func (d *Display) gesture(g touch.Gesture) {
 				d.mu.Lock()
 				words, library := d.showingLyrics, d.showingLibrary
 				d.mu.Unlock()
+				live := liveStation(home.Get().Radio(), home.Get().MusicPlayback())
 				switch {
 				case library && at.In(d.r.libraryButton().Inset(-d.r.s(8))):
 					d.openLibrary()
@@ -1063,6 +1064,9 @@ func (d *Display) gesture(g touch.Gesture) {
 					go d.endMusic()
 				case at.In(fav):
 					go d.favorite()
+				case live && (at.In(back) || at.In(next)):
+					// Not drawn on a station: a tap there is a tap on the page.
+					d.musicTap(media.TransportToggle, play)
 				case at.In(back):
 					d.musicTap(media.TransportPrevious, back)
 				case at.In(next):
@@ -1143,9 +1147,12 @@ func (d *Display) musicStripGesture(g touch.Gesture) bool {
 	}
 
 	back, play, next, closeX := d.r.stripButtons()
+	live := liveStation(home.Get().Radio(), home.Get().MusicPlayback())
 	switch {
 	case at.In(closeX):
 		go d.endMusic()
+	case live && (at.In(back) || at.In(next)):
+		// Not drawn on a station: nothing to skip to.
 	case at.In(back):
 		d.musicTap(media.TransportPrevious, back)
 	case at.In(play):
@@ -1160,6 +1167,16 @@ func (d *Display) musicStripGesture(g touch.Gesture) bool {
 		d.wake()
 	}
 	return true
+}
+
+// liveStation is whether what plays is a station: one of the device's own, or one Music Assistant's
+// queue is playing. Neither has a song before or after this one; the device's own player skips
+// nowhere, and Music Assistant's queue holds the station alone.
+func liveStation(rd home.Radio, music home.MusicPlaybackView) bool {
+	if rd.Now == "Music Assistant" {
+		return music.Station != ""
+	}
+	return rd.Now != "" || rd.Chosen != ""
 }
 
 // favNoteFor is how long the word under a pressed star stays up.
@@ -1186,6 +1203,8 @@ func (d *Display) favorite() {
 		note = "Already a favorite"
 	case errors.Is(err, home.ErrOwnStationsFull):
 		note = "Your stations are full"
+	case errors.Is(err, home.ErrNotInLibrary):
+		note = "Not in your library"
 	case err != nil && on:
 		note = "Couldn't remove it"
 	case err != nil:
@@ -1942,6 +1961,7 @@ func (d *Display) frame() time.Duration {
 	// live on this room's preferred external speaker rather than on this Show, so route state is also
 	// a real Now Playing session even when Sendspin is not carrying audio locally.
 	s.music = home.Get().MusicPlayback()
+	s.live = liveStation(s.radio, s.music)
 	routedMusic := s.music.Playing || s.music.Paused
 	wants := (s.phase == "idle") && (d.nowPlaying() || routedMusic)
 	d.mu.Lock()

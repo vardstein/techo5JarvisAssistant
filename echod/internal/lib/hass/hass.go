@@ -77,6 +77,13 @@ func (e *statusError) Error() string {
 	return fmt.Sprintf("hass: %s %s: %s", e.method, e.path, e.status)
 }
 
+// ServerFailed is whether err is Home Assistant answering with a 5xx: it was reached and the action
+// itself failed, as against no answer at all or a request it turned down.
+func ServerFailed(err error) bool {
+	var se *statusError
+	return errors.As(err, &se) && se.code/100 == 5
+}
+
 var (
 	once   sync.Once
 	shared *Client

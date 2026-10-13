@@ -19,7 +19,8 @@ import (
 
 // The music strip: once music has played a while, the Show goes back to its clock - photos and all -
 // with the music in a strip across the foot: the song, back, play or pause, forward, and an X that
-// stops it. A tap on the song brings the full page back for a while. How soon, or never, is a setting.
+// stops it; a station has play or stop alone. A tap on the song brings the full page back for a while.
+// How soon, or never, is a setting.
 
 // setMusicStrip is the settings screen's choice.
 func (d *Display) setMusicStrip(i int) { setStrip(d.strip, i) }
@@ -114,16 +115,25 @@ func (r *renderer) musicStrip(s scene) {
 
 	// The controls see through to the strip, so the song under them stays readable.
 	shade := color.NRGBA{R: 16, G: 12, B: 10, A: 150}
-	for _, c := range []image.Rectangle{back, play, next} {
+	buttons := []image.Rectangle{back, play, next}
+	if s.live {
+		buttons = []image.Rectangle{play} // a station has nothing to skip to
+	}
+	for _, c := range buttons {
 		r.disc(c.Min.X+c.Dx()/2, c.Min.Y+c.Dy()/2, c.Dx()/2, shade)
 	}
-	r.markBack(back.Min.X+back.Dx()/2-r.s(22), back.Min.Y+back.Dy()/2-r.s(18))
-	if s.paused {
+	if !s.live {
+		r.markBack(back.Min.X+back.Dx()/2-r.s(22), back.Min.Y+back.Dy()/2-r.s(18))
+		r.markNext(next.Min.X+next.Dx()/2-r.s(27), next.Min.Y+next.Dy()/2-r.s(18))
+	}
+	switch {
+	case s.live && !s.paused:
+		r.markStop(play.Min.X+play.Dx()/2-r.s(15), play.Min.Y+play.Dy()/2-r.s(15))
+	case s.paused:
 		r.markPlay(play.Min.X+play.Dx()/2-r.s(12), play.Min.Y+play.Dy()/2-r.s(18))
-	} else {
+	default:
 		r.markPause(play.Min.X+play.Dx()/2-r.s(15), play.Min.Y+play.Dy()/2-r.s(18))
 	}
-	r.markNext(next.Min.X+next.Dx()/2-r.s(27), next.Min.Y+next.Dy()/2-r.s(18))
 
 	cx, cy, cr := closeX.Min.X+closeX.Dx()/2, closeX.Min.Y+closeX.Dy()/2, closeX.Dx()/2
 	r.disc(cx, cy, cr, color.NRGBA{R: 16, G: 12, B: 10, A: 230})

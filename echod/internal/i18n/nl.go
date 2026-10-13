@@ -471,6 +471,7 @@ var nl = lang{
 		"Already a favorite":                   "Al een favoriet",
 		"Your stations are full":               "Je zenders zijn vol",
 		"Couldn't save it":                     "Kon het niet bewaren",
+		"Not in your library":                  "Niet in je bibliotheek",
 		"Couldn't remove it":                   "Kon het niet weghalen",
 		"Night":                                "Nacht",
 		"Home screen":                          "Startscherm",

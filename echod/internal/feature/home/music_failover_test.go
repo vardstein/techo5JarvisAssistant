@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/gorilla/websocket"
+
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/hass"
 )
@@ -30,6 +32,8 @@ type musicHAFake struct {
 	states map[string]hass.State
 	calls  []musicServiceCall
 	queue  map[string]any // what get_queue answers for the player, when a test sets it
+	render string         // what every template renders to over the websocket
+	fail   map[string]int // "domain.service" answered with this status in place of {}
 }
 
 func newMusicHAFake() *musicHAFake {
@@ -62,6 +66,10 @@ func (f *musicHAFake) serviceCalls() []musicServiceCall {
 }
 
 func (f *musicHAFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/api/websocket" {
+		f.renderOverWebsocket(w, r)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method == http.MethodGet && r.URL.Path == "/api/states" {
 		f.mu.Lock()
@@ -102,7 +110,12 @@ func (f *musicHAFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		f.mu.Lock()
 		f.calls = append(f.calls, musicServiceCall{domain: parts[0], service: parts[1], data: data})
+		code := f.fail[parts[0]+"."+parts[1]]
 		f.mu.Unlock()
+		if code != 0 {
+			http.Error(w, http.StatusText(code), code)
+			return
+		}
 
 		if parts[0] == "music_assistant" && parts[1] == "get_queue" {
 			entity, _ := data["entity_id"].(string)
@@ -124,6 +137,30 @@ func (f *musicHAFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.NotFound(w, r)
+}
+
+// renderOverWebsocket answers one render_template the way Home Assistant does for an ordinary user.
+func (f *musicHAFake) renderOverWebsocket(w http.ResponseWriter, r *http.Request) {
+	c, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer c.Close()
+	_ = c.WriteJSON(map[string]string{"type": "auth_required"})
+	var auth map[string]string
+	if c.ReadJSON(&auth) != nil {
+		return
+	}
+	_ = c.WriteJSON(map[string]string{"type": "auth_ok"})
+	var cmd map[string]any
+	if c.ReadJSON(&cmd) != nil || cmd["type"] != "render_template" {
+		return
+	}
+	f.mu.Lock()
+	out := f.render
+	f.mu.Unlock()
+	_ = c.WriteJSON(map[string]any{"id": cmd["id"], "type": "result", "success": true, "result": nil})
+	_ = c.WriteJSON(map[string]any{"id": cmd["id"], "type": "event", "event": map[string]any{"result": out, "listeners": map[string]any{}}})
 }
 
 func setupMusicFailoverTest(t *testing.T) (*Feature, *musicHAFake) {

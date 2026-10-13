@@ -153,8 +153,9 @@ func (r *renderer) nowPlaying(s scene) {
 		r.musicProgress(s.music, s.now, image.Rect(col.Min.X, bar, col.Max.X, bar+r.s(6)), ink)
 	}
 
-	// One row: the star, back, play or pause, forward, and stop. Sendspin routes these back to Music
-	// Assistant, so the page controls the real queue/group rather than a local shadow player.
+	// One row: the star, back, play or pause, forward, and stop; on a station only the star, play or
+	// stop, and stop. Sendspin routes these back to Music Assistant, so the page controls the real
+	// queue/group rather than a local shadow player.
 	_, back, play, next, stop := r.nowPlayingButtons()
 	defer r.favNotePill(s)
 	defer r.pressLight(s.pressed)
@@ -167,18 +168,28 @@ func (r *renderer) nowPlaying(s scene) {
 	if !dark() {
 		ground = shift(walnut, -6)
 	}
-	for _, b := range []image.Rectangle{fav, back, next, stop} {
+	for _, b := range []image.Rectangle{fav, stop} {
 		r.roundButton(b, rad, ground)
+	}
+	if !s.live {
+		r.roundButton(back, rad, ground)
+		r.roundButton(next, rad, ground)
 	}
 	r.roundButton(play, rad, amber)
 	cx := func(b image.Rectangle) float64 { return float64(b.Min.X+b.Max.X) / 2 }
 	cy := float64(play.Min.Y+play.Max.Y) / 2
 	u := float64(r.s(13)) // half a mark's height
-	r.markSkip(cx(back), cy, u, false, cream)
-	r.markSkip(cx(next), cy, u, true, cream)
-	if s.paused {
+	if !s.live {
+		r.markSkip(cx(back), cy, u, false, cream)
+		r.markSkip(cx(next), cy, u, true, cream)
+	}
+	switch {
+	case s.live && !s.paused:
+		// A station can't be paused, only stopped: it comes back live, not where it was.
+		r.roundFillF(cx(play)-u*0.85, cy-u*0.85, cx(play)+u*0.85, cy+u*0.85, u*0.22, onAccent())
+	case s.paused:
 		r.aaPoly([][2]float64{{cx(play) - u*0.7, cy - u*1.15}, {cx(play) + u*1.1, cy}, {cx(play) - u*0.7, cy + u*1.15}}, onAccent())
-	} else {
+	default:
 		bw := u * 0.62
 		r.roundFillF(cx(play)-u*0.8, cy-u*1.05, cx(play)-u*0.8+bw, cy+u*1.05, bw/3, onAccent())
 		r.roundFillF(cx(play)+u*0.8-bw, cy-u*1.05, cx(play)+u*0.8, cy+u*1.05, bw/3, onAccent())
@@ -794,12 +805,17 @@ func (r *renderer) bareButtons(s scene, fav, back, play, next, stop image.Rectan
 	under := r.pixel(play)
 	rad := float64(play.Dy()) / 2
 	r.roundFillF(cx(play)-rad, cy-rad, cx(play)+rad, cy+rad, rad, white)
-	r.markSkip(cx(back), cy, u, false, white)
-	r.markSkip(cx(next), cy, u, true, white)
+	if !s.live {
+		r.markSkip(cx(back), cy, u, false, white)
+		r.markSkip(cx(next), cy, u, true, white)
+	}
 	m := u * 0.9
-	if s.paused {
+	switch {
+	case s.live && !s.paused:
+		r.roundFillF(cx(play)-m*0.8, cy-m*0.8, cx(play)+m*0.8, cy+m*0.8, m*0.2, under)
+	case s.paused:
 		r.aaPoly([][2]float64{{cx(play) - m*0.7, cy - m*1.15}, {cx(play) + m*1.1, cy}, {cx(play) - m*0.7, cy + m*1.15}}, under)
-	} else {
+	default:
 		bw := m * 0.62
 		r.roundFillF(cx(play)-m*0.8, cy-m*1.05, cx(play)-m*0.8+bw, cy+m*1.05, bw/3, under)
 		r.roundFillF(cx(play)+m*0.8-bw, cy-m*1.05, cx(play)+m*0.8, cy+m*1.05, bw/3, under)
@@ -981,6 +997,11 @@ func (r *renderer) markNext(x, top int) {
 }
 
 func (r *renderer) markPlay(x, top int) { r.markTriangle(x, top, r.s(36), true) }
+
+// markStop is a station's stop: a square as tall as the pause bars' middle.
+func (r *renderer) markStop(x, top int) {
+	draw.Draw(r.dst, image.Rect(x, top, x+r.s(30), top+r.s(30)), image.NewUniform(amber), image.Point{}, draw.Src)
+}
 
 func (r *renderer) markPause(x, top int) {
 	r.markBar(x, top)
