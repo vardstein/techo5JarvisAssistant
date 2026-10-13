@@ -14,7 +14,7 @@ try:  # Home Assistant 2026.10 and later
 except ImportError:
     import voluptuous as vol
 
-from .const import CONF_EXTRA, CONF_MAIN, CONF_NOTIFY, DOMAIN
+from .const import CONF_EXTRA, CONF_MAIN, CONF_NOTIFY, DOMAIN, NAME
 from .coordinator import find_shows
 
 
@@ -31,7 +31,7 @@ class GenbuFlow(ConfigFlow, domain=DOMAIN):
         shows = _labels(find_shows(self.hass))
         if user_input is not None:
             main = user_input.get(CONF_MAIN) or ""
-            return self.async_create_entry(title="Genbu", data={CONF_MAIN: main})
+            return self.async_create_entry(title=NAME, data={CONF_MAIN: main})
         schema = vol.Schema({vol.Optional(CONF_MAIN): vol.In(shows)} if shows else {})
         return self.async_show_form(step_id="user", data_schema=schema,
                                     description_placeholders={"count": str(len(shows))})

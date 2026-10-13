@@ -73,7 +73,8 @@ started.
 calendar, recipe) and loads them on every page, so a dashboard that uses them needs nothing copied and no
 resource. See [ha-dashboard](../ha-dashboard/README.md).
 
-**The Genbu page** (from 1.3.0). Genbu adds **Genbu** to the sidebar, with one card per Show. A card has
+**The Genbu Control Center** (from 1.3.0, named so in 1.4.0). Genbu Assistant adds **Genbu Control Center** to
+the sidebar, at /genbu, with one card per Show. A card has
 what you would use on the Show: the media player, the voice satellite, screen and LED ring lights, night
 mode, microphone mute, white noise, the alarm buttons and the music choice; then under **Settings** the
 Show's settings, like volume and which assistant and wake word it uses; and a link to the device page.

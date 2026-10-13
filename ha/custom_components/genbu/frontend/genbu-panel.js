@@ -1,7 +1,7 @@
-// The Genbu page in the sidebar: one card per Genbu Show. Everything on it is the Show's own entities
-// (its ESPHome device, the devices under it and its Genbu settings device), so nothing is copied and a
-// renamed or hidden entity looks the same here as anywhere else in Home Assistant. Rows open the usual
-// more-info dialog. The text is English only, like the entity names the Shows report.
+// The Genbu Control Center in the sidebar: one card per Genbu Show. Everything on it is the Show's own
+// entities (its ESPHome device, the devices under it and its Genbu settings device), so nothing is copied
+// and a renamed or hidden entity looks the same here as anywhere else in Home Assistant. Rows open the
+// usual more-info dialog. The text is English only, like the entity names the Shows report.
 
 // Controls first, in this order; anything else after them, then the settings.
 const ORDER = ["media_player", "assist_satellite", "light", "switch", "select", "number", "button",
@@ -31,7 +31,7 @@ class GenbuPanel extends HTMLElement {
         .section { padding: 12px 16px 4px; font-weight: 500; color: var(--secondary-text-color); }
         ha-card h2 { margin: 0; padding: 16px 16px 8px; font-size: 20px; font-weight: 400; }
       </style>
-      <header><button title="Menu" aria-label="Menu"><ha-icon icon="mdi:menu"></ha-icon></button>Genbu</header>
+      <header><button title="Menu" aria-label="Menu"><ha-icon icon="mdi:menu"></ha-icon></button><span class="title">Genbu Control Center</span></header>
       <main></main>`;
     this.shadowRoot.querySelector("button").addEventListener("click", () =>
       this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })));
@@ -40,7 +40,11 @@ class GenbuPanel extends HTMLElement {
 
   set narrow(value) { this.toggleAttribute("narrow", !!value); }
 
-  set panel(value) { this._panel = value; this._render(); }
+  set panel(value) {
+    this._panel = value;
+    this.shadowRoot.querySelector(".title").textContent = value?.config?.title ?? "Genbu Control Center";
+    this._render();
+  }
 
   set hass(value) {
     this._hass = value;

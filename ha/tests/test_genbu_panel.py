@@ -1,5 +1,5 @@
-"""The Genbu page in the sidebar (GENBU-114) inside a real Home Assistant: it is there while Genbu runs,
-its script is served, and it goes when Genbu is unloaded. Also what 1.3.0 tidies up after 1.2.0, whose
+"""The Genbu Control Center in the sidebar (GENBU-114, named in GENBU-120) inside a real Home Assistant:
+it is there while Genbu runs, its script is served, and it goes when Genbu is unloaded. Also what 1.3.0 tidies up after 1.2.0, whose
 copies of the controls it replaces: their registry entries go and the hidden originals come back."""
 
 from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, DATA_PANELS
@@ -42,7 +42,8 @@ async def test_page_is_in_the_sidebar(hass: HomeAssistant, hass_client):
     add_show(hass)
     await setup(hass)
     panel = hass.data[DATA_PANELS]["genbu"]
-    assert panel.sidebar_title == "Genbu"
+    assert panel.sidebar_title == "Genbu Control Center"
+    assert panel.config["title"] == "Genbu Control Center"
     assert panel.sidebar_icon == "mdi:tablet-dashboard"
     assert not panel.require_admin
     custom = panel.config["_panel_custom"]

@@ -47,6 +47,18 @@ async def setup(hass, main=None):
     return entry
 
 
+@pytest.mark.parametrize(("before", "after"), [("Genbu", "Genbu Assistant"), ("Haus", "Haus")])
+async def test_the_entry_takes_the_new_name(hass: HomeAssistant, before: str, after: str):
+    """GENBU-120: an entry set up before 1.4.0 is called Genbu Assistant now; one somebody renamed keeps
+    their name."""
+    await async_setup_component(hass, "repairs", {})
+    entry = MockConfigEntry(domain=DOMAIN, data={}, unique_id=DOMAIN, title=before)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.title == after
+
+
 async def test_house_version_from_the_main(hass: HomeAssistant):
     add_show(hass, "hall", "v1.0.3-stable.52")
     add_show(hass, "kitchen", "v1.0.2-stable.48")

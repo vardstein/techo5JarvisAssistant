@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Genbu",
+        "title": "Genbu Assistant",
         "description": "Genbu keeps your Genbu Shows on one version. One of them, the main update Show, looks for updates and asks about them; the others follow the version it runs. Shows found: {count}.",
         "data": {
           "main_show": "Main update Show"
@@ -13,14 +13,14 @@
       }
     },
     "abort": {
-      "already_configured": "Genbu is set up already",
-      "single_instance_allowed": "Genbu is set up already"
+      "already_configured": "Genbu Assistant is set up already",
+      "single_instance_allowed": "Genbu Assistant is set up already"
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Genbu",
+        "title": "Genbu Assistant",
         "description": "{main} is the main update Show. Change it in select.genbu_main_update_show.",
         "data": {
           "extra_mains": "More main update Shows",
