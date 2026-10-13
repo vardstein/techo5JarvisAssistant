@@ -536,8 +536,13 @@ func (c *conversation) handle(e event) {
 
 		slog.Error("pipeline error", "slot", c.slot+1, "code", e.code, "message", e.msg)
 		c.clearPending()
+		// A question of this device's still open here was not answered: nothing that came back was
+		// words ("joa" heard as silence), and it is asked again rather than shown as a failure.
+		again := c.asked && question.Missed()
 		c.idle("failed", activity.Failed)
-		c.trouble()
+		if !again {
+			c.trouble()
+		}
 
 	case evCancel:
 		c.clearPending()
@@ -574,8 +579,11 @@ func (c *conversation) handle(e event) {
 		case phaseThinking:
 			slog.Warn("gave up waiting for an answer", "slot", c.slot+1, "after", wakeword.MaxThink(c.slot))
 		}
+		again := c.asked && question.Missed()
 		c.idle("timed out", activity.Timeout)
-		c.trouble()
+		if !again {
+			c.trouble()
+		}
 	}
 }
 

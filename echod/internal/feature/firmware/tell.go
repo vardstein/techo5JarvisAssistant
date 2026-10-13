@@ -20,8 +20,8 @@ import (
 // automatic installs on there is nothing for anybody to do, so that is said once.
 //
 // Otherwise it is asked, through Home Assistant, which opens the microphone after the question: "yes"
-// installs it there and then, and "not now" leaves it for the next reminder. With no Home Assistant to
-// ask through, it is only said.
+// installs it there and then, and "not now" leaves it for the next reminder. An answer nobody could make
+// out is asked for once more. With no Home Assistant to ask through, it is only said.
 var (
 	say     = func(words string) { safe.Go("update notice", func() { remind.Say(words) }) }
 	ask     = remind.Ask
@@ -61,6 +61,8 @@ func (u *Firmware) tellOf(v string, now time.Time) {
 			install(u)
 		}, func() {
 			say(i18n.T("Okay, I'll remind you later."))
+		}, func() {
+			ask(i18n.T("Sorry, I didn't catch that. Should I install the update now, yes or no?"))
 		})
 		if ask(i18n.F("An update for this Show is ready, version {version}. Want me to install it now?", "version", spoken(v))) {
 			return
