@@ -27,8 +27,9 @@ import (
 
 // One update point per house (docs/update-leader.md). Home Assistant's genbu integration publishes the
 // house version and the main update Shows. A main Show, or a Show in a house without the integration,
-// works as before. Every other Show follows: it never reads its channel, never speaks about an offer,
-// and moves to the house version, up or down.
+// works as before. Every other Show follows: it never reads its channel and moves to the house version,
+// up or down. Since Genbu 1.4.0 there is no main Show; the house update waits on Home Assistant's update
+// card, and the one Show Genbu names asks about it out loud (GENBU-119, GENBU-125).
 //
 // A Show only reads here. Which Show is main is decided in Home Assistant alone, so two Shows can never
 // both take the job.
@@ -39,6 +40,10 @@ const (
 	// main Show unavailable (empty while it is there).
 	attrMains   = "main_shows"
 	attrMissing = "main_missing_since"
+	// attrWaiting is the house update waiting on the card, attrAsks the one Show that asks about it, so
+	// it is not asked in every room at once.
+	attrWaiting = "update_waiting"
+	attrAsks    = "update_asks"
 
 	// houseGrace is how long after Home Assistant connects a missing house sensor means the house has
 	// none. Its states arrive within moments of the subscription; until then the Show stays quiet.
@@ -168,6 +173,7 @@ var inUse = func(now time.Time) bool {
 // sighting is what Home Assistant last sent about the house; have* says whether a value arrived at all.
 type sighting struct {
 	version, mains, missing string
+	waiting, asks           string
 	haveVersion, haveMains  bool
 }
 
@@ -177,6 +183,8 @@ var lookHouse = func() sighting {
 	s.version, s.haveVersion = ha.Value(houseEntity, "")
 	s.mains, s.haveMains = ha.Value(houseEntity, attrMains)
 	s.missing, _ = ha.Value(houseEntity, attrMissing)
+	s.waiting, _ = ha.Value(houseEntity, attrWaiting)
+	s.asks, _ = ha.Value(houseEntity, attrAsks)
 	return s
 }
 
@@ -193,7 +201,9 @@ func (u *Firmware) followHouse() {
 	hastate.Get().Follow("firmware",
 		hastate.Key{Entity: houseEntity},
 		hastate.Key{Entity: houseEntity, Attribute: attrMains},
-		hastate.Key{Entity: houseEntity, Attribute: attrMissing})
+		hastate.Key{Entity: houseEntity, Attribute: attrMissing},
+		hastate.Key{Entity: houseEntity, Attribute: attrWaiting},
+		hastate.Key{Entity: houseEntity, Attribute: attrAsks})
 	hastate.Get().Changed.Listen(func(up hastate.Update) {
 		if up.Entity != houseEntity {
 			return
@@ -272,7 +282,8 @@ func (u *Firmware) houseStep(ctx context.Context, now time.Time) {
 		return
 	}
 	defer u.house.step.Unlock()
-	v := lookHouse().version
+	s := lookHouse()
+	v := s.version
 	c := config.Get().Update
 	if c.HouseSeen != v {
 		if err := config.Set().Update().HouseSeen(v); err != nil {
@@ -299,8 +310,19 @@ func (u *Firmware) houseStep(ctx context.Context, now time.Time) {
 		return
 	case askFirst:
 		u.askToAlign(v, now)
+	default:
+		if asksAboutWaiting(s, f, nodeName()) {
+			u.tellHouse(s.waiting, now)
+		}
 	}
 	u.houseStatus(houseLine(f, u.mainName(), u.mainMissing(), now))
+}
+
+// asksAboutWaiting is this Show being the one to ask about the house update: it is on the house version
+// itself, and Genbu named it.
+func asksAboutWaiting(s sighting, f following, node string) bool {
+	return f.house == f.running && s.asks == node && update.ValidVersion(s.waiting) == nil &&
+		update.Newer(s.waiting, f.house)
 }
 
 // houseLine is the following Show's one line in update_status.
@@ -328,7 +350,7 @@ func houseLine(f following, main, missing string, now time.Time) string {
 func (u *Firmware) mainName() string {
 	mains := hastate.Options(lookHouse().mains)
 	if len(mains) == 0 {
-		return "no main Show"
+		return "the house" // Genbu 1.4.0 and later
 	}
 	return mains[0]
 }

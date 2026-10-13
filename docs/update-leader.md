@@ -115,7 +115,7 @@ cd ha && /tmp/havenv/bin/python -m pytest
 
 | Entity | What it is |
 |---|---|
-| `sensor.genbu_house_version` | The house version, e.g. `v1.0.3-stable.52`. Attributes: `update_waiting` (the release the card offers and nobody skipped, which a Show asks about out loud), `since`, `shows` (each Show's version and whether it is online), and for Shows from before 1.4.0 `main_shows` (always empty) and `main_missing_since` (always empty). |
+| `sensor.genbu_house_version` | The house version, e.g. `v1.0.3-stable.52`. Attributes: `update_waiting` (the release the card offers and nobody skipped), `update_asks` (the one Show that asks about it out loud: the first online Show by node name that runs the house version), `since`, `shows` (each Show's version and whether it is online), and for Shows from before 1.4.0 `main_shows` (always empty) and `main_missing_since` (always empty). |
 | `select.<show>_music_plays_on` | Per Show: where music asked for at that Show plays. "Automatic" is a Music Assistant player in the Show's room that is not a Show, else the Show's own player; never another room's. Its label says which and why: "Automatic: speaker in Living Room (Wohnzimmer)", or "Automatic: no speaker in Kitchen (genbuShow5)". A speaker that is offline is passed over, a picked one too, and the music goes to the next one in line until it is back; Automatic then says "Automatic: Wohnzimmer is offline (genbuShow5)", and an offline player reads "Fairphone 5 (offline)" in the list. Or pick any player. It sits on a small genbu device named like the Show and connected via its ESPHome device, since Home Assistant lets a device belong to one integration only; that device goes when the Show's own device is removed. |
 | `sensor.<show>_music_falls_back_to` | Per Show, on the same genbu device: where its music goes when the player it plays on now is offline. The next one in line that is up (a pick falls back to the room's speaker), else the Show itself, which is the end of the line. Its `player` attribute is the entity. |
 
@@ -146,9 +146,11 @@ state of `sensor.genbu_house_version` and its attributes. **No HA token is neede
   installs overnight.
 - Until then, or while the sensor's state is not a version (`unavailable`), the Show stays where it is and
   says nothing about updates.
-- *Firmware, next part of GENBU-119:* a Show that is on the house version and sees `update_waiting` asks
-  once out loud, "Want me to install it now?"; a yes installs the house update, as the card's Install
-  does. Until that firmware is out, the card and the voice ("installiere die Updates", or asking the
+- A Show that is on the house version, sees `update_waiting` and is named in `update_asks` asks out loud:
+  "An update for your Shows is ready, version 1.4.1. Want me to install it now?" A yes moves the house, as
+  the card's Install does, and this Show moves with the others; "not now" asks again in 4 hours, never in
+  quiet hours. Only that one Show asks, so the question is not heard in every room at once. A Show with
+  older firmware stays quiet; then the card and the voice ("installiere die Updates", or asking the
   assistant) do the asking.
 
 ### When a following Show moves
@@ -180,8 +182,8 @@ button means "go to the house version", so it also works when that means going b
 Up to 1.3 the house version was the newest `committed_version` among the main update Shows, picked in
 `select.genbu_main_update_show`, and a main Show gone for 24 hours opened a Repairs issue, with an
 automatic pick after 7 days. 1.4.0 removes all of it: with Home Assistant reading the channel itself, no
-Show has to be the one that looks. The Show screens still say "Following <main> · version 1.0.3" until
-the firmware part of GENBU-119 is out.
+Show has to be the one that looks. A Show screen with firmware from before this change says "Following no
+main Show · version 1.0.3"; newer firmware says "Following the house · version 1.0.3".
 
 ## Installer flow
 
@@ -212,7 +214,7 @@ After the HA sign-in (job 40):
   - `update.FetchTag`;
   - going back allowed only on the align path;
   - the status line;
-  - next: ask about `update_waiting`.
+  - the Show named in `update_asks` asks about `update_waiting` (`tellHouse` in `tell.go`).
 - **echod `feature/firmware/tell.go`:** following Shows stay quiet. The boot ask reuses `remind.Ask`.
 - **`tools/jarvis_crown/genbu.py`:** integration check and setup, waiting for alignment.
   `tools/jarvis-show.py` runs it after the Show is added (`install` and `home-assistant`). Tests in

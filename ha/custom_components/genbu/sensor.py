@@ -1,8 +1,8 @@
 """sensor.genbu_house_version: the version the house runs, the one every Show moves to. The Shows read it
-and three of its attributes over their ESPHome link. main_shows is always empty since 1.4.0 (GENBU-119):
+and four of its attributes over their ESPHome link. main_shows is always empty since 1.4.0 (GENBU-119):
 every Show follows, none decides; it is left out while the house has no version yet, so the Shows stay
 as they are. main_missing_since is always empty. update_waiting is the house update the card offers and
-nobody skipped, which a Show asks about out loud.
+nobody skipped; update_asks is the one Show that asks about it out loud, so not every room asks at once.
 
 music_players is where music asked for at each Show plays, by the Show's device id and by its
 assist_satellite, for the music automation and scripts the installer makes.
@@ -71,6 +71,7 @@ class HouseVersion(SensorEntity):
             **mains,
             "main_missing_since": "",
             "update_waiting": self.hub.waiting,
+            "update_asks": self.hub.asker,
             "since": house.since,
             "shows": {s.node: {"name": s.name, "installed": s.installed, "committed": s.committed,
                                "online": s.online} for s in self.hub.shows},

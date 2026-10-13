@@ -585,6 +585,8 @@ var nl = lang{
 		"An update for this Show is ready, version {version}. It installs by itself tonight.":                 "Er staat een update klaar voor deze Show, versie {version}. Die installeert zichzelf vannacht.",
 		"An update for this Show is ready, version {version}. You can install it in Settings, under Updates.": "Er staat een update klaar voor deze Show, versie {version}. Je kunt hem installeren via Instellingen, onder Updates.",
 		"An update for this Show is ready, version {version}. Want me to install it now?":                     "Er staat een update klaar voor deze Show, versie {version}. Zal ik hem nu installeren?",
+		"An update for your Shows is ready, version {version}. Want me to install it now?":                    "Er staat een update klaar voor je Shows, versie {version}. Zal ik hem nu installeren?",
+		"An update for your Shows is ready, version {version}. You can install it in Home Assistant.":         "Er staat een update klaar voor je Shows, versie {version}. Je kunt hem installeren in Home Assistant.",
 		"This Show is on version {running}, your other Shows are on {house}. Want me to switch to it now?":    "Deze Show draait versie {running}, je andere Shows draaien {house}. Zal ik nu overstappen?",
 		"Okay, installing it now.":     "Oké, ik installeer hem nu.",
 		"Okay, I'll remind you later.": "Oké, ik herinner je er later aan.",

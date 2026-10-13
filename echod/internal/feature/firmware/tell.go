@@ -27,6 +27,9 @@ import (
 // A yes is for the house, not only this Show (GENBU-125): Genbu is asked to install the update on every
 // other Show that has one waiting too, so nobody has to answer each of them. Without Genbu that call
 // goes nowhere, and only this Show updates.
+//
+// A Show following the house asks about the house update instead, when Genbu names it as the one to ask
+// (GENBU-119): a yes moves the house, and this Show moves with the others.
 var (
 	say         = func(words string) { safe.Go("update notice", func() { remind.Say(words) }) }
 	ask         = remind.Ask
@@ -48,11 +51,17 @@ const (
 func (u *Firmware) tell() { u.tellOf(u.channelOffered(), time.Now()) }
 
 // tellOf says that v is ready, if it is due and can be said now.
-func (u *Firmware) tellOf(v string, now time.Time) {
+func (u *Firmware) tellOf(v string, now time.Time) { u.tellAbout(v, now, false) }
+
+// tellHouse says that v is ready for the house: a yes asks Genbu to move the house, and nothing installs
+// here first.
+func (u *Firmware) tellHouse(v string, now time.Time) { u.tellAbout(v, now, true) }
+
+func (u *Firmware) tellAbout(v string, now time.Time, house bool) {
 	if v == "" || quiet() || !canSay() {
 		return
 	}
-	auto := u.AutoInstall()
+	auto := !house && u.AutoInstall()
 	c := config.Get().Update
 	if v == c.Told && (auto || now.Sub(c.ToldAt) < remindEvery) {
 		return
@@ -61,22 +70,32 @@ func (u *Firmware) tellOf(v string, now time.Time) {
 		slog.Error("saving the update notice failed", "err", err)
 		return
 	}
-	slog.Info("saying an update is ready", "version", v, "again", v == c.Told)
+	slog.Info("saying an update is ready", "version", v, "again", v == c.Told, "house", house)
 	if !auto {
 		question.Ask("update", answerWithin, func() {
 			slog.Info("installing the update, as asked", "version", v)
 			say(i18n.T("Okay, installing it now."))
-			install(u)
+			if !house {
+				install(u)
+			}
 			updateHouse()
 		}, func() {
 			say(i18n.T("Okay, I'll remind you later."))
 		}, func() {
 			ask(i18n.T("Sorry, I didn't catch that. Should I install the update now, yes or no?"))
 		})
-		if ask(i18n.F("An update for this Show is ready, version {version}. Want me to install it now?", "version", spoken(v))) {
+		words := i18n.F("An update for this Show is ready, version {version}. Want me to install it now?", "version", spoken(v))
+		if house {
+			words = i18n.F("An update for your Shows is ready, version {version}. Want me to install it now?", "version", spoken(v))
+		}
+		if ask(words) {
 			return
 		}
 		question.Withdraw("update")
+	}
+	if house {
+		say(i18n.F("An update for your Shows is ready, version {version}. You can install it in Home Assistant.", "version", spoken(v)))
+		return
 	}
 	say(notice(v, auto))
 }

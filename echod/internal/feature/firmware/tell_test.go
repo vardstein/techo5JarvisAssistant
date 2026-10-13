@@ -136,3 +136,20 @@ func TestNextCheck(t *testing.T) {
 		}
 	}
 }
+
+// Asking for the house: when nobody can be asked, it is said where to install it.
+func TestHouseUpdateIsSaid(t *testing.T) {
+	config.Use(filepath.Join(t.TempDir(), "state.json"))
+	oldSay, oldAsk, oldCan, oldQuiet := say, ask, canSay, quiet
+	t.Cleanup(func() { say, ask, canSay, quiet = oldSay, oldAsk, oldCan, oldQuiet })
+	said := make(chan string, 2)
+	say = func(words string) { said <- words }
+	ask = func(string) bool { return false }
+	canSay = func() bool { return true }
+	quiet = func() bool { return false }
+
+	(&Firmware{}).tellHouse("v1.4.1-staging.61", time.Now())
+	if got, want := <-said, "An update for your Shows is ready, version 1.4.1 staging 61. You can install it in Home Assistant."; got != want {
+		t.Fatalf("said %q, want %q", got, want)
+	}
+}
