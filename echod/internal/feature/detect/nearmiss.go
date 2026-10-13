@@ -7,7 +7,6 @@ import (
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/ring"
-	"github.com/HuskerMinion/techo5/echod/internal/feature/voice"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/speaker"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/safe"
 )
@@ -58,10 +57,9 @@ type ducker struct {
 	// pushes the end out rather than leaving two timers racing to undo it.
 	stop interface{ Reset(time.Duration) bool }
 
-	// enabled, playing, busy, duck, ringing and hush are the world; now and after are the clock.
+	// enabled, playing, duck, ringing and hush are the world; now and after are the clock.
 	enabled func() bool
 	playing func() bool
-	busy    func() bool
 	duck    func(bool)
 	ringing func() bool
 	hush    func()
@@ -75,7 +73,6 @@ func newDucker() *ducker {
 		enabled: func() bool { return config.Get().Media.DuckOnNearMiss },
 		// The arbiter, rather than the player: the question is whether anything of ours is audible.
 		playing: func() bool { return speaker.Sound().Backgrounds().Playing() != nil },
-		busy:    func() bool { return voice.Get().Busy() },
 		duck:    func(on bool) { speaker.Sound().Backgrounds().Duck("near miss", on) },
 		ringing: ring.IsSounding,
 		hush:    ring.Hush,
@@ -144,8 +141,10 @@ func (d *ducker) hushRing(peak float64) {
 	d.hush()
 }
 
-// restore puts the level back, unless a turn is holding it down: a near miss that becomes a real
-// detection ducks for the turn, and that duck outlives this one.
+// restore lets go of this duck, always. A near miss that becomes a real detection ducks for the turn
+// as well, and the arbiter holds the level down while either asks, so a turn still running keeps the
+// music down by itself. Skipping the release during a turn left the near miss holding it for good:
+// the music stayed quiet after the answer, until something else happened to duck and unduck it.
 func (d *ducker) restore() {
 	d.mu.Lock()
 	d.until = time.Time{}
@@ -153,10 +152,6 @@ func (d *ducker) restore() {
 	d.stop = nil
 	d.mu.Unlock()
 
-	if d.busy() {
-		slog.Debug("near miss duck expired during a turn, leaving the level to the turn")
-		return
-	}
 	d.duck(false)
 }
 
