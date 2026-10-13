@@ -475,6 +475,7 @@ var de = lang{
 		"Already a favorite":                   "Schon ein Favorit",
 		"Your stations are full":               "Deine Sender sind voll",
 		"Couldn't save it":                     "Ließ sich nicht speichern",
+		"Not in your library":                  "Nicht in deiner Bibliothek",
 		"Couldn't remove it":                   "Ließ sich nicht entfernen",
 		"Night":                                "Nacht",
 		"Home screen":                          "Startbildschirm",

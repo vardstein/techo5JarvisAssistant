@@ -25,6 +25,55 @@ func TestTheQueueCarriesMusicAssistantsFavorite(t *testing.T) {
 	}
 }
 
+// A live stream has no next song: Music Assistant's queue names the station again, which the page read
+// out as "Next · Hitradio FFH".
+func TestAStationHasNoNextSong(t *testing.T) {
+	_, fake := setupMusicFailoverTest(t)
+	fake.queue = map[string]any{
+		"current_item": map[string]any{"name": "Hitradio FFH", "media_item": map[string]any{
+			"name": "Hitradio FFH", "media_type": "radio", "uri": "tunein://radio/s17490",
+		}},
+		"next_item": map[string]any{"name": "Hitradio FFH"},
+	}
+	next, cur, err := musicQueue(testLocalMA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next != "" || cur.Station == "" {
+		t.Errorf("queue = %q, %+v; want no next song and the station named", next, cur)
+	}
+}
+
+// The star on a station's song asks Music Assistant to find it with its providers. When none has it,
+// Home Assistant answers 500, and the page says the song is not in the library rather than "failed".
+// The same 500 on a track of the library is a plain failure.
+func TestAStationSongNoProviderHasIsNotInTheLibrary(t *testing.T) {
+	for _, c := range []struct {
+		station string
+		code    int
+		want    error
+	}{{"Hitradio FFH", 500, ErrNotInLibrary}, {"", 500, nil}, {"Hitradio FFH", 0, nil}} {
+		f, fake := setupMusicFailoverTest(t)
+		fake.render = "button.living_room_jarvis_favorite_current_song"
+		if c.code != 0 {
+			fake.fail = map[string]int{"button.press": c.code}
+		}
+		musicPlayback.view = MusicPlaybackView{Entity: testLocalMA, Playing: true, Title: "Some Song", Station: c.station}
+		err := f.FavoriteNow()
+		switch {
+		case c.want != nil && !errors.Is(err, c.want):
+			t.Errorf("station %q, %d: err %v, want %v", c.station, c.code, err, c.want)
+		case c.want == nil && c.code != 0 && (err == nil || errors.Is(err, ErrNotInLibrary)):
+			t.Errorf("station %q, %d: err %v, want a plain failure", c.station, c.code, err)
+		case c.code == 0 && err != nil:
+			t.Errorf("station %q: err %v, want the song saved", c.station, err)
+		}
+		if calls := fake.serviceCalls(); len(calls) == 0 || calls[len(calls)-1].domain != "button" {
+			t.Errorf("station %q, %d: calls %+v, want the favorite button pressed", c.station, c.code, calls)
+		}
+	}
+}
+
 func TestAStationIsStarredOnTheDevicesOwnListWithoutTheScript(t *testing.T) {
 	f, fake := setupMusicFailoverTest(t)
 	f.urlName, f.url = "Test FM", "http://example.org/test.mp3"

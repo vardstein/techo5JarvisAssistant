@@ -484,6 +484,7 @@ var es = lang{
 		"Already a favorite":                   "Ya es un favorito",
 		"Your stations are full":               "Tus emisoras están llenas",
 		"Couldn't save it":                     "No se pudo guardar",
+		"Not in your library":                  "No está en tu biblioteca",
 		"Couldn't remove it":                   "No se pudo quitar",
 		"Night":                                "Noche",
 		"Home screen":                          "Pantalla de inicio",

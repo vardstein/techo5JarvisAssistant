@@ -478,6 +478,7 @@ var it = lang{
 		"Already a favorite":                   "È già un preferito",
 		"Your stations are full":               "Le tue stazioni sono piene",
 		"Couldn't save it":                     "Impossibile salvarlo",
+		"Not in your library":                  "Non è nella tua libreria",
 		"Couldn't remove it":                   "Impossibile toglierlo",
 		"Night":                                "Notte",
 		"Home screen":                          "Schermata iniziale",

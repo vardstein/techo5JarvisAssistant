@@ -478,6 +478,7 @@ var fr = lang{
 		"Already a favorite":                   "Déjà un favori",
 		"Your stations are full":               "Vos stations sont pleines",
 		"Couldn't save it":                     "Impossible de l'enregistrer",
+		"Not in your library":                  "Pas dans votre bibliothèque",
 		"Couldn't remove it":                   "Impossible de le retirer",
 		"Night":                                "Nuit",
 		"Home screen":                          "Écran d'accueil",

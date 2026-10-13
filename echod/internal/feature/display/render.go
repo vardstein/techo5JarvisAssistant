@@ -104,7 +104,10 @@ type scene struct {
 	// progress and next-item context refreshed in the background by feature/home.
 	showWeather bool
 	music       home.MusicPlaybackView
-	forecast    forecastDays
+	// live is a station playing rather than a song from a queue: there is nothing to skip to and
+	// nothing to pause, so the page has no back or forward and its play button stops (GENBU-152).
+	live     bool
+	forecast forecastDays
 	// lyrics is the words of the song on the now-playing page, when the music server has them, and
 	// showLyrics the page showing them in place of the song's details.
 	lyrics     *home.Lyrics
