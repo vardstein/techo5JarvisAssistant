@@ -1,8 +1,9 @@
-"""Genbu: one update point per house. Finds the Genbu Shows that Home Assistant knows through ESPHome,
-keeps which of them are main update Shows, publishes the house version the others follow in
-sensor.genbu_house_version, and asks in Repairs when a main update Show goes missing. The Genbu page in
-the sidebar has a card per Show, made from its ESPHome entities (frontend/). Genbu also serves the Jarvis
-dashboard's cards and loads them on every page (ha-dashboard/README.md). See docs/update-leader.md."""
+"""Genbu Assistant: one update point per house. Finds the Genbu Shows that Home Assistant knows through
+ESPHome, keeps which of them are main update Shows, publishes the house version the others follow in
+sensor.genbu_house_version, and asks in Repairs when a main update Show goes missing. The Genbu Control
+Center in the sidebar has a card per Show, made from its ESPHome entities (frontend/). Genbu also serves
+the Jarvis dashboard's cards and loads them on every page (ha-dashboard/README.md). See
+docs/update-leader.md."""
 
 from __future__ import annotations
 
@@ -24,8 +25,8 @@ try:  # Home Assistant 2026.10 and later
 except ImportError:
     import voluptuous as vol
 
-from .const import (CARDS, DOMAIN, MANUFACTURERS, PANEL, PANEL_FILES, SERVICE_FORGET, SERVICE_INSTALL,
-                    STORE_KEY, STORE_VERSION)
+from .const import (CARDS, DOMAIN, MANUFACTURERS, NAME, OLD_NAME, PANEL, PANEL_FILES, PANEL_TITLE,
+                    SERVICE_FORGET, SERVICE_INSTALL, STORE_KEY, STORE_VERSION)
 from .coordinator import GenbuHouse, find_shows, unhide
 
 PLATFORMS = [Platform.SENSOR, Platform.SELECT]
@@ -34,6 +35,8 @@ INSTALL_SCHEMA = vol.Schema({vol.Optional("except_node", default=""): cv.string}
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    if entry.title == OLD_NAME:  # set up before 1.4.0; a title somebody chose stays
+        hass.config_entries.async_update_entry(entry, title=NAME)
     _drop_copies(hass, entry)
     hub = GenbuHouse(hass, entry)
     await hub.async_start()
@@ -70,9 +73,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _add_panel(hass: HomeAssistant) -> None:
-    """The Genbu page in the sidebar: one card per Show, built in the browser from the Show's own ESPHome
-    entities, so there is nothing to copy or keep in step. The version in the script's address makes
-    browsers load it again after an update."""
+    """The Genbu Control Center in the sidebar: one card per Show, built in the browser from the Show's own
+    ESPHome entities, so there is nothing to copy or keep in step. The version in the script's address
+    makes browsers load it again after an update."""
     if not hass.data.get(f"{DOMAIN}_files"):
         # Static paths can't be taken back, so only once per Home Assistant run.
         await hass.http.async_register_static_paths(
@@ -81,9 +84,9 @@ async def _add_panel(hass: HomeAssistant) -> None:
     version = (await async_get_integration(hass, DOMAIN)).version
     frontend.async_remove_panel(hass, PANEL, warn_if_unknown=False)
     await panel_custom.async_register_panel(
-        hass, frontend_url_path=PANEL, webcomponent_name="genbu-panel", sidebar_title="Genbu",
+        hass, frontend_url_path=PANEL, webcomponent_name="genbu-panel", sidebar_title=PANEL_TITLE,
         sidebar_icon="mdi:tablet-dashboard", module_url=f"{PANEL_FILES}/genbu-panel.js?v={version}",
-        config={"manufacturers": sorted(MANUFACTURERS)}, require_admin=False)
+        config={"manufacturers": sorted(MANUFACTURERS), "title": PANEL_TITLE}, require_admin=False)
     await _add_cards(hass)
 
 

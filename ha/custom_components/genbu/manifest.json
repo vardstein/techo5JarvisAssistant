@@ -1,6 +1,6 @@
 {
   "domain": "genbu",
-  "name": "Genbu",
+  "name": "Genbu Assistant",
   "after_dependencies": [
     "esphome",
     "music_assistant"

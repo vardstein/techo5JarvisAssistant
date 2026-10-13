@@ -12,6 +12,9 @@ STORE_KEY = f"{DOMAIN}.house"
 STORE_VERSION = 1
 SERVICE_FORGET = "forget_show"  # the installer's --remove-show, once the Show is out of ESPHome
 SERVICE_INSTALL = "install_updates"  # "yes" on one Show, or the voice kit: every Show with an update installs it
+NAME = "Genbu Assistant"  # the integration, and its one config entry (GENBU-120)
+OLD_NAME = "Genbu"  # the entry's title before 1.4.0
+PANEL_TITLE = "Genbu Control Center"  # the sidebar page's title (GENBU-121)
 PANEL = "genbu"  # the sidebar page with a card per Show, at /genbu
 PANEL_FILES = "/genbu_panel"  # where its script is served from (frontend/), and the dashboard cards
 # The dashboard's cards (ha-dashboard/), in frontend/ too. Genbu loads them on every page, so a dashboard
