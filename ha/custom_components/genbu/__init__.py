@@ -10,11 +10,11 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from homeassistant.components import frontend, panel_custom
+from homeassistant.components import frontend, panel_custom, websocket_api
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
+from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.storage import Store
@@ -26,7 +26,7 @@ except ImportError:
     import voluptuous as vol
 
 from . import claims
-from .const import (CARDS, CONF_SEARXNG, DOMAIN, MANUFACTURERS, NAME, OLD_NAME, OLD_RECIPES, PANEL, PANEL_FILES,
+from .const import (CARDS, CONF_SEARXNG, DOMAIN, FRESH, MANUFACTURERS, NAME, OLD_NAME, OLD_RECIPES, PANEL, PANEL_FILES,
                     PANEL_TITLE, SERVICE_FORGET, SERVICE_INSTALL, STORE_KEY, STORE_VERSION)
 from .coordinator import GenbuHouse, unhide
 
@@ -99,18 +99,37 @@ async def _add_cards(hass: HomeAssistant) -> None:
     a hash of its file rather than Genbu's version, so a browser that kept a card for a month (Home
     Assistant tells it to) loads the new one whenever the file changes, version bumped or not. A copy
     still loaded from /config/www as a resource does nothing: Genbu's card is defined first, and the
-    cards define themselves only once."""
+    cards define themselves only once.
+
+    The addresses are written into the page, and Home Assistant's service worker hands out the page it
+    kept while it fetches the new one for next time. So after an update the first page, and any tab left
+    open through the restart, still has the old cards. genbu-fresh.js comes along carrying a hash of all
+    the files; it asks genbu/frontend for the current one and reloads the page when they differ."""
     if hass.data.get(f"{DOMAIN}_cards"):
         return
     folder = Path(__file__).parent / "frontend"
 
     def hashes() -> dict[str, str]:
-        return {name: hashlib.sha256((folder / name).read_bytes()).hexdigest()[:12] for name in CARDS}
+        return {name: hashlib.sha256((folder / name).read_bytes()).hexdigest()[:12] for name in (*CARDS, FRESH)}
 
-    urls = [f"{PANEL_FILES}/{name}?v={v}" for name, v in (await hass.async_add_executor_job(hashes)).items()]
+    found = await hass.async_add_executor_job(hashes)
+    current = hashlib.sha256(" ".join(found[name] for name in (*CARDS, FRESH)).encode()).hexdigest()[:12]
+    hass.data[f"{DOMAIN}_frontend"] = current
+    if not hass.data.get(f"{DOMAIN}_ws"):
+        websocket_api.async_register_command(hass, _ws_frontend)
+        hass.data[f"{DOMAIN}_ws"] = True
+    urls = [f"{PANEL_FILES}/{name}?v={found[name]}" for name in CARDS] + [f"{PANEL_FILES}/{FRESH}?v={current}"]
     for url in urls:
         frontend.add_extra_js_url(hass, url)
     hass.data[f"{DOMAIN}_cards"] = urls
+
+
+@websocket_api.websocket_command({vol.Required("type"): "genbu/frontend"})
+@callback
+def _ws_frontend(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict) -> None:
+    """The hash genbu-fresh.js compares its own with; None while Genbu is not set up."""
+    connection.send_result(msg["id"], {"version": hass.data.get(f"{DOMAIN}_frontend")
+                                       if hass.data.get(f"{DOMAIN}_cards") else None})
 
 
 def _take_recipe_search(hass: HomeAssistant, entry: ConfigEntry) -> None:

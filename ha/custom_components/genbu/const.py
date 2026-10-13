@@ -30,4 +30,6 @@ PANEL_FILES = "/genbu_panel"  # where its script is served from (frontend/), and
 # that uses them needs no resource and nothing copied to /config/www.
 CARDS = ("jarvis-calendar-card.js", "jarvis-live-timer-card.js", "jarvis-recipe-card.js",
          "jarvis-room-environment-card.js", "jarvis-weather-card.js")
+# Loaded with the cards: reloads a page whose cards are older than the ones Genbu serves (GENBU-147).
+FRESH = "genbu-fresh.js"
 
