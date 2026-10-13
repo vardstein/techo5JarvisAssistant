@@ -2,7 +2,9 @@
 # weather in the top corners, the next timer and calendar event along the
 # bottom. See README.md for what to install first.
 #
-# Replace the entity ids and the device_id with your own.
+# Replace the entity ids and the device_id with your own. The installer
+# makes this from the house (_jarvis_cards in tools/jarvis_crown/
+# home_assistant.py); keep the two alike.
 #
 # Every size follows the screen it is shown on: the numbers are the
 # 1280x800 layout's, written as min(<px/12.8>vw, <px/8>vh), so an 8" Show

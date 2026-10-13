@@ -36,6 +36,10 @@ The cards live in the Genbu integration, in
 
 ## Installing
 
+The installer can make this dashboard and the recipe page for you, from what your house has, once
+Genbu 1.3.1 or newer and wall-clock-card are in ([docs/jarvis-crown-installer.md](../docs/jarvis-crown-installer.md),
+`--jarvis-dashboard`). By hand:
+
 1. Install [wall-clock-card](https://github.com/rkotulan/ha-wall-clock-card), through HACS or by
    hand from its releases. The dashboard was built against v3.17.3.
 2. Add Genbu 1.3.1 or newer ([docs/update-leader.md](../docs/update-leader.md)). It brings the cards

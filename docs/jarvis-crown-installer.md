@@ -451,7 +451,15 @@ What happens with the answers:
      Doors, windows, motion and the Show itself are left out. It is made as
      `dashboard-<room>` (for "Küche", `dashboard-kueche`), and a room with nothing on that list gets
      none. Enter is no. `--room-dashboard` makes it without asking, `--no-room-dashboard` never
-     asks. A dashboard that is already there is never changed;
+     asks. A dashboard that is already there is never changed.
+     With Genbu 1.3.1 or newer in Home Assistant, which brings the Jarvis cards, it then asks
+     whether to make the [Jarvis dashboard](../ha-dashboard/README.md) at `jarvis-display`: the
+     clock, the room's temperature and humidity, the weather, the Show's timer and a calendar,
+     taken from what the house has. The clock is wall-clock-card, from HACS; without it there is
+     no Jarvis dashboard and the installer says so. With Genbu Rezepte there it makes the
+     [recipe page](recipes.md) at `jarvis-rezept` as well. Enter is no; `--jarvis-dashboard` and
+     `--no-jarvis-dashboard` answer ahead of time. Pick the dashboard on the Show under
+     **Dashboard to show**;
   6. asks whether to set up the voice extras, the Home Assistant pieces around the Shows (`--voice-extras`
      says yes ahead of time, `--no-voice-extras` no; Enter is no):
      - the [turn-room-down](voice-setup.md#music-in-the-same-room) blueprint, and for this Show an
@@ -712,6 +720,7 @@ uses the Home Assistant, DashCast, Music Assistant and choice switches.
 | `--wake-word NAME` | One of the wake words the Show offers. `''` leaves it alone. |
 | `--room NAME` | The Home Assistant area it stands in, by name or id. `''` leaves it alone. |
 | `--room-dashboard`, `--no-room-dashboard` | Make a small dashboard for its room when the room has none, or never. Asked otherwise. |
+| `--jarvis-dashboard`, `--no-jarvis-dashboard` | Make the Jarvis dashboard and the recipe page when the house has none, or never. Needs Genbu 1.3.1 and wall-clock-card. Asked otherwise. |
 | `--voice-extras`, `--no-voice-extras` | Set up the voice extras in Home Assistant (step 6 above), or don't. Asked otherwise. |
 | `--rename-entities`, `--no-rename-entities` | For a Show renamed since it was installed: give its entities, and what uses them, the new name too, or don't. Asked otherwise. |
 | `--calendars LIST` | The calendars the Show shows, like `calendar.personal, calendar.familie` (step 9 above). `''` leaves them alone. Asked otherwise. |
