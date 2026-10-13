@@ -128,8 +128,17 @@ func build() *Mute {
 
 func (m *Mute) Name() string { return "microphone mute" }
 
+// The switch and its status are there on every device. The ring effect needs a ring, and the LED
+// brightness an LED that can dim: on the Shows the privacy circuit lights it and nothing sets how bright.
 func (m *Mute) Entities() []esphome.Entity {
-	return []esphome.Entity{m.sw, m.status, m.ring, m.brightness}
+	out := []esphome.Entity{m.sw, m.status}
+	if led.HasRing() {
+		out = append(out, m.ring)
+	}
+	if privacy.LightDims {
+		out = append(out, m.brightness)
+	}
+	return out
 }
 
 // Muted reports whether the line is cut, which is what a turn has to check before opening the

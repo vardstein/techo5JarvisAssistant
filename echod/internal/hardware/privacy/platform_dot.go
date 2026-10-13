@@ -21,6 +21,9 @@ func platformLight() (LED, error) {
 	return exportedLED()
 }
 
+// LightDims is whether the mute LED's brightness can be set: on the Dot echod drives the LED itself.
+const LightDims = true
+
 // Nothing to seed: the hardware holds the microphones, and the saved state reaches the latch through
 // the mute feature. See privacy.Seed.
 func seedSoftwareCut(bool) {}

@@ -141,6 +141,11 @@ func Get() *Driver {
 // Present reports whether this device has a ring at all.
 func (d *Driver) Present() bool { return d.ring.Present() }
 
+// HasRing is whether this device has a ring, for the settings that only mean something with one: a
+// Show 5 or a Show 8 has none, and an effect picker in Home Assistant that changes nothing is clutter.
+// A variable so tests can say either.
+var HasRing = func() bool { return Get().Present() }
+
 // Start takes the ring off the kernel driver, which otherwise animates it and repaints over
 // everything written to it.
 //

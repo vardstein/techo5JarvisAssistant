@@ -398,9 +398,14 @@ func (w *WakeWord) Name() string { return "wake word settings" }
 
 func (w *WakeWord) Entities() []esphome.Entity {
 	var ents []esphome.Entity
+	ring := led.HasRing()
 	for _, s := range w.slots {
-		ents = append(ents, s.wake, s.threshold, s.tone, s.effect, s.thinking, s.replying,
-			s.delivery, s.buffer, s.followUp, s.followUps, s.followUpTone, s.followAfter, s.maxListen, s.maxThink)
+		ents = append(ents, s.wake, s.threshold, s.tone)
+		// The effects only ever play on the ring.
+		if ring {
+			ents = append(ents, s.effect, s.thinking, s.replying)
+		}
+		ents = append(ents, s.delivery, s.buffer, s.followUp, s.followUps, s.followUpTone, s.followAfter, s.maxListen, s.maxThink)
 	}
 	return ents
 }

@@ -73,7 +73,12 @@ func build() *Reaction {
 
 func (r *Reaction) Name() string { return "room reaction" }
 
-func (r *Reaction) Entities() []esphome.Entity { return []esphome.Entity{r.sel} }
+func (r *Reaction) Entities() []esphome.Entity {
+	if !led.HasRing() {
+		return nil
+	}
+	return []esphome.Entity{r.sel}
+}
 
 // Restore starts following the room again, if that is what was chosen.
 func (r *Reaction) Restore(c config.Config) {

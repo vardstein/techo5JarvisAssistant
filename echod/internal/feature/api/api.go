@@ -26,6 +26,7 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/feature/bluetooth"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/voice"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/wakeword"
+	"github.com/HuskerMinion/techo5/echod/internal/hardware/led"
 	"github.com/HuskerMinion/techo5/echod/internal/layout"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/safe"
 )
@@ -165,11 +166,15 @@ func (a *API) Start(ctx context.Context) error {
 // Each name carries the device's own, because Home Assistant shows what it is given verbatim: a bare "Ring"
 // or "Assistant 1" is unreadable in a house with several satellites.
 func subDevices(name string) []esphome.Device {
-	out := []esphome.Device{
-		{ID: component.DeviceRing, Name: name + " ring"},
-		{ID: component.DeviceMicrophone, Name: name + " microphone"},
-		{ID: component.DevicePlayback, Name: name + " playback"},
+	var out []esphome.Device
+	// No ring page on a device without a ring: everything that would go on it is left out too.
+	if led.HasRing() {
+		out = append(out, esphome.Device{ID: component.DeviceRing, Name: name + " ring"})
 	}
+	out = append(out,
+		esphome.Device{ID: component.DeviceMicrophone, Name: name + " microphone"},
+		esphome.Device{ID: component.DevicePlayback, Name: name + " playback"},
+	)
 
 	for slot := range wakeword.Slots {
 		out = append(out, esphome.Device{

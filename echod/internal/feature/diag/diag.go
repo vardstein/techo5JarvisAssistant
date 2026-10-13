@@ -107,13 +107,22 @@ func Get() *Diag {
 func (d *Diag) Name() string { return "diagnostics" }
 
 func (d *Diag) Entities() []esphome.Entity {
-	out := []esphome.Entity{
-		d.cached, d.free, d.purge, d.restart,
-		d.temperature, d.radioTemp, d.cores, d.coresOnline, d.load, d.memory, d.lux,
+	out := []esphome.Entity{d.cached, d.free, d.purge, d.restart}
+	// A temperature only where the board has that thermal zone, or Home Assistant shows a sensor that
+	// stays unknown for ever.
+	zones := thermalZones()
+	if _, ok := zones[cpuZone]; ok {
+		out = append(out, d.temperature)
+	}
+	if _, ok := zones[radioZone]; ok {
+		out = append(out, d.radioTemp)
+	}
+	out = append(out,
+		d.cores, d.coresOnline, d.load, d.memory, d.lux,
 		d.roomLevel, d.roomFloor,
 		d.ip, d.color, d.signal, d.rxRate, d.txRate, d.ads,
 		d.testPlayback, d.interval, d.minCores,
-	}
+	)
 	if d.lensCover != nil {
 		out = append(out, d.lensCover)
 	}
@@ -594,6 +603,10 @@ func (d *Diag) board() {
 }
 
 // reading picks one thermal zone out of what was found.
+// thermalZones is what the board's thermal zones read now. Asked on every entity list rather than once,
+// since the radio's zone only comes up with the Wi-Fi driver. A variable so tests can say which exist.
+var thermalZones = func() map[string]float64 { return metrics.Reader{}.Temperatures() }
+
 func reading(temps map[string]float64, zone string) metrics.Reading {
 	v, ok := temps[zone]
 	return metrics.Reading{Value: v, Known: ok}

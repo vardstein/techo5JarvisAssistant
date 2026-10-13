@@ -8,7 +8,10 @@ import (
 	esphome "github.com/ygelfand/go-esphome-device"
 
 	"github.com/HuskerMinion/techo5/echod/internal/component"
+	"github.com/HuskerMinion/techo5/echod/internal/hardware/buttons"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/led"
+	"github.com/HuskerMinion/techo5/echod/internal/hardware/metrics"
+	"github.com/HuskerMinion/techo5/echod/internal/hardware/privacy"
 )
 
 // registered is every entity the components put up, by object id.
@@ -184,21 +187,42 @@ var registered = []string{
 	"wifi_signal",
 }
 
-func TestEveryComponentStillRegisters(t *testing.T) {
-	var got []string
-	for _, e := range component.Default().Entities() {
-		got = append(got, objectID(e))
-	}
-	slices.Sort(got)
+// ringOnly are the entities a device without a ring leaves out: the light, its segments and every effect.
+var ringOnly = []string{"failure_effect", "replying_effect_1", "ring", "ring_muted", "room_reaction", "thinking_effect_1", "wake_effect_1"}
 
-	want := slices.DeleteFunc(slices.Clone(registered), func(id string) bool { return slices.Contains(notOnThisDevice, id) })
-	// With no ring where the tests run, the ring's light and its segments are not put up either.
-	if !led.Get().Present() {
-		want = slices.DeleteFunc(want, func(id string) bool { return id == "ring" || strings.HasPrefix(id, "segment_") })
-	}
-	if !slices.Equal(got, want) {
-		t.Errorf("registered entities changed\n got: %s\nwant: %s",
-			strings.Join(got, " "), strings.Join(want, " "))
+// Each device reports only the hardware it has (GENBU-142), so the list is checked with a ring and
+// without one, and with what this machine's buttons, mute LED and thermal zones are.
+func TestEveryComponentStillRegisters(t *testing.T) {
+	was := led.HasRing
+	defer func() { led.HasRing = was }()
+	zones := metrics.Reader{}.Temperatures()
+
+	for _, ring := range []bool{true, false} {
+		led.HasRing = func() bool { return ring }
+		var got []string
+		for _, e := range component.Default().Entities() {
+			got = append(got, objectID(e))
+		}
+		slices.Sort(got)
+
+		want := slices.DeleteFunc(slices.Clone(registered), func(id string) bool {
+			_, cpu := zones["mtktscpu"]
+			_, radio := zones["mtktswmt"]
+			switch {
+			case slices.Contains(notOnThisDevice, id):
+			case !ring && (slices.Contains(ringOnly, id) || strings.HasPrefix(id, "segment_")):
+			case id == "button_action" && !buttons.HasAction():
+			case id == "mute_led_brightness" && !privacy.LightDims:
+			case id == "cpu_temperature" && !cpu, id == "radio_temperature" && !radio:
+			default:
+				return false
+			}
+			return true
+		})
+		if !slices.Equal(got, want) {
+			t.Errorf("ring %v: registered entities changed\n got: %s\nwant: %s",
+				ring, strings.Join(got, " "), strings.Join(want, " "))
+		}
 	}
 }
 
