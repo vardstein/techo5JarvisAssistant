@@ -11,12 +11,17 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/feature/security"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/metrics"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/hass"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/mass"
 )
 
 // How this Show's Home Assistant key stands, for Genbu to look after it (GENBU-196): a sensor that
 // says ok, none, gone, remote or off, an action that answers with that and the key's name, and one
 // that tries a home-only refusal once more. A refused key is no longer sent on every request
 // (GENBU-158), so without these nobody in Home Assistant would learn that the Show stopped asking.
+//
+// The Music Assistant token for the lyrics has the same: a sensor that says ok, none or gone, and an
+// action that answers with that and the token's name, so the installer keeps a token that still works
+// instead of making a new one on every run, which drops the Show's player for a moment (GENBU-137).
 
 func (f *Feature) buildKeySensor() {
 	f.keyTxt = &esphome.TextSensor{Base: esphome.Base{
@@ -26,6 +31,13 @@ func (f *Feature) buildKeySensor() {
 		Category: esphome.CategoryDiagnostic,
 	}}
 	hass.Get().Changed.Listen(func(struct{}) { f.showKey() })
+	f.maKeyTxt = &esphome.TextSensor{Base: esphome.Base{
+		ObjectID: "music_assistant_key",
+		Name:     "Music Assistant key",
+		Icon:     "mdi:key-chain",
+		Category: esphome.CategoryDiagnostic,
+	}}
+	mass.Get().Changed.Listen(func(struct{}) { f.showMAKey() })
 }
 
 func (f *Feature) showKey() {
@@ -33,9 +45,15 @@ func (f *Feature) showKey() {
 	f.Changed.Emit(struct{}{})
 }
 
-// keyActions are home_assistant_key, which says how the key stands and names it, and
-// home_assistant_retry. Over the encrypted API only, like music_assistant: which key a Show holds is
-// for Home Assistant to ask, not for anyone else on the network.
+func (f *Feature) showMAKey() {
+	f.maKeyTxt.Set(mass.Get().KeyState())
+	f.Changed.Emit(struct{}{})
+}
+
+// keyActions are home_assistant_key, which says how the key stands and names it,
+// home_assistant_retry, and music_assistant_key, home_assistant_key's twin for the lyrics token. Over
+// the encrypted API only, like music_assistant: which key a Show holds is for Home Assistant to ask,
+// not for anyone else on the network.
 func keyActions() []*esphome.Action {
 	encrypted := func(name string) error {
 		if !security.APIEncrypted() {
@@ -61,6 +79,16 @@ func keyActions() []*esphome.Action {
 				return nil, err
 			}
 			return map[string]any{"state": hass.Get().Retry()}, nil
+		},
+	}, {
+		Name:    "music_assistant_key",
+		Answers: true,
+		Run: func(esphome.Call) (any, error) {
+			if err := encrypted("music_assistant_key"); err != nil {
+				return nil, err
+			}
+			c := mass.Get()
+			return map[string]any{"state": c.KeyState(), "key": c.KeyID()}, nil
 		},
 	}}
 }

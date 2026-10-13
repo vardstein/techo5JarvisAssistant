@@ -1499,6 +1499,18 @@ def hand_over_key(ha: HomeAssistant, svc: str, data: dict) -> bool:
     return (answer.get("service_response") or {}).get("stored") is True
 
 
+def music_assistant_key(ha: HomeAssistant, svc: str) -> str:
+    """The Show's name for the Music Assistant token it holds (its music_assistant_key action, GENBU-137),
+    when it says Music Assistant has not turned the token away; "" otherwise. A Show from before that,
+    or one that could not answer, gets a new token, as every run gave it before."""
+    try:
+        answer = ha.request("POST", f"/api/services/esphome/{svc}?return_response", {}) or {}
+    except HomeAssistantError:
+        return ""
+    said = answer.get("service_response") or {}
+    return str(said.get("key") or "") if said.get("state") == "ok" else ""
+
+
 def genbu_show_key(ha: HomeAssistant, node: str, url: str) -> dict | None:
     """Has Genbu give the Show its user and key (genbu.show_key, Genbu 1.4.2, GENBU-196): it does it inside
     Home Assistant, the same way its Repairs button does for a Show whose key was lost, and deletes the
@@ -1522,9 +1534,10 @@ class DeviceSettings:
     ha_url: str | None = None
     ha_token: str | None = None
     music_assistant: str | None = None
-    # Makes the Show's own Music Assistant user, for lyrics, and returns its token, or None when that
-    # failed (and said why). Given the Show's name; called only once the Show can take the token.
-    music_assistant_login: Callable[[str], str | None] | None = None
+    # Makes the Show's own Music Assistant user, for lyrics, and returns its token, "" when the Show's
+    # token still works and is kept, or None when that failed (and said why). Given the Show's name and
+    # its name for the token it holds (music_assistant_key); called only once the Show can take a token.
+    music_assistant_login: Callable[[str, str], str | None] | None = None
     # The Show gets a Home Assistant user of its own (make_show_user) and that user's token instead of
     # ha_token, and its streamed dashboard is shown as that user.
     own_user: bool = False
@@ -1690,7 +1703,11 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
                      "given; run this again once the Show is online")
             continue
         if data is None and svc == f"{prefix}_music_assistant":
-            token = s.music_assistant_login(node or opts.name)
+            asks = f"{prefix}_music_assistant_key"
+            token = s.music_assistant_login(node or opts.name,
+                                            music_assistant_key(ha, asks) if asks in services else "")
+            if token == "":  # the Show's own still works
+                continue
             if not token:
                 progress(f"WARN: {what} not set, so lyrics won't work on the Show")
                 continue

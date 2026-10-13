@@ -104,6 +104,7 @@ class FakeHA:
         self.show_answers = True  # the Show's home_assistant action says it stored the token
         self.show_fails = ""      # what the Show's home_assistant action fails with
         self.show_says = {"stored": True}  # its answer
+        self.ma_key = None  # what its music_assistant_key action answers; None: a Show from before it
         self.entries = [{"entry_id": "E1", "domain": "esphome", "title": "Jarvis Show 5"}] if entry else []
         self.areas = {"living_room": "Wohnzimmer", "kitchen": "Küche"}
         self.area = ""
@@ -184,6 +185,8 @@ class FakeHA:
             prefix = ha.service_prefix(self.node or "Jarvis Show 5")
             names = [f"{prefix}_{action}" for action in
                      ("dashboard_server", "home_assistant", "sendspin_server", "music_assistant")]
+            if self.ma_key is not None:
+                names.append(f"{prefix}_music_assistant_key")
             return [{"domain": "light", "services": {}}, {"domain": "esphome", "services": {n: {} for n in names}}]
         if path == "/api/states" and method == "GET":
             return [{"entity_id": e["entity_id"], "state": "on",
@@ -204,6 +207,8 @@ class FakeHA:
         if path.startswith("/api/services/esphome/"):
             if not path.endswith("?return_response"):
                 return []
+            if self.ma_key is not None and path.endswith("_music_assistant_key?return_response"):
+                return {"changed_states": [], "service_response": self.ma_key}
             # Before GENBU-158 no action of the Show's answered; since then home_assistant does.
             if not (self.show_answers and path.endswith("_home_assistant?return_response")):
                 raise ha.HomeAssistantError(f"POST {path}: HTTP 400 {{\"message\": \"Service does not support "
@@ -310,7 +315,7 @@ class DeployTests(unittest.TestCase):
     def test_a_renamed_show_is_reached_by_the_name_home_assistant_has(self):
         fake, names = FakeHA(), []
         fake.node = "genbushow5"
-        _, log = run_deploy(fake, host="10.0.0.9", login=lambda name: names.append(name) or "MA-SHOW-TOKEN")
+        _, log = run_deploy(fake, host="10.0.0.9", login=lambda name, held: names.append(name) or "MA-SHOW-TOKEN")
         actions = dict(fake.posted("/api/services/esphome/"))
         self.assertEqual(actions["/api/services/esphome/genbushow5_sendspin_server"], {"ip": "10.0.0.6"})
         self.assertEqual(actions["/api/services/esphome/genbushow5_music_assistant"], {"token": "MA-SHOW-TOKEN"})
@@ -362,12 +367,12 @@ class DeployTests(unittest.TestCase):
 
     def test_music_assistant_token_made_for_the_show_by_name(self):
         fake, names = FakeHA(), []
-        run_deploy(fake, host="10.0.0.9", login=lambda name: names.append(name) or "MA-SHOW-TOKEN")
+        run_deploy(fake, host="10.0.0.9", login=lambda name, held: names.append(name) or "MA-SHOW-TOKEN")
         self.assertEqual(names, ["jarvis-show-5"])
         self.assertEqual(dict(fake.posted("/api/services/esphome/"))
                          ["/api/services/esphome/jarvis_show_5_music_assistant"], {"token": "MA-SHOW-TOKEN"})
         fake = FakeHA()
-        _, log = run_deploy(fake, host="10.0.0.9", login=lambda name: None)
+        _, log = run_deploy(fake, host="10.0.0.9", login=lambda name, held: None)
         self.assertNotIn("/api/services/esphome/jarvis_show_5_music_assistant",
                          dict(fake.posted("/api/services/esphome/")))
         self.assertTrue(any("lyrics won't work" in line for line in log))
@@ -375,6 +380,34 @@ class DeployTests(unittest.TestCase):
         run_deploy(fake, host="10.0.0.9")
         self.assertNotIn("/api/services/esphome/jarvis_show_5_music_assistant",
                          dict(fake.posted("/api/services/esphome/")))
+
+    def test_music_assistant_token_kept_while_it_works(self):
+        # GENBU-137: the Show names its token, and the login keeps it ("") or makes a new one.
+        posted = "/api/services/esphome/jarvis_show_5_music_assistant"
+        for says, held in (({"state": "ok", "key": "k1"}, "k1"), ({"state": "gone", "key": "k1"}, ""),
+                           ({"state": "none", "key": ""}, ""), ({}, ""), (None, "")):
+            fake, seen = FakeHA(), []
+            fake.ma_key = says
+            run_deploy(fake, host="10.0.0.9", login=lambda name, h: seen.append(h) or "")
+            self.assertEqual(seen, [held], says)
+            self.assertNotIn(posted, dict(fake.posted("/api/services/esphome/")), says)
+        fake = FakeHA()
+        fake.ma_key = {"state": "ok", "key": "k1"}
+        _, log = run_deploy(fake, host="10.0.0.9", login=lambda name, h: "MA-NEW")
+        self.assertEqual(dict(fake.posted("/api/services/esphome/"))[posted], {"token": "MA-NEW"})
+        self.assertFalse(any(line.startswith("WARN") for line in log))
+
+    def test_music_assistant_key_that_cannot_be_asked_is_none(self):
+        fake = FakeHA()
+        fake.ma_key = {"state": "ok", "key": "k1"}
+        services = fake.request
+
+        def request(method, path, body=None):
+            if path.endswith("_music_assistant_key?return_response"):
+                raise ha.HomeAssistantError(f"POST {path}: HTTP 500")
+            return services(method, path, body)
+        fake.request = request
+        self.assertEqual(ha.music_assistant_key(fake, "jarvis_show_5_music_assistant_key"), "")
 
     def test_show_without_an_address_is_found_by_its_local_name(self):
         fake = FakeHA()
@@ -1534,9 +1567,9 @@ class MusicAssistantTests(unittest.TestCase):
                                                           {"token_id": "t-other", "name": "phone"}]},
                            {"message_id": "5", "result": {}},
                            {"message_id": "6", "result": "show-token"})
-        token, made = ma.show_exchange(sock, "10.0.0.6:8095", "ma-token", "Jarvis Show 5",
-                                       key="dGhlIHNhbXBsZSBub25jZQ==")
-        self.assertEqual((token, made), ("show-token", True))
+        token, how = ma.show_exchange(sock, "10.0.0.6:8095", "ma-token", "Jarvis Show 5",
+                                      key="dGhlIHNhbXBsZSBub25jZQ==")
+        self.assertEqual((token, how), ("show-token", ma.MADE))
         sent = sock.messages()
         self.assertEqual([m["command"] for m in sent], ["auth", "auth/users", "auth/user/create", "auth/tokens",
                                                         "auth/token/revoke", "auth/token/create"])
@@ -1554,7 +1587,7 @@ class MusicAssistantTests(unittest.TestCase):
                            {"message_id": "3", "result": []},
                            {"message_id": "4", "result": "show-token"})
         self.assertEqual(ma.show_exchange(sock, "10.0.0.6:8095", "ma-token", "Jarvis Show 5",
-                                          key="dGhlIHNhbXBsZSBub25jZQ=="), ("show-token", False))
+                                          key="dGhlIHNhbXBsZSBub25jZQ=="), ("show-token", ma.RENEWED))
         self.assertNotIn("auth/user/create", [m["command"] for m in sock.messages()])
         sock = self.server({"message_id": "1", "result": {"authenticated": True}},
                            {"message_id": "2", "result": [{"user_id": "u5", "username": "jarvis-show-5",
@@ -1562,6 +1595,39 @@ class MusicAssistantTests(unittest.TestCase):
         with self.assertRaises(ma.MusicAssistantError):
             ma.show_exchange(sock, "10.0.0.6:8095", "ma-token", "Jarvis Show 5", key="dGhlIHNhbXBsZSBub25jZQ==")
         self.assertEqual([m["command"] for m in sock.messages()], ["auth", "auth/users"])
+
+    def test_show_token_kept_while_it_works(self):
+        # GENBU-137: the Show's token stays when it names it and it has more than a month to go; a
+        # leftover of the same name goes. Anything else gets a new one, as before.
+        now = ma.datetime(2026, 10, 14, tzinfo=ma.timezone.utc)
+        held = ma.key_name("t-show")
+
+        def run(tokens, held=held, revoked=0):
+            sock = self.server({"message_id": "1", "result": {"authenticated": True}},
+                               {"message_id": "2", "result": [{"user_id": "u5", "username": "jarvis-show-5",
+                                                               "role": "user", "enabled": True}]},
+                               {"message_id": "3", "result": tokens},
+                               *[{"message_id": str(4 + i), "result": {}} for i in range(revoked)],
+                               {"message_id": str(4 + revoked), "result": "show-token"})
+            got = ma.show_exchange(sock, "10.0.0.6:8095", "ma-token", "Jarvis Show 5", held=held,
+                                   key="dGhlIHNhbXBsZSBub25jZQ==", now=now)
+            return got, [(m["command"], m.get("args")) for m in sock.messages()][2:]
+
+        show = {"token_id": "t-show", "name": ma.TOKEN_NAME, "expires_at": "2027-10-01T22:50:00.123456+00:00"}
+        got, sent = run([show, {"token_id": "t-left", "name": ma.TOKEN_NAME, "expires_at": "2027-01-01T00:00:00"},
+                         {"token_id": "t-phone", "name": "phone"}], revoked=1)
+        self.assertEqual(got, (None, ma.KEPT))
+        self.assertEqual(sent, [("auth/tokens", {"user_id": "u5"}), ("auth/token/revoke", {"token_id": "t-left"})])
+
+        for why, tokens, h, revoked in (
+                ("the Show names no token", [show], "", 1),
+                ("it names another", [show], ma.key_name("t-other"), 1),
+                ("not called Jarvis Show", [{**show, "name": "phone"}], held, 0),
+                ("runs out within the month", [{**show, "expires_at": "2026-11-01T00:00:00+00:00"}], held, 1),
+                ("no end date", [{**show, "expires_at": None}], held, 1)):
+            got, sent = run(tokens, h, revoked)
+            self.assertEqual(got, ("show-token", ma.RENEWED), why)
+            self.assertEqual(sent[-1], ("auth/token/create", {"name": ma.TOKEN_NAME, "user_id": "u5"}), why)
 
     def test_genres_with_enough_songs_by_their_numeric_ids(self):
         few = [{"item_id": str(i)} for i in range(3)]

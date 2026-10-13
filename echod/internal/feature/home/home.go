@@ -186,6 +186,8 @@ type Feature struct {
 
 	// keyTxt says how the Show's Home Assistant key stands (key.go).
 	keyTxt *esphome.TextSensor
+	// maKeyTxt says how its Music Assistant token stands (key.go).
+	maKeyTxt *esphome.TextSensor
 }
 
 // forecastEvery is how often the forecast is refreshed while there is a weather entity.
@@ -373,6 +375,7 @@ func (f *Feature) Restore(c config.Config) {
 	f.alertsSw.Set(!c.Home.AlertsOff)
 	f.showRadio(meta{}) // nothing plays at a start; the poller fills them in
 	f.keyTxt.Set(hass.Get().KeyState())
+	f.maKeyTxt.Set(mass.Get().KeyState())
 	f.cameraSoundSw.Set(c.Home.CameraSound)
 	if hasScreen {
 		f.slideshowSel.Set(slideshowLabelFor(c.Home.Slideshow.Mode))

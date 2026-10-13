@@ -260,7 +260,7 @@ func tuneInLocal(call maCall) ([]station, error) {
 func tuneInStandIn() ([]station, error) {
 	host := config.Get().Sendspin.ServerIP
 	if host == "" || !mass.Get().Ready() {
-		return nil, errors.New("no Music Assistant token, or no server paired")
+		return nil, errors.New("no Music Assistant token that works, or no server paired")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

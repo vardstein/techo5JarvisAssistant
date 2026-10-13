@@ -15,7 +15,10 @@ Both are Music Assistant settings, turned back on in its own settings pages.
 The same token also gives the Show a Music Assistant user of its own (show_token), for the lyrics of
 the song playing, which Home Assistant's integration does not pass on. The user is a plain one, not
 an admin; its password is random and thrown away, so only its token, on the Show, ever signs in. The
-installer's token is used for that and kept nowhere.
+installer's token is used for that and kept nowhere. A new token drops the Show's player in Music
+Assistant for a moment, so a run keeps the Show's token while it still works: the Show names the token
+it holds, and whether Music Assistant turned it away, and Music Assistant lists the user's tokens with
+the day each runs out (GENBU-137).
 
 That token is either an admin's long-lived one, or one the installer gets by signing in as an admin
 with a username and password (sign_in, Music Assistant's own auth/login). A sign-in's token is
@@ -36,10 +39,12 @@ is connected and makes it again at once, so that one waits until the Show is off
 """
 from __future__ import annotations
 
+import hashlib
 import re
 import secrets
 import socket
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from jarvis_crown.home_assistant import ws_open
@@ -109,6 +114,32 @@ def exchange(sock: Any, host: str, token: str, *, key: str | None = None) -> lis
 # the ones before it, so running the installer again leaves one.
 TOKEN_NAME = "Jarvis Show"
 
+# How long before it runs out a token is renewed all the same: Music Assistant's long-lived tokens last
+# a year and do not renew themselves (TOKEN_LONG_LIVED_EXPIRATION, webserver/auth.py, 2.10.6).
+RENEW_BEFORE = timedelta(days=30)
+
+# What show_token did about the Show's token.
+MADE, RENEWED, KEPT = "made", "renewed", "kept"
+
+
+def key_name(token_id: str) -> str:
+    """How the Show names its token (echod's mass.keyID): the sha256 of the token's id, its JWT's jti."""
+    return hashlib.sha256(token_id.encode()).hexdigest()
+
+
+def keeps(old: dict, held: str, now: datetime) -> bool:
+    """Whether old, one of the user's tokens, is the one the Show holds, with RENEW_BEFORE or more to go.
+    held is the Show's name for its token, "" when it has none or Music Assistant turned it away."""
+    if not held or old.get("name") != TOKEN_NAME or key_name(str(old.get("token_id") or "")) != held:
+        return False
+    try:
+        expires = datetime.fromisoformat(str(old.get("expires_at")))
+    except ValueError:
+        return False
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    return expires - now > RENEW_BEFORE
+
 
 def show_username(name: str) -> str:
     """The Show's user in Music Assistant, from its name: "Jarvis Show 5" is jarvis-show-5."""
@@ -118,9 +149,11 @@ def show_username(name: str) -> str:
     return slug
 
 
-def show_exchange(sock: Any, host: str, token: str, name: str, *, key: str | None = None) -> tuple[str, bool]:
-    """Logs in on a connected socket and makes the Show's user and a token for it; returns the token
-    and whether the user was new."""
+def show_exchange(sock: Any, host: str, token: str, name: str, *, held: str = "", key: str | None = None,
+                  now: datetime | None = None) -> tuple[str | None, str]:
+    """Logs in on a connected socket and makes the Show's user and a token for it, unless the Show
+    holds one that still works (held, see keeps). Returns the new token, None for a kept one, and
+    MADE, RENEWED or KEPT."""
     session = _login(sock, host, token, key=key)
     username = show_username(name)
     user = next((u for u in session.call("auth/users") or [] if u.get("username") == username), None)
@@ -132,10 +165,15 @@ def show_exchange(sock: Any, host: str, token: str, name: str, *, key: str | Non
         raise MusicAssistantError(f"Music Assistant already has a user {username!r} that is not a plain, "
                                   "enabled user; the Show's lyrics are left out")
     user_id = user["user_id"]
-    for old in session.call("auth/tokens", user_id=user_id) or []:
-        if old.get("name") == TOKEN_NAME:
+    now = now or datetime.now(timezone.utc)
+    mine = [t for t in session.call("auth/tokens", user_id=user_id) or [] if t.get("name") == TOKEN_NAME]
+    kept = next((t for t in mine if not made and keeps(t, held, now)), None)
+    for old in mine:
+        if old is not kept:
             session.call("auth/token/revoke", token_id=old["token_id"])
-    return session.call("auth/token/create", name=TOKEN_NAME, user_id=user_id), made
+    if kept is not None:
+        return None, KEPT
+    return session.call("auth/token/create", name=TOKEN_NAME, user_id=user_id), MADE if made else RENEWED
 
 
 TUNEIN = "tunein"
@@ -266,11 +304,12 @@ def add_tunein(host: str, token: str, username: str, *, timeout: float = 20.0,
     return _connected(host, timeout, connect, lambda sock, peer: tunein_exchange(sock, peer, token, username))
 
 
-def show_token(host: str, token: str, name: str, *, timeout: float = 20.0,
-               connect: Callable[..., Any] = socket.create_connection) -> tuple[str, bool]:
-    """A token for the Show's own Music Assistant user, made when it is not there yet; returns it
-    and whether the user was new."""
-    return _connected(host, timeout, connect, lambda sock, peer: show_exchange(sock, peer, token, name))
+def show_token(host: str, token: str, name: str, *, held: str = "", timeout: float = 20.0,
+               connect: Callable[..., Any] = socket.create_connection) -> tuple[str | None, str]:
+    """A token for the Show's own Music Assistant user, made when it is not there yet, unless the Show's
+    own still works; see show_exchange."""
+    return _connected(host, timeout, connect,
+                      lambda sock, peer: show_exchange(sock, peer, token, name, held=held))
 
 
 def sign_in_exchange(sock: Any, host: str, username: str, password: str, *, name: str,
