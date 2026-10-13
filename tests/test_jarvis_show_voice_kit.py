@@ -201,6 +201,21 @@ class SetUpTests(unittest.TestCase):
         self.assertIn("current_temperature", climate)
         self.assertNotIn("'temperature'", climate)   # the setpoint attribute
 
+    def test_music_starts_before_the_mix_of_similar_songs_is_made(self):
+        fake = FakeHA()
+        run(fake)
+        steps = fake.configs[("script", "jarvis_music_start")]["sequence"]
+        plays = [s for s in steps if s.get("action") == "music_assistant.play_media"]
+        # The first play has no radio mode, which is what makes Music Assistant wait.
+        self.assertEqual(len(plays), 1)
+        self.assertNotIn("radio_mode", plays[0]["data"])
+        radio = steps[steps.index(plays[0]) + 1]
+        self.assertIn("radio", radio["if"][0]["value_template"])
+        then = radio["then"][0]
+        self.assertEqual(then["data"]["enqueue"], "add")
+        self.assertIs(then["data"]["radio_mode"], True)
+        self.assertTrue(then["continue_on_error"])
+
     def test_a_second_run_changes_nothing(self):
         fake = FakeHA()
         run(fake)
