@@ -91,7 +91,14 @@ func build() *Light {
 
 func (l *Light) Name() string { return "ring light" }
 
+// ringPresent is whether the device has a ring: a Show 5 or a Show 8 has none, and a light in Home
+// Assistant that does nothing is only clutter there.
+var ringPresent = func() bool { return led.Get().Present() }
+
 func (l *Light) Entities() []esphome.Entity {
+	if !ringPresent() {
+		return nil
+	}
 	out := []esphome.Entity{l.light}
 	for _, s := range l.segs {
 		out = append(out, s)
