@@ -105,6 +105,9 @@ def parse_args() -> argparse.Namespace:
     setup.add_argument("--room-dashboard", action=argparse.BooleanOptionalAction, default=None,
                        help="make a small dashboard for its room when the house has none, the page a swipe in "
                             "from the left goes on to (default: ask; Enter is no)")
+    setup.add_argument("--jarvis-dashboard", action=argparse.BooleanOptionalAction, default=None,
+                       help="make the Jarvis dashboard (clock, room, weather, timer, calendar) and the recipe page "
+                            "when the house has none; needs Genbu 1.3.1 and wall-clock-card (default: ask; Enter is no)")
     setup.add_argument("--voice-extras", action=argparse.BooleanOptionalAction, default=None,
                        help="set up the Home Assistant pieces around the Shows: the room going quiet while a "
                             "Show listens, and with a German assistant local answers (room, temperature, "
@@ -346,7 +349,8 @@ def _chooser(args):
     if not asker.interactive:
         return None
     given = {"assistant": args.assistant, "wake word": args.wake_word, "room": args.room,
-             "room dashboard": args.room_dashboard, "voice extras": args.voice_extras,
+             "room dashboard": args.room_dashboard,
+             "jarvis dashboard": getattr(args, "jarvis_dashboard", None), "voice extras": args.voice_extras,
              "calendars": args.calendars, "new name": getattr(args, "rename_entities", None),
              "assistant name": getattr(args, "genbu_assistant", None)}
 
@@ -426,7 +430,8 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
 
     opts = ha_api.DeployOptions(
         name=name, psk=psk, host=host, wake_word=args.wake_word or None, assistant=args.assistant or None,
-        room=args.room or None, room_dashboard=args.room_dashboard, voice_extras=args.voice_extras,
+        room=args.room or None, room_dashboard=args.room_dashboard,
+        jarvis_dashboard=getattr(args, "jarvis_dashboard", None), voice_extras=args.voice_extras,
         music_genres=_music_genres(settings) if args.voice_extras is not False else None,
         assistant_name=getattr(args, "genbu_assistant", None), keep_replaced=_keeper(backups), calendars=args.calendars, caldav=caldav,
         ask_caldav=_caldav_asker(args), rename_entities=getattr(args, "rename_entities", None), renamed=renamed,

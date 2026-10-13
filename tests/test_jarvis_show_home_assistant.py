@@ -121,6 +121,9 @@ class FakeHA:
             {"entity_id": "light.jarvis_show_5_screen", "device_id": "D1", "area_id": None},
         ]
         self.classes = {"sensor.wohnzimmer_temperature": "temperature", "binary_sensor.fenster": "window"}
+        self.units = {"sensor.wohnzimmer_temperature": "°C"}
+        self.genbu_cards = False  # Genbu 1.3.1 or newer, serving the dashboard cards
+        self.resources = []       # lovelace/resources
         self.states = {
             "select.jarvis_show_5_assistant": {"state": "preferred", "attributes": {"options": ["preferred", "Jarvis"]}},
             "select.jarvis_show_5_wake_word": {"state": "Okay Nabu", "attributes": {"options": ["Okay Nabu", "Hey Jarvis"]}},
@@ -129,6 +132,10 @@ class FakeHA:
 
     def request(self, method, path, body=None):
         self.calls.append((method, path, body))
+        if method == "GET" and path.startswith("/genbu_panel/"):
+            if not self.genbu_cards:
+                raise ha.NotFound(f"GET {path}: HTTP 404")
+            return "customElements.define(...)"
         if method == "GET" and path == "/api/diagnostics/config_entry/E1":
             if self.node is None:
                 raise ha.NotFound("GET /api/diagnostics/config_entry/E1: HTTP 404")
@@ -161,6 +168,9 @@ class FakeHA:
             return "".join(f"{a}\t{n}\n" for a, n in self.areas.items())
         if path == "/api/template" and "device_id(" in body["template"]:
             return f"D1\t{self.area or 'None'}"
+        if path == "/api/template" and "area_entities('living_room')" in body["template"]:
+            return "\n".join(e["entity_id"] for e in self.entities
+                             if e["area_id"] == "living_room" or e["device_id"] == "D2")
         if path == "/api/template":
             return "\n".join([e for e in self.states if ".jarvis_show_5_" in e] + ["select.jarvis_show_5_assistant_2"])
         if path == "/api/services" and method == "GET":
@@ -170,7 +180,8 @@ class FakeHA:
             return [{"domain": "light", "services": {}}, {"domain": "esphome", "services": {n: {} for n in names}}]
         if path == "/api/states" and method == "GET":
             return [{"entity_id": e["entity_id"], "state": "on",
-                     "attributes": {"device_class": self.classes.get(e["entity_id"])}} for e in self.entities]
+                     "attributes": {"device_class": self.classes.get(e["entity_id"]),
+                                    "unit_of_measurement": self.units.get(e["entity_id"])}} for e in self.entities]
         if path.startswith("/api/states/"):
             entity = path[len("/api/states/"):]
             if self.unconfigured and entity.endswith("_wake_word"):
@@ -194,6 +205,8 @@ class FakeHA:
             return self.pipelines
         if message["type"] == "lovelace/dashboards/list":
             return list(self.boards)
+        if message["type"] == "lovelace/resources":
+            return list(self.resources)
         if message["type"] == "lovelace/config":
             if message["url_path"] not in self.views:
                 raise ha.HomeAssistantError("lovelace/config: config_not_found")
@@ -653,6 +666,69 @@ class RoomTests(unittest.TestCase):
             self.assertNotIn("room dashboard", asked)
             self.assertIn(f"Wohnzimmer has a dashboard already ({where}); the Show goes on to it", log)
             self.assertEqual(len(fake.ws_calls), 1)
+
+    def jarvis_house(self, *, clock=True):
+        fake = FakeHA()
+        fake.genbu_cards = True
+        fake.resources = [{"url": "/hacsfiles/wall-clock-card/wall-clock-card.js", "type": "module"}] if clock else []
+        fake.states["assist_satellite.jarvis_show_5_assist_satellite"] = {"state": "idle"}
+        fake.entities.append({"entity_id": "sensor.wohnzimmer_humidity", "device_id": "D2", "area_id": None})
+        fake.classes["sensor.wohnzimmer_humidity"] = "humidity"
+        fake.units["sensor.wohnzimmer_humidity"] = "%"
+        fake.entities.append({"entity_id": "weather.forecast_home", "device_id": None, "area_id": None})
+        return fake
+
+    def test_the_jarvis_dashboard_is_made_from_the_house(self):
+        fake = self.jarvis_house()
+        offered = {}
+
+        def choose(label, current, options, names=None):
+            offered[label] = options
+            return {"room": "Wohnzimmer", "jarvis dashboard": "yes"}.get(label)
+        _, log = run_deploy(fake, choose=choose, host="10.0.0.9", voice_extras=False, calendars="")
+        self.assertEqual(offered["jarvis dashboard"], ["yes", "no"])
+        create, save = [m for m in fake.ws_calls if m.get("url_path") == "jarvis-display"]
+        self.assertEqual((create["type"], create["title"]), ("lovelace/dashboards/create", "Jarvis"))
+        cards = ha._calendar_cards(save["config"])
+        self.assertEqual(cards, [{"type": "custom:jarvis-calendar-card", "entity": "calendar.personal",
+                                  "title": "Kalender", "daysAhead": 14}])
+        zones = save["config"]["views"][0]["cards"][0]["layout"]["zones"]
+        top = [w["card"] for w in zones["top-center"]["widgets"]]
+        self.assertEqual(top[0], {"type": "custom:jarvis-room-environment-card", "title": "Wohnzimmer",
+                                  "temperature_entity": "sensor.wohnzimmer_temperature",
+                                  "humidity_entity": "sensor.wohnzimmer_humidity"})
+        self.assertEqual(top[1]["entity"], "weather.forecast_home")
+        timer = zones["bottom-center"]["widgets"][0]["card"]
+        self.assertEqual(timer, {"type": "custom:jarvis-live-timer-card", "device_id": "D1",
+                                 "satellite_id": "assist_satellite.jarvis_show_5_assist_satellite"})
+        self.assertIn("the Jarvis dashboard jarvis-display made; on the Show, pick it under Dashboard to show", log)
+        # Again: it is there, nothing is asked or made.
+        fake.boards = [{"url_path": "jarvis-display", "mode": "storage"}]
+        offered.clear()
+        _, log = run_deploy(fake, choose=choose, host="10.0.0.9", voice_extras=False, calendars="")
+        self.assertNotIn("jarvis dashboard", offered)
+        self.assertIn("the Jarvis dashboard is there already (jarvis-display)", log)
+
+    def test_no_jarvis_dashboard_without_its_clock_but_the_recipe_page(self):
+        fake = self.jarvis_house(clock=False)
+        fake.entities.append({"entity_id": "sensor.jarvis_recipe", "device_id": None, "area_id": None})
+        _, log = run_deploy(fake, host="10.0.0.9", jarvis_dashboard=True, voice_extras=False, calendars="")
+        made = [m["url_path"] for m in fake.ws_calls if m["type"] == "lovelace/dashboards/create"]
+        self.assertEqual(made, ["jarvis-rezept"])
+        recipe = [m for m in fake.ws_calls if m["type"] == "lovelace/config/save"][0]["config"]
+        self.assertEqual(recipe["views"][0]["cards"], [{"type": "custom:jarvis-recipe-card",
+                                                        "entity": "sensor.jarvis_recipe"}])
+        self.assertTrue(any("WARN: no Jarvis dashboard, as its clock is wall-clock-card" in line for line in log))
+
+    def test_no_jarvis_dashboard_is_asked_for_without_genbus_cards(self):
+        fake = FakeHA()
+        asked = []
+        _, log = run_deploy(fake, choose=lambda label, *_: asked.append(label) or (
+            "Wohnzimmer" if label == "room" else "yes"), host="10.0.0.9", voice_extras=False, calendars="")
+        self.assertNotIn("jarvis dashboard", asked)
+        self.assertFalse(any("Jarvis dashboard" in line for line in log))
+        _, log = run_deploy(FakeHA(), choose=None, host="10.0.0.9", jarvis_dashboard=False)
+        self.assertFalse(any("Jarvis dashboard" in line for line in log))
 
     def test_a_room_with_nothing_to_show_gets_none(self):
         fake = FakeHA()

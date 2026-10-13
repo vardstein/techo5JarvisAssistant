@@ -42,7 +42,9 @@ later ([The recipe page](dashboards.md#the-recipe-page)).
    well as **Assist**, and save.
 4. Make sure Genbu is 1.3.1 or newer: it brings the recipe card along with the others
    ([ha-dashboard](../ha-dashboard/README.md)).
-5. **Settings → Dashboards → Add dashboard → New dashboard from scratch.** Call it "Rezept", and
+5. Make the page. The installer makes it with the Jarvis dashboard (`--jarvis-dashboard`,
+   [jarvis-crown-installer.md](jarvis-crown-installer.md)); by hand, it is
+   **Settings → Dashboards → Add dashboard → New dashboard from scratch.** Call it "Rezept", and
    set its URL to `jarvis-rezept`: the Show finds the page by that address. Open it, **⋮ → Edit
    dashboard → ⋮ → Raw configuration editor**, and paste
    [`jarvis-recipe-dashboard.yaml`](../ha-dashboard/jarvis-recipe-dashboard.yaml).

@@ -873,6 +873,118 @@ def _room_dashboard(ha: HomeAssistant, entities: list[str], make: bool | None,
     return f"room dashboard {url_path} made for {name}, {len(cards)} cards"
 
 
+JARVIS_BOARD = "jarvis-display"   # the Jarvis dashboard's address
+RECIPE_BOARD = "jarvis-rezept"    # the recipe page's, which the Show finds it by (docs/recipes.md)
+
+
+def _jarvis_cards(room: str, temperature: str | None, humidity: str | None, weather: str | None,
+                  satellite: str | None, device: str, calendar: str) -> dict:
+    """ha-dashboard/jarvis-dashboard.yaml with the house's entities in it; keep the two alike. A corner
+    with nothing to show is left out."""
+    def widget(card: dict, **style: Any) -> dict:
+        return {"type": "ha-card", "transparent": True, "style": style, "card": card}
+    top = []
+    if temperature:
+        card = {"type": "custom:jarvis-room-environment-card", "title": room, "temperature_entity": temperature}
+        if humidity:
+            card["humidity_entity"] = humidity
+        top.append(widget(card, widthMode="content"))
+    if weather:
+        top.append(widget({"type": "custom:jarvis-weather-card", "title": "Wetter", "entity": weather},
+                          widthMode="content", margin="0 0 0 auto"))
+    bottom = []
+    if satellite and device:
+        bottom.append(widget({"type": "custom:jarvis-live-timer-card", "device_id": device,
+                              "satellite_id": satellite}, widthMode="fill", grow=1))
+    bottom.append(widget({"type": "custom:jarvis-calendar-card", "entity": calendar, "title": "Kalender",
+                          "daysAhead": 14}, widthMode="fill", grow=2))
+    zones: dict[str, Any] = {}
+    if top:
+        zones["top-center"] = {"direction": "row", "align": "start", "crossAlign": "start", "widgets": top}
+    zones["center"] = {"align": "center", "gap": "0px", "widgets": [
+        {"type": "clock", "clockSize": "min(22.5vw, 36vh)",
+         "timeFormat": {"hour": "2-digit", "minute": "2-digit", "hour12": False},
+         "style": {"margin": "min(1.875vw, 3vh) 0 0 0"}},
+        {"type": "date", "dateSize": "min(7.5vw, 12vh)", "dateTextAlign": "center",
+         "dateFormat": {"weekday": "long", "day": "numeric", "month": "long"}}]}
+    zones["bottom-center"] = {"direction": "row", "crossAlign": "end", "gap": "min(3.125vw, 5vh)",
+                              "widgets": bottom}
+    clock = {"type": "custom:wall-clock-card", "logLevel": "warn",
+             "appearance": {"fontColor": "#FFFFFF", "fontFamily": "Roboto, sans-serif",
+                            "textShadow": "0 2px 10px rgba(0,0,0,0.95)", "language": "de",
+                            "timeZone": "Europe/Berlin", "size": "custom"},
+             "background": {"source": "picsum", "opacity": 0.38, "rotationInterval": 90, "objectFit": "cover",
+                            "blur": 6, "grayscale": 0.05},
+             "layout": {"spacing": {"padding": "3vh", "zoneGap": "2vh", "widgetGap": "1vh"}, "zones": zones,
+                        "format": "grid-3x3"}}
+    return {"title": "Jarvis", "views": [{"title": "Jarvis", "path": "home", "type": "panel", "cards": [clock]}]}
+
+
+def _jarvis_dashboard(ha: HomeAssistant, entities: list[str], make: bool | None,
+                      choose: Chooser | None = None) -> str | None:
+    """Makes the Jarvis dashboard (clock, the room, weather, timer and calendar) at jarvis-display, and the
+    recipe page when Genbu Rezepte is there, when the house has neither and make says so (None: choose is
+    asked). Their cards come with Genbu 1.3.1 and newer; the clock is wall-clock-card, from HACS. The
+    calendar is the first the house has, until the calendar step points it at the chosen ones. Nothing
+    there already is touched. None: nothing to say, Genbu has no cards to make them from."""
+    try:
+        ha.request("GET", "/genbu_panel/jarvis-weather-card.js")
+    except HomeAssistantError:
+        return None
+    have = {str(b.get("url_path")) for b in ha.ws({"type": "lovelace/dashboards/list"}) or []}
+    states = {str(s.get("entity_id")): s for s in ha.request("GET", "/api/states") or [] if isinstance(s, dict)}
+    recipe = "sensor.jarvis_recipe" in states and RECIPE_BOARD not in have
+    if JARVIS_BOARD in have and not recipe:
+        return f"the Jarvis dashboard is there already ({JARVIS_BOARD})"
+    if make is None:
+        picked = choose("jarvis dashboard", "", ["yes", "no"],
+                        {"yes": "yes, the Jarvis dashboard" + (" and the recipe page" if recipe else "")}) \
+            if choose else None
+        make = picked == "yes"
+    if not make:
+        return "no Jarvis dashboard made"
+    said = []
+    if recipe:
+        ha.ws({"type": "lovelace/dashboards/create", "url_path": RECIPE_BOARD, "title": "Rezept",
+               "icon": "mdi:chef-hat", "require_admin": False, "show_in_sidebar": False, "mode": "storage"})
+        ha.ws({"type": "lovelace/config/save", "url_path": RECIPE_BOARD, "config": {"title": "Rezept", "views": [
+            {"title": "Rezept", "path": "rezept", "type": "panel",
+             "cards": [{"type": "custom:jarvis-recipe-card", "entity": "sensor.jarvis_recipe"}]}]}})
+        said.append(f"the recipe page {RECIPE_BOARD} made")
+    if JARVIS_BOARD not in have:
+        listed = ha.ws({"type": "lovelace/resources"}) or []
+        if not any("wall-clock-card" in str(r.get("url")) for r in listed if isinstance(r, dict)):
+            said.append("WARN: no Jarvis dashboard, as its clock is wall-clock-card and Home Assistant does not "
+                        "have it; add it through HACS (ha-dashboard/README.md) and run this again")
+            return "; ".join(said)
+        satellite = next((e for e in sorted(entities) if e.startswith("assist_satellite.")
+                          and _ENTITY_ID_RE.fullmatch(e)), None)
+        known = satellite or next((e for e in sorted(entities, key=len) if _ENTITY_ID_RE.fullmatch(e)), "")
+        text = ha.request("POST", "/api/template", {"template":
+                          "{% set d = device_id('" + known + "') %}{{ d }}\t{{ area_id(d) if d else '' }}"}) \
+            if known else ""
+        device, _, area = str(text or "").partition("\t")
+        device, area = device.strip().replace("None", ""), area.strip().replace("None", "")
+        in_area = ha.request("POST", "/api/template", {"template":
+                             "{{ area_entities('" + area + "') | join('\\n') }}"}) if area else ""
+        mine = set(str(in_area or "").split())
+
+        def measured(kind: str, unit: tuple[str, ...]) -> str | None:
+            return next((e for e in sorted(mine) if e.startswith("sensor.") and e in states
+                         and (states[e].get("attributes") or {}).get("device_class") == kind
+                         and (states[e].get("attributes") or {}).get("unit_of_measurement") in unit), None)
+        weathers = sorted(e for e in states if e.startswith("weather."))
+        weather = "weather.forecast_home" if "weather.forecast_home" in weathers else next(iter(weathers), None)
+        calendar = next(iter(sorted(e for e in states if e.startswith("calendar."))), "calendar.personal")
+        config = _jarvis_cards(_areas(ha).get(area, area) if area else "Zimmer", measured("temperature", ("°C", "°F")),
+                               measured("humidity", ("%",)), weather, satellite, device, calendar)
+        ha.ws({"type": "lovelace/dashboards/create", "url_path": JARVIS_BOARD, "title": "Jarvis",
+               "icon": "mdi:tablet-dashboard", "require_admin": False, "show_in_sidebar": True, "mode": "storage"})
+        ha.ws({"type": "lovelace/config/save", "url_path": JARVIS_BOARD, "config": config})
+        said.append(f"the Jarvis dashboard {JARVIS_BOARD} made; on the Show, pick it under Dashboard to show")
+    return "; ".join(said)
+
+
 def _entry_devices(ha: HomeAssistant, entry_id: str) -> list[str]:
     """The ids of the devices the ESPHome entry has."""
     return [str(d["id"]) for d in ha.ws({"type": "config/device_registry/list"}) or []
@@ -1334,6 +1446,7 @@ class DeployOptions:
     assistant: str | None = None   # the Assist pipeline the Show talks to; None as above
     room: str | None = None        # the area it is in, by name or id; None as above
     room_dashboard: bool | None = None  # make a small one for the room if it has none; None: ask
+    jarvis_dashboard: bool | None = None  # make the Jarvis dashboard and recipe page if missing; None: ask
     voice_extras: bool | None = None    # the house's answers and music sentences (voice_kit); None: ask
     music_genres: dict[str, str] | None = None  # Music Assistant's genres for the random music, URI -> name
     assistant_name: bool | None = None  # call the Show's pipeline ASSISTANT_NAME; None: ask
@@ -1430,7 +1543,7 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
     # The options change reloads the entry, so the entities and actions come back a moment later.
     entities: list[str] = []
     want_selects = bool(opts.wake_word or opts.assistant or choose)
-    want_entities = want_selects or bool(s.music_assistant or opts.room or opts.room_dashboard or s.own_user
+    want_entities = want_selects or bool(s.music_assistant or opts.room or opts.room_dashboard or opts.jarvis_dashboard or s.own_user
                                          or opts.voice_extras)
     while True:
         entities = entry_entities(ha, entry_id) if want_entities else []
@@ -1461,6 +1574,10 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
         progress(_room(ha, entities, opts.room, choose))
     if opts.room_dashboard or (opts.room_dashboard is None and choose):
         progress(_room_dashboard(ha, entities, opts.room_dashboard, choose))
+    if opts.jarvis_dashboard or (opts.jarvis_dashboard is None and choose):
+        said = _jarvis_dashboard(ha, entities, opts.jarvis_dashboard, choose)
+        if said:
+            progress(said)
     extras = opts.voice_extras
     if extras is None and choose:
         extras = choose("voice extras", "", ["yes", "no"], {}) == "yes"
