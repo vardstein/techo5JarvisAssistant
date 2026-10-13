@@ -30,9 +30,51 @@ type musicRouteState struct {
 	activeOutput      string
 	activeGroup       string
 	activeMembers     []string
+
+	// primaryState is what the preferred speaker said at the last poll while it was online, "" while it
+	// was not or before the first poll: what tells a play started on it from one it came back with.
+	primaryState string
+	// activeAt is when activeOutput last was the preferred speaker playing, or a play sent to it.
+	activeAt time.Time
 }
 
 var musicRoute musicRouteState
+
+// musicSettle is how long a play sent to the preferred speaker counts as its, before Music Assistant
+// has said it plays: a poll in between must not take the screen off it again.
+const musicSettle = 15 * time.Second
+
+// localCarried is whether this Show's own Music Assistant stream is what the room hears. Home
+// Assistant's state of the Show's player can be stale for an hour (GENBU-167), Sendspin cannot.
+var localCarried = func() bool { return media.Get().Carried() }
+
+// forgetPrimary takes the screen off the preferred speaker once it has stopped, so the page and its
+// buttons go back to whatever plays here. Caller holds musicRoute.
+func (r *musicRouteState) forgetPrimary(primary string, now time.Time) {
+	if r.activeOutput == primary && now.Sub(r.activeAt) >= musicSettle {
+		r.activeOutput = ""
+	}
+}
+
+// musicGroupedWith is whether Music Assistant has the player st among the members of a group with entity.
+func musicGroupedWith(st hass.State, entity string) bool {
+	members, _ := st.Attributes["group_members"].([]any)
+	for _, m := range members {
+		if s, _ := m.(string); s == entity {
+			return true
+		}
+	}
+	return false
+}
+
+// stopLocalMusic ends this Show's own Music Assistant queue, so a play on the room's speaker is the
+// only one the room hears.
+func stopLocalMusic(local string) {
+	if err := hass.Get().Call("media_player", "media_stop", map[string]any{"entity_id": local}); err != nil {
+		slog.Warn("music route: stopping this Show's own queue through Home Assistant failed; asking Sendspin", "err", err)
+		media.Get().Transport(media.TransportStop)
+	}
+}
 
 // MusicPlaybackView is observational state for the native full-screen music surface. Playback keeps
 // working if Home Assistant cannot provide these extras; Sendspin remains the source of track/audio.
@@ -153,7 +195,9 @@ func (f *Feature) PlayMusic(mediaID string) (string, error) {
 	musicRoute.Lock()
 	wasFallback := musicRoute.fallbackActive
 	musicRoute.Unlock()
-	if wasFallback && target != local {
+	// Music the Show plays itself goes too, not only a fallback of Jarvis's: whatever started it, the
+	// room hears one speaker (GENBU-167).
+	if (wasFallback || localCarried()) && target != local {
 		if err := hass.Get().Call("media_player", "media_stop", map[string]any{"entity_id": local}); err != nil {
 			return "", fmt.Errorf("stop local fallback before returning to preferred speaker: %w", err)
 		}
@@ -169,6 +213,7 @@ func (f *Feature) PlayMusic(mediaID string) (string, error) {
 	musicRoute.fallbackActive = fallback
 	musicRoute.primaryWasPlaying = !fallback && target != local
 	musicRoute.activeOutput = target
+	musicRoute.activeAt = time.Now()
 	musicRoute.activeGroup = ""
 	musicRoute.activeMembers = nil
 	musicRoute.Unlock()
@@ -224,25 +269,56 @@ func (f *Feature) musicRouteTick() {
 		return
 	}
 
+	now := time.Now()
+	online := musicPlayerOnline(st)
+	playing := online && musicAssistantState(st) && strings.EqualFold(st.State, "playing")
 	musicRoute.Lock()
+	// A play started on the room's speaker while it was online and quiet, by voice, its app or Music
+	// Assistant, takes the room over from whatever this Show plays of its own. Coming back already
+	// playing is not that: the speaker drops out and returns on its own.
+	started := playing && musicRoute.primaryState != "" && !strings.EqualFold(musicRoute.primaryState, "playing")
+	musicRoute.primaryState = ""
+	if online {
+		musicRoute.primaryState = st.State
+	}
+	if started && musicRoute.activeGroup == "" && local != "" && localCarried() && !musicGroupedWith(st, local) {
+		musicRoute.Unlock()
+		slog.Info("music route: the room's speaker started playing; stopping this Show's own queue", "speaker", primary)
+		stopLocalMusic(local)
+		musicRoute.Lock()
+		musicRoute.fallbackActive = false
+		musicRoute.primaryWasPlaying = true
+		musicRoute.activeOutput, musicRoute.activeAt = primary, now
+		musicRoute.Unlock()
+		f.Changed.Emit(struct{}{})
+		return
+	}
 	if musicRoute.fallbackActive {
 		musicRoute.Unlock()
 		return // sticky until the next explicit Play request
 	}
-	if musicPlayerOnline(st) {
+	if online {
 		if !musicAssistantState(st) {
 			musicRoute.primaryWasPlaying = false
+			musicRoute.forgetPrimary(primary, now)
 			musicRoute.Unlock()
 			return
 		}
-		musicRoute.primaryWasPlaying = strings.EqualFold(st.State, "playing")
-		if musicRoute.primaryWasPlaying {
-			musicRoute.activeOutput = primary
+		musicRoute.primaryWasPlaying = playing
+		if playing {
+			musicRoute.activeOutput, musicRoute.activeAt = primary, now
+		} else if !strings.EqualFold(st.State, "paused") {
+			// Stopped or idle: the screen goes back to what plays here. A pause stays the speaker's,
+			// so play on the screen picks it up again.
+			musicRoute.forgetPrimary(primary, now)
 		}
 		musicRoute.Unlock()
 		return
 	}
 	shouldFailOver := musicRoute.primaryWasPlaying
+	if !shouldFailOver {
+		musicRoute.forgetPrimary(primary, now)
+	}
 	musicRoute.Unlock()
 	if !shouldFailOver || local == "" {
 		return
@@ -367,8 +443,13 @@ func (f *Feature) musicPlaybackTick() {
 	}
 	group, members := f.MusicGroupOutput()
 	_, active, _ := f.MusicOutput()
-	if active == "" && media.Get().Carried() {
-		active, _ = musicAssistantPlayer()
+	// The page draws what Sendspin carries here, so its buttons go to this Show's own player too: the
+	// room's speaker may still be the route from a song it played earlier (GENBU-167). A group's leader
+	// is what a group answers to, so a group keeps it.
+	if group == "" && localCarried() {
+		if local, _ := musicAssistantPlayer(); local != "" {
+			active = local
+		}
 	}
 	if active == "" {
 		musicPlayback.Lock()
@@ -656,8 +737,9 @@ func (f *Feature) stopRoutedMusic() bool {
 		return false
 	}
 	if err := f.MusicTransport(media.TransportStop); err != nil {
-		slog.Warn("music route: stopping active Music Assistant output failed", "err", err)
-		return true
+		// Not stopped, so not routed: the stop goes through this Show as well rather than nowhere.
+		slog.Warn("music route: stopping active Music Assistant output failed", "entity", v.Entity, "err", err)
+		return false
 	}
 	if v.Route != "" {
 		if err := releaseActiveMusicGroup(); err != nil {
