@@ -1,0 +1,10 @@
+{
+  "id": "lineage-18.1-20260904-UNOFFICIAL-checkers",
+  "kind": "lineage",
+  "file": "lineage-18.1-20260904-UNOFFICIAL-checkers.zip",
+  "url": "https://github.com/amazon-oss/releases/releases/download/lineage-18.1-checkers-v0.7/lineage-18.1-20260904-UNOFFICIAL-checkers.zip",
+  "sha256": "785fa643fd68b2e6f6f02d96a2da58373c6a577b92a27cf6cec69603bb94068e",
+  "size": 485795474,
+  "source": "amazon-oss/releases lineage-18.1-checkers-v0.7",
+  "manual": false
+}

@@ -1,0 +1,10 @@
+{
+  "id": "techo5-boot-v0.7.16",
+  "kind": "boot",
+  "file": "techo5-boot-v0.7.16.img",
+  "url": "https://github.com/HuskerMinion/techo5/releases/download/v0.7.16/techo5-boot-v0.7.16.img",
+  "sha256": "7e9ce93a54fc613cbfab5d15929aa06bfd6f63c2c432d6f8261b3599fc3cd791",
+  "size": 13553664,
+  "source": "HuskerMinion/techo5 v0.7.16 (signed manifest)",
+  "manual": false
+}

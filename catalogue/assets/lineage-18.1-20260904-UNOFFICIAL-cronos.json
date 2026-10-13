@@ -1,0 +1,10 @@
+{
+  "id": "lineage-18.1-20260904-UNOFFICIAL-cronos",
+  "kind": "lineage",
+  "file": "lineage-18.1-20260904-UNOFFICIAL-cronos.zip",
+  "url": "https://github.com/amazon-oss/releases/releases/download/lineage-18.1-cronos-v0.4/lineage-18.1-20260904-UNOFFICIAL-cronos.zip",
+  "sha256": "4c355998061a454792128d4b730932b47ed05a3d2a6d2628599218f44cc84678",
+  "size": 484847340,
+  "source": "amazon-oss/releases lineage-18.1-cronos-v0.4",
+  "manual": false
+}

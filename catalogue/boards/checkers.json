@@ -1,0 +1,23 @@
+{
+  "id": "checkers",
+  "model": "Echo Show 5 1st gen / H23K37",
+  "profile_id": "genbu-checkers-v1",
+  "identity": {
+    "fastboot_product": "CHECKERS",
+    "twrp_device": "checkers"
+  },
+  "display": {
+    "width": 960,
+    "height": 480
+  },
+  "policy": {
+    "install": {
+      "unlock": "amonet-kaeru"
+    }
+  },
+  "assets": {
+    "lineage": "lineage-18.1-20260904-UNOFFICIAL-checkers",
+    "boot": "techo5-boot-checkers-v1.0.1",
+    "amonet": "amonet-checkers-v2.0.1"
+  }
+}

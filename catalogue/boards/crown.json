@@ -1,0 +1,23 @@
+{
+  "id": "crown",
+  "model": "Echo Show 8 1st gen / C7H6N3",
+  "profile_id": "genbu-crown-v1",
+  "identity": {
+    "fastboot_product": "CROWN",
+    "twrp_device": "crown"
+  },
+  "display": {
+    "width": 1280,
+    "height": 800
+  },
+  "policy": {
+    "install": {
+      "unlock": "amonet-kaeru"
+    }
+  },
+  "assets": {
+    "lineage": "lineage-18.1-20260904-UNOFFICIAL-crown",
+    "boot": "techo5-boot-crown-v1.0.1",
+    "amonet": "amonet-crown-v2.0.1"
+  }
+}

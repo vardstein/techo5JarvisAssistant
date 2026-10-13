@@ -1,0 +1,23 @@
+{
+  "id": "cronos",
+  "model": "Echo Show 5 2nd gen",
+  "profile_id": "genbu-cronos-v1",
+  "identity": {
+    "fastboot_product": "CRONOS",
+    "twrp_device": "cronos"
+  },
+  "display": {
+    "width": 960,
+    "height": 480
+  },
+  "policy": {
+    "install": {
+      "unlock": "amonet-kaeru"
+    }
+  },
+  "assets": {
+    "lineage": "lineage-18.1-20260904-UNOFFICIAL-cronos",
+    "boot": "techo5-boot-v0.7.16",
+    "amonet": "amonet-cronos-v2.0.1"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "id": "amonet-checkers-v2.0.1",
+  "kind": "amonet",
+  "file": "amonet-checkers-v2.0.1.zip",
+  "url": "https://xdaforums.com/attachments/amonet-checkers-v2-0-1-zip.6373840/",
+  "sha256": "770324a8ed5ab922c0383f8ba072d70fc0190cc2c879f12f67b8d6cfa3ad30ee",
+  "size": 63836775,
+  "source": "XDA thread 4762900 (R0rt1z2), browser download (XDA's CDN refuses scripts)",
+  "manual": true,
+  "kaeru": "amonet/bin/checkers-kaeru.bin",
+  "members": {
+    "amonet/bin/twrp.img": "dcc75bb651894c343039d45af73c4d900594762f6f55187c1ebdaf12d0ae59f5"
+  }
+}

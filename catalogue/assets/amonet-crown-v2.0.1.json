@@ -1,0 +1,20 @@
+{
+  "id": "amonet-crown-v2.0.1",
+  "kind": "amonet",
+  "file": "amonet-crown-v2.0.1.zip",
+  "url": "https://xdaforums.com/attachments/amonet-crown-v2-0-1-zip.6373841/",
+  "sha256": "5db974c321ae2f4586f7c51c95b7bdffb61ef85bde05ce7e62f78196a984c24f",
+  "size": 44233517,
+  "source": "XDA thread 4762900 (R0rt1z2), needs an XDA login",
+  "manual": true,
+  "kaeru": "amonet/bin/crown-kaeru.bin",
+  "members": {
+    "amonet/bin/fastboot": "cb3d13b850143da85eb4b2099462514894459213da93d03d6ff4782d927d6e20",
+    "amonet/bin/fastboot32": "8912e9926cfc45503ad960866501305a684462b1dd1a44c5d82b1f075d6dd8c1",
+    "amonet/bin/fastbrick.img": "6b899c2919933b94a8c3e3454c22fe733d1a346d87c27640554a828aae9c6e9a",
+    "amonet/bin/twrp.img": "b6b1446436de27cf860ebc170d4e3dffe3068ab90396ec915a123589d0d6f7d8",
+    "amonet/device.prop": "4313cbc0c8a75d418ec96890a317b89eae71bc78c7c92ace358000cb7d8d7bd5",
+    "amonet/fastbrick.sh": "aa93be2a752f8f4d4da31fa4bb733e9ce1dcdb9a55feda3795f52b95a9062ec5",
+    "amonet/profile.sh": "844e584acc0bda882ff4c897cf2f55a5c9b8b9d913b9f5b7f897e6780371605a"
+  }
+}

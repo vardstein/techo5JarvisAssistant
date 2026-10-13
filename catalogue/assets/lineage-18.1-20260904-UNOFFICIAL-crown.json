@@ -1,0 +1,10 @@
+{
+  "id": "lineage-18.1-20260904-UNOFFICIAL-crown",
+  "kind": "lineage",
+  "file": "lineage-18.1-20260904-UNOFFICIAL-crown.zip",
+  "url": "https://github.com/amazon-oss/releases/releases/download/lineage-18.1-crown-v0.5/lineage-18.1-20260904-UNOFFICIAL-crown.zip",
+  "sha256": "a01359a5e13dad8ac24c5507e8a747163b992012410b14d2ca9a8711ec4a1491",
+  "size": 489922458,
+  "source": "amazon-oss/releases lineage-18.1-crown-v0.5",
+  "manual": false
+}
