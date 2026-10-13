@@ -207,6 +207,8 @@ def room_temperature(house: House) -> dict:
         "wie (warm|kalt) ist es [gerade|jetzt] hier [drin|drinnen]",
         "wie ist die temperatur [gerade|jetzt] hier [drin|drinnen]",
         "wie viel grad (sind|hat) es [gerade|jetzt] hier [drin|drinnen]",
+        "wie (warm|kalt) ist es [gerade|jetzt]",
+        "wie ist die temperatur [gerade|jetzt]",
     ]
     if house.weather:
         command += ["wie (warm|kalt) ist es [gerade|jetzt] (draußen|draussen)",
@@ -236,6 +238,9 @@ def room_humidity(house: House) -> dict:
         "wie (feucht|trocken) ist es [gerade|jetzt] {place}",
         "wie [hoch] ist die (luftfeuchtigkeit|luftfeuchte|feuchtigkeit) [gerade|jetzt] {place}",
         "wie viel (luftfeuchtigkeit|luftfeuchte|feuchtigkeit) (ist|hat es|haben wir) [gerade|jetzt] {place}")]
+    # No place named means the Show's room, as "hier" does. "das" is what speech to text made of "es".
+    command += ["wie (feucht|trocken) ist (es|das) [gerade|jetzt]",
+                "wie [hoch] ist die (luftfeuchtigkeit|luftfeuchte|feuchtigkeit) [gerade|jetzt]"]
     return {
         "alias": "Genbu - Room humidity",
         "description": "Answers humidity questions locally from the room's own sensor, or the thermostat's "
@@ -251,8 +256,9 @@ def room_humidity(house: House) -> dict:
 # For the model: what each room measures. A room's own sensor comes first, the thermostat's reading of
 # the room next, and the temperature the heating is set to never, because a 4B model asked how warm it
 # is took the setpoint or the thermostat at the radiator over the room sensor (GENBU-139). The values
-# are spoken German already, so the model only has to repeat them.
-ROOM_CLIMATE = r"""{% set temps = __TEMPERATURES__ %}{% set hums = __HUMIDITIES__ %}{% set de = __NAMES__ %}{% set ns = namespace(rooms=[], warm=[]) %}{% for a in areas() %}{% set cl = area_entities(a) | select('match', 'climate\\.') | list %}{% set t = states(temps[a]) | float(none) if a in temps else none %}{% if t is none %}{% set t = cl | map('state_attr', 'current_temperature') | reject('none') | map('float', none) | reject('none') | list | first | default(none) %}{% endif %}{% set h = states(hums[a]) | float(none) if a in hums else none %}{% if h is none %}{% set h = cl | map('state_attr', 'current_humidity') | reject('none') | map('float', none) | reject('none') | list | first | default(none) %}{% endif %}{% set n = de.get(a, area_name(a)) %}{% set r = dict(raum=n) %}{% if t is not none %}{% set v = '%.1f' | format(t) %}{% set r = dict(r, temperatur=(v[:-2] if v.endswith('.0') else v) | replace('.', ',') ~ ' Grad') %}{% set ns.warm = ns.warm + [[t, n]] %}{% endif %}{% if h is not none %}{% set r = dict(r, luftfeuchtigkeit=(h | round(0) | int) ~ ' Prozent') %}{% endif %}{% if t is not none or h is not none %}{% set ns.rooms = ns.rooms + [r] %}{% endif %}{% endfor %}{% set out = dict(raeume=ns.rooms, hinweis='Gemessene Werte. Die eingestellte Zieltemperatur der Heizung ist nicht die Raumtemperatur.') %}{% if ns.warm | count > 1 %}{% set w = ns.warm | sort %}{% set out = dict(out, waermster_raum=w[-1][1], kaeltester_raum=w[0][1]) %}{% endif %}{{ out }}"""
+# are spoken German already, so the model only has to repeat them. The rooms come warmest first, because
+# the same model asked whether 17,2 Grad is colder than 17,5 said no; the order answers that for it.
+ROOM_CLIMATE = r"""{% set temps = __TEMPERATURES__ %}{% set hums = __HUMIDITIES__ %}{% set de = __NAMES__ %}{% set ns = namespace(rooms=[], warm=[]) %}{% for a in areas() %}{% set cl = area_entities(a) | select('match', 'climate\\.') | list %}{% set t = states(temps[a]) | float(none) if a in temps else none %}{% if t is none %}{% set t = cl | map('state_attr', 'current_temperature') | reject('none') | map('float', none) | reject('none') | list | first | default(none) %}{% endif %}{% set h = states(hums[a]) | float(none) if a in hums else none %}{% if h is none %}{% set h = cl | map('state_attr', 'current_humidity') | reject('none') | map('float', none) | reject('none') | list | first | default(none) %}{% endif %}{% set n = de.get(a, area_name(a)) %}{% set r = dict(raum=n) %}{% if t is not none %}{% set v = '%.1f' | format(t) %}{% set r = dict(r, temperatur=(v[:-2] if v.endswith('.0') else v) | replace('.', ',') ~ ' Grad') %}{% set ns.warm = ns.warm + [[t, n]] %}{% endif %}{% if h is not none %}{% set r = dict(r, luftfeuchtigkeit=(h | round(0) | int) ~ ' Prozent') %}{% endif %}{% if t is not none or h is not none %}{% set ns.rooms = ns.rooms + [[-t if t is not none else 999, ns.rooms | count, r]] %}{% endif %}{% endfor %}{% set out = dict(raeume_vom_waermsten_zum_kaeltesten=ns.rooms | sort | map(attribute='2') | list, hinweis='Gemessene Werte. Ein Raum weiter oben in der Liste ist wärmer als einer weiter unten. Die eingestellte Zieltemperatur der Heizung ist nicht die Raumtemperatur.') %}{% if ns.warm | count > 1 %}{% set w = ns.warm | sort %}{% set out = dict(out, waermster_raum=w[-1][1], kaeltester_raum=w[0][1]) %}{% endif %}{{ out }}"""
 
 
 def room_climate(house: House) -> dict:
