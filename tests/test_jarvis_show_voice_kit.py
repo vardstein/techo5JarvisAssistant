@@ -274,7 +274,7 @@ class SetUpTests(unittest.TestCase):
             offline = next(i for i, s in enumerate(steps)
                            if "has_value(target_player)" in json.dumps(s))
             self.assertEqual(steps[offline]["then"][0]["variables"]["result"],
-                             {"success": False, "message": kit.PLAYER_OFFLINE}, script)
+                             {"success": False, "message": kit.PLAYER_OFFLINE, "speaker": "{{ route }}"}, script)
             started = next(i for i, s in enumerate(steps) if s.get("action") == "script.turn_on"
                            or "jarvis_music_start" in json.dumps(s))
             self.assertLess(offline, started, script)

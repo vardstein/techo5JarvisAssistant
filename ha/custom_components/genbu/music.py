@@ -85,3 +85,32 @@ def falls_back_to(chosen: str, area: str, names: list[str], players: list[Player
     now = plays_on(chosen, area, names, players, mac)
     after = line[line.index(now) + 1:] if now in line else []
     return next((e for e in after if e in up), own_player(names, players, mac))
+
+
+def _named(e: str, players: list[Player]) -> dict:
+    p = next((p for p in players if p.entity == e), None)
+    return {"player": e, "name": (p.name if p else "") or e}
+
+
+def route(chosen: str, area: str, names: list[str], players: list[Player], mac: str = "",
+          asked: str = "") -> dict:
+    """Where music asked for on this Show plays right now, as facts the voice assistant words itself
+    (GENBU-161): plays_on and its name, own when that is the Show itself, and skipped, the speakers in
+    line before it that are offline. A speaker somebody named (asked) plays there when it is up; when it
+    is offline nothing plays, asked_off says so, and offer is the Show itself to play on instead.
+    plays_on is empty when nothing is up or there is no player at all."""
+    up = {p.entity for p in players if p.available}
+    own = own_player(names, players, mac)
+    if asked and asked in {p.entity for p in players} and asked not in up:
+        facts = {"plays_on": "", "name": "", "own": False, "skipped": [],
+                 "asked_off": {**_named(asked, players), "why": "offline"}}
+        if own and own != asked and own in up:
+            facts["offer"] = _named(own, players)
+        return facts
+    if asked:
+        return {"plays_on": asked, "name": _named(asked, players)["name"], "own": asked == own, "skipped": []}
+    line = _line(chosen, area, names, players, mac)
+    now = next((e for e in line if e in up), "")
+    before = line[:line.index(now)] if now else line
+    return {"plays_on": now, "name": _named(now, players)["name"] if now else "", "own": bool(now) and now == own,
+            "skipped": [{**_named(e, players), "why": "offline"} for e in before]}

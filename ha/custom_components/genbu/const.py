@@ -13,6 +13,7 @@ STORE_KEY = f"{DOMAIN}.house"
 STORE_VERSION = 1
 SERVICE_FORGET = "forget_show"  # the installer's --remove-show, once the Show is out of ESPHome
 SERVICE_INSTALL = "install_updates"  # "yes" on a Show, or the voice kit: the house installs its update
+SERVICE_MUSIC_ROUTE = "music_route"  # the voice kit: where music asked for on a Show plays (GENBU-161)
 SERVICE_SHOW_KEY = "show_key"  # admins only: a Show gets a new Home Assistant key (GENBU-196)
 NAME = "Genbu Assistant"  # the integration, and its one config entry (GENBU-120)
 OLD_NAME = "Genbu"  # the entry's title before 1.4.0

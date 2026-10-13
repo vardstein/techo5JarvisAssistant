@@ -85,6 +85,20 @@
         }
       }
     },
+    "music_route": {
+      "name": "Wo Musik spielt",
+      "description": "Was das Voice-Kit fragt, bevor es Musik spielt: wo Musik, die an einem Show gewünscht wird, gerade spielt, welche Lautsprecher übersprungen wurden, weil sie aus sind, und ob der Show sie erwähnen soll (beim ersten Mal, danach höchstens einmal pro Stunde).",
+      "fields": {
+        "show": {
+          "name": "Show",
+          "description": "Das Gerät des Shows oder sein Sprachsatellit."
+        },
+        "player": {
+          "name": "Lautsprecher",
+          "description": "Ein Lautsprecher, den jemand genannt hat. Ist er aus, spielt nichts und stattdessen wird der Show selbst angeboten."
+        }
+      }
+    },
     "show_key": {
       "name": "Einem Show einen neuen Schlüssel geben",
       "description": "Nur für Admins. Macht einen neuen Home-Assistant-Schlüssel für den Benutzer des Shows, und vorher einen Benutzer, falls er keinen hat (kein Admin, nur von zu Hause), und gibt den Schlüssel dem Show über seine verschlüsselte ESPHome-Verbindung. Die alten Schlüssel des Benutzers werden gelöscht, sobald der Show den neuen gespeichert hat. Der Installer ruft das auf.",

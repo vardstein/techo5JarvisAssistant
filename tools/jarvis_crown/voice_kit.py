@@ -733,6 +733,20 @@ NO_PLAYER = "Hier gibt es keinen Lautsprecher für Musik. Stell ihn in Home Assi
 # reach the Show's own), so target_player is one that can't play.
 PLAYER_OFFLINE = "Der Lautsprecher hier ist gerade nicht erreichbar."
 
+# The Show talking right now, as in TARGET_PLAYER; '' with none or two at once.
+ASKER = r"""{% set busy = states.assist_satellite | rejectattr('state', 'in', ['idle', 'unavailable', 'unknown']) | map(attribute='entity_id') | list %}{{ busy[0] if busy | count == 1 else '' }}"""
+
+# Whether Genbu has genbu.music_route (1.4.3): an action Home Assistant doesn't know stops a script even
+# with continue_on_error, so it is only called where it is.
+ROUTED = "state_attr('sensor.genbu_house_version', 'music_route') | default(false, true)"
+
+# What the model is told about the speaker facts in each music script's answer (GENBU-161).
+SPEAKER_NOTE = (" In der Antwort steht unter speaker, wo die Musik spielt. Ist speaker.tell wahr, kurz sagen, dass "
+                "der Lautsprecher aus speaker.skipped gerade aus ist und die Musik jetzt woanders spielt (own: hier "
+                "auf der Show, sonst auf speaker.name); sonst den ausgefallenen Lautsprecher nur nennen, wenn danach "
+                "gefragt wird. Steht speaker.asked_off da, spielt nichts: sagen, dass dieser Lautsprecher aus ist, "
+                "und anbieten, stattdessen auf speaker.offer zu spielen.")
+
 PLAYER_FIELD = {"name": "Player", "description": "Music Assistant player; empty for the usual one.",
                 "selector": {"entity": {"filter": [{"integration": "music_assistant", "domain": "media_player"}]}}}
 
@@ -832,12 +846,27 @@ def _start(media_id: str, media_type: str, **more: str) -> dict:
                                    "media_type": media_type, **more}}}
 
 
-def _no_player() -> list[dict]:
-    return [{"if": [{"condition": "template", "value_template": "{{ not target_player }}"}],
+def _where() -> list[dict]:
+    """Where the music goes, asked of Genbu where it can tell (GENBU-161): it knows which speakers in the
+    Show's line are off, which it passed over, and whether to mention that now. route, set to {} in the
+    script's first step so the answer lands there, carries those facts into the result as speaker."""
+    return [{"if": [{"condition": "template",
+                     "value_template": "{{ (" + ROUTED + ") and (asker or player | default('', true)) | length > 0 }}"}],
+             "then": [{"action": "genbu.music_route",
+                       "data": {"show": "{{ asker }}", "player": "{{ player | default('', true) }}"},
+                       "response_variable": "route", "continue_on_error": True}]},
+            {"variables": {"target_player": "{{ route.plays_on if route.plays_on is defined else target_player }}"}},
+            {"if": [{"condition": "template", "value_template": "{{ route.asked_off is defined }}"}],
+             "then": [{"variables": {"result": {
+                          "success": False, "speaker": "{{ route }}",
+                          "message": "{{ route.asked_off.name }} ist gerade nicht erreichbar."}}},
+                      {"stop": "Player offline.", "response_variable": "result"}]},
+            {"if": [{"condition": "template",
+                     "value_template": "{{ not target_player and not route.skipped | default([]) }}"}],
              "then": [{"variables": {"result": {"success": False, "message": NO_PLAYER}}},
                       {"stop": "Kein Player.", "response_variable": "result"}]},
-            {"if": [{"condition": "template", "value_template": "{{ not has_value(target_player) }}"}],
-             "then": [{"variables": {"result": {"success": False, "message": PLAYER_OFFLINE}}},
+            {"if": [{"condition": "template", "value_template": "{{ not target_player or not has_value(target_player) }}"}],
+             "then": [{"variables": {"result": {"success": False, "message": PLAYER_OFFLINE, "speaker": "{{ route }}"}}},
                       {"stop": "Player offline.", "response_variable": "result"}]}]
 
 
@@ -848,7 +877,7 @@ def play_radio(house: House) -> dict:
         "description": 'Spielt einen Radiosender über Music Assistant. Immer verwenden, wenn ein Radiosender '
                        'oder einfach "Radio" gewünscht wird, auch wenn der Name verhört klingt ("Biele Hit '
                        'Radio FFH" heißt Hitradio FFH). Den gehörten Namen unverändert in name weitergeben. '
-                       'Die Antwort nennt den Sender, der jetzt läuft, oder die Sender, die es gibt.',
+                       'Die Antwort nennt den Sender, der jetzt läuft, oder die Sender, die es gibt.' + SPEAKER_NOTE,
         "mode": "restart",
         "fields": {
             "name": {"name": "Sender", "description": "Der Sendername so, wie er gehört wurde. Leer für den "
@@ -856,8 +885,9 @@ def play_radio(house: House) -> dict:
             "player": PLAYER_FIELD,
         },
         "sequence": [
-            {"variables": {"players": house.players, "target_player": TARGET_PLAYER, "heard": RADIO_HEARD}},
-            *_no_player(),
+            {"variables": {"players": house.players, "target_player": TARGET_PLAYER, "heard": RADIO_HEARD,
+                           "asker": ASKER, "route": {}}},
+            *_where(),
             {"action": "music_assistant.get_library", "data": {
                 "config_entry_id": entry, "media_type": "radio", "limit": 500}, "response_variable": "stations"},
             # The closest station: its whole name in what was heard ("biele hit radio ffh" has
@@ -883,7 +913,7 @@ def play_radio(house: House) -> dict:
                                 "{% else %}Ich habe keine Radiosender.{% endif %}"}}},
                  {"stop": "Sender nicht gefunden.", "response_variable": "result"}]},
             _start("{{ best.uri }}", "radio"),
-            {"variables": {"result": {"success": True, "station": "{{ best.name }}",
+            {"variables": {"result": {"success": True, "station": "{{ best.name }}", "speaker": "{{ route }}",
                                       "message": "Spiele {{ best.name }}."}}},
             {"stop": "Sender läuft.", "response_variable": "result"},
         ],
@@ -960,7 +990,7 @@ def play_mood(house: House) -> dict:
                        'Playlist, zum Beispiel "was Flottes", "was Ruhiges", "laute Musik", "90er", "meine '
                        'Lieblingslieder" oder "von Helene Fischer". Den Wunsch wörtlich in query weitergeben. '
                        'Für Radiosender stattdessen Radiosender abspielen verwenden. Die Antwort sagt, was jetzt '
-                       'läuft.',
+                       'läuft.' + SPEAKER_NOTE,
         "mode": "restart",
         "fields": {
             "query": {"name": "Wunsch", "description": 'Was gewünscht wurde, wörtlich, z. B. "was flottes" oder '
@@ -968,8 +998,9 @@ def play_mood(house: House) -> dict:
             "player": PLAYER_FIELD,
         },
         "sequence": [
-            {"variables": {"players": house.players, "target_player": TARGET_PLAYER, "plan": MOOD_PLAN}},
-            *_no_player(),
+            {"variables": {"players": house.players, "target_player": TARGET_PLAYER, "plan": MOOD_PLAN,
+                           "asker": ASKER, "route": {}}},
+            *_where(),
             # Three lookups whatever the plan, so the answers are there below; each takes about 10 ms.
             search(1, "{{ plan.terms[0] | default('-') }}"),
             search(2, "{{ plan.terms[1] | default(plan.terms[0] | default('-')) }}"),
@@ -984,7 +1015,7 @@ def play_mood(house: House) -> dict:
                       {"stop": "Keine Musik.", "response_variable": "result"}]},
             _start("{{ pick.uri }}", "{{ pick.media_type }}", radio="{{ pick.radio }}", shuffled="{{ pick.shuffle }}"),
             {"variables": {"result": {"success": True, "title": "{{ pick.title }}", "artist": "{{ pick.artist }}",
-                                      "message": MOOD_MESSAGE}}},
+                                      "speaker": "{{ route }}", "message": MOOD_MESSAGE}}},
             {"stop": "Musik läuft.", "response_variable": "result"},
         ],
     }
@@ -1036,12 +1067,12 @@ def play_random(house: House) -> dict:
         "alias": "Play Random Music",
         "description": "Startet sofort zufällige Musik auf dem Lautsprecher im Raum. Dieses Werkzeug ist für "
                        "unspezifische Wünsche wie 'Spiele Musik', 'Mach Musik an' oder 'Spiel irgendwas'. Nicht "
-                       "nach Künstler oder Genre fragen. Die Antwort sagt, welches Lied läuft.",
+                       "nach Künstler oder Genre fragen. Die Antwort sagt, welches Lied läuft." + SPEAKER_NOTE,
         "mode": "restart",
         "fields": {"player": PLAYER_FIELD},
         "sequence": [
-            {"variables": {"players": house.players, "target_player": TARGET_PLAYER}},
-            *_no_player(),
+            {"variables": {"players": house.players, "target_player": TARGET_PLAYER, "asker": ASKER, "route": {}}},
+            *_where(),
             {"action": "music_assistant.get_library", "data": {
                 "config_entry_id": house.music_entry, "limit": RANDOM_SEEDS, "media_type": "track",
                 "order_by": "random"},
@@ -1062,7 +1093,8 @@ def play_random(house: House) -> dict:
                 "result": {"message": "Spiele {{ title }}{{ ' von ' ~ artist if artist }}"
                                       "{{ ', dazu ähnliche Lieder und etwas ' ~ genre.name if genre.name is defined "
                                       "else ' und ähnliche Lieder' }}.",
-                           "title": "{{ title }}", "artist": "{{ artist }}", "success": True}}},
+                           "title": "{{ title }}", "artist": "{{ artist }}", "success": True,
+                           "speaker": "{{ route }}"}}},
             {"response_variable": "result", "stop": "Wiedergabe gestartet."},
         ],
     }
@@ -1106,6 +1138,23 @@ def _stop_actions(house: House, words: dict, phrases: dict, paused: str, nothing
     ]
 
 
+# Asked at a Show whose speaker is off and the music plays elsewhere (GENBU-161): said before the answer
+# the first time, then at most once an hour, as genbu.music_route decides (route.tell).
+SKIPPED = r"""{% set n = route.skipped | default([]) | map(attribute='name') | list %}{% if route.tell | default(false) and n and route.plays_on | default('') and r is defined and r is mapping and r.success | default(false) %}"""
+SKIP_NOTE = SKIPPED + r"""{{ n | join(' und ') }} {{ 'ist' if n | count == 1 else 'sind' }} gerade aus, deshalb spiele ich {{ 'hier' if route.own else 'auf ' ~ route.name }}. {% endif %}"""
+SKIP_NOTE_EN = SKIPPED + r"""{{ n | join(' and ') }} {{ 'is' if n | count == 1 else 'are' }} off right now, so I'm playing {{ 'here' if route.own else 'on ' ~ route.name }}. {% endif %}"""
+
+
+def _routed(script: str, data: dict) -> list[dict]:
+    """Asks Genbu where the music goes from the Show that heard it, then has the script play there."""
+    return [{"if": "{{ trigger.device_id | default('', true) and (" + ROUTED + ") }}",
+             "then": [{"action": "genbu.music_route", "data": {"show": "{{ trigger.device_id }}"},
+                       "response_variable": "route", "continue_on_error": True}]},
+            {"action": script, "data": {**data, "player": "{{ route.plays_on if route.plays_on | default('', true) "
+                                                          "else room_player }}"},
+             "response_variable": "r", "continue_on_error": True}]
+
+
 # Asked at a device, only its own player; typed, the house's usual one.
 LOCAL_TARGET = ("{% set ok = players | select('has_value') | list %}"
                 "{{ room_player if trigger.device_id else room_player or (ok + players) | first | default('') }}")
@@ -1113,10 +1162,9 @@ LOCAL_TARGET = ("{% set ok = players | select('has_value') | list %}"
 
 def local_music(house: House) -> dict:
     def answered(script: str, data: dict, fallback: str) -> list[dict]:
-        return [{"action": script, "data": {**data, "player": "{{ room_player }}"}, "response_variable": "r",
-                 "continue_on_error": True},
-                {"set_conversation_response": "{{ r.message if r is defined and r is mapping and r.message is "
-                                              "defined else '" + fallback + "' }}"}]
+        return [*_routed(script, data),
+                {"set_conversation_response": SKIP_NOTE + "{{ r.message if r is defined and r is mapping and "
+                                              "r.message is defined else '" + fallback + "' }}"}]
 
     def step(action: str) -> dict:
         return {"action": action, "target": {"entity_id": "{{ target_player }}"}, "continue_on_error": True}
@@ -1156,7 +1204,7 @@ def local_music(house: House) -> dict:
         "actions": [
             {"variables": {"said": "{{ trigger.sentence | lower }}", "kind": LOCAL_MUSIC_KIND,
                            "room_player": ROOM_PLAYER, "players": house.players,
-                           "target_player": LOCAL_TARGET}},
+                           "target_player": LOCAL_TARGET, "route": {}}},
             {"choose": [
                 {"conditions": "{{ kind == 'toggle' }}", "sequence": [
                     {"variables": {"playing": ROOM_PLAYING}},
@@ -1217,7 +1265,7 @@ LOCAL_MUSIC_KIND_EN = r"""{% if trigger.id == 'toggle' %}toggle{% elif 'station'
 # "play the station rock antenne please" is "rock antenne".
 STATION_EN = r"""{{ said | regex_replace('^(please )?(play|turn on|turn|put on|listen to)( the)?( station)?\\s*', '') | regex_replace('\\s*(on|please)$', '') }}"""
 
-MUSIC_ANSWER_EN = (r"""{% if r is not defined or r is not mapping %}__FALLBACK__{% elif r.message is defined and r.message == '""" + NO_PLAYER + r"""' %}There's no music speaker here. Pick one in Home Assistant under the Show's Music plays on.{% elif r.message is defined and r.message == '""" + PLAYER_OFFLINE + r"""' %}The speaker here can't be reached right now.{% elif kind == 'radio' %}{% if r.success | default(false) %}Playing {{ r.station }}.{% elif r.stations is defined and r.stations %}I don't know that station. I have {{ r.stations | join(', ') }}.{% elif r.stations is defined %}I don't have any radio stations.{% else %}__FALLBACK__{% endif %}{% elif not r.success | default(false) %}I can't find any music in the library right now.{% elif r.title and (r.artist or kind != 'mood') %}Playing {{ r.title }}{{ ' by ' ~ r.artist if r.artist }} and similar songs.{% elif r.title %}Playing the playlist {{ r.title }}.{% elif r.artist %}Playing music by {{ r.artist }}.{% else %}__FALLBACK__{% endif %}""")
+MUSIC_ANSWER_EN = (r"""{% if r is not defined or r is not mapping %}__FALLBACK__{% elif r.speaker is defined and r.speaker is mapping and r.speaker.asked_off is defined %}{{ r.speaker.asked_off.name }} can't be reached right now.{% elif r.message is defined and r.message == '""" + NO_PLAYER + r"""' %}There's no music speaker here. Pick one in Home Assistant under the Show's Music plays on.{% elif r.message is defined and r.message == '""" + PLAYER_OFFLINE + r"""' %}The speaker here can't be reached right now.{% elif kind == 'radio' %}{% if r.success | default(false) %}Playing {{ r.station }}.{% elif r.stations is defined and r.stations %}I don't know that station. I have {{ r.stations | join(', ') }}.{% elif r.stations is defined %}I don't have any radio stations.{% else %}__FALLBACK__{% endif %}{% elif not r.success | default(false) %}I can't find any music in the library right now.{% elif r.title and (r.artist or kind != 'mood') %}Playing {{ r.title }}{{ ' by ' ~ r.artist if r.artist }} and similar songs.{% elif r.title %}Playing the playlist {{ r.title }}.{% elif r.artist %}Playing music by {{ r.artist }}.{% else %}__FALLBACK__{% endif %}""")
 
 NOW_PLAYING_EN = (r"""{% set t = state_attr(playing[0], 'media_title') or '' %}{% set ar = state_attr(playing[0], 'media_artist') or '' %}{% set t = (t | """
                   + SPOKEN + r""") or t %}{% if t %}Now playing {{ t }}{{ ' by ' ~ ar if ar }}.{% else %}Music is already playing here.{% endif %}""")
@@ -1225,9 +1273,8 @@ NOW_PLAYING_EN = (r"""{% set t = state_attr(playing[0], 'media_title') or '' %}{
 
 def local_music_en(house: House) -> dict:
     def answered(script: str, data: dict, fallback: str) -> list[dict]:
-        return [{"action": script, "data": {**data, "player": "{{ room_player }}"}, "response_variable": "r",
-                 "continue_on_error": True},
-                {"set_conversation_response": MUSIC_ANSWER_EN.replace("__FALLBACK__", fallback)}]
+        return [*_routed(script, data),
+                {"set_conversation_response": SKIP_NOTE_EN + MUSIC_ANSWER_EN.replace("__FALLBACK__", fallback)}]
     return {
         "alias": "Genbu - Local Music (English)",
         "description": 'Music without the language model: random, by mood ("play something upbeat", "play '
@@ -1262,7 +1309,7 @@ def local_music_en(house: House) -> dict:
                                    "| regex_replace(' +', ' ') | trim }}",
                            "query": MOOD_EN, "kind": LOCAL_MUSIC_KIND_EN,
                            "room_player": ROOM_PLAYER, "players": house.players,
-                           "target_player": LOCAL_TARGET}},
+                           "target_player": LOCAL_TARGET, "route": {}}},
             {"choose": [
                 {"conditions": "{{ kind == 'toggle' }}", "sequence": [
                     {"variables": {"playing": ROOM_PLAYING}},
