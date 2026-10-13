@@ -729,6 +729,10 @@ ROOM_PLAYER = r"""{% set asker = trigger.device_id | default('', true) %}""" + S
 
 NO_PLAYER = "Hier gibt es keinen Lautsprecher für Musik. Stell ihn in Home Assistant bei der Show unter Musik spielt auf ein."
 
+# Every player in the Show's line is offline (the room's speaker unplugged, and Music Assistant can't
+# reach the Show's own), so target_player is one that can't play.
+PLAYER_OFFLINE = "Der Lautsprecher hier ist gerade nicht erreichbar."
+
 PLAYER_FIELD = {"name": "Player", "description": "Music Assistant player; empty for the usual one.",
                 "selector": {"entity": {"filter": [{"integration": "music_assistant", "domain": "media_player"}]}}}
 
@@ -779,7 +783,9 @@ def music_start() -> dict:
             "media_type": {"description": "track, artist, playlist, album oder radio."},
             "radio": {"description": "Ähnliche Lieder anhängen."},
             "mix": {"description": "Weitere URIs, deren ähnliche Lieder mit hineingemischt werden (mit radio)."},
-            "shuffle": {"description": "Zufällige Reihenfolge."},
+            # Not "shuffle": Home Assistant has a template function by that name, which an unset field
+            # would read as.
+            "shuffled": {"description": "Zufällige Reihenfolge."},
             "enqueue": {"description": "replace (Standard) oder play."},
         },
         "sequence": [
@@ -795,7 +801,7 @@ def music_start() -> dict:
                       {"delay": {"milliseconds": 800}},
                       {"wait_template": "{{ not (" + SATELLITES_BUSY_EXPR + ") }}",
                        "timeout": 30, "continue_on_timeout": True}]},
-            {"if": [{"condition": "template", "value_template": "{{ shuffle | default(false) | bool }}"}],
+            {"if": [{"condition": "template", "value_template": "{{ shuffled | default(false) | bool }}"}],
              "then": [{"action": "media_player.shuffle_set", "target": {"entity_id": "{{ player }}"},
                        "data": {"shuffle": True}, "continue_on_error": True}]},
             # Played plainly first, so it starts at once. With radio mode Music Assistant builds the
@@ -829,7 +835,10 @@ def _start(media_id: str, media_type: str, **more: str) -> dict:
 def _no_player() -> list[dict]:
     return [{"if": [{"condition": "template", "value_template": "{{ not target_player }}"}],
              "then": [{"variables": {"result": {"success": False, "message": NO_PLAYER}}},
-                      {"stop": "Kein Player.", "response_variable": "result"}]}]
+                      {"stop": "Kein Player.", "response_variable": "result"}]},
+            {"if": [{"condition": "template", "value_template": "{{ not has_value(target_player) }}"}],
+             "then": [{"variables": {"result": {"success": False, "message": PLAYER_OFFLINE}}},
+                      {"stop": "Player offline.", "response_variable": "result"}]}]
 
 
 def play_radio(house: House) -> dict:
@@ -973,7 +982,7 @@ def play_mood(house: House) -> dict:
              "then": [{"variables": {"result": {"success": False,
                                                 "message": "Ich finde gerade keine Musik in der Bibliothek."}}},
                       {"stop": "Keine Musik.", "response_variable": "result"}]},
-            _start("{{ pick.uri }}", "{{ pick.media_type }}", radio="{{ pick.radio }}", shuffle="{{ pick.shuffle }}"),
+            _start("{{ pick.uri }}", "{{ pick.media_type }}", radio="{{ pick.radio }}", shuffled="{{ pick.shuffle }}"),
             {"variables": {"result": {"success": True, "title": "{{ pick.title }}", "artist": "{{ pick.artist }}",
                                       "message": MOOD_MESSAGE}}},
             {"stop": "Musik läuft.", "response_variable": "result"},
@@ -1208,7 +1217,7 @@ LOCAL_MUSIC_KIND_EN = r"""{% if trigger.id == 'toggle' %}toggle{% elif 'station'
 # "play the station rock antenne please" is "rock antenne".
 STATION_EN = r"""{{ said | regex_replace('^(please )?(play|turn on|turn|put on|listen to)( the)?( station)?\\s*', '') | regex_replace('\\s*(on|please)$', '') }}"""
 
-MUSIC_ANSWER_EN = (r"""{% if r is not defined or r is not mapping %}__FALLBACK__{% elif r.message is defined and r.message == '""" + NO_PLAYER + r"""' %}There's no music speaker here. Pick one in Home Assistant under the Show's Music plays on.{% elif kind == 'radio' %}{% if r.success | default(false) %}Playing {{ r.station }}.{% elif r.stations is defined and r.stations %}I don't know that station. I have {{ r.stations | join(', ') }}.{% elif r.stations is defined %}I don't have any radio stations.{% else %}__FALLBACK__{% endif %}{% elif not r.success | default(false) %}I can't find any music in the library right now.{% elif r.title and (r.artist or kind != 'mood') %}Playing {{ r.title }}{{ ' by ' ~ r.artist if r.artist }} and similar songs.{% elif r.title %}Playing the playlist {{ r.title }}.{% elif r.artist %}Playing music by {{ r.artist }}.{% else %}__FALLBACK__{% endif %}""")
+MUSIC_ANSWER_EN = (r"""{% if r is not defined or r is not mapping %}__FALLBACK__{% elif r.message is defined and r.message == '""" + NO_PLAYER + r"""' %}There's no music speaker here. Pick one in Home Assistant under the Show's Music plays on.{% elif r.message is defined and r.message == '""" + PLAYER_OFFLINE + r"""' %}The speaker here can't be reached right now.{% elif kind == 'radio' %}{% if r.success | default(false) %}Playing {{ r.station }}.{% elif r.stations is defined and r.stations %}I don't know that station. I have {{ r.stations | join(', ') }}.{% elif r.stations is defined %}I don't have any radio stations.{% else %}__FALLBACK__{% endif %}{% elif not r.success | default(false) %}I can't find any music in the library right now.{% elif r.title and (r.artist or kind != 'mood') %}Playing {{ r.title }}{{ ' by ' ~ r.artist if r.artist }} and similar songs.{% elif r.title %}Playing the playlist {{ r.title }}.{% elif r.artist %}Playing music by {{ r.artist }}.{% else %}__FALLBACK__{% endif %}""")
 
 NOW_PLAYING_EN = (r"""{% set t = state_attr(playing[0], 'media_title') or '' %}{% set ar = state_attr(playing[0], 'media_artist') or '' %}{% set t = (t | """
                   + SPOKEN + r""") or t %}{% if t %}Now playing {{ t }}{{ ' by ' ~ ar if ar }}.{% else %}Music is already playing here.{% endif %}""")

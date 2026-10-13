@@ -35,9 +35,6 @@ type Client struct {
 	mu   sync.Mutex
 	acc  access
 	http *http.Client
-	// wsTemplates is the token Home Assistant refused a REST template for: only admins may use
-	// /api/template, so a Show that is its own, ordinary user renders over the websocket instead.
-	wsTemplates string
 }
 
 // statusError is an answer Home Assistant gave with an HTTP error status.
@@ -48,12 +45,6 @@ type statusError struct {
 
 func (e *statusError) Error() string {
 	return fmt.Sprintf("hass: %s %s: %s", e.method, e.path, e.status)
-}
-
-// refused is a 401 or 403: the token is wrong, or its user may not do this.
-func refused(err error) bool {
-	var se *statusError
-	return errors.As(err, &se) && (se.code == http.StatusUnauthorized || se.code == http.StatusForbidden)
 }
 
 var (
@@ -438,21 +429,11 @@ func (c *Client) MusicAssistantFor(own, name string) (string, error) {
 	return named, nil
 }
 
-// Render has Home Assistant render a template and returns the text. Home Assistant renders one
-// over REST for an admin only; for anyone else it is the websocket, which takes a connection.
+// Render has Home Assistant render a template and returns the text. Always over the websocket: REST's
+// /api/template is for admins only, and a Show is its own, ordinary user. Trying REST first cost a 401
+// on every start, which Home Assistant counts as a failed login: a "Login attempt failed" notification
+// each time a Show booted, and with IP banning on, a Show locked out after a few restarts.
 func (c *Client) Render(template string) (string, error) {
-	c.mu.Lock()
-	ws := c.wsTemplates != "" && c.wsTemplates == c.acc.Token
-	c.mu.Unlock()
-	if !ws {
-		out, err := c.do("POST", "/api/template", map[string]any{"template": template})
-		if err == nil {
-			return strings.TrimSpace(string(out)), nil
-		}
-		if !refused(err) {
-			return "", err
-		}
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	s, err := c.wsOpen(ctx)
@@ -463,11 +444,6 @@ func (c *Client) Render(template string) (string, error) {
 	out, err := s.render(template)
 	if err != nil {
 		return "", err
-	}
-	if !ws {
-		c.mu.Lock()
-		c.wsTemplates = c.acc.Token
-		c.mu.Unlock()
 	}
 	return strings.TrimSpace(out), nil
 }

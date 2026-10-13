@@ -58,38 +58,27 @@ func fakeTemplates(t *testing.T, admin bool, rest, ws *atomic.Int32) *httptest.S
 	}))
 }
 
-func TestRenderAsAnOrdinaryUserGoesOverTheWebsocket(t *testing.T) {
-	var rest, ws atomic.Int32
-	srv := fakeTemplates(t, false, &rest, &ws)
-	defer srv.Close()
-	c := &Client{acc: access{URL: srv.URL, Token: "secret"}, http: srv.Client()}
-	for i := 0; i < 2; i++ {
-		got, err := c.Render("{{ area_name('media_player.x') }}")
-		if err != nil || got != "Küche" {
-			t.Fatalf("Render = %q, %v", got, err)
+// Never over REST, for an admin either: a Show's 401 there was a failed login in Home Assistant's eyes,
+// with a "Login attempt failed" notification on every boot (seen 2026-10-13).
+func TestRenderGoesOverTheWebsocketOnly(t *testing.T) {
+	for _, admin := range []bool{false, true} {
+		var rest, ws atomic.Int32
+		srv := fakeTemplates(t, admin, &rest, &ws)
+		c := &Client{acc: access{URL: srv.URL, Token: "secret"}, http: srv.Client()}
+		for i := 0; i < 2; i++ {
+			got, err := c.Render("{{ area_name('media_player.x') }}")
+			if err != nil || got != "Küche" {
+				t.Fatalf("admin=%v: Render = %q, %v", admin, got, err)
+			}
 		}
-	}
-	if rest.Load() != 1 || ws.Load() != 2 {
-		t.Fatalf("REST asked %d times, websocket %d; want 1 and 2", rest.Load(), ws.Load())
-	}
-	// A new token is asked over REST again: it may be an admin's.
-	c.acc.Token = "secret2"
-	if _, err := c.Render("x"); err == nil {
-		t.Fatal("a token Home Assistant refuses everywhere rendered")
-	}
-	if rest.Load() != 2 {
-		t.Fatalf("REST asked %d times after the token changed, want 2", rest.Load())
-	}
-}
-
-func TestRenderAsAnAdminStaysOnREST(t *testing.T) {
-	var rest, ws atomic.Int32
-	srv := fakeTemplates(t, true, &rest, &ws)
-	defer srv.Close()
-	c := &Client{acc: access{URL: srv.URL, Token: "secret"}, http: srv.Client()}
-	got, err := c.Render("x")
-	if err != nil || got != "Küche" || ws.Load() != 0 {
-		t.Fatalf("Render = %q, %v, websocket used %d times", got, err, ws.Load())
+		if rest.Load() != 0 || ws.Load() != 2 {
+			t.Fatalf("admin=%v: REST asked %d times, websocket %d; want 0 and 2", admin, rest.Load(), ws.Load())
+		}
+		c.acc.Token = "wrong"
+		if _, err := c.Render("x"); err == nil {
+			t.Fatalf("admin=%v: a token Home Assistant refuses rendered", admin)
+		}
+		srv.Close()
 	}
 }
 
