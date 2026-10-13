@@ -8,7 +8,9 @@
 // with "Untertitel im Auftrag des ZDF". Heard after a wake word, it goes on to the assistant as usual.
 //
 // A turn opened for the question can also end with no words at all: Whisper takes a short, quiet "joa"
-// for silence, or nobody answers before listening runs out. Then the question is asked once more.
+// for silence, or nobody answers before listening runs out. Then the question is asked once more, and
+// the same goes for words in that turn that answer nothing: a television gets one more asking, and a
+// "yes" said some way this does not know gets a second chance.
 package question
 
 import (
@@ -53,10 +55,19 @@ func Ask(what string, d time.Duration, yes, no, again func()) {
 func Missed() bool {
 	mu.Lock()
 	q := cur
-	if q == nil || q.again == nil || q.missed || now().After(q.until) {
+	mu.Unlock()
+	return askAgain(q)
+}
+
+// askAgain keeps q open and asks it once more, if it can still be asked again and is still the one open
+// (or was just taken from being it).
+func askAgain(q *open) bool {
+	mu.Lock()
+	if q == nil || q.again == nil || q.missed || now().After(q.until) || (cur != nil && cur != q) {
 		mu.Unlock()
 		return false
 	}
+	cur = q
 	q.missed = true
 	q.until = now().Add(againAfter + q.d)
 	mu.Unlock()
@@ -87,7 +98,9 @@ func Withdraw(what string) {
 func Answer(text string) bool { return Take(text, false) }
 
 // Take is Answer for a turn that may have been opened for the question rather than by a wake word. In
-// that one a transcript that does not answer it is dropped as well, and Take reports it as taken.
+// that one a transcript that does not answer it is dropped as well, and Take reports it as taken; the
+// question is then asked once more, as after a silence, since it may have been an answer this did not
+// know.
 func Take(text string, forIt bool) bool {
 	if strings.TrimSpace(text) == "" {
 		return false
@@ -109,6 +122,7 @@ func Take(text string, forIt bool) bool {
 	default:
 		if forIt {
 			slog.Info("not an answer to the question, dropped", "question", q.what, "text", text)
+			askAgain(q)
 			return true
 		}
 		slog.Info("question left unanswered", "question", q.what, "text", text)
