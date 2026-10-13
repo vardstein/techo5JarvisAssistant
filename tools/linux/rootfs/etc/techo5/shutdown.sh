@@ -10,6 +10,9 @@ if [ -n "$pid" ]; then
 fi
 killall dropbear ntpd udhcpc wpa_supplicant fbprobe 2>/dev/null
 cp /run/boot.log /data/techo5-linux/boot.log 2>/dev/null
+# The time, for the next boot (see t5_clock_restore).
+. /lib/techo5-lib.sh
+t5_clock_save
 sync
 umount -a -r 2>/dev/null
 sync

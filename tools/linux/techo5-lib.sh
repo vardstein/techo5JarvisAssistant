@@ -355,6 +355,11 @@ t5_wifi_up() {
 	done
 	if ! wpa_cli -p /run/wpa -i wlan0 status 2>/dev/null | grep -q '^wpa_state=COMPLETED'; then
 		log "wifi: not associated ($(wpa_cli -p /run/wpa -i wlan0 status 2>/dev/null | grep wpa_state))"
+		# The lease client is left asking anyway, in the background so the boot is not held: the
+		# supplicant goes on trying, and a network it finds later, or one joined from the screen
+		# (lib/wifi only pokes a running udhcpc), has to get an address when it does, not at the
+		# keeper's next restart. -A 5 asks again five seconds after a round goes unanswered.
+		pidof udhcpc >/dev/null || udhcpc -i wlan0 -b -R -O ntpsrv -A 5 -p /run/udhcpc.pid -s "${UDHCPC_SCRIPT:-/usr/share/udhcpc/default.script}" > /tmp/udhcpc.log 2>&1 &
 		return 1
 	fi
 	if ! pidof udhcpc >/dev/null; then
@@ -459,13 +464,61 @@ t5_ntp_peers() {
 }
 
 # t5_ntp: set the clock once from NTP (the RTC is not trusted), then write it
-# to the RTC so the next boot starts closer. Bounded: an unreachable server
-# must not hold the boot.
+# to the RTC and to userdata so the next boot starts closer. Bounded: an
+# unreachable server must not hold the boot.
 t5_ntp() {
 	# shellcheck disable=SC2046 # the peers are separate words on purpose
 	timeout -s KILL ${NTP_WAIT:-40} ntpd -n -q $(t5_ntp_peers) > /tmp/ntpd.log 2>&1 || { log "clock: ntp failed"; return 1; }
 	hwclock -w 2>/dev/null
+	t5_clock_save
 	log "clock: $(date)"
+}
+
+# t5_clock_start: set the clock now and keep it set: one bounded NTP query, then ntpd
+# running. Once at a time: the boot script, the network keeper and udhcpc.sh (as soon as a
+# lease is bound) all call it, and whichever comes first does it.
+T5_NTP_LOCK=${T5_NTP_LOCK:-/run/techo5/ntp-start}
+t5_clock_start() {
+	pidof ntpd >/dev/null && return 0
+	mkdir -p "${T5_NTP_LOCK%/*}"
+	t5_up=$(cut -d. -f1 /proc/uptime)
+	if ! mkdir "$T5_NTP_LOCK" 2>/dev/null; then
+		# Another caller is at it. One that was killed on the way leaves the mark behind, so it
+		# only counts for as long as the NTP query can take (uptime: the clock itself jumps).
+		t5_at=$(cat "$T5_NTP_LOCK/at" 2>/dev/null)
+		case "$t5_at" in '' | *[!0-9]*) return 0 ;; esac
+		[ $((t5_up - t5_at)) -le $((${NTP_WAIT:-40} + 20)) ] && return 0
+	fi
+	echo "$t5_up" > "$T5_NTP_LOCK/at"
+	t5_ntp
+	# shellcheck disable=SC2046
+	pidof ntpd >/dev/null || ntpd $(t5_ntp_peers) > /dev/null 2>&1
+	rm -rf "$T5_NTP_LOCK"
+}
+
+# The Echo has no battery for its RTC: after a power cut it starts in 2010, and until NTP
+# answers every certificate looks not yet valid. The last time it knew is kept on userdata
+# (as fake-hwclock does) and put back early in the boot. It only ever moves the clock
+# forward: an older saved time, or one an RTC that did keep running is already past, is left
+# alone, and a forward clock is what NTP corrects next anyway.
+T5_CLOCK=${T5_CLOCK:-/data/misc/techo5/clock}
+
+# t5_clock_save: write the time now, if it is later than the one saved.
+t5_clock_save() {
+	[ -d "${T5_CLOCK%/*}" ] || return 0
+	t5_now=$(date +%s)
+	t5_saved=$(cat "$T5_CLOCK" 2>/dev/null)
+	case "$t5_saved" in '' | *[!0-9]*) t5_saved=0 ;; esac
+	[ "$t5_now" -gt "$t5_saved" ] || return 0
+	echo "$t5_now" > "$T5_CLOCK.tmp" && mv -f "$T5_CLOCK.tmp" "$T5_CLOCK"
+}
+
+# t5_clock_restore: set the clock to the saved time, when that is later than the clock.
+t5_clock_restore() {
+	t5_saved=$(cat "$T5_CLOCK" 2>/dev/null)
+	case "$t5_saved" in '' | *[!0-9]*) return 0 ;; esac
+	[ "$t5_saved" -gt "$(date +%s)" ] || return 0
+	date -s "@$t5_saved" > /dev/null 2>&1 && log "clock: $(date), the last time saved"
 }
 
 # t5_dropbear <keydir> [extra args]: SSH on port 22 with host keys kept in
