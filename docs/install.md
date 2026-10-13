@@ -323,7 +323,8 @@ Assistant, so set that if the list looks like somebody else's country.
 **2. Music Assistant (needs the Home Assistant token and the Music Assistant integration).** When Home
 Assistant has Music Assistant, Radio gets a "Music Assistant" list: the radio stations in its library,
 starred ones first. That is whatever you added there: TuneIn's presets once TuneIn is added as a
-provider, Radio Browser stations, or a stream added by hand. Nothing on the device has to know the
+provider (the installer adds it when you give it your TuneIn username), Radio Browser stations, or a
+stream added by hand. Nothing on the device has to know the
 Music Assistant server for this; the list comes through Home Assistant, and a station plays through
 Music Assistant on the room's player, the way a song does, so it follows the room's output and groups.
 A station playing that way is marked "Playing now" in the list.

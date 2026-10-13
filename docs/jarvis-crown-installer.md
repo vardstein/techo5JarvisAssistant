@@ -408,9 +408,9 @@ the user of its own.
 
 The Music Assistant admin, signed in or by token, is optional and asked for whenever there is a Music
 Assistant server. It is used for this run only: to make the Show a plain Music Assistant user of its
-own for the lyrics on the now-playing page ([Lyrics](lyrics.md)), and with
-`--music-assistant-local-metadata` (below) to switch the online lookups off. The Show keeps only the
-token of its own user.
+own for the lyrics on the now-playing page ([Lyrics](lyrics.md)), with
+`--music-assistant-local-metadata` (below) to switch the online lookups off, and to add TuneIn for the
+radio when you give your TuneIn username (below). The Show keeps only the token of its own user.
 
 The addresses have switches too (`--ha-url`, `--dashcast`, `--music-assistant`), and
 `--no-questions` (or `TECHO5_NO_PROMPT=1`, or no terminal) asks nothing at all. Such a run also
@@ -589,6 +589,20 @@ What happens with the answers:
   failure here is a warning and does not stop the install; it runs again with
   `home-assistant --name NAME --music-assistant-local-metadata`. Both are ordinary Music Assistant
   settings, switched back on in its own settings pages.
+- **TuneIn in Music Assistant, when you give a username.** With a Music Assistant admin and no TuneIn
+  there yet, the installer asks for your TuneIn username (`--music-assistant-tunein USERNAME` answers
+  ahead of time, `''` skips it; Enter skips too). It adds Music Assistant's TuneIn provider with it,
+  through the same setup Music Assistant's own settings page runs (Settings, Music providers, add
+  TuneIn). Music Assistant then lists the stations that TuneIn account follows, and the Show's Radio
+  page has them in its Music Assistant list; TuneIn also stands in for local stations when Radio
+  Browser is down. It's the username, not the email address you sign in with. A Music Assistant that
+  has TuneIn already is not asked and keeps it as it is, so running this again adds no second one.
+  Music Assistant keeps the username in its settings and sends it to TuneIn (opml.radiotime.com)
+  each time it fetches the list. Music Assistant 2.10 makes those calls without checking TuneIn's
+  certificate, so someone between your house and TuneIn could read the username and change the
+  station list; leave TuneIn out if that matters to you. A failure here is a warning; it runs again with
+  `home-assistant --name NAME --music-assistant-tunein USERNAME`, and Music Assistant's settings
+  remove TuneIn again.
 
 Without Wi-Fi at install (it is picked on the Show's screen instead) or without an admin, the
 tool says how to finish later. The same steps run on their own for a Show that is already installed:
@@ -738,7 +752,8 @@ uses the Home Assistant, DashCast, Music Assistant and choice switches.
 | `--dashcast-key-file FILE` | A file holding the DashCast key. |
 | `--music-assistant HOST` | The Music Assistant server. |
 | `--music-assistant-local-metadata` | Music Assistant stops looking metadata up online and keeps to the library's own tags. Off unless given. |
-| `--music-assistant-token-file FILE` | A file holding a Music Assistant admin's long-lived token, used instead of signing in, once for the Show's own user there (lyrics) and the switch above. |
+| `--music-assistant-tunein USERNAME` | Add Music Assistant's TuneIn with this TuneIn username, for the radio, unless it has TuneIn already. `''` leaves it alone. Asked otherwise, when there is a Music Assistant admin and no TuneIn; Enter skips it. |
+| `--music-assistant-token-file FILE` | A file holding a Music Assistant admin's long-lived token, used instead of signing in, once for the Show's own user there (lyrics) and the switches above. |
 | `--assistant NAME` | The Assist pipeline it talks to, or `preferred`. `''` leaves it alone. |
 | `--genbu-assistant`, `--no-genbu-assistant` | Call the Show's assistant "Genbu Assistant" in Home Assistant, and keep every device that was on it there, or leave the name alone. Asked otherwise, Enter is no. |
 | `--wake-word NAME` | One of the wake words the Show offers. `''` leaves it alone. |

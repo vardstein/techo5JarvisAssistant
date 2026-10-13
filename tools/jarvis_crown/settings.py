@@ -60,6 +60,8 @@ class Settings:
     # (music_assistant.py). It is kept nowhere.
     music_assistant_token: str | None = field(default=None, repr=False)
     music_assistant_local_metadata: bool = False
+    # The TuneIn username Music Assistant's TuneIn provider is added with (music_assistant.add_tunein).
+    music_assistant_tunein: str | None = None
     # Root's password, which the Show's USB console asks for. Only its hash reaches the Show.
     root_password: str | None = field(default=None, repr=False)
     # No ha_token: the Show is made a Home Assistant user of its own when it is added, and gets that
@@ -90,6 +92,8 @@ class Settings:
             out.append("Music Assistant: the Show gets a user of its own there, for lyrics")
             if self.music_assistant_local_metadata:
                 out.append("Music Assistant: online metadata lookups switched off")
+            if self.music_assistant_tunein:
+                out.append(f"Music Assistant: TuneIn added as {self.music_assistant_tunein}, unless it is there")
         if self.ha_admin:
             out.append("added to Home Assistant automatically" +
                        (f", signed in as {self.ha_user} until the run ends" if self.ha_sign_in else ""))
@@ -421,6 +425,7 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
            ha_login: Callable[..., "ha_api.SignedIn"] = ha_api.sign_in,
            ma_login: Callable[..., tuple[str, str]] = ma_api.sign_in,
            ma_logout: Callable[..., None] = ma_api.sign_out,
+           ma_tunein_there: Callable[[str, str], bool] = ma_api.tunein_there,
            run: SignIns | None = None) -> Settings:
     """Everything the Show is set up with: switches first, then the keyring, then the terminal. Without
     want_show, only the admin sides of Home Assistant and Music Assistant (for taking a Show out)."""
@@ -549,9 +554,34 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
         elif ma_token is None:
             asker.note("No Music Assistant admin: music plays, but lyrics won't work on the Show" +
                        ("; Music Assistant keeps looking metadata up online." if local else "."))
+    tunein = None
+    if music and ma_token:
+        tunein = _ma_tunein(asker, args, music, ma_token, ma_tunein_there, want_show)
     s = replace(s, music_assistant=music, music_assistant_token=ma_token, music_assistant_user=ma_user,
-                music_assistant_local_metadata=bool(music and getattr(args, "music_assistant_local_metadata", False)))
+                music_assistant_local_metadata=bool(music and getattr(args, "music_assistant_local_metadata", False)),
+                music_assistant_tunein=tunein)
     return s
+
+
+def _ma_tunein(asker: Asker, args, host: str, token: str, there: Callable[[str, str], bool],
+               want_show: bool) -> str | None:
+    """The TuneIn username to add Music Assistant's TuneIn with: --music-assistant-tunein ('' leaves it
+    alone), else asked, but only of a Music Assistant that has no TuneIn yet."""
+    given = getattr(args, "music_assistant_tunein", None)
+    if given is not None:
+        return _checked(given, ma_api.check_tunein_username) if given.strip() else None
+    if not (want_show and asker.interactive):
+        return None
+    try:
+        if there(host, token):
+            return None
+    except ma_api.MusicAssistantError:
+        return None  # the steps that need Music Assistant say what went wrong
+    return asker.text("your TuneIn username, for the radio (optional)", None, ma_api.check_tunein_username,
+                      skip="Enter: no TuneIn",
+                      help="Music Assistant adds TuneIn with it and lists the stations that account follows; "
+                           "the Show's radio page shows them. The username, not the email address. Music "
+                           "Assistant keeps it in its settings; this computer does not.")
 
 
 def check_username(value: str) -> str:
