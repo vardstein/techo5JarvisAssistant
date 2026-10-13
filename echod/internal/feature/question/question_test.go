@@ -86,9 +86,10 @@ func TestAnswer(t *testing.T) {
 // Whisper writes Hessian "Joa gerne" as these (Show 5, 2026-10-13).
 func TestKindly(t *testing.T) {
 	for want, said := range map[Said][]string{
-		Yes: {" Jörg Erne!", " Du auch gerne!", "Gern, du", "Joa gerne", "Okey"},
+		Yes: {" Jörg Erne!", " Du auch gerne!", "Gern, du", "Joa gerne", "Okey", " Joggerne!",
+			" Und ich auch gerne."},
 		Other: {"", "Jein", "Naja", "Mal sehen", "Nein danke Jörg", "Gerne, aber nicht jetzt", "Jörg Erne, nee",
-			"Untertitel im Auftrag des ZDF", "Wie spät ist es?", "Erste Hilfe"},
+			"Untertitel im Auftrag des ZDF", "Wie spät ist es?", "Erste Hilfe", "Unsicher", "Ungern", "Nicht so gerne"},
 	} {
 		for _, s := range said {
 			if got := Kindly(s); got != want {

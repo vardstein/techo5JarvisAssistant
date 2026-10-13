@@ -13,7 +13,7 @@
 // "yes" said some way this does not know gets a second chance.
 //
 // In that turn a short reply is also read more kindly (see Kindly): Whisper does not know Hessian, and
-// writes "Joa gerne" as "Jörg Erne!" or "Du auch gerne!".
+// writes "Joa gerne" as "Jörg Erne!", "Joggerne!", "Du auch gerne!" or "Und ich auch gerne.".
 package question
 
 import (
@@ -209,10 +209,16 @@ func Reply(text string) Said {
 }
 
 // kindWords is the most words a reply read kindly may have; a television says more than that.
-const kindWords = 3
+const kindWords = 4
+
+// kindEnds are the yes words a word read kindly may end in, with something Whisper made of "Joa" before
+// them ("Joggerne"), so starting with a j. Only these: plenty of words end in "sicher" or "klar" and say
+// nothing of the kind, and "ungern" is a no.
+var kindEnds = []string{"gerne", "gern"}
 
 // Kindly reads a short transcript, heard in the turn opened for the question, as a yes when one of its
-// words is a yes or one letter away from one ("Erne" is "gerne") and none is a no or near one ("Jein").
+// words is a yes, one letter away from one ("Erne" is "gerne") or ends in "gerne" ("Joggerne"), and none
+// is a no or near one ("Jein").
 // Words it does not know are let through, since Whisper makes them up from a dialect it does not know.
 // Anything that sounds like a no is not taken either way, and the question is asked again.
 func Kindly(text string) Said {
@@ -226,7 +232,7 @@ func Kindly(text string) Said {
 		switch {
 		case noWords[w] || near(w, noWords):
 			return Other
-		case yesWords[w] || near(w, yesWords):
+		case yesWords[w] || near(w, yesWords) || endsKindly(w):
 			yes = true
 		}
 	}
@@ -234,6 +240,16 @@ func Kindly(text string) Said {
 		return Yes
 	}
 	return Other
+}
+
+// endsKindly reports whether w is one of kindEnds with a "jo" of some kind in front of it.
+func endsKindly(w string) bool {
+	for _, e := range kindEnds {
+		if len(w) > len(e) && strings.HasPrefix(w, "j") && strings.HasSuffix(w, e) {
+			return true
+		}
+	}
+	return false
 }
 
 // near reports whether w is one letter (added, dropped or changed) away from a word in the set. Only
