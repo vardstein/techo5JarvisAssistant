@@ -1216,7 +1216,9 @@ func (d *Display) frame() time.Duration {
 	d.alertSceneSpot(&s, now)
 	s.missed = missedNote(now, true)
 	if s.missed == "" {
-		s.update = updateNote(true)
+		if s.update = keyNote(true); s.update == "" {
+			s.update = updateNote(true)
+		}
 	}
 
 	if boring {

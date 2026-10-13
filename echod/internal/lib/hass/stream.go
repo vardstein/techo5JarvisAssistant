@@ -28,11 +28,9 @@ var streamHTTP = func() *http.Client {
 
 // Stream opens a GET on a path that keeps answering, read until ctx is done or the caller closes it.
 func (c *Client) Stream(ctx context.Context, path string) (io.ReadCloser, error) {
-	c.mu.Lock()
-	acc := c.acc
-	c.mu.Unlock()
-	if acc.URL == "" || acc.Token == "" {
-		return nil, errors.New("hass: no access configured")
+	acc, err := c.access()
+	if err != nil {
+		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, "GET", acc.URL+path, nil)
 	if err != nil {
@@ -42,6 +40,9 @@ func (c *Client) Stream(ctx context.Context, path string) (io.ReadCloser, error)
 	resp, err := streamHTTP.Do(req)
 	if err != nil {
 		return nil, err
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		c.refuse(acc.Token)
 	}
 	if resp.StatusCode/100 != 2 {
 		resp.Body.Close()

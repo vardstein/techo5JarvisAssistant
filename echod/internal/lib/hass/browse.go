@@ -3,7 +3,6 @@ package hass
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -41,11 +40,9 @@ type wsSession struct {
 
 // wsOpen dials and authenticates. The caller closes the connection.
 func (c *Client) wsOpen(ctx context.Context) (*wsSession, error) {
-	c.mu.Lock()
-	acc := c.acc
-	c.mu.Unlock()
-	if acc.URL == "" || acc.Token == "" {
-		return nil, errors.New("hass: no access configured")
+	acc, err := c.access()
+	if err != nil {
+		return nil, err
 	}
 	// What the caller gave, read before the wrap below: kept for the commands that follow, so their bound
 	// is the caller's own and each still gets its own thirty seconds. Reading it after the wrap would make
@@ -84,6 +81,9 @@ func (c *Client) wsOpen(ctx context.Context) (*wsSession, error) {
 	if err := conn.ReadJSON(&hello); err != nil {
 		conn.Close()
 		return nil, err
+	}
+	if hello.Type == "auth_invalid" {
+		c.refuse(acc.Token)
 	}
 	if hello.Type != "auth_ok" {
 		conn.Close()

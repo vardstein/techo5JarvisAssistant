@@ -110,6 +110,47 @@ func TestActionWithoutReturnResponseSaysNothing(t *testing.T) {
 	}
 }
 
+// Home Assistant numbers every call to an action that answers and waits up to 30 seconds for how it
+// went, return_response or not; an automation's plain call timed out on a live Home Assistant 2026.10.1
+// before this. It gets success or failure, without the answer it did not ask for.
+func TestANumberedCallIsAlwaysAnswered(t *testing.T) {
+	fail := false
+	action := &Action{
+		Name:    "recordings",
+		Answers: true,
+		Run: func(Call) (any, error) {
+			if fail {
+				return nil, errors.New("disk gone")
+			}
+			return map[string]any{"ids": []string{"a"}}, nil
+		},
+	}
+
+	ents := NewEntities()
+	if err := ents.AddActions(action); err != nil {
+		t.Fatal(err)
+	}
+
+	_, peer := startServer(t, ents)
+	peer.hello()
+
+	peer.send(&api.ExecuteServiceRequest{Key: action.key(), CallId: 9})
+	reply, ok := peer.recv().(*api.ExecuteServiceResponse)
+	if !ok {
+		t.Fatal("a numbered call got no reply, so Home Assistant waits it out")
+	}
+	if reply.GetCallId() != 9 || !reply.GetSuccess() || len(reply.GetResponseData()) != 0 {
+		t.Fatalf("call_id = %d, success = %v, data = %q", reply.GetCallId(), reply.GetSuccess(), reply.GetResponseData())
+	}
+
+	fail = true
+	peer.send(&api.ExecuteServiceRequest{Key: action.key(), CallId: 10})
+	reply, ok = peer.recv().(*api.ExecuteServiceResponse)
+	if !ok || reply.GetCallId() != 10 || reply.GetSuccess() || reply.GetErrorMessage() != "disk gone" {
+		t.Fatalf("a failed numbered call: %v", reply)
+	}
+}
+
 func TestActionErrorReachesTheCaller(t *testing.T) {
 	action := &Action{
 		Name:    "turn_audio",

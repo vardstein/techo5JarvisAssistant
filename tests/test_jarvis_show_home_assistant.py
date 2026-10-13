@@ -97,6 +97,9 @@ class FakeHA:
         self.unconfigured = unconfigured  # times the wake word select still reads unavailable
         self.flow_errors = list(flow_errors)
         self.allowed = allowed
+        self.show_answers = True  # the Show's home_assistant action says it stored the token
+        self.show_fails = ""      # what the Show's home_assistant action fails with
+        self.show_says = {"stored": True}  # its answer
         self.entries = [{"entry_id": "E1", "domain": "esphome", "title": "Jarvis Show 5"}] if entry else []
         self.areas = {"living_room": "Wohnzimmer", "kitchen": "Küche"}
         self.area = ""
@@ -195,7 +198,15 @@ class FakeHA:
             self.states[body["entity_id"]]["state"] = "on"
             return []
         if path.startswith("/api/services/esphome/"):
-            return []
+            if not path.endswith("?return_response"):
+                return []
+            # Before GENBU-158 no action of the Show's answered; since then home_assistant does.
+            if not (self.show_answers and path.endswith("_home_assistant?return_response")):
+                raise ha.HomeAssistantError(f"POST {path}: HTTP 400 {{\"message\": \"Service does not support "
+                                            "responses. Remove return_response from request.\"}")
+            if self.show_fails:
+                raise ha.HomeAssistantError(f"POST {path}: HTTP 500 {{\"message\": \"{self.show_fails}\"}}")
+            return {"changed_states": [], "service_response": self.show_says}
         raise AssertionError(f"unexpected {method} {path}")
 
     def ws(self, message):
@@ -230,7 +241,8 @@ class FakeHA:
         return {}
 
     def posted(self, prefix):
-        return [(p, b) for m, p, b in self.calls if m == "POST" and p.startswith(prefix)]
+        """What was posted under prefix, by path without its query."""
+        return [(p.split("?")[0], b) for m, p, b in self.calls if m == "POST" and p.startswith(prefix)]
 
 
 def run_deploy(fake, choose=None, login=None, **kw):
@@ -1610,9 +1622,13 @@ class OwnUserHA(FakeHA):
         self.sent_auth = []
         self.url = "http://ha:8123"
         self.owner = True
+        self.current = True  # auth/refresh_tokens marks the token it was asked with
+        self.events = []     # the handover and what was deleted, in order
 
     def request(self, method, path, body=None, *, auth=True, form=False):
         if not path.startswith("/auth/"):
+            if path.startswith("/api/services/esphome/"):
+                self.events.append(("hand over", path))
             return super().request(method, path, body)
         self.sent_auth.append((path, auth, form))
         if path == "/auth/login_flow":
@@ -1635,6 +1651,7 @@ class OwnUserHA(FakeHA):
             return [dict(u) for u in self.users]
         self.ws_calls.append(message)
         if kind == "config/auth/delete":
+            self.events.append(("delete user", message["user_id"]))
             self.users = [u for u in self.users if u["id"] != message["user_id"]]
             return None
         if kind == "config/auth/create":
@@ -1656,19 +1673,22 @@ class OwnUserHA(FakeHA):
         return super().ws(message)
 
     def as_user(self, token):
-        assert token == "USER-ACCESS"
+        # The installer's sign-in as the Show's user, or the new token the Show is given.
+        current = {"USER-ACCESS": "R-login", "SHOW-USER-TOKEN": "R-new"}[token]
         fake = self
 
         class Own:
             def ws(self, message):
                 fake.ws_calls.append(("as user", message))
                 if message["type"] == "auth/long_lived_access_token":
+                    assert token == "USER-ACCESS"
                     fake.llats.append({"id": "R-new", "type": "long_lived_access_token",
                                        "client_name": message["client_name"]})
                     return "SHOW-USER-TOKEN"
                 if message["type"] == "auth/refresh_tokens":
-                    return list(fake.llats)
+                    return [{**t, "is_current": fake.current and t["id"] == current} for t in fake.llats]
                 if message["type"] == "auth/delete_refresh_token":
+                    fake.events.append(("delete token", message["refresh_token_id"]))
                     fake.llats = [t for t in fake.llats if t["id"] != message["refresh_token_id"]]
                     return {}
                 raise AssertionError(message)
@@ -1717,15 +1737,104 @@ class OwnUserTests(unittest.TestCase):
         self.assertEqual(dict(fake.posted("/api/services/esphome/"))
                          ["/api/services/esphome/jarvis_show_5_home_assistant"]["token"], "SHOW-USER-TOKEN")
 
-    def test_an_admin_who_is_not_the_owner_makes_the_user_again(self):
+    def test_an_admin_who_is_not_the_owner_makes_a_second_user(self):
+        # Only the owner may set a password. Deleting the user first would end the token the Show
+        # still uses (GENBU-158), so a second one takes over and the first goes once the Show has it.
         fake = OwnUserHA(users=[{"id": "U1", "name": "Jarvis Show 5", "username": "show_jarvis_show_5",
                                  "group_ids": ["system-users"]}])
         fake.owner = False
+        fake.llats = [t for t in fake.llats if t["id"] != "R-old"]  # the old token is U1's, gone with it
         log = self.deploy(fake)
-        self.assertEqual([u["id"] for u in fake.users], ["U-new"])
-        self.assertTrue(any("made again" in line for line in log))
+        self.assertEqual([(u["id"], u["username"]) for u in fake.users], [("U-new", "show_jarvis_show_5-2")])
+        self.assertEqual(fake.events, [("hand over", "/api/services/esphome/jarvis_show_5_home_assistant"
+                                                     "?return_response"), ("delete user", "U1")])
+        self.assertTrue(any("made next to 'show_jarvis_show_5'" in line for line in log))
         self.assertEqual(dict(fake.posted("/api/services/esphome/"))
                          ["/api/services/esphome/jarvis_show_5_home_assistant"]["token"], "SHOW-USER-TOKEN")
+
+        # The next run by that admin goes back to the first name the same way.
+        fake.users[0]["id"] = "U2"
+        fake.events = []
+        self.deploy(fake)
+        self.assertEqual([u["username"] for u in fake.users], ["show_jarvis_show_5"])
+        self.assertEqual(fake.events[-1], ("delete user", "U2"))
+
+    def test_the_owner_keeps_using_the_second_name(self):
+        fake = OwnUserHA(users=[{"id": "U2", "name": "Jarvis Show 5", "username": "show_jarvis_show_5-2",
+                                 "group_ids": ["system-users"]}])
+        fake.passwords["show_jarvis_show_5-2"] = "old"
+        self.deploy(fake)
+        self.assertEqual([u["id"] for u in fake.users], ["U2"])
+        self.assertNotEqual(fake.passwords["show_jarvis_show_5-2"], "old")
+        self.assertNotIn(("delete user", "U2"), fake.events)
+
+    def test_the_owner_tidies_up_both_names(self):
+        fake = OwnUserHA(users=[{"id": "U1", "name": "Jarvis Show 5", "username": "show_jarvis_show_5",
+                                 "group_ids": ["system-users"]},
+                                {"id": "U2", "name": "Jarvis Show 5", "username": "show_jarvis_show_5-2",
+                                 "group_ids": ["system-users"]}])
+        self.deploy(fake)
+        self.assertEqual([u["id"] for u in fake.users], ["U1"])
+        self.assertEqual(fake.events[0][0], "hand over")
+        self.assertIn(("delete user", "U2"), fake.events)
+
+    def test_both_names_taken_and_no_owner_changes_nothing(self):
+        fake = OwnUserHA(users=[{"id": "U1", "name": "Jarvis Show 5", "username": "show_jarvis_show_5",
+                                 "group_ids": ["system-users"]},
+                                {"id": "U2", "name": "Jarvis Show 5", "username": "show_jarvis_show_5-2",
+                                 "group_ids": ["system-users"]}])
+        fake.owner = False
+        with self.assertRaisesRegex(ha.HomeAssistantError, "both 'show_jarvis_show_5' and 'show_jarvis_show_5-2'"):
+            self.deploy(fake)
+        self.assertEqual([u["id"] for u in fake.users], ["U1", "U2"])
+        self.assertEqual(fake.events, [])
+
+    def test_old_tokens_go_only_after_the_show_stored_the_new_one(self):
+        fake = OwnUserHA()
+        self.deploy(fake)
+        self.assertEqual(fake.events, [("hand over", "/api/services/esphome/jarvis_show_5_home_assistant"
+                                                     "?return_response"), ("delete token", "R-old")])
+
+    def test_a_show_that_cannot_say_keeps_the_old_tokens(self):
+        # A Show from before GENBU-158: Home Assistant refuses return_response, the token goes over the
+        # old way, and as nothing says it arrived, the one the Show had stays.
+        fake = OwnUserHA(users=[{"id": "U1", "name": "Jarvis Show 5", "username": "show_jarvis_show_5",
+                                 "group_ids": ["system-users"]}])
+        fake.owner = False
+        fake.show_answers = False
+        log = self.deploy(fake)
+        self.assertEqual([e for e in fake.events if e[0] != "hand over"], [])
+        self.assertEqual([p for _, p in fake.events], [
+            "/api/services/esphome/jarvis_show_5_home_assistant?return_response",
+            "/api/services/esphome/jarvis_show_5_home_assistant"])
+        self.assertEqual([u["id"] for u in fake.users], ["U1", "U-new"])
+        self.assertIn("R-old", [t["id"] for t in fake.llats])
+        self.assertTrue(any(line.startswith("WARN: the Show did not say it stored its new token")
+                            and "'show_jarvis_show_5'" in line for line in log))
+
+    def test_only_stored_true_counts(self):
+        for says in ({"stored": False}, {"stored": "yes"}, {}, None):
+            fake = OwnUserHA()
+            fake.show_says = says
+            self.deploy(fake)
+            self.assertEqual([e[0] for e in fake.events], ["hand over"], says)
+            self.assertIn("R-old", [t["id"] for t in fake.llats])
+
+    def test_a_failed_handover_keeps_everything(self):
+        fake = OwnUserHA(users=[{"id": "U1", "name": "Jarvis Show 5", "username": "show_jarvis_show_5",
+                                 "group_ids": ["system-users"]}])
+        fake.show_fails = "Failed to execute action home_assistant on jarvis-show-5: disk full"
+        with self.assertRaisesRegex(ha.HomeAssistantError, "disk full"):
+            self.deploy(fake)
+        self.assertEqual([e[0] for e in fake.events], ["hand over"])
+        self.assertIn("R-old", [t["id"] for t in fake.llats])
+
+    def test_no_current_token_means_nothing_is_deleted(self):
+        fake = OwnUserHA()
+        fake.current = False
+        log = self.deploy(fake)
+        self.assertEqual([e[0] for e in fake.events], ["hand over"])
+        self.assertTrue(any("did not say which token" in line for line in log))
 
     def test_an_admin_with_that_name_is_not_taken_over(self):
         fake = OwnUserHA(users=[{"id": "U1", "name": "x", "username": "show_jarvis_show_5",

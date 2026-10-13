@@ -8,7 +8,21 @@ import (
 
 	"github.com/HuskerMinion/techo5/echod/internal/feature/firmware"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/ring"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/hass"
 )
+
+// keyNote is the line that says Home Assistant turned this device's token away, or nothing. It takes
+// the update's place, ahead of it, as nothing that needs Home Assistant works until the installer is
+// run again, and the device stops asking (lib/hass), so nobody would find out any other way.
+func keyNote(short bool) string {
+	switch {
+	case !hass.Get().Refused():
+		return ""
+	case short:
+		return "Key refused"
+	}
+	return "Home Assistant refused this device · rerun the installer"
+}
 
 // updateNote is the line that says an update is ready to install, or nothing. It shares the place a
 // missed ring is said in, and gives way to one. short is the round face's, where only a few words fit.
