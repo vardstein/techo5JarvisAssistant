@@ -100,8 +100,9 @@ func TestStreamSendsTheTokenAndHandsOverTheBody(t *testing.T) {
 		t.Fatal("a 404 opened a stream")
 	}
 	c.acc.Token = "wrong"
-	if _, err := c.Stream(context.Background(), "/api/camera_proxy_stream/camera.hall"); !refused(err) {
-		t.Fatalf("a wrong token: %v, want refused", err)
+	var se *statusError
+	if _, err := c.Stream(context.Background(), "/api/camera_proxy_stream/camera.hall"); !errors.As(err, &se) || se.code != http.StatusUnauthorized {
+		t.Fatalf("a wrong token: %v, want a 401", err)
 	}
 	if _, err := (&Client{}).Stream(context.Background(), "/x"); err == nil {
 		t.Fatal("a stream with no access configured")

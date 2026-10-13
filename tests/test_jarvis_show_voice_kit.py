@@ -252,6 +252,33 @@ class SetUpTests(unittest.TestCase):
         # The other seeds of the mix go in the same call, so Music Assistant builds it once.
         self.assertEqual(then["data"]["media_id"], "{{ [media_id] + (mix | default([], true) | list) }}")
 
+    def test_shuffle_is_not_a_field(self):
+        """Home Assistant has a template function called shuffle, so an unset field by that name read as
+        the function and the script failed on '{{ shuffle | bool }}' each time nothing passed it."""
+        fake = FakeHA()
+        run(fake)
+        start = fake.configs[("script", "jarvis_music_start")]
+        self.assertNotIn("shuffle", start["fields"])
+        self.assertIn("shuffled", start["fields"])
+        self.assertNotRegex(json.dumps(start["sequence"]), r"\{\{ shuffle\b")
+        mood = json.dumps(fake.configs[("script", "jarvis_play_mood")])
+        self.assertIn('"shuffled": "{{ pick.shuffle }}"', mood)
+
+    def test_an_offline_player_is_said_not_played(self):
+        """At the mother's place (2026-10-13) the room's speaker was unplugged and Music Assistant couldn't
+        reach the Show's own: the music went nowhere and the answer still said what was playing."""
+        fake = FakeHA()
+        run(fake)
+        for script in ("play_random_music", "jarvis_play_mood", "jarvis_play_radio"):
+            steps = fake.configs[("script", script)]["sequence"]
+            offline = next(i for i, s in enumerate(steps)
+                           if "has_value(target_player)" in json.dumps(s))
+            self.assertEqual(steps[offline]["then"][0]["variables"]["result"],
+                             {"success": False, "message": kit.PLAYER_OFFLINE}, script)
+            started = next(i for i, s in enumerate(steps) if s.get("action") == "script.turn_on"
+                           or "jarvis_music_start" in json.dumps(s))
+            self.assertLess(offline, started, script)
+
     def test_random_music_mixes_three_songs_and_a_genre_for_the_time_of_day(self):
         fake = FakeHA()
         run(fake, genres={"library://genre/29": "Jazz", "library://genre/12": "Classical",
@@ -970,6 +997,7 @@ class EnglishTemplateTests(unittest.TestCase):
                 ("radio", {"success": False, "stations": []}, "I don't have any radio stations."),
                 ("random", {"success": False, "message": kit.NO_PLAYER}, "There's no music speaker here. Pick one "
                  "in Home Assistant under the Show's Music plays on."),
+                ("random", {"success": False, "message": kit.PLAYER_OFFLINE}, "The speaker here can't be reached right now."),
                 ("random", {"success": False, "message": "Keine Musik."}, "I can't find any music in the library right now.")]:
             self.assertEqual(said.render(kind=kind, r=r), want, r)
         self.assertEqual(said.render(kind="random"), "Music's on.")
