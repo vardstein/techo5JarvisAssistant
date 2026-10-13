@@ -388,9 +388,10 @@ WECKER_VARIABLES = {
                "{%- elif not nums -%}-1{%- elif 'stunde' in spoken -%}"
                "{{ nums[0] * 60 + (nums[1] if nums | count > 1 else 0) }}{%- else -%}{{ nums[0] }}{%- endif -%}",
     # "halb acht" is 7:30, "viertel vor acht" and "dreiviertel acht" 7:45, "viertel nach sieben" 7:15.
+    # Whisper hears "viertel nach" as "vierte Nacht" now and then.
     "half": "{{ spoken is search('halb') }}",
-    "before": "{{ spoken is search('viertel vor|dreiviertel') }}",
-    "past": "{{ spoken is search('viertel nach') }}",
+    "before": "{{ spoken is search('viertel? vor|dreiviertel') }}",
+    "past": "{{ spoken is search('viertel nach|vierte nacht') }}",
     "evening": "{{ spoken is search('abend|nachmittag|nachts') }}",
     "h": "{{ (nums[0] - 1 if half or before else nums[0]) if nums else -1 }}",
     "m": "{{ 30 if half else 45 if before else 15 if past else (nums[1] if nums | count > 1 else 0) }}",
@@ -409,7 +410,8 @@ def wecker() -> dict:
                        'Wecker sei gestellt.',
         "triggers": [{"trigger": "conversation", "command": [
             "(stell|stelle) [mir] [einen|den|meinen] wecker (auf|für|um|in) {when}",
-            "(weck|wecke) mich [bitte] (um|in) {when}",
+            # "Weg mich" is how Whisper often writes "Weck mich".
+            "(weck|wecke|weg) mich [bitte] (um|in) {when}",
             "wecker (auf|für|um|in) {when}"]}],
         "actions": [
             {"variables": dict(WECKER_VARIABLES)},
@@ -480,7 +482,8 @@ PLAYER_FIELD = {"name": "Player", "description": "Music Assistant player; empty 
                 "selector": {"entity": {"filter": [{"integration": "music_assistant", "domain": "media_player"}]}}}
 
 RADIO_HEARD = r"""{% set stop = ['spiel', 'spiele', 'viel', 'biele', 'hör', 'höre', 'hoer', 'hoere', 'mach', 'mache', 'doch', 'mal', 'bitte', 'den', 'das', 'die', 'sender', 'an', 'ein', 'einschalten'] %}
-{{ ((name | default('') | string | lower | regex_replace('[^a-z0-9äöüß]+', ' ')).split() | reject('in', stop) | list | join(' ')) }}"""
+{{ ((name | default('') | string | lower | regex_replace('[^a-z0-9äöüß]+', ' ')
+    | regex_replace('(^| )(spiele?|viel|biele|höre?|hoere?)radio', '\\1radio')).split() | reject('in', stop) | list | join(' ')) }}"""
 
 RADIO_BEST = r"""{% set generic = ['radio', 'hit', 'fm', 'sender', 'the', 'der', 'die', 'das'] %}
 {% set h = heard | trim %}
@@ -805,7 +808,7 @@ def play_random(house: House) -> dict:
     }
 
 
-LOCAL_MUSIC_KIND = r"""{% if trigger.id == 'toggle' %}toggle{% elif 'station' in trigger.slots or said | regex_search('\\b(radio|sender)\\b') %}radio{% elif 'mood' in trigger.slots and trigger.slots.mood | lower | trim in ['leiser', 'lauter'] %}volume{% elif 'mood' in trigger.slots %}mood{% else %}random{% endif %}"""
+LOCAL_MUSIC_KIND = r"""{% if trigger.id == 'toggle' %}toggle{% elif 'station' in trigger.slots or said | regex_search('(radio|sender)\\b') %}radio{% elif 'mood' in trigger.slots and trigger.slots.mood | lower | trim in ['leiser', 'lauter'] %}volume{% elif 'mood' in trigger.slots %}mood{% else %}random{% endif %}"""
 
 # The media players playing in the room of the device that heard it, and the target player; Music
 # Assistant's own first, so a speaker it plays through is not paused twice over.
@@ -841,7 +844,8 @@ def local_music(house: House) -> dict:
             "[ich] [bitte] (spiel|spiele|spielen) [doch] [mal] [einfach] [bitte] "
             "[(irgendwelche|irgendeine|ein bisschen|etwas|die)] musik [ab] [bitte]",
             "spiel[e] [doch] [mal] [einfach] (was|etwas|irgendwas)",
-            "spielemusik",
+            # Whisper often writes the two words as one: "Spielmusik", "Spielradio FFH".
+            "(spielmusik|spielemusik) [bitte]",
             "spiel[e] musik spiel[e] musik",
             "[bitte] musik (spielen|abspielen|ab) [bitte]",
             "(mach|mache) [doch] [mal] [bitte] [etwas] musik",
@@ -855,7 +859,9 @@ def local_music(house: House) -> dict:
             "(spiel|spiele|viel|biele|hör|höre) [doch] [mal] {station} radio",
             "(spiel|spiele|viel|biele|hör|höre) [doch] [mal] {station} radio {rest}",
             "(spiel|spiele|viel|biele|hör|höre) [doch] [mal] radio {station}",
-            "(spiel|spiele|viel|biele|hör|höre) [doch] [mal] [den] sender {station}"]},
+            "(spiel|spiele|viel|biele|hör|höre) [doch] [mal] [den] sender {station}",
+            "(spielradio|spieleradio|hörradio|höreradio) [bitte]",
+            "(spielradio|spieleradio|hörradio|höreradio) {station}"]},
             # Just "die Musik": start some if nothing plays here, else only say what is on.
             {"trigger": "conversation", "id": "toggle", "command": ["[bitte] [die] musik [bitte]"]}],
         "actions": [
