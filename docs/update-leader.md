@@ -69,6 +69,14 @@ updates every Show. The voice kit's sentence calls it too: "installiere die Upda
 Shows" at any Show starts every update, even when that Show has none of its own, and says which Shows
 started.
 
+**Asking the assistant** (from 1.4.0). With an AI conversation agent, Genbu Assistant gives it the tool
+`genbu__firmware`, so it understands what was meant rather than fixed sentences: "Gibt es ein Update für
+dich?", "What's new?", "Welche Version hast du?", "Update the Shows". It answers from the Shows' update
+entities: each version and channel, the waiting release and its summary. Installing always asks first and
+then starts every Show with an update, as above. A Show gets the tool while its **Updates by voice** switch
+is on (on until you turn it off); in the app only an admin does. Other voice devices never get it. The
+voice kit's fixed sentences still answer first where they match.
+
 **The dashboard cards** (from 1.3.1). Genbu brings the Jarvis dashboard's cards (weather, room, timer,
 calendar, recipe) and loads them on every page, so a dashboard that uses them needs nothing copied and no
 resource. See [ha-dashboard](../ha-dashboard/README.md).

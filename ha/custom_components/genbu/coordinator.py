@@ -73,6 +73,25 @@ def find_shows(hass: HomeAssistant) -> list[Show]:
     return sorted(shows.values(), key=lambda s: s.node)
 
 
+async def install_waiting(hass: HomeAssistant, skip: str = "") -> dict[str, list[str]]:
+    """Starts the waiting update on every Show that has one, except the Show named skip (it is installing
+    already). Answers with who started and who is up to date; a Show that is offline is left out."""
+    skip = skip.strip().lower()
+    updating, current = [], []
+    for show in find_shows(hass):
+        if skip and show.node.lower() == skip:
+            continue
+        state = hass.states.get(show.watch[0]) if show.watch else None
+        if state is None or state.state not in ("on", "off"):
+            continue
+        if state.state == "on":
+            await hass.services.async_call("update", "install", {"entity_id": show.watch[0]}, blocking=False)
+            updating.append(show.name)
+        else:
+            current.append(show.name)
+    return {"updating": updating, "current": current}
+
+
 def _macs(hass: HomeAssistant) -> dict[str, str]:
     """The MAC Music Assistant has for each of its players' devices, by player id, which is the
     unique id of its media player. Home Assistant's device for a player doesn't carry it."""

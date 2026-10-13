@@ -27,7 +27,7 @@ except ImportError:
 
 from .const import (CARDS, CONF_SEARXNG, DOMAIN, MANUFACTURERS, NAME, OLD_NAME, OLD_RECIPES, PANEL, PANEL_FILES,
                     PANEL_TITLE, SERVICE_FORGET, SERVICE_INSTALL, STORE_KEY, STORE_VERSION)
-from .coordinator import GenbuHouse, find_shows, unhide
+from .coordinator import GenbuHouse, install_waiting, unhide
 
 PLATFORMS = [Platform.SENSOR, Platform.SELECT, Platform.SWITCH]
 FORGET_SCHEMA = vol.Schema({vol.Required("node"): cv.string})
@@ -150,20 +150,7 @@ async def _install_updates(hass: HomeAssistant, call: ServiceCall) -> ServiceRes
     one that asked has none. except_node is the Show that asked and is installing already: a second
     install on top of its own would start the same download twice. Answers with who started and who is
     up to date; a Show that is offline has no update to install and is left out."""
-    skip = call.data.get("except_node", "").strip().lower()
-    updating, current = [], []
-    for show in find_shows(hass):
-        if skip and show.node.lower() == skip:
-            continue
-        state = hass.states.get(show.watch[0]) if show.watch else None
-        if state is None or state.state not in ("on", "off"):
-            continue
-        if state.state == "on":
-            await hass.services.async_call("update", "install", {"entity_id": show.watch[0]}, blocking=False)
-            updating.append(show.name)
-        else:
-            current.append(show.name)
-    return {"updating": updating, "current": current}
+    return await install_waiting(hass, call.data.get("except_node", ""))
 
 
 async def _options_changed(hass: HomeAssistant, entry: ConfigEntry) -> None:

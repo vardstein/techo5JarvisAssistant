@@ -4,7 +4,11 @@ agent that can control the house finds them, with nothing to tick (Home Assistan
 genbu__recipe finds a recipe on the web and puts it on the Show's screen. It is offered only when all of
 these hold, asked anew for every request: a recipe search is set up in Genbu Assistant's options, the
 request comes from a Genbu Show, and that Show has Recipes on. A phone, a Voice PE or the chat in the app
-never see it. See docs/genbu-assistant.md §4."""
+never see it.
+
+genbu__firmware answers questions about the Shows' software and installs a waiting update after asking. A
+Show with Updates by voice on gets it, and so does an admin typing in the app; another voice device never
+does. See docs/genbu-assistant.md §1 and §4."""
 
 from __future__ import annotations
 
@@ -30,7 +34,8 @@ except ImportError:
     import voluptuous as vol
 
 from . import recipe as rec
-from .const import DOMAIN, NEW_RECIPE, RECIPES, SHOW_RECIPE
+from .const import DOMAIN, NEW_RECIPE, RECIPES, SHOW_RECIPE, VOICE_UPDATES
+from .coordinator import install_waiting
 from .house import Show
 
 _LOGGER = logging.getLogger(__name__)
@@ -44,6 +49,12 @@ PROMPT = {
     "en": ("When someone wants a recipe or asks how to cook or bake something, use genbu__recipe. The recipe "
            "then is on the screen: just say which dish it is and from which site. Ingredients and steps only "
            "when someone wants to hear them."),
+}
+FIRMWARE_PROMPT = {
+    "de": ("Fragen zur Software oder Version der Genbu Shows beantwortet genbu__firmware. Bevor ein Update "
+           "installiert wird, frag immer erst nach."),
+    "en": ("genbu__firmware answers questions about the Genbu Shows' software or version. Always ask before an "
+           "update is installed."),
 }
 
 
@@ -67,6 +78,10 @@ def async_get_tools(hass: HomeAssistant, llm_context: llm.LLMContext, api_id: st
     if hub.searxng and show is not None and hub.switched_on(show, RECIPES):
         tools.append(RecipeTool(show))
         prompt.append(PROMPT[_lang(llm_context)])
+    # The app sends no device; whether it is an admin is checked when the tool is called.
+    if hub.shows and (hub.switched_on(show, VOICE_UPDATES) if show else llm_context.device_id is None):
+        tools.append(FirmwareTool(show))
+        prompt.append(FIRMWARE_PROMPT[_lang(llm_context)])
     if not tools:
         return None
     return LLMTools(tools=tools, prompt=" ".join(prompt))
@@ -192,3 +207,68 @@ async def _show(hass: HomeAssistant, show: Show) -> bool:
         _LOGGER.warning("esphome.%s: %s", action, exc)
         return False
     return True
+
+
+def _channel(version: str) -> str:
+    """stable, staging or dev, from a version like v1.4.0-staging.55."""
+    rest = version.partition("-")[2]
+    return rest.partition(".")[0] or "stable"
+
+
+class FirmwareTool(llm.Tool):
+    name = f"{DOMAIN}__firmware"
+    title = "Genbu Show software"
+    description = (
+        "The software (firmware) of the Genbu Shows: you are one of them. Use it when someone asks about your or "
+        "the Shows' version, whether there is an update, what is new in it, or wants the update installed. "
+        "Not for other devices, their settings or readings, and not for news, weather or lists. "
+        "action status: versions and the waiting update. action install: installs the waiting update on all "
+        "Shows. Ask first and set confirm only after the person said yes to installing it.")
+    parameters = vol.Schema({
+        vol.Required("action", description="status, or install"): vol.In(["status", "install"]),
+        vol.Optional("confirm", description="True only after the person said yes to installing"): bool,
+    })
+    integration = DOMAIN
+    annotations = llm.ToolAnnotations(read_only=False, destructive=False, idempotent=True, open_world=False)
+
+    def __init__(self, show: Show | None) -> None:
+        self.show = show  # None: asked in the app
+
+    async def async_call(self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext):
+        if self.show is None:
+            user_id = llm_context.context.user_id if llm_context.context else None
+            user = await hass.auth.async_get_user(user_id) if user_id else None
+            if user is None or not user.is_admin:
+                return llm.ToolResult(data={"error": "Only an admin can ask about the Shows' software"}, error=True)
+        hub = _hub(hass)
+        if hub is None:
+            return llm.ToolResult(data={"error": "Genbu Assistant is not running"}, error=True)
+        status = self._status(hass, hub.shows)
+        if tool_input.tool_args.get("action") != "install":
+            return llm.ToolResult(data=status)
+        if not status["update_waiting"]:
+            return llm.ToolResult(data={**status, "installed": "nothing, every Show is up to date"})
+        if not tool_input.tool_args.get("confirm"):
+            return llm.ToolResult(data={**status, "ask_first": f"Ask whether to install {status['update_waiting']} "
+                                        "on all Shows now. Install only after a yes."})
+        started = await install_waiting(hass)
+        return llm.ToolResult(data={"installing_on": started["updating"], "up_to_date": started["current"],
+                                    "note": "Each Show restarts when its update is in."})
+
+    def _status(self, hass: HomeAssistant, shows: list[Show]) -> dict:
+        """What the update entities say: each Show's version, and the release waiting with its summary."""
+        out: dict = {"shows": [], "update_waiting": None, "whats_new": None}
+        for show in shows:
+            state = hass.states.get(show.watch[0]) if show.watch else None
+            attrs = state.attributes if state else {}
+            installed = str(attrs.get("installed_version") or show.installed or "")
+            item = {"name": show.name, "version": installed, "channel": _channel(installed),
+                    "online": state is not None and state.state in ("on", "off")}
+            if self.show is not None and show.device == self.show.device:
+                item["this_is_you"] = True
+            if state is not None and state.state == "on":
+                item["update_to"] = latest = str(attrs.get("latest_version") or "")
+                out["update_waiting"] = out["update_waiting"] or latest
+                out["whats_new"] = out["whats_new"] or rec._line(str(attrs.get("release_summary") or "")) or None
+            out["shows"].append(item)
+        return out
