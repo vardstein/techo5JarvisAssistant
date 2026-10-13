@@ -744,10 +744,15 @@ class FakeCalendarHA(FakeHA):
         self.caldav_brings = caldav_brings
         self.saved = []
         self.card_file = None  # the calendar card's source as Home Assistant serves it; None: no resource
+        self.genbu_card = None  # the one Genbu serves; None: no Genbu, or one from before it brought cards
 
     def request(self, method, path, body=None):
         if method == "GET" and path == "/local/openjade/jarvis-calendar-card.js?v=8":
             return self.card_file
+        if method == "GET" and path == "/genbu_panel/jarvis-calendar-card.js":
+            if self.genbu_card is None:
+                raise ha.NotFound(f"GET {path}: HTTP 404")
+            return self.genbu_card
         if method == "GET" and path.startswith("/api/calendars/"):
             self.calls.append((method, path, body))
             calendar = urllib.parse.unquote(path[len("/api/calendars/"):].split("?", 1)[0])
@@ -975,6 +980,18 @@ class CalendarTests(unittest.TestCase):
 
         fake = FakeCalendarHA(calendars=("calendar.familie", "calendar.arbeit"))
         fake.card_file = old.replace("config.entity", "config.entities || config.entity")
+        fake.boards = [{"url_path": "jarvis-display", "mode": "storage"}]
+        fake.views = {"jarvis-display": [{"cards": [{"type": "custom:jarvis-calendar-card", "entity": "calendar.personal"}]}]}
+        _, log = run_deploy(fake, host="10.0.0.9", calendars="calendar.familie, calendar.arbeit")
+        self.assertEqual(fake.saved[0]["config"]["views"][0]["cards"][0]["entities"],
+                         ["calendar.familie", "calendar.arbeit"])
+        self.assertFalse(any("older than this installer" in line for line in log))
+
+        # Genbu's card is the one that counts: it loads before any resource, and the old copy then does nothing.
+        fake = FakeCalendarHA(calendars=("calendar.familie", "calendar.arbeit"))
+        fake.card_file = old
+        fake.genbu_card = (pathlib.Path(__file__).parents[1] / "ha/custom_components/genbu/frontend"
+                           / "jarvis-calendar-card.js").read_text()
         fake.boards = [{"url_path": "jarvis-display", "mode": "storage"}]
         fake.views = {"jarvis-display": [{"cards": [{"type": "custom:jarvis-calendar-card", "entity": "calendar.personal"}]}]}
         _, log = run_deploy(fake, host="10.0.0.9", calendars="calendar.familie, calendar.arbeit")

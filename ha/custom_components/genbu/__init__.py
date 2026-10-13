@@ -1,10 +1,12 @@
 """Genbu: one update point per house. Finds the Genbu Shows that Home Assistant knows through ESPHome,
 keeps which of them are main update Shows, publishes the house version the others follow in
 sensor.genbu_house_version, and asks in Repairs when a main update Show goes missing. The Genbu page in
-the sidebar has a card per Show, made from its ESPHome entities (frontend/). See docs/update-leader.md."""
+the sidebar has a card per Show, made from its ESPHome entities (frontend/). Genbu also serves the Jarvis
+dashboard's cards and loads them on every page (ha-dashboard/README.md). See docs/update-leader.md."""
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from homeassistant.components import frontend, panel_custom
@@ -22,7 +24,7 @@ try:  # Home Assistant 2026.10 and later
 except ImportError:
     import voluptuous as vol
 
-from .const import DOMAIN, MANUFACTURERS, PANEL, PANEL_FILES, SERVICE_FORGET, STORE_KEY, STORE_VERSION
+from .const import CARDS, DOMAIN, MANUFACTURERS, PANEL, PANEL_FILES, SERVICE_FORGET, STORE_KEY, STORE_VERSION
 from .coordinator import GenbuHouse, unhide
 
 PLATFORMS = [Platform.SENSOR, Platform.SELECT]
@@ -51,6 +53,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         return False
     frontend.async_remove_panel(hass, PANEL, warn_if_unknown=False)
+    for url in hass.data.pop(f"{DOMAIN}_cards", []):
+        frontend.remove_extra_js_url(hass, url)
     # Saved now, not in a few seconds, so removing Genbu right after starts from the same house.
     hub = entry.runtime_data
     await hub.store.async_save(hub.house.data)
@@ -72,6 +76,26 @@ async def _add_panel(hass: HomeAssistant) -> None:
         hass, frontend_url_path=PANEL, webcomponent_name="genbu-panel", sidebar_title="Genbu",
         sidebar_icon="mdi:tablet-dashboard", module_url=f"{PANEL_FILES}/genbu-panel.js?v={version}",
         config={"manufacturers": sorted(MANUFACTURERS)}, require_admin=False)
+    await _add_cards(hass)
+
+
+async def _add_cards(hass: HomeAssistant) -> None:
+    """The dashboard's cards, loaded on every page from where the panel's script is. Each address carries
+    a hash of its file rather than Genbu's version, so a browser that kept a card for a month (Home
+    Assistant tells it to) loads the new one whenever the file changes, version bumped or not. A copy
+    still loaded from /config/www as a resource does nothing: Genbu's card is defined first, and the
+    cards define themselves only once."""
+    if hass.data.get(f"{DOMAIN}_cards"):
+        return
+    folder = Path(__file__).parent / "frontend"
+
+    def hashes() -> dict[str, str]:
+        return {name: hashlib.sha256((folder / name).read_bytes()).hexdigest()[:12] for name in CARDS}
+
+    urls = [f"{PANEL_FILES}/{name}?v={v}" for name, v in (await hass.async_add_executor_job(hashes)).items()]
+    for url in urls:
+        frontend.add_extra_js_url(hass, url)
+    hass.data[f"{DOMAIN}_cards"] = urls
 
 
 def _drop_copies(hass: HomeAssistant, entry: ConfigEntry) -> None:

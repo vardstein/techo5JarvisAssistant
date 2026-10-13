@@ -2,7 +2,7 @@
 its script is served, and it goes when Genbu is unloaded. Also what 1.3.0 tidies up after 1.2.0, whose
 copies of the controls it replaces: their registry entries go and the hidden originals come back."""
 
-from homeassistant.components.frontend import DATA_PANELS
+from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, DATA_PANELS
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -56,16 +56,40 @@ async def test_page_is_in_the_sidebar(hass: HomeAssistant, hass_client):
     assert 'customElements.define("genbu-panel"' in await resp.text()
 
 
+CARDS = ("jarvis-calendar-card", "jarvis-live-timer-card", "jarvis-recipe-card", "jarvis-room-environment-card",
+         "jarvis-weather-card")
+
+
+def card_urls(hass: HomeAssistant) -> list[str]:
+    return sorted(u for u in hass.data[DATA_EXTRA_MODULE_URL].urls if "/jarvis-" in u)
+
+
+async def test_dashboard_cards_load_on_every_page(hass: HomeAssistant, hass_client):
+    await setup(hass)
+    urls = card_urls(hass)
+    assert [u.split("?")[0] for u in urls] == [f"/genbu_panel/{c}.js" for c in CARDS]
+    assert all(len(u.split("?v=")[1]) == 12 for u in urls)  # the file's hash, new whenever the file is
+    client = await hass_client()
+    for card in CARDS:
+        resp = await client.get(f"/genbu_panel/{card}.js")
+        assert resp.status == 200
+        assert card in await resp.text()
+    # The calendar card shows a list of calendars, which the installer sets (docs/calendars.md).
+    assert "entities" in await (await client.get("/genbu_panel/jarvis-calendar-card.js")).text()
+
+
 async def test_page_goes_with_genbu_and_comes_back(hass: HomeAssistant):
     add_show(hass)
     entry = await setup(hass)
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
     assert "genbu" not in hass.data[DATA_PANELS]
+    assert not card_urls(hass)
     # Set up again in the same run: the files are already served, the page comes back.
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     assert "genbu" in hass.data[DATA_PANELS]
+    assert len(card_urls(hass)) == len(CARDS)
 
 
 async def test_after_1_2_0_copies_go_and_originals_come_back(hass: HomeAssistant):

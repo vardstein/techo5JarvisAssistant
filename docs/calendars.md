@@ -14,11 +14,11 @@ means nothing is on it for the next year. If the date under the clock does nothi
 the Show has no calendar chosen (step 4).
 
 A red card with nothing in it, where the calendar should be, is Home Assistant saying the card
-couldn't start. Usually the card lists its calendars under `entities` but the card file in
-`/config/www/openjade/` is older than that and only knows `entity`. Copy the current
-`jarvis-calendar-card.js` there and raise its `?v=` (see [ha-dashboard](../ha-dashboard/README.md)).
-The installer checks the file first: when it is older, the card gets only the first chosen calendar,
-and the installer says so.
+couldn't start. Usually the card lists its calendars under `entities`, but the card Home Assistant
+loads is an old copy in `/config/www/openjade/` that only knows `entity`. Genbu 1.3.1 and newer
+brings the current card ([ha-dashboard](../ha-dashboard/README.md)), so adding or updating Genbu fixes
+it. The installer checks the card first: when it is older, the card gets only the first chosen
+calendar, and the installer says so.
 
 The installer can do steps 1, 3 and 4 for a CalDAV account. It asks for the account and which
 calendars the Show shows, checks that each of them answers (without reading what's on them), and
