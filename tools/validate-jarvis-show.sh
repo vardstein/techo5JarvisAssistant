@@ -18,14 +18,8 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 echo '=== PYTHON SYNTAX ==='
 python3 -m compileall -q tools tests
 
-echo '=== PROFILE JSON ==='
-python3 - <<'PY'
-import json
-from pathlib import Path
-for path in sorted(Path('profiles').glob('*.json')):
-    json.loads(path.read_text(encoding='utf-8'))
-    print('PASS:', path)
-PY
+echo '=== BOARD CATALOGUE ==='
+python3 tools/jarvis_crown/catalogue.py check
 
 echo '=== SHELL SYNTAX ==='
 bash -n tools/release-jarvis-show.sh

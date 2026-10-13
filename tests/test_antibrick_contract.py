@@ -5,7 +5,8 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
-from jarvis_crown.boards import KNOWN_UNSUPPORTED_PRODUCTS, PROFILES  # noqa: E402
+from jarvis_crown.catalogue import profile_for_board, supported_boards  # noqa: E402
+from jarvis_crown.device_gate import KNOWN_UNSUPPORTED_PRODUCTS  # noqa: E402
 from jarvis_crown.install import BOOT_SHA256_BY_BOARD, make_install_plan  # noqa: E402,F401
 from jarvis_crown.recovery import TWRP_SHA256_BY_BOARD  # noqa: E402
 from jarvis_crown.unlock import AMONET_UNLOCK_SHA256  # noqa: E402
@@ -13,10 +14,10 @@ from jarvis_crown.unlock import AMONET_UNLOCK_SHA256  # noqa: E402
 
 class AntiBrickContractTests(unittest.TestCase):
     def test_only_crown_checkers_and_cronos_are_product_targets(self):
-        self.assertEqual(set(PROFILES), {"crown", "checkers", "cronos"})
-        self.assertEqual(PROFILES["crown"].fastboot_product, "CROWN")
-        self.assertEqual(PROFILES["checkers"].fastboot_product, "CHECKERS")
-        self.assertEqual(PROFILES["cronos"].fastboot_product, "CRONOS")
+        self.assertEqual(set(supported_boards()), {"crown", "checkers", "cronos"})
+        self.assertEqual(profile_for_board("crown").fastboot_product, "CROWN")
+        self.assertEqual(profile_for_board("checkers").fastboot_product, "CHECKERS")
+        self.assertEqual(profile_for_board("cronos").fastboot_product, "CRONOS")
         self.assertNotIn("CRONOS", KNOWN_UNSUPPORTED_PRODUCTS)
 
     def test_cronos_boot_is_pinned_but_twrp_and_amonet_are_not(self):

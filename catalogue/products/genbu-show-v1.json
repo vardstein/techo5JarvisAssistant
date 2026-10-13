@@ -1,5 +1,5 @@
 {
-  "product": "genbu-show-v1",
+  "id": "genbu-show-v1",
   "version": 1,
   "boards": [
     "crown",

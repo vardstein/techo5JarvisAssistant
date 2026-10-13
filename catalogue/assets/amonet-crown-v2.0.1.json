@@ -16,5 +16,6 @@
     "amonet/device.prop": "4313cbc0c8a75d418ec96890a317b89eae71bc78c7c92ace358000cb7d8d7bd5",
     "amonet/fastbrick.sh": "aa93be2a752f8f4d4da31fa4bb733e9ce1dcdb9a55feda3795f52b95a9062ec5",
     "amonet/profile.sh": "844e584acc0bda882ff4c897cf2f55a5c9b8b9d913b9f5b7f897e6780371605a"
-  }
+  },
+  "notes": "Pinned from a known-good amonet-crown-v2.0.1 archive. Reviewed 2026-10-09: the scripts match R0rt1z2/amonet (main.py/common.py as of 999f8d0ab5). unlock.py checks the six unlock members before it runs fastbrick.sh, and recovery.py checks bin/twrp.img before it boots it. Extract the zip and pass the folder as --amonet-dir."
 }

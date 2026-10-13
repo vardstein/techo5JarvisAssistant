@@ -30,7 +30,7 @@ from typing import Callable
 import zipfile
 
 from jarvis_crown.assets import assets_for
-from jarvis_crown.boards import profile_for_board
+from jarvis_crown.catalogue import profile_for_board
 from jarvis_crown.device_gate import DeviceIdentity
 from jarvis_crown.recovery import (
     RecoveryError,

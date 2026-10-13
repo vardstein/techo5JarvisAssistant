@@ -1,153 +1,212 @@
-"""GENBU-163 slice a: the board catalogue gives exactly what boards.py and profiles/*.json give today.
+"""GENBU-163: the installer reads its boards from catalogue/ and still gives exactly what it gave before.
 
-Every field of today's owners is either compared with the catalogue here or listed with the reason it is
-not a board fact. A new field in boards.py or a profile fails this test until someone decides where it
-belongs. The catalogue under test is the real one; the validator tests copy it and break one thing.
+tests/fixtures/board-catalogue-baseline.json froze what boards.py and the pin constants in install.py,
+recovery.py, unlock.py and assets.py gave at 7d601d0, the last commit where they owned those facts.
+The parity tests below feed the catalogue-backed code the same inputs and expect the same answers,
+error messages included. The two confirmation phrases left the board profile on the way (oddc
+answer 7), so they are compared with the step constants that own them now.
+
+The validator tests copy the real catalogue, break one thing, and expect a refusal.
 """
+import argparse
+import contextlib
+import dataclasses
+import importlib.util
+import io
 import json
 import pathlib
 import shutil
 import sys
 import tempfile
 import unittest
-from dataclasses import fields
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
-from jarvis_crown import assets as code_assets  # noqa: E402
-from jarvis_crown import boards, install, recovery, unlock  # noqa: E402
+from jarvis_crown import assets, catalogue, device_gate, install, recovery, unlock  # noqa: E402
 from jarvis_crown.catalogue import Catalogue, CatalogueError  # noqa: E402
 
-PROFILES_DIR = ROOT / "profiles"
-PRODUCT = json.loads((PROFILES_DIR / "genbu-show-v1.json").read_text())
-TWRP_MEMBER = "amonet/bin/twrp.img"  # the path recovery._pinned_twrp opens inside the amonet folder
+BASELINE = json.loads((ROOT / "tests" / "fixtures" / "board-catalogue-baseline.json").read_text())
 
-# BoardProfile fields that are not board facts. Both phrases are the same on every board, so they
-# move into the generic step code (oddc answer 7); test_confirmations_are_not_board_facts proves it.
-NOT_BOARD_FACTS = {"unlock_confirmation", "install_confirmation"}
-
-# profiles/<board>-v1.json keys that do not come from the board entity, and why.
-PROFILE_KEYS_ELSEWHERE = {
-    "platform": "the product entity (profiles/genbu-show-v1.json product)",
-    "install_confirmation": "generic step code",
-    "unlock_confirmation": "generic step code",
-    "music": "copy of the product entity's music block",
-    "destructive_assets": "prose plus copies of the asset pins; the pins are compared below",
+# Fields BoardProfile had before the move that are step facts, not board facts, and who owns them now.
+MOVED_TO_STEPS = {
+    "install_confirmation": install.FINAL_CONFIRM_PHRASE,
+    "unlock_confirmation": unlock.CONFIRM_PHRASE,
 }
 
 
-class CatalogueParityTest(unittest.TestCase):
+def outcome(fn, value):
+    """Same shape as the generator's outcome(), so the two can be compared as data."""
+    try:
+        return {"ok": dataclasses.asdict(fn(value))}
+    except Exception as exc:  # noqa: BLE001 - the type and text are what we compare
+        return {"error": type(exc).__name__, "message": str(exc)}
+
+
+def without_steps(frozen: dict) -> dict:
+    """A frozen profile minus the phrases, after checking they match the step constants."""
+    rest = dict(frozen)
+    for name, owner in MOVED_TO_STEPS.items():
+        if rest.pop(name) != owner:
+            raise AssertionError(f"{name} {frozen[name]!r} is not the step's {owner!r}")
+    return rest
+
+
+def frozen_outcome(frozen: dict) -> dict:
+    return {"ok": without_steps(frozen["ok"])} if "ok" in frozen else frozen
+
+
+@dataclasses.dataclass
+class _Wrap:
+    assets: tuple
+
+    def __post_init__(self):
+        self.assets = [dataclasses.asdict(a) for a in self.assets]
+
+
+def board_choices(path: pathlib.Path) -> list[str]:
+    """The --board choices a script gives argparse, caught on the way in, as the generator did."""
+    seen: list[str] = []
+    real_add = argparse.ArgumentParser.add_argument
+
+    def spy(self, *names, **kwargs):
+        if "--board" in names:
+            seen.extend(kwargs["choices"])
+        return real_add(self, *names, **kwargs)
+
+    argparse.ArgumentParser.add_argument = spy
+    try:
+        spec = importlib.util.spec_from_file_location(path.stem.replace("-", "_") + "_parity", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        old_argv = sys.argv
+        sys.argv = [path.name, "--help"]
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                (module.parse_args if hasattr(module, "parse_args") else module.main)()
+        except SystemExit:
+            pass
+        finally:
+            sys.argv = old_argv
+    finally:
+        argparse.ArgumentParser.add_argument = real_add
+    return seen
+
+
+class BaselineParityTest(unittest.TestCase):
+    def test_profiles(self):
+        frozen = BASELINE["profiles"]
+        self.assertEqual(list(catalogue.supported_boards()), list(frozen))
+        for name, profile in frozen.items():
+            with self.subTest(board=name):
+                self.assertEqual(dataclasses.asdict(catalogue.profile_for_board(name)), without_steps(profile))
+
+    def test_profile_fields_are_the_old_ones_minus_the_phrases(self):
+        old = set(next(iter(BASELINE["profiles"].values())))
+        new = {f.name for f in dataclasses.fields(catalogue.BoardProfile)}
+        self.assertEqual(new, old - set(MOVED_TO_STEPS))
+
+    def test_product_to_board(self):
+        mapping = {}
+        for name in catalogue.supported_boards():
+            mapping[catalogue.profile_for_board(name).fastboot_product] = name
+        self.assertEqual(mapping, BASELINE["product_to_board"])
+        cat = catalogue.default()
+        for product, board in BASELINE["product_to_board"].items():
+            self.assertEqual(cat.board_for("fastboot_product", product), board)
+
+    def test_lookups_including_case_folding(self):
+        # OPEN DECISION (GENBU-163 Q8): today's lookups fold case and strip spaces. Kept as it was.
+        for name, frozen in BASELINE["profile_for_board"].items():
+            with self.subTest(board=name):
+                self.assertEqual(outcome(catalogue.profile_for_board, name), frozen_outcome(frozen))
+        for product, frozen in BASELINE["profile_for_product"].items():
+            with self.subTest(product=product):
+                self.assertEqual(outcome(catalogue.profile_for_product, product), frozen_outcome(frozen))
+
+    def test_device_gate(self):
+        self.assertEqual(device_gate.KNOWN_UNSUPPORTED_PRODUCTS, BASELINE["known_unsupported_products"])
+        self.assertEqual(device_gate.SUPPORTED_SUMMARY, BASELINE["supported_summary"])
+        self.assertEqual(sorted(device_gate.SUPPORTED_PRODUCTS), BASELINE["device_gate_supported_products"])
+        for product, message in BASELINE["unsupported_product_message"].items():
+            with self.subTest(product=product):
+                self.assertEqual(device_gate.unsupported_product_message(product), message)
+
+    def test_install_constants(self):
+        frozen = BASELINE["install"]
+        self.assertEqual(install.BOOT_SHA256_BY_BOARD, frozen["BOOT_SHA256_BY_BOARD"])
+        self.assertEqual(install.CROWN_BOOT_SHA256, frozen["CROWN_BOOT_SHA256"])
+        self.assertEqual(install.CHECKERS_BOOT_SHA256, frozen["CHECKERS_BOOT_SHA256"])
+        self.assertEqual(install.CRONOS_BOOT_SHA256, frozen["CRONOS_BOOT_SHA256"])
+        self.assertEqual(list(install.SUPPORTED_BOARDS), frozen["SUPPORTED_BOARDS"])
+        self.assertEqual(install.PROFILE_ID, frozen["PROFILE_ID"])
+        self.assertEqual(install.FINAL_CONFIRM_PHRASE, frozen["FINAL_CONFIRM_PHRASE"])
+
+    def test_recovery_constants(self):
+        frozen = BASELINE["recovery"]
+        self.assertEqual(recovery.TWRP_SHA256, frozen["TWRP_SHA256"])
+        self.assertEqual(recovery.TWRP_SHA256_BY_BOARD, frozen["TWRP_SHA256_BY_BOARD"])
+
+    def test_unlock_constants(self):
+        frozen = BASELINE["unlock"]
+        self.assertEqual(unlock.CONFIRM_PHRASE, frozen["CONFIRM_PHRASE"])
+        self.assertEqual(unlock.AMONET_UNLOCK_SHA256, frozen["AMONET_UNLOCK_SHA256"])
+
+    def test_assets(self):
+        frozen = BASELINE["assets"]
+        self.assertEqual({b: [dataclasses.asdict(a) for a in t] for b, t in assets.ASSETS.items()}, frozen["ASSETS"])
+        for name, expected in frozen["assets_for"].items():
+            with self.subTest(board=name):
+                self.assertEqual(outcome(lambda x: _Wrap(assets.assets_for(x)), name), expected)
+        for name, expected in frozen["amonet_bundle_dir"].items():
+            self.assertEqual(str(assets.amonet_bundle_dir(pathlib.Path("CACHE"), name)), expected)
+
+    def test_board_choices(self):
+        for rel, expected in BASELINE["board_choices"].items():
+            with self.subTest(script=rel):
+                self.assertEqual(board_choices(ROOT / rel), expected)
+
+
+class CatalogueFactsTest(unittest.TestCase):
+    """What the catalogue says beyond the frozen values, checked against the code that relies on it."""
+
     @classmethod
     def setUpClass(cls):
         cls.cat = Catalogue()
-        cls.resolved = {b: cls.cat.resolve(b) for b in cls.cat.boards()}
 
-    def test_same_board_set_everywhere(self):
-        expected = set(boards.PROFILES)
-        self.assertEqual(set(self.cat.boards()), expected)
-        self.assertEqual(set(install.SUPPORTED_BOARDS), expected)
-        self.assertEqual(set(PRODUCT["boards"]), expected)
-        self.assertEqual(set(code_assets.ASSETS), expected)
-
-    def test_board_profile_fields(self):
-        names = {f.name for f in fields(boards.BoardProfile)}
-        compared = {"board", "fastboot_product", "model", "product_id", "display_width", "display_height",
-                    "amonet_dir_name", "amonet_kaeru_name"}
-        self.assertEqual(names - NOT_BOARD_FACTS, compared, "BoardProfile grew a field: decide its owner")
-        for name, profile in boards.PROFILES.items():
-            r = self.resolved[name]
-            with self.subTest(board=name):
-                self.assertEqual(profile.board, r["id"])
-                self.assertEqual(profile.fastboot_product, r["identity"]["fastboot_product"])
-                self.assertEqual(profile.model, r["model"])
-                self.assertEqual(profile.product_id, r["profile_id"])
-                self.assertEqual(profile.display_width, r["display"]["width"])
-                self.assertEqual(profile.display_height, r["display"]["height"])
-                self.assertEqual(profile.amonet_dir_name, r["assets"]["amonet"]["file"].removesuffix(".zip"))
-                self.assertEqual(profile.amonet_kaeru_name, pathlib.PurePosixPath(r["assets"]["amonet"]["kaeru"]).name)
-
-    def test_confirmations_are_not_board_facts(self):
-        self.assertEqual({p.unlock_confirmation for p in boards.PROFILES.values()}, {unlock.CONFIRM_PHRASE})
-        self.assertEqual({p.install_confirmation for p in boards.PROFILES.values()}, {"ERASE"})
-
-    def test_product_lookup_matches(self):
-        for product, board in boards.PRODUCT_TO_BOARD.items():
-            self.assertEqual(self.cat.board_for("fastboot_product", product), board)
-            self.assertEqual(boards.profile_for_product(product).board, board)
+    def test_one_product_lists_every_board(self):
+        product = self.cat.product()
+        self.assertEqual(product["id"], install.PROFILE_ID)
+        # mkrootfs.sh, techo5lib and echod read the rootfs marker's "product"; it must stay this string.
+        self.assertEqual(product["id"], "genbu-show-v1")
+        self.assertEqual(product["boards"], list(catalogue.supported_boards()))
+        self.assertEqual(sorted(product["boards"]), self.cat.boards())
 
     def test_twrp_device_is_the_board_name_recovery_checks(self):
         # recovery.verify_twrp_board compares ro.product.device with the board name.
-        for name in boards.PROFILES:
+        for name in self.cat.boards():
             self.assertEqual(self.cat.board_for("twrp_device", name), name)
 
-    def test_board_profiles_json(self):
-        files = sorted(p.name for p in PROFILES_DIR.glob("*-v1.json") if p.name != "genbu-show-v1.json")
-        # cronos has no profile file today; boards.py alone carries it.
-        self.assertEqual(files, ["checkers-v1.json", "crown-v1.json"])
-        for file in files:
-            data = json.loads((PROFILES_DIR / file).read_text())
-            r = self.resolved[data["board"]]
-            with self.subTest(file=file):
-                compared = {"product", "board", "fastboot_product", "model", "display"}
-                self.assertEqual(set(data) - compared - set(PROFILE_KEYS_ELSEWHERE), set(),
-                                 "profile grew a key: decide its owner")
-                self.assertEqual(data["product"], r["profile_id"])
-                self.assertEqual(data["fastboot_product"], r["identity"]["fastboot_product"])
-                self.assertEqual(data["model"], r["model"])
-                self.assertEqual(data["display"], r["display"])
-                self.assertEqual(data["platform"], PRODUCT["product"])
-                self.assertEqual(data["install_confirmation"], "ERASE")
-                self.assertEqual(data["unlock_confirmation"], unlock.CONFIRM_PHRASE)
-                if "music" in data:
-                    self.assertEqual(data["music"], PRODUCT["music"])
-                if "destructive_assets" in data:
-                    da = data["destructive_assets"]
-                    self.assertEqual(set(da), {"status", "boot", "twrp", "amonet"})
-                    self.assertEqual(da["boot"]["sha256"], r["assets"]["boot"]["sha256"])
-                    self.assertIn(r["assets"]["boot"]["file"], da["boot"]["source"])
-                    self.assertEqual(da["twrp"]["sha256"], r["assets"]["amonet"]["members"][TWRP_MEMBER])
-                    self.assertIn(r["assets"]["amonet"]["file"], da["twrp"]["source"])
-
-    def test_download_assets(self):
-        for name, pinned in code_assets.ASSETS.items():
-            r = self.resolved[name]["assets"]
-            self.assertEqual(sorted(a.kind for a in pinned), sorted(r))
-            for a in pinned:
-                c = r[a.kind]
-                with self.subTest(board=name, kind=a.kind):
-                    self.assertEqual(a.name, c["file"])
-                    self.assertEqual(a.url, c["url"])
-                    self.assertEqual(a.source, c["source"])
-                    self.assertEqual(a.manual, c["manual"])
-                    # Today "" and 0 mean "not pinned"; the catalogue leaves the pin out.
-                    self.assertEqual(a.sha256, c.get("sha256", ""))
-                    self.assertEqual(a.size, c.get("size", 0))
-
-    def test_boot_pins(self):
-        for name, sha in install.BOOT_SHA256_BY_BOARD.items():
-            self.assertEqual(sha, self.resolved[name]["assets"]["boot"].get("sha256"))
-
-    def test_twrp_pins(self):
-        self.assertEqual(recovery.TWRP_SHA256_BY_BOARD["crown"], recovery.TWRP_SHA256)
-        for name, sha in recovery.TWRP_SHA256_BY_BOARD.items():
-            members = self.resolved[name]["assets"]["amonet"].get("members", {})
-            self.assertEqual(sha, members.get(TWRP_MEMBER), name)
-
-    def test_unlock_pins(self):
-        # unlock.py verifies these files on crown and refuses every other board unless someone passes
-        # a hash manifest. The catalogue says the same thing: only crown's zip pins all of them.
-        for name in boards.PROFILES:
-            members = self.resolved[name]["assets"]["amonet"].get("members", {})
-            pinned = {rel: members.get("amonet/" + rel) for rel in unlock.AMONET_UNLOCK_SHA256}
+    def test_unlock_pins_only_complete_on_crown(self):
+        # unlock.py refuses every board but crown in code; the catalogue agrees that only crown's
+        # zip pins every file the unlock needs. Opening another board takes the evidence gate first.
+        for name in self.cat.boards():
+            members = self.cat.resolve(name)["assets"]["amonet"].get("members", {})
+            pinned = {rel: members.get("amonet/" + rel) for rel in unlock.UNLOCK_FILES}
             if name == "crown":
                 self.assertEqual(pinned, unlock.AMONET_UNLOCK_SHA256)
             else:
                 self.assertIn(None, pinned.values(), name)
 
     def test_unlock_policy(self):
-        for name in boards.PROFILES:
-            self.assertEqual(self.resolved[name]["policy"], {"install": {"unlock": "amonet-kaeru"}})
+        for name in self.cat.boards():
+            self.assertEqual(self.cat.resolve(name)["policy"], {"install": {"unlock": "amonet-kaeru"}})
+
+    def test_check_command(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(catalogue.main(["check"]), 0)
+        self.assertIn("ok: 1 product, 3 boards", out.getvalue())
 
 
 class CatalogueRefusesTest(unittest.TestCase):
@@ -158,9 +217,11 @@ class CatalogueRefusesTest(unittest.TestCase):
         for name in ("echo-show-8-gen2", "Crown", " crown", "crown ", "", "generic"):
             with self.subTest(name=name), self.assertRaises(CatalogueError):
                 self.cat.resolve(name)
+            with self.subTest(profile=name), self.assertRaises(CatalogueError):
+                self.cat.profile(name)
 
     def test_unknown_or_inexact_product(self):
-        # boards.profile_for_product folds case and strips spaces; the catalogue does not.
+        # profile_for_product folds case and strips spaces before it asks (Q8); the catalogue itself does not.
         for product in ("crown", "CROWN ", "CHECKERS2", "", "LAGUNA"):
             with self.subTest(product=product), self.assertRaises(CatalogueError):
                 self.cat.board_for("fastboot_product", product)
@@ -182,11 +243,15 @@ class CatalogueRefusesTest(unittest.TestCase):
 class CatalogueValidatorTest(unittest.TestCase):
     """Copy the real catalogue, break one thing, expect a refusal."""
 
-    def broken(self, rel, change):
+    def copy(self) -> pathlib.Path:
         tmp = pathlib.Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, tmp)
         root = tmp / "catalogue"
         shutil.copytree(ROOT / "catalogue", root)
+        return root
+
+    def broken(self, rel, change):
+        root = self.copy()
         path = root / rel
         data = json.loads(path.read_text())
         change(data)
@@ -222,10 +287,45 @@ class CatalogueValidatorTest(unittest.TestCase):
 
     def test_member_pins_need_zip_pin(self):
         self.broken("assets/amonet-cronos-v2.0.1.json",
-                    lambda d: d.update(members={TWRP_MEMBER: "0" * 64}))
+                    lambda d: d.update(members={recovery.TWRP_MEMBER: "0" * 64}))
 
     def test_id_must_match_file(self):
         self.broken("boards/crown.json", lambda d: d.update(id="crown2"))
+
+    def test_notes_must_be_text(self):
+        self.broken("boards/cronos.json", lambda d: d.update(notes=""))
+        self.broken("assets/techo5-boot-v0.7.16.json", lambda d: d.update(notes=["a list"]))
+
+    def test_product_unknown_key(self):
+        self.assertIn("unknown", self.broken("products/genbu-show-v1.json", lambda d: d.update(camera={"x": 1})))
+
+    def test_product_missing_block(self):
+        self.assertIn("missing", self.broken("products/genbu-show-v1.json", lambda d: d.pop("security")))
+
+    def test_product_empty_block(self):
+        self.broken("products/genbu-show-v1.json", lambda d: d.update(music={}))
+
+    def test_product_unknown_board(self):
+        self.assertIn("no board", self.broken("products/genbu-show-v1.json", lambda d: d["boards"].append("laguna")))
+
+    def test_product_board_twice(self):
+        self.assertIn("twice", self.broken("products/genbu-show-v1.json", lambda d: d["boards"].append("crown")))
+
+    def test_board_no_product_lists(self):
+        self.assertIn("no product lists",
+                      self.broken("products/genbu-show-v1.json", lambda d: d["boards"].remove("cronos")))
+
+    def test_product_bad_version(self):
+        self.broken("products/genbu-show-v1.json", lambda d: d.update(version=0))
+
+    def test_two_products_refuse_to_pick(self):
+        root = self.copy()
+        shutil.copy(root / "products" / "genbu-show-v1.json", root / "products" / "genbu-show-v2.json")
+        data = json.loads((root / "products" / "genbu-show-v2.json").read_text())
+        data["id"] = "genbu-show-v2"
+        (root / "products" / "genbu-show-v2.json").write_text(json.dumps(data))
+        with self.assertRaisesRegex(CatalogueError, "exactly one product"):
+            Catalogue(root).product()
 
 
 if __name__ == "__main__":

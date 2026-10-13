@@ -10,5 +10,6 @@
   "kaeru": "amonet/bin/checkers-kaeru.bin",
   "members": {
     "amonet/bin/twrp.img": "dcc75bb651894c343039d45af73c4d900594762f6f55187c1ebdaf12d0ae59f5"
-  }
+  },
+  "notes": "Needed only by units first unlocked with Amonet 1.x (boot starts with \"microloader by xyz\"): flashing this zip in TWRP moves them to the 2.x layout (jarvis-show.py amonet-upgrade). Unlocking checkers from stock is refused: its unlock members are not pinned here. Reviewed 2026-10-09: update-binary is byte-identical to R0rt1z2/amonet mt8163-echo-show HEAD, the other scripts match upstream (main.py/common.py as of 999f8d0ab5), fastbrick.sh and fastboot(32) are the same bytes as crown's pinned ones, device.prop says checkers, and twrp.img is the 16.1.0-20260812-checkers build. Preloader, LK, TZ and kaeru exist only in this zip."
 }

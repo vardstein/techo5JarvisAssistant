@@ -39,7 +39,7 @@ tools/linux/slotctl
 tools/linux/mkrootfs.sh
 echod/internal/feature/firmware/
 dashcast/
-profiles/
+catalogue/
 ```
 
 Any upstream change that alters partition names, boot/recovery handling, `slotctl`, updater trust,

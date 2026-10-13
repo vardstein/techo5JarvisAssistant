@@ -19,5 +19,6 @@
     "lineage": "lineage-18.1-20260904-UNOFFICIAL-cronos",
     "boot": "techo5-boot-v0.7.16",
     "amonet": "amonet-cronos-v2.0.1"
-  }
+  },
+  "notes": "The 2nd gen Echo Show 5 (2021). Same MT8163 and MT7668 as checkers, its own panel and codec. Its amonet zip and TWRP are not pinned yet, so unlock and recovery stay closed until they are reviewed."
 }

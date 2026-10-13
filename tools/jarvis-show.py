@@ -18,9 +18,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from jarvis_crown.amonet_upgrade import AdbUpgradeClient, UpgradeError, upgrade_amonet  # noqa: E402
 from jarvis_crown.assets import amonet_bundle_dir, asset_path, assets_for, default_cache_dir  # noqa: E402
 from jarvis_crown.boot_logo import BootLogoError, SshClient, put_logo  # noqa: E402
-from jarvis_crown.boards import profile_for_board, profile_for_product  # noqa: E402
+from jarvis_crown.catalogue import profile_for_board, profile_for_product, supported_boards  # noqa: E402
 from jarvis_crown.device_gate import DeviceGateError, identify_show  # noqa: E402
 from jarvis_crown.flow import FlowError, InstallInputs, run_install_flow  # noqa: E402
+from jarvis_crown.install import FINAL_CONFIRM_PHRASE  # noqa: E402
 from jarvis_crown import genbu  # noqa: E402
 from jarvis_crown import home_assistant as ha_api  # noqa: E402
 from jarvis_crown import ui  # noqa: E402
@@ -33,7 +34,7 @@ from jarvis_crown.preflight import SERIAL_GROUPS, _group_names, preflight_ok, pr
 from jarvis_crown.recovery import RecoveryError, adb_recovery_serials, identify_recovery_show  # noqa: E402
 from jarvis_crown.to_fastboot import ToFastbootError, bring_to_fastboot  # noqa: E402
 from jarvis_crown.releases import CHANNELS, DEFAULT_CHANNEL, ReleaseError, fetch_rootfs  # noqa: E402
-from jarvis_crown.unlock import UnlockError, unlock_show  # noqa: E402
+from jarvis_crown.unlock import CONFIRM_PHRASE as UNLOCK_PHRASE, UnlockError, unlock_show  # noqa: E402
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -55,7 +56,7 @@ STAGES = {
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="jarvis-show")
     parser.add_argument("command", help="what to do (default preflight); docs/jarvis-crown-installer.md, \"Commands and switches\"", choices=["preflight", "identify", "unlock", "install", "amonet-upgrade", "wifi", "home-assistant", "boot-logo"], nargs="?")
-    parser.add_argument("--board", choices=("crown", "checkers", "cronos"), help="optional board cross-check; install/identify auto-detect by default")
+    parser.add_argument("--board", choices=supported_boards(), help="optional board cross-check; install/identify auto-detect by default")
     parser.add_argument("--amonet-dir", type=Path, help="the unpacked Amonet 2.x package; default ../third_party/<board> or the asset cache")
     parser.add_argument("--amonet-zip", type=Path, help="amonet-upgrade: the pinned Amonet 2.x zip; default from the asset cache")
     parser.add_argument("--amonet-hashes", type=Path, help="trusted JSON SHA-256 map for a board whose Amonet bytes are not built-in")
@@ -916,12 +917,12 @@ def _main() -> int:
             ui.out.caution(f"unlocking {p.model} runs the board-specific Amonet exploit.")
             ui.out.caution(f"detected LK build: {build or 'UNREADABLE'}")
             ui.out.caution("bootloader exploits inherently carry brick risk; keep mains power connected and do not interrupt writes.")
-            return ui.out.typed(p.unlock_confirmation)
+            return ui.out.typed(UNLOCK_PHRASE)
 
         def confirm_install(p):
             ui.out.caution("the next stage formats userdata for Lineage vendor staging, then converts system into the A/B slot store.")
             ui.out.caution("the verified recovery backup already exists; do not disconnect power/USB during these writes.")
-            return ui.out.typed(p.install_confirmation)
+            return ui.out.typed(FINAL_CONFIRM_PHRASE)
 
         with secret_files(settings) as files:
             inputs = InstallInputs(
@@ -1000,7 +1001,7 @@ def _main() -> int:
     ui.out.caution(f"the next stage intentionally runs Amonet for {profile.board}.")
     ui.out.caution(f"detected LK build: {identity.lk_build_desc or 'UNREADABLE'}")
     ui.out.caution("bootloader exploits inherently carry brick risk; keep mains power connected and do not interrupt writes.")
-    confirmation = ui.out.typed(profile.unlock_confirmation)
+    confirmation = ui.out.typed(UNLOCK_PHRASE)
     try:
         result = unlock_show(
             identity,

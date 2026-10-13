@@ -5,5 +5,6 @@
   "url": "https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-show-5-2nd-gen-2021-cronos.4772596/",
   "source": "XDA thread 4772596 (R0rt1z2), browser download, not reviewed yet",
   "manual": true,
-  "kaeru": "amonet/bin/cronos-kaeru.bin"
+  "kaeru": "amonet/bin/cronos-kaeru.bin",
+  "notes": "Not reviewed yet: no sha256, so the fetcher only inspects it and the installer never uses it. Its bin/twrp.img gets pinned once the zip is reviewed; until then recovery refuses to boot any TWRP on cronos. The attachment link is on the first post of the thread."
 }

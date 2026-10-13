@@ -6,5 +6,6 @@
   "sha256": "785fa643fd68b2e6f6f02d96a2da58373c6a577b92a27cf6cec69603bb94068e",
   "size": 485795474,
   "source": "amazon-oss/releases lineage-18.1-checkers-v0.7",
-  "manual": false
+  "manual": false,
+  "notes": "Each sha256 is the one the release notes publish and the one GitHub reports as the asset digest. 20260904 is the first build whose kernel is 4.9.337-g8d928c5176cc, the ABI the Jarvis boot images and the vendor-module gate require."
 }

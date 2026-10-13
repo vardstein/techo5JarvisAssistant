@@ -16,29 +16,24 @@ import sys
 import tarfile
 from typing import Callable
 
-from jarvis_crown.boards import profile_for_board
+from jarvis_crown import catalogue
+from jarvis_crown.catalogue import profile_for_board
 from jarvis_crown.recovery import RecoveryError, verify_backup
 
-CHECKERS_BOOT_SHA256 = "6fd696dce2592d2237a432e23ed7c032f1643bd1fe475d3094eccd9f7d2079b2"
-CROWN_BOOT_SHA256 = "e00bed964d9b2ce31df152d183d2aeb45a7839cc5f7460a93dd97d70715ad1b7"
-CRONOS_BOOT_SHA256 = "7e9ce93a54fc613cbfab5d15929aa06bfd6f63c2c432d6f8261b3599fc3cd791"
+# Boot pins come from the catalogue (catalogue/assets/<boot asset>.json), where the review notes for
+# each image live too. These names stay so callers and tests keep working; None means not pinned.
+SUPPORTED_BOARDS = catalogue.supported_boards()
 BOOT_SHA256_BY_BOARD: dict[str, str | None] = {
-    # Upstream TECHO5 v1.0.1 techo5-boot-crown-v1.0.1.img, for the same reasons as checkers below. Its
-    # ramdisk is v0.8.0's byte for byte; the kernel only adds the quick-tap unmute fix (upstream #17).
-    "crown": CROWN_BOOT_SHA256,
-    # Upstream TECHO5 v1.0.1 techo5-boot-checkers-v1.0.1.img: listed in the v1.0.1 manifest signed by
-    # the upstream release key, kernel 4.9.337-g8d928c5176cc (the Jarvis vendor-module ABI).
-    "checkers": CHECKERS_BOOT_SHA256,
-    # Upstream TECHO5 v0.7.16 techo5-boot-v0.7.16.img, the last release with a cronos boot image (its
-    # 11 DTBs are all cronos) and the one upstream's own install-show.py picks for cronos. Same kernel
-    # 4.9.337-g8d928c5176cc as checkers v1.0.1, and the same init; only four ramdisk tools differ.
-    "cronos": CRONOS_BOOT_SHA256,
+    board: catalogue.default().resolve(board)["assets"]["boot"].get("sha256") for board in SUPPORTED_BOARDS
 }
+CHECKERS_BOOT_SHA256 = BOOT_SHA256_BY_BOARD["checkers"]
+CROWN_BOOT_SHA256 = BOOT_SHA256_BY_BOARD["crown"]
+CRONOS_BOOT_SHA256 = BOOT_SHA256_BY_BOARD["cronos"]
 ROOTFS_MARKER = "etc/jarvis-show-release.json"
-PROFILE_ID = "genbu-show-v1"
-SUPPORTED_BOARDS = ("crown", "checkers", "cronos")
+PROFILE_ID = catalogue.default().product()["id"]  # the rootfs marker's "product"
 UPDATE_CHANNELS = ("stable", "staging", "dev")  # echod/internal/update/channel.go
-FINAL_CONFIRM_PHRASE = "ERASE"  # compatibility alias
+# What the person types before the install formats userdata. The same on every board, so the step owns it.
+FINAL_CONFIRM_PHRASE = "ERASE"
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -217,9 +212,9 @@ def make_install_plan(
     update_channel: str | None = None,
 ) -> InstallPlan:
     profile = profile_for_board(board)
-    if confirmation != profile.install_confirmation:
+    if confirmation != FINAL_CONFIRM_PHRASE:
         raise InstallError(
-            f"final confirmation must be exactly: {profile.install_confirmation}"
+            f"final confirmation must be exactly: {FINAL_CONFIRM_PHRASE}"
         )
     if not adb_serial.strip():
         raise InstallError("ADB recovery serial is required")

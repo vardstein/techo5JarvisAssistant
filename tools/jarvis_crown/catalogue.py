@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Genbu Show board catalogue: load, check, resolve, explain.
 
-The catalogue is catalogue/boards/<board>.json and catalogue/assets/<asset>.json. A board names its
-assets by id and never copies them. There is no inheritance and there are no defaults: every key a
+The catalogue is catalogue/products/<product>.json, catalogue/boards/<board>.json and
+catalogue/assets/<asset>.json. A product lists its boards by id, and a board names its assets by id;
+neither copies what it names. There is no inheritance and there are no defaults: every key a
 board or asset may have is listed below, an unknown key or value is an error, and a value that is
-missing stays missing. Lookups are exact. Anything that does not match exactly one board is refused.
+missing stays missing. "notes" is free text for people (review history, why a pin is or is not there);
+no code reads it. Lookups are exact. Anything that does not match exactly one board is refused.
 
-This module is the only owner of the entity shape. Nothing else reads catalogue/ directly.
+This module is the only owner of the entity shape. Nothing else reads catalogue/ directly: the installer
+asks profile_for_board() and profile_for_product() below, or resolve() for pins.
 
     python3 tools/jarvis_crown/catalogue.py check
     python3 tools/jarvis_crown/catalogue.py resolve crown
@@ -20,6 +23,8 @@ import json
 from pathlib import Path
 import re
 import sys
+from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import Any
 import zipfile
 
@@ -36,6 +41,9 @@ _ID = re.compile(r"^[a-z0-9][a-z0-9._-]*$", re.IGNORECASE)
 _BOARD_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MEMBER = re.compile(r"^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$")
+# Product blocks the catalogue carries but does not own the inside of. Nothing in the installer reads
+# them; they are kept here so the product has one file, and checked only for being non-empty objects.
+PRODUCT_BLOCKS = frozenset({"assistant", "display", "security", "music"})
 
 
 class CatalogueError(ValueError):
@@ -69,7 +77,7 @@ def _int(where: str, value: Any) -> int:
 
 def _check_asset(where: str, a: Any) -> None:
     _keys(where, a, {"id", "kind", "file", "url", "source", "manual"},
-          {"sha256", "size", "kaeru", "members"})
+          {"sha256", "size", "kaeru", "members", "notes"})
     _str(f"{where}#/id", a["id"], _ID)
     if a["kind"] not in ASSET_KINDS:
         raise CatalogueError(f"{where}#/kind: {a['kind']!r} not in {sorted(ASSET_KINDS)}")
@@ -77,6 +85,8 @@ def _check_asset(where: str, a: Any) -> None:
     if not _str(f"{where}#/url", a["url"]).startswith("https://"):
         raise CatalogueError(f"{where}#/url: only https sources")
     _str(f"{where}#/source", a["source"])
+    if "notes" in a:
+        _str(f"{where}#/notes", a["notes"])
     if type(a["manual"]) is not bool:
         raise CatalogueError(f"{where}#/manual: expected true or false")
     # A pin is the sha256 and the size together. Without them the asset is known but never used.
@@ -102,8 +112,10 @@ def _check_asset(where: str, a: Any) -> None:
 
 
 def _check_board(where: str, b: Any, assets: dict[str, dict]) -> None:
-    _keys(where, b, {"id", "model", "profile_id", "identity", "display", "policy", "assets"})
+    _keys(where, b, {"id", "model", "profile_id", "identity", "display", "policy", "assets"}, {"notes"})
     _str(f"{where}#/id", b["id"], _BOARD_ID)
+    if "notes" in b:
+        _str(f"{where}#/notes", b["notes"])
     _str(f"{where}#/model", b["model"])
     _str(f"{where}#/profile_id", b["profile_id"], _BOARD_ID)
     identity = b["identity"]
@@ -127,6 +139,25 @@ def _check_board(where: str, b: Any, assets: dict[str, dict]) -> None:
             raise CatalogueError(f"{where}#/assets/{kind}: {ref!r} is a {assets[ref]['kind']} asset")
 
 
+def _check_product(where: str, p: Any, boards: dict[str, dict]) -> None:
+    _keys(where, p, {"id", "version", "boards"} | PRODUCT_BLOCKS)
+    _str(f"{where}#/id", p["id"], _BOARD_ID)
+    _int(f"{where}#/version", p["version"])
+    if not isinstance(p["boards"], list) or not p["boards"]:
+        raise CatalogueError(f"{where}#/boards: expected a non-empty list of board ids")
+    if len(set(map(str, p["boards"]))) != len(p["boards"]):
+        raise CatalogueError(f"{where}#/boards: a board is listed twice")
+    for i, ref in enumerate(p["boards"]):
+        if ref not in boards:
+            raise CatalogueError(f"{where}#/boards/{i}: no board {ref!r}")
+        # The installer finds a unit in fastboot first, so a board it installs needs that key.
+        if "fastboot_product" not in boards[ref]["identity"]:
+            raise CatalogueError(f"{where}#/boards/{i}: {ref} has no identity.fastboot_product")
+    for block in PRODUCT_BLOCKS:
+        if not isinstance(p[block], dict) or not p[block]:
+            raise CatalogueError(f"{where}#/{block}: expected a non-empty object")
+
+
 def _load_dir(path: Path) -> dict[str, tuple[Path, dict]]:
     out: dict[str, tuple[Path, dict]] = {}
     for file in sorted(path.glob("*")):
@@ -147,6 +178,7 @@ class Catalogue:
         self.root = root
         self._assets = _load_dir(root / "assets")
         self._boards = _load_dir(root / "boards")
+        self._products = _load_dir(root / "products")
         for name, (file, data) in self._assets.items():
             _check_asset(self._rel(file), data)
         assets = {k: v for k, (_, v) in self._assets.items()}
@@ -156,6 +188,13 @@ class Catalogue:
         unused = sorted(set(assets) - used)
         if unused:
             raise CatalogueError(f"assets no board uses: {unused}")
+        boards = {k: v for k, (_, v) in self._boards.items()}
+        for name, (file, data) in self._products.items():
+            _check_product(self._rel(file), data, boards)
+        listed = {ref for _, p in self._products.values() for ref in p["boards"]}
+        unlisted = sorted(set(boards) - listed)
+        if unlisted:
+            raise CatalogueError(f"boards no product lists: {unlisted}")
         for key in IDENTITY_KEYS:
             seen: dict[str, str] = {}
             for name, (_, b) in self._boards.items():
@@ -171,6 +210,30 @@ class Catalogue:
 
     def boards(self) -> list[str]:
         return sorted(self._boards)
+
+    def product(self) -> dict:
+        """The one product in the catalogue. A second product needs someone to decide who picks it."""
+        if len(self._products) != 1:
+            raise CatalogueError(f"expected exactly one product, found {sorted(self._products)}; refusing")
+        (_, p), = self._products.values()
+        return json.loads(json.dumps(p))
+
+    def profile(self, board: str) -> "BoardProfile":
+        """The installer's view of one board the product lists."""
+        if board not in self.product()["boards"]:
+            raise CatalogueError(f"no catalogue board {board!r} in the product; refusing")
+        r = self.resolve(board)
+        amonet = r["assets"]["amonet"]
+        return BoardProfile(
+            board=r["id"],
+            fastboot_product=r["identity"]["fastboot_product"],
+            model=r["model"],
+            product_id=r["profile_id"],
+            display_width=r["display"]["width"],
+            display_height=r["display"]["height"],
+            amonet_dir_name=amonet["file"].removesuffix(".zip"),
+            amonet_kaeru_name=PurePosixPath(amonet["kaeru"]).name,
+        )
 
     def board_for(self, key: str, value: str) -> str:
         """The one board whose identity key equals value exactly, else refuse."""
@@ -208,6 +271,66 @@ class Catalogue:
         return value, f"{self._rel(file)}#{pointer or '/'}"
 
 
+@dataclass(frozen=True)
+class BoardProfile:
+    """What the install steps need to know about one board, all of it read from the catalogue.
+
+    The confirmation phrases used to live here too. They are the same on every board, so they belong to
+    the step that asks for them: unlock.CONFIRM_PHRASE and install.FINAL_CONFIRM_PHRASE.
+    """
+    board: str
+    fastboot_product: str
+    model: str
+    product_id: str
+    display_width: int
+    display_height: int
+    amonet_dir_name: str  # the amonet zip's file name without .zip; the folder it unpacks into
+    amonet_kaeru_name: str  # the file name of the zip's kaeru payload, under amonet/bin/
+
+
+_default: Catalogue | None = None
+
+
+def default() -> Catalogue:
+    """The repository's catalogue, loaded and checked once per process."""
+    global _default
+    if _default is None:
+        _default = Catalogue()
+    return _default
+
+
+def supported_boards() -> tuple[str, ...]:
+    """The product's boards, in the order the product lists them."""
+    return tuple(default().product()["boards"])
+
+
+def _or_list(items: tuple[str, ...]) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " or " + items[-1]
+
+
+# OPEN DECISION (GENBU-163 Q8): the two lookups below strip spaces and fold case before they match,
+# exactly as boards.py did, so "Crown" picks crown and "crown" picks CROWN. The catalogue itself
+# matches exactly (board_for, resolve). Whether the installer should stop folding is Jade's call;
+# until then this keeps today's behaviour, and tests/test_board_catalogue.py pins it.
+def profile_for_board(board: str) -> BoardProfile:
+    key = board.strip().lower()
+    boards = supported_boards()
+    if key not in boards:
+        raise ValueError(f"unsupported Jarvis Show board {board!r}; choose {_or_list(boards)}")
+    return default().profile(key)
+
+
+def profile_for_product(product: str) -> BoardProfile:
+    key = product.strip().upper()
+    try:
+        board = default().board_for("fastboot_product", key)
+    except CatalogueError:
+        raise ValueError(f"unsupported fastboot product {product!r}") from None
+    if board not in supported_boards():
+        raise ValueError(f"unsupported fastboot product {product!r}")
+    return default().profile(board)
+
+
 def check_files(cat: Catalogue, dirs: list[Path]) -> list[str]:
     """Hash every pinned asset (and pinned zip member) found in dirs. Read-only; reports, never fixes."""
     lines = []
@@ -241,7 +364,8 @@ def main(argv: list[str]) -> int:
     try:
         cat = Catalogue()
         if argv == ["check"]:
-            print(f"ok: {len(cat.boards())} boards, {len(cat._assets)} assets")
+            n = len(cat._products)
+            print(f"ok: {n} product{'s' * (n != 1)}, {len(cat.boards())} boards, {len(cat._assets)} assets")
         elif len(argv) >= 2 and argv[0] == "check-files":
             lines = check_files(cat, [Path(d).expanduser() for d in argv[1:]])
             print("\n".join(lines))

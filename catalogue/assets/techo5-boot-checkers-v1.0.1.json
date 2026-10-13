@@ -6,5 +6,6 @@
   "sha256": "6fd696dce2592d2237a432e23ed7c032f1643bd1fe475d3094eccd9f7d2079b2",
   "size": 13172736,
   "source": "HuskerMinion/techo5 v1.0.1 (signed manifest)",
-  "manual": false
+  "manual": false,
+  "notes": "Upstream TECHO5 v1.0.1 techo5-boot-checkers-v1.0.1.img: listed in the v1.0.1 manifest signed by the upstream release key, kernel 4.9.337-g8d928c5176cc (the Jarvis vendor-module ABI)."
 }

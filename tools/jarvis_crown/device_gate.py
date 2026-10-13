@@ -11,11 +11,42 @@ import re
 import subprocess
 from typing import Callable, Sequence
 
-from jarvis_crown.boards import PROFILES, profile_for_board, profile_for_product, unsupported_product_message
+from jarvis_crown.catalogue import profile_for_board, profile_for_product, supported_boards
 
 FASTBOOT_TIMEOUT_SECONDS = 8
-SUPPORTED_PRODUCTS = {profile.fastboot_product for profile in PROFILES.values()}
+_PROFILES = tuple(profile_for_board(board) for board in supported_boards())
+SUPPORTED_PRODUCTS = {profile.fastboot_product for profile in _PROFILES}
 SUPPORTED_PRODUCT = "CROWN"  # compatibility alias for Crown-only callers/tests
+
+
+# Products upstream may know about but Jarvis Show v1 intentionally refuses.
+# Keep this list descriptive only: no destructive code path may select these profiles.
+KNOWN_UNSUPPORTED_PRODUCTS: dict[str, str] = {}
+
+# "CHECKERS (Echo Show 5 1st gen), CRONOS (Echo Show 5 2nd gen) and CROWN (Echo Show 8 1st gen)":
+# the catalogue's products and models, the model cut before its " / " part number.
+def _summary() -> str:
+    parts = [f"{p.fastboot_product} ({p.model.partition(' / ')[0]})"
+             for p in sorted(_PROFILES, key=lambda p: p.fastboot_product)]
+    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+
+
+SUPPORTED_SUMMARY = _summary()
+
+
+def unsupported_product_message(product: str) -> str:
+    key = product.strip().upper()
+    if key in KNOWN_UNSUPPORTED_PRODUCTS:
+        return (
+            f"{key} is {KNOWN_UNSUPPORTED_PRODUCTS[key]}, which is intentionally unsupported by "
+            f"Jarvis Show v1. Only {SUPPORTED_SUMMARY} are supported. Do not flash this "
+            "device; no write was attempted."
+        )
+    return (
+        f"{key or product!r} is not a supported Jarvis Show target. "
+        f"Jarvis Show v1 supports only {SUPPORTED_SUMMARY}. This may be a newer "
+        "generation; do not flash it. No write was attempted."
+    )
 
 
 class DeviceGateError(RuntimeError):

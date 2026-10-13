@@ -17,7 +17,7 @@ from typing import Callable
 import zipfile
 
 from jarvis_crown import ui
-from jarvis_crown.boards import profile_for_board
+from jarvis_crown.catalogue import profile_for_board
 
 MIN_FREE_BYTES = 8 * 1024 * 1024 * 1024
 REQUIRED_TOOLS = {

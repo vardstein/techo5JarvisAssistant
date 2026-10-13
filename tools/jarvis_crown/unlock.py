@@ -9,24 +9,35 @@ import subprocess
 import time
 from typing import Callable, Mapping
 
-from jarvis_crown.boards import profile_for_board, profile_for_product
+from jarvis_crown import catalogue
+from jarvis_crown.catalogue import profile_for_board, profile_for_product
 from jarvis_crown.device_gate import DeviceGateError, DeviceIdentity, identify_crown, identify_show
 from jarvis_crown.timing import POLL_SECONDS, POST_AMONET_FASTBOOT_TIMEOUT_SECONDS
 
+# What the person types before Amonet runs. The same on every board, so the step owns it.
 CONFIRM_PHRASE = "UNLOCK"
 FASTBRICK_TIMEOUT_SECONDS = 600
 VERIFY_INTERVAL_SECONDS = POLL_SECONDS
 VERIFY_ATTEMPTS = int(POST_AMONET_FASTBOOT_TIMEOUT_SECONDS / VERIFY_INTERVAL_SECONDS)
 
-# Pinned from the user's known-good amonet-crown-v2.0.1 archive.
-AMONET_UNLOCK_SHA256: dict[str, str] = {
-    "fastbrick.sh": "aa93be2a752f8f4d4da31fa4bb733e9ce1dcdb9a55feda3795f52b95a9062ec5",
-    "profile.sh": "844e584acc0bda882ff4c897cf2f55a5c9b8b9d913b9f5b7f897e6780371605a",
-    "device.prop": "4313cbc0c8a75d418ec96890a317b89eae71bc78c7c92ace358000cb7d8d7bd5",
-    "bin/fastbrick.img": "6b899c2919933b94a8c3e3454c22fe733d1a346d87c27640554a828aae9c6e9a",
-    "bin/fastboot": "cb3d13b850143da85eb4b2099462514894459213da93d03d6ff4782d927d6e20",
-    "bin/fastboot32": "8912e9926cfc45503ad960866501305a684462b1dd1a44c5d82b1f075d6dd8c1",
-}
+# The files unlock checks before it runs fastbrick.sh, relative to <amonet-dir>/amonet.
+UNLOCK_FILES = ("fastbrick.sh", "profile.sh", "device.prop", "bin/fastbrick.img", "bin/fastboot", "bin/fastboot32")
+
+
+def _unlock_pins(board: str) -> dict[str, str] | None:
+    """The catalogue's pins for every unlock file of board's amonet zip, or None if any is missing."""
+    members = catalogue.default().resolve(board)["assets"]["amonet"].get("members", {})
+    pins = {name: members.get("amonet/" + name) for name in UNLOCK_FILES}
+    return None if None in pins.values() else pins
+
+
+# Only crown's zip pins every unlock file today. Unlock still runs on crown alone without a hash
+# manifest from the caller (see unlock_show): pinning more members in the catalogue does not open
+# unlock on another board. That waits for the evidence gate (docs/board-catalogue.md, open questions).
+_crown_pins = _unlock_pins("crown")
+if _crown_pins is None:
+    raise catalogue.CatalogueError("crown's amonet zip no longer pins every unlock file; refusing to load")
+AMONET_UNLOCK_SHA256: dict[str, str] = _crown_pins
 
 
 class UnlockError(RuntimeError):
@@ -165,9 +176,9 @@ def unlock_show(
             )
     verify_amonet_unlock_assets(amonet_dir, expected_hashes=expected_hashes)
 
-    if confirmation != profile.unlock_confirmation:
+    if confirmation != CONFIRM_PHRASE:
         raise UnlockError(
-            f"locked {profile.board} requires exact confirmation phrase {profile.unlock_confirmation!r}"
+            f"locked {profile.board} requires exact confirmation phrase {CONFIRM_PHRASE!r}"
         )
 
     _invoke_fastbrick(amonet_dir, run=run)

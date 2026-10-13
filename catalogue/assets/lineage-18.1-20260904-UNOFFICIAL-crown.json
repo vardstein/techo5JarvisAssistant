@@ -6,5 +6,6 @@
   "sha256": "a01359a5e13dad8ac24c5507e8a747163b992012410b14d2ca9a8711ec4a1491",
   "size": 489922458,
   "source": "amazon-oss/releases lineage-18.1-crown-v0.5",
-  "manual": false
+  "manual": false,
+  "notes": "Each sha256 is the one the release notes publish and the one GitHub reports as the asset digest. 20260904 is the first build whose kernel is 4.9.337-g8d928c5176cc, the ABI the Jarvis boot images and the vendor-module gate require."
 }

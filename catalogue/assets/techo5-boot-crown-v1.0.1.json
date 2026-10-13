@@ -6,5 +6,6 @@
   "sha256": "e00bed964d9b2ce31df152d183d2aeb45a7839cc5f7460a93dd97d70715ad1b7",
   "size": 13156352,
   "source": "HuskerMinion/techo5 v1.0.1 (signed manifest)",
-  "manual": false
+  "manual": false,
+  "notes": "Upstream TECHO5 v1.0.1 techo5-boot-crown-v1.0.1.img, pinned for the same reasons as the checkers v1.0.1 image (signed v1.0.1 manifest, kernel 4.9.337-g8d928c5176cc). Its ramdisk is v0.8.0's byte for byte; the kernel only adds the quick-tap unmute fix (upstream #17)."
 }

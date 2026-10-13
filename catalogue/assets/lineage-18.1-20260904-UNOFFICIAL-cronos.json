@@ -6,5 +6,6 @@
   "sha256": "4c355998061a454792128d4b730932b47ed05a3d2a6d2628599218f44cc84678",
   "size": 484847340,
   "source": "amazon-oss/releases lineage-18.1-cronos-v0.4",
-  "manual": false
+  "manual": false,
+  "notes": "Each sha256 is the one the release notes publish and the one GitHub reports as the asset digest. 20260904 is the first build whose kernel is 4.9.337-g8d928c5176cc, the ABI the Jarvis boot images and the vendor-module gate require."
 }

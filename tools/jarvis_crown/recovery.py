@@ -13,19 +13,20 @@ import subprocess
 import time
 from typing import Callable, Protocol
 
-from jarvis_crown.boards import profile_for_board, profile_for_product
+from jarvis_crown import catalogue
+from jarvis_crown.catalogue import profile_for_board, profile_for_product
 from jarvis_crown.device_gate import DeviceIdentity, SUPPORTED_PRODUCTS, identify_crown, identify_show
 from jarvis_crown.timing import (COMMAND_TIMEOUT_SECONDS, POLL_SECONDS, TWRP_REENUM_TIMEOUT_SECONDS)
 
-TWRP_SHA256 = "b6b1446436de27cf860ebc170d4e3dffe3068ab90396ec915a123589d0d6f7d8"
+# The TWRP image _pinned_twrp boots, as a member of the board's amonet zip (<amonet-dir>/amonet/bin/twrp.img).
+TWRP_MEMBER = "amonet/bin/twrp.img"
+# Pins come from the zip's member table in the catalogue. A board whose zip has no TWRP pin (cronos
+# until its zip is reviewed) gets None, and recovery refuses to boot any TWRP on it.
 TWRP_SHA256_BY_BOARD: dict[str, str | None] = {
-    "crown": TWRP_SHA256,
-    # bin/twrp.img of the pinned amonet-checkers-v2.0.1.zip (jarvis_crown/assets.py), 16.1.0-20260812
-    "checkers": "dcc75bb651894c343039d45af73c4d900594762f6f55187c1ebdaf12d0ae59f5",
-    # bin/twrp.img of amonet-cronos-v2.0.1.zip, pinned once that zip is reviewed. Until then recovery
-    # refuses to boot any TWRP on cronos.
-    "cronos": None,
+    board: catalogue.default().resolve(board)["assets"]["amonet"].get("members", {}).get(TWRP_MEMBER)
+    for board in catalogue.supported_boards()
 }
+TWRP_SHA256 = TWRP_SHA256_BY_BOARD["crown"]  # crown's, kept by name: tests swap it out
 SMALL_PARTITIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 14, 15)
 BOOT_AREAS = ("boot0", "boot1")
 TWRP_WAIT_INTERVAL_SECONDS = POLL_SECONDS
