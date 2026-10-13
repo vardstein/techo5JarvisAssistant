@@ -216,6 +216,21 @@ class SetUpTests(unittest.TestCase):
         self.assertIs(then["data"]["radio_mode"], True)
         self.assertTrue(then["continue_on_error"])
 
+    def test_music_waits_for_the_answer_to_be_spoken(self):
+        fake = FakeHA()
+        run(fake)
+        steps = fake.configs[("script", "jarvis_music_start")]["sequence"]
+        # Before anything is played: while a voice assistant near the player is busy, wait it out, look
+        # again a moment later, and never hang on it.
+        first = steps[0]
+        self.assertIn("responding", first["if"][0]["value_template"])
+        waits = [s for s in first["then"] if "wait_template" in s]
+        self.assertEqual(len(waits), 2)
+        for wait in waits:
+            self.assertIn("processing", wait["wait_template"])
+            self.assertTrue(wait["continue_on_timeout"])
+        self.assertTrue(any("delay" in s for s in first["then"]))
+
     def test_a_second_run_changes_nothing(self):
         fake = FakeHA()
         run(fake)
