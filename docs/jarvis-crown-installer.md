@@ -493,9 +493,10 @@ What happens with the answers:
      left alone. One that differs, because you changed it or an older installer made it, is only
      replaced when you say yes. When several differ, you're asked once (keep all, replace all, or
      ask about each), and every old configuration is saved first in
-     `backups/home-assistant/`. Which scripts Assist may use (Settings → Voice assistants → Expose)
-     is not touched; expose `jarvis_play_radio` and `jarvis_play_mood` there if the model should
-     reach them;
+     `backups/home-assistant/`. The scripts meant for the model are exposed to Assist (Settings →
+     Voice assistants → Expose): `jarvis_play_radio`, `jarvis_play_mood` and `play_random_music` on
+     every run, `jarvis_room_climate` only by the run that made it. The helper `jarvis_music_start`
+     stays unexposed;
   7. hands it the DashCast server, Home Assistant access and Music Assistant address again through
      its own actions, and turns its Sendspin switch on;
   8. with a Music Assistant admin, makes the Show's own Music Assistant user (`jarvis-show-5` for
@@ -532,6 +533,12 @@ What happens with the answers:
      again or skip; skipped, the Show looks for updates on its own channel. When the house already has
      a version, the Show follows it, and the tool waits up to 15 minutes for it to get there. Updates
      then come on one card in Home Assistant, **Genbu Show firmware**.
+  11. asks about this Show's optional features in Genbu: **Recipes** ("Recipes on this Show?", only
+     when a recipe search is set up in Genbu Assistant) and **Updates by voice** ("Ask this Show about
+     updates by voice?"). Enter is yes for both. `--recipes`/`--no-recipes` and
+     `--voice-updates`/`--no-voice-updates` answer ahead of time; with nobody at the terminal and no
+     switch, Genbu's own default stays. Both can be changed later on the Show's card. The run ends
+     with "Everything is on the Genbu Control Center page in Home Assistant's sidebar."
 
   The Show's actions are named after its ESPHome node (`esphome.<node>_dashboard_server` and so on).
   The tool takes the node from Home Assistant, so a Show renamed since it was installed is still
@@ -725,6 +732,8 @@ uses the Home Assistant, DashCast, Music Assistant and choice switches.
 | `--room NAME` | The Home Assistant area it stands in, by name or id. `''` leaves it alone. |
 | `--room-dashboard`, `--no-room-dashboard` | Make a small dashboard for its room when the room has none, or never. Asked otherwise. |
 | `--jarvis-dashboard`, `--no-jarvis-dashboard` | Make the Jarvis dashboard and the recipe page when the house has none, or never. Needs Genbu 1.3.1 and wall-clock-card. Asked otherwise. |
+| `--recipes`, `--no-recipes` | Recipe search by voice on this Show, when Genbu Assistant has a recipe search (step 11 above). Asked otherwise, Enter is yes. |
+| `--voice-updates`, `--no-voice-updates` | Asking this Show about firmware updates by voice (step 11 above). Asked otherwise, Enter is yes. |
 | `--voice-extras`, `--no-voice-extras` | Set up the voice extras in Home Assistant (step 6 above), or don't. Asked otherwise. |
 | `--rename-entities`, `--no-rename-entities` | For a Show renamed since it was installed: give its entities, and what uses them, the new name too, or don't. Asked otherwise. |
 | `--calendars LIST` | The calendars the Show shows, like `calendar.personal, calendar.familie` (step 9 above). `''` leaves them alone. Asked otherwise. |

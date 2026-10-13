@@ -135,5 +135,72 @@ class HouseTest(unittest.TestCase):
         self.assertEqual(genbu.house(FakeHouse(entry=True, version="")), genbu.House(""))
 
 
+class Features(FakeHouse):
+    """Genbu's switches for the Show on device D1: Updates by voice always, Recipes with a recipe search."""
+
+    def __init__(self, *, recipes=True, switches=True):
+        super().__init__(entry=True)
+        self.keys = (["recipes"] if recipes else []) + ["voice_updates"]
+        self.switches = switches
+
+    def ws(self, msg):
+        if msg["type"] == "config/device_registry/list":
+            return [{"id": "D1", "config_entries": ["E1"]}, {"id": "D9", "config_entries": ["E9"]}]
+        if msg["type"] == "config/entity_registry/list":
+            mine = [{"platform": "genbu", "unique_id": f"G1_{k}_D1", "entity_id": f"switch.kitchen_{k}"}
+                    for k in self.keys] if self.switches else []
+            return mine + [{"platform": "genbu", "unique_id": "G1_recipes_D9", "entity_id": "switch.attic_recipes"}]
+        raise AssertionError(f"unexpected ws {msg}")
+
+    def request(self, method, path, body=None):
+        if method == "POST" and path.startswith("/api/services/switch/"):
+            self.calls.append((method, path, body))
+            return []
+        return super().request(method, path, body)
+
+    def switched(self):
+        return [(p.rsplit("/", 1)[1], b["entity_id"]) for m, p, b in self.calls if p.startswith("/api/services/")]
+
+
+def features(fake, given=None, answers=None):
+    lines, asked, clock = [], [], Clock()
+
+    def choose(label, current, options, names):
+        asked.append(label)
+        return (answers or {}).get(label)
+
+    genbu.features(fake, "E1", given or {}, choose=choose if answers is not None else None,
+                   progress=lines.append, sleep=clock.sleep, clock=clock)
+    return lines, asked
+
+
+class FeaturesTest(unittest.TestCase):
+    def test_both_are_asked_and_set_on_this_show_only(self):
+        fake = Features()
+        lines, asked = features(fake, answers={"recipes": "no", "voice updates": "yes"})
+        self.assertEqual(asked, ["recipes", "voice updates"])
+        self.assertEqual(fake.switched(), [("turn_off", "switch.kitchen_recipes"),
+                                           ("turn_on", "switch.kitchen_voice_updates")])
+        self.assertIn("Recipes off on this Show", lines)
+
+    def test_recipes_is_not_asked_without_a_recipe_search(self):
+        fake = Features(recipes=False)
+        _, asked = features(fake, answers={"voice updates": "no"})
+        self.assertEqual(asked, ["voice updates"])
+        self.assertEqual(fake.switched(), [("turn_off", "switch.kitchen_voice_updates")])
+
+    def test_switches_answer_and_nobody_at_the_terminal_leaves_the_rest(self):
+        fake = Features()
+        _, asked = features(fake, given={"recipes": True})
+        self.assertEqual(asked, [])
+        self.assertEqual(fake.switched(), [("turn_on", "switch.kitchen_recipes")])
+
+    def test_a_show_genbu_has_not_seen_yet_points_to_the_page(self):
+        fake = Features(switches=False)
+        lines, asked = features(fake, answers={})
+        self.assertEqual((asked, fake.switched()), ([], []))
+        self.assertTrue(any("Genbu Control Center" in line for line in lines), lines)
+
+
 if __name__ == "__main__":
     unittest.main()

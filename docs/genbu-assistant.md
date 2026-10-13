@@ -5,6 +5,8 @@ Assistant and the installer for Genbu 1.4.0 (GENBU-119, see [update-leader.md](u
 Show's own question about a waiting update comes with the next firmware. The control center from §3 is built
 as decided below (GENBU-121): the house card first, then one card per Show in foldable groups, each Show's
 own automations through its "Genbu Show: <node>" label, and "Visit" on the integration's device opens it.
+The installer asks about Recipes and Updates by voice for each Show, exposes the three music scripts on every
+run, and ends with a pointer to the page.
 
 Jade asked for three things after the 1.3.0 tests:
 
