@@ -312,7 +312,9 @@ place in the list, so it doesn't depend on whether the list starts with today.
 "Wie feucht ist es im Schlafzimmer?" isn't one of Home Assistant's sentences either. The installer
 adds **Genbu - Room humidity**, built like the temperature one: "wie feucht ist es", "wie (hoch) ist
 die Luftfeuchtigkeit" and "wie viel Luftfeuchtigkeit", each for a named room, "hier" and "draußen".
-The answer is "Im Schlafzimmer sind es 57 Prozent Luftfeuchtigkeit."
+The answer is "Im Schlafzimmer sind es 57 Prozent Luftfeuchtigkeit." With no room named ("Wie feucht
+ist es?", or "Wie warm ist es?" for the temperature), it answers for the Show's own room. "Wie feucht
+ist das?" counts too, because that is what speech to text sometimes makes of it.
 
 ### Room climate for the model
 
@@ -323,15 +325,20 @@ reading at the radiator, and the temperature the heating is set to. A 4B model p
 often enough to notice, and sometimes reads 15 degrees for a room that is 18.
 
 So the installer adds a script, **Raumklima** (`script.jarvis_room_climate`), and exposes it to
-Assist. It returns one temperature and one humidity per room, already in spoken German, plus the
-warmest and coldest room:
+Assist. It returns one temperature and one humidity per room, already in spoken German, warmest
+room first, plus the warmest and coldest room by name:
 
 ```text
-{'raeume': [{'raum': 'Wohnzimmer', 'temperatur': '18,1 Grad', 'luftfeuchtigkeit': '54 Prozent'},
-            {'raum': 'Schlafzimmer', 'temperatur': '17,1 Grad', 'luftfeuchtigkeit': '57 Prozent'}],
- 'hinweis': 'Gemessene Werte. Die eingestellte Zieltemperatur der Heizung ist nicht die Raumtemperatur.',
- 'waermster_raum': 'Wohnzimmer', 'kaeltester_raum': 'Schlafzimmer'}
+{'raeume_vom_waermsten_zum_kaeltesten': [
+    {'raum': 'Wohnzimmer', 'temperatur': '18,1 Grad', 'luftfeuchtigkeit': '54 Prozent'},
+    {'raum': 'Küche', 'temperatur': '17,5 Grad', 'luftfeuchtigkeit': '57 Prozent'},
+    {'raum': 'Bad', 'temperatur': '17,2 Grad', 'luftfeuchtigkeit': '58 Prozent'}],
+ 'hinweis': 'Gemessene Werte. Ein Raum weiter oben in der Liste ist wärmer als einer weiter unten. ...',
+ 'waermster_raum': 'Wohnzimmer', 'kaeltester_raum': 'Bad'}
 ```
+
+The order is there for comparisons. Given 17,2 and 17,5 Grad, the model said the Bad was the warmer
+room; with the list sorted it gets that right.
 
 Each room's value comes from the same place as the local answers: its own sensor if it has one,
 otherwise what the thermostat measures, never the setpoint. Rooms are read when the script runs, so

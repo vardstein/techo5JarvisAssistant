@@ -573,9 +573,13 @@ class SentenceTests(unittest.TestCase):
                             ("Wie hoch ist die Luftfeuchtigkeit in der Küche", "{'raum': 'Küche'}"),
                             ("Wie ist die Luftfeuchtigkeit hier", "{}"),
                             ("Wie viel Luftfeuchtigkeit haben wir gerade hier drin", "{}"),
-                            ("Wie feucht ist es draußen", "{}")]:
+                            ("Wie feucht ist es draußen", "{}"),
+                            ("Wie feucht ist es", "{}"), ("Wie feucht ist das", "{}"),
+                            ("Wie ist die Luftfeuchtigkeit gerade", "{}")]:
             self.assertEqual(self.heard(text), [("humidity:", slots)], text)
         self.assertEqual(self.heard("Wie warm ist es im Bad"), [("temperature:", "{'raum': 'Bad'}")])
+        for text in ("Wie warm ist es", "Wie kalt ist es jetzt", "Wie ist die Temperatur"):
+            self.assertEqual(self.heard(text), [("temperature:", "{}")], text)
 
 
 if __name__ == "__main__":
