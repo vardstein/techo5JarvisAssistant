@@ -14,8 +14,10 @@ off)
 	t5_usb_off
 	# The shell on the port ends with it, so nobody finds it still logged in when the port opens
 	# again; init starts a fresh one, which asks for the password when one is set.
+	# No console running is fine: a false test as the last command would be the script's exit
+	# status, and the daemon would take the port for still open and retry every minute.
 	p=$(cat /run/techo5/console.pid 2>/dev/null)
-	[ -n "$p" ] && kill -HUP "$p" 2>/dev/null
+	if [ -n "$p" ]; then kill -HUP "$p" 2>/dev/null || :; fi
 	;;
 *)
 	echo "usage: techo5-usb on|off" >&2
