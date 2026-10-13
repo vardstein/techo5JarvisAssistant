@@ -253,10 +253,6 @@ func (f *Feature) save(w http.ResponseWriter, r *http.Request) {
 		}
 	case "dashboard":
 		problem = saveDashboard(r)
-	case "remote-unmute":
-		if err := config.Set().Microphone().AllowRemoteUnmute(r.PostFormValue("allow") == "yes"); err != nil {
-			problem = "could not save the microphone permission: " + err.Error()
-		}
 	case "timezone":
 		zone := strings.TrimSpace(r.PostFormValue("zone"))
 		switch {

@@ -2,10 +2,12 @@ package config
 
 // Microphone is the array: whether it is cut, how it is combined, and how hard it is driven.
 type Microphone struct {
-	Muted             bool `json:"muted"`
-	SoftwareMuted     bool `json:"software_muted,omitempty"`
-	AllowRemoteUnmute bool `json:"allow_remote_unmute,omitempty"`
-	LEDBright         bool `json:"led_bright"`
+	Muted     bool `json:"muted"`
+	LEDBright bool `json:"led_bright"`
+
+	// SoftwareMuted is the second, software-only mute from before GENBU-166. It is only read, so a
+	// device saved with it on comes back with the latch engaged, and cleared once that is done.
+	SoftwareMuted bool `json:"software_muted,omitempty"`
 
 	// Gain is the analog gain on the array's converters, in dB.
 	Gain int `json:"gain"`
@@ -83,12 +85,8 @@ func (w MicrophoneWriter) Muted(v bool) error {
 	return w.st.Update(func(c *Config) { c.Microphone.Muted = v })
 }
 
-func (w MicrophoneWriter) SoftwareMuted(v bool) error {
-	return w.st.Update(func(c *Config) { c.Microphone.SoftwareMuted = v })
-}
-
-func (w MicrophoneWriter) AllowRemoteUnmute(v bool) error {
-	return w.st.Update(func(c *Config) { c.Microphone.AllowRemoteUnmute = v })
+func (w MicrophoneWriter) ClearSoftwareMuted() error {
+	return w.st.Update(func(c *Config) { c.Microphone.SoftwareMuted = false })
 }
 
 func (w MicrophoneWriter) LEDBright(v bool) error {
