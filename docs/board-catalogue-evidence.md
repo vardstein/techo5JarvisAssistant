@@ -85,7 +85,7 @@ dashcast's geometry, `install-show.py` `BOARDS` and `LOGO_KAERU`, `boot_logo.py`
 |---|---|---|---|
 | R1 | fastboot reports product `CRONOS` | claimed | prose in `docs/hardware.md:473` ("Fastboot reports `product: CRONOS`"), no captured output |
 | R2 | TWRP reports `ro.product.device=cronos` | claimed | not captured; R3 is the same property under LineageOS, not TWRP |
-| R3 | under LineageOS 18.1, `ro.product.device` is `cronos` | proven | `docs/dumps/cronos-lineage-18.1-bench.txt:2` |
+| R3 | under LineageOS 18.1, `ro.product.device` is `cronos` | proven | `docs/dumps/cronos-lineage-18.1-bench.txt:3` (printed by `getprop ro.product.device`, `tools/hwdump.sh:10`) |
 | R4 | screen 960x480 at 59.64 fps | proven | `docs/dumps/cronos-lineage-18.1-bench.txt:828`, `:830` |
 | R5 | device-tree compatible | unknown | the dump has none |
 | R6 | panel `lcm=1-st7701s_wsvga_dsi_vdo_cronos_st_truly` (not in the catalogue) | proven | `docs/dumps/cronos-lineage-18.1-bench.txt:90` |
