@@ -33,6 +33,14 @@ an error, only an assistant that ignores its prompt. Set it in **Settings → De
 Ollama →** the conversation entry, **Reconfigure**, **Context window size**. Exposing fewer
 entities shrinks the request too.
 
+**Keep the model loaded.** The Ollama entry has its own **Keep alive** (seconds), and Home
+Assistant sends it with every request, so it beats `OLLAMA_KEEP_ALIVE` on the server. Ours was 1800,
+so after half an hour of quiet the next question waited for a cold load. Set it to -1 (keep loaded)
+if the card does nothing else. `OLLAMA_FLASH_ATTENTION=1` on the server is free speed. We tried
+`OLLAMA_KV_CACHE_TYPE=q8_0` too. It saves about 270 MB at 16384 tokens, which a 6 GB card with one
+4B model doesn't need, and it is one more thing that can cost a small model accuracy, so we left it
+at the default.
+
 **Anything else that talks to the same model has to ask for the same window.** Ollama reloads a
 model when a request asks for a different context size. If some other client loads it with the
 default (a keep-warm script, say, that sends `{"model": ..., "keep_alive": ...}` every 20 minutes),
@@ -66,6 +74,8 @@ Sprechen:
 - Klares, ruhiges Hochdeutsch, kein Amtsdeutsch und keine Jugendsprache. Deutsche Wörter statt englischer, wo es sie gibt.
 - Kein Markdown, keine Listen, keine Emojis, keine Zeichen wie °, %, / oder ~.
   Schreib Einheiten als Wort aus, also Grad, Prozent und Uhr.
+- Zahlen schreibst du als Ziffern, genau so wie sie im Werkzeug-Ergebnis stehen, mit Komma statt Punkt:
+  "18,2 Grad", "54 Prozent", "7 Uhr 30". Nie als Wort ausschreiben, nie runden oder umrechnen.
 - Konkret statt ungefähr: Raum, Gerät, Wert, Uhrzeit.
 - Ist die Frage auf Englisch, ist die ganze Antwort auf Englisch.
 - Will jemand plaudern, darfst du nachdenklich und neugierig sein, aber kurz.
@@ -142,7 +152,14 @@ Why some of it is there:
   It admits mistakes because a voice that is wrong with confidence is worse than one that says
   "Das weiß ich nicht."
 - **Speaking.** Everything goes through text to speech. Piper reads "21°C" or "19:30" badly or not at
-  all, so the prompt asks for words ("21 Grad", "19 Uhr 30") and no markdown.
+  all, so the prompt asks for unit words ("21 Grad", "19 Uhr 30") and no markdown.
+- **Numbers as digits.** The unit rule alone made the model spell numbers out, and spelled-out
+  numbers were mostly wrong: "vierundachtzig Prozent" for 58, "zweieinhalb Grad" for 17,1, an empty
+  "bei Grad", even Chinese digits. When it wrote digits it copied the value correctly. Asking for
+  digits exactly as the tool returned them took 20 test questions from about 5 right to 15.
+  Most of the rest were a room with two sensors (a room sensor and the thermostat), where it
+  sometimes reads the heating setpoint as the temperature. Exposing one temperature sensor per
+  room helps there. Piper reads "18,2 Grad" fine.
 - **"du".** Without the line the model switches to "Sie" now and then ("Sie befinden sich im
   Wohnzimmer"). Showing the wrong form next to the right one is what made it stick.
 - **The sample answers.** A 4B model follows examples better than rules. It also repeats them word
