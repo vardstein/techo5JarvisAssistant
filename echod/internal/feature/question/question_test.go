@@ -10,11 +10,14 @@ func TestReply(t *testing.T) {
 		Yes: {"Yes.", "yeah sure", "Sure!", "OK, do it", "okay go ahead", "yes please", "Install it now.", "Now.",
 			"Ja.", "Ja, bitte.", "Klar!", "Gerne", "Mach das.", "Ja, installier es jetzt", "auf jeden Fall", "na klar",
 			"Ja, das Update ausführen.", "Updaten.", "Führ es aus", "Aktualisieren",
+			"Joa.", "Joah", "Jo, a.", "Jaaa!", "Jupp", "Japp.", "Passt.", "Logo", "Genau", "Na gut", "Mach mal", "Ja, mach ruhig",
+			"O.K.", "o. k.", "Okidoki", "Yo", "Sounds good", "Klar doch.  Klar doch.",
 			"Oui", "Sì, certo", "Sí, claro", "Ja graag"},
 		No: {"No.", "no thanks", "Not now.", "later", "Maybe later", "don't", "wait",
-			"Nein.", "Nein danke", "Jetzt nicht.", "Später", "nee", "Non", "No, dopo", "Nee, straks"},
+			"Nein.", "Nein danke", "Jetzt nicht.", "Später", "nee", "Neeein", "Nö, lass mal", "Non", "No, dopo", "Nee, straks"},
 		Other: {"", "what time is it", "yes and turn on the lights", "play some music", "thanks",
-			"Wie spät ist es?", "Mach das Licht an", "Untertitel im Auftrag des ZDF", "Aus", "Update"},
+			"Wie spät ist es?", "Mach das Licht an", "Untertitel im Auftrag des ZDF", "Aus", "Update",
+			"Naja", "Jein", "Mal sehen", "A"},
 	} {
 		for _, s := range said {
 			if got := Reply(s); got != want {
@@ -31,7 +34,7 @@ func TestAnswer(t *testing.T) {
 
 	answered := make(chan string, 1)
 	ask := func() {
-		Ask("update", time.Minute, func() { answered <- "yes" }, func() { answered <- "no" })
+		Ask("update", time.Minute, func() { answered <- "yes" }, func() { answered <- "no" }, nil)
 	}
 
 	if Answer("yes") {
@@ -85,7 +88,7 @@ func TestAnswer(t *testing.T) {
 func TestTakeDropsWhatIsNotAnAnswer(t *testing.T) {
 	answered := make(chan string, 1)
 	ask := func() {
-		Ask("update", time.Minute, func() { answered <- "yes" }, func() { answered <- "no" })
+		Ask("update", time.Minute, func() { answered <- "yes" }, func() { answered <- "no" }, nil)
 	}
 
 	ask()
@@ -108,5 +111,53 @@ func TestTakeDropsWhatIsNotAnAnswer(t *testing.T) {
 
 	if Take("Wie spät ist es?", true) {
 		t.Fatal("a turn with no question open dropped a request")
+	}
+}
+
+// A turn opened for the question that hears no words asks it once more, and the answer to that is
+// taken as the answer to the question. A second silence does not ask a third time.
+func TestMissedAsksOnceMore(t *testing.T) {
+	at := time.Date(2026, 10, 13, 4, 31, 0, 0, time.UTC)
+	now = func() time.Time { return at }
+	oldAfter := againAfter
+	againAfter = 0
+	defer func() { now, againAfter = time.Now, oldAfter }()
+
+	if Missed() {
+		t.Fatal("asked again with no question open")
+	}
+	answered := make(chan string, 1)
+	again := make(chan bool, 2)
+	Ask("update", time.Minute, func() { answered <- "yes" }, func() { answered <- "no" }, func() { again <- true })
+
+	at = at.Add(50 * time.Second)
+	if !Missed() || !<-again {
+		t.Fatal("the question was not asked again")
+	}
+	at = at.Add(50 * time.Second) // past the first minute, inside the second
+	if Missed() {
+		t.Fatal("asked a third time")
+	}
+	if !Take("Joa", true) || <-answered != "yes" {
+		t.Fatal("the answer to the second asking was not taken")
+	}
+
+	// Asked only once when there is nothing to ask again with.
+	Ask("house", time.Minute, func() {}, func() {}, nil)
+	if Missed() {
+		t.Fatal("asked again without a way to ask")
+	}
+	Withdraw("house")
+
+	// A question replaced before it is asked again is not asked for the old one.
+	againAfter = 50 * time.Millisecond
+	Ask("update", time.Minute, func() {}, func() {}, func() { again <- true })
+	Missed()
+	Withdraw("update")
+	time.Sleep(150 * time.Millisecond)
+	select {
+	case <-again:
+		t.Fatal("a withdrawn question was asked again")
+	default:
 	}
 }
