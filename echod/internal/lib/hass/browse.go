@@ -52,44 +52,56 @@ func (c *Client) wsOpen(ctx context.Context) (*wsSession, error) {
 	// The dial and the handshake get their own thirty seconds, or the caller's if that is shorter.
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	dl, _ := ctx.Deadline()
 
+	conn, answer, err := signIn(ctx, acc)
+	if err != nil {
+		return nil, err
+	}
+	if answer.Type == "auth_invalid" {
+		c.refuse(acc.Token, reason(answer.Message))
+	}
+	if answer.Type != "auth_ok" {
+		conn.Close()
+		return nil, fmt.Errorf("hass: websocket auth: %s %s", answer.Type, answer.Message)
+	}
+	return &wsSession{conn: conn, deadline: caller}, nil
+}
+
+// authAnswer is Home Assistant's answer to a websocket sign-in: auth_ok, or auth_invalid and why.
+type authAnswer struct {
+	Type    string `json:"type"`
+	Message string `json:"message"`
+}
+
+// signIn dials the websocket and signs in with acc's token, within ctx. The connection comes back open
+// whatever the answer was, for the caller to use or close.
+func signIn(ctx context.Context, acc access) (*websocket.Conn, authAnswer, error) {
+	var answer authAnswer
 	url := "ws" + strings.TrimPrefix(acc.URL, "http") + "/api/websocket"
 	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, url, http.Header{})
 	if resp != nil && resp.Body != nil {
 		resp.Body.Close()
 	}
 	if err != nil {
-		return nil, fmt.Errorf("hass: websocket: %w", err)
+		return nil, answer, fmt.Errorf("hass: websocket: %w", err)
 	}
-	if !dl.IsZero() {
+	if dl, ok := ctx.Deadline(); ok {
 		_ = conn.SetReadDeadline(dl)
 		_ = conn.SetWriteDeadline(dl)
 	}
-	var hello struct {
-		Type    string `json:"type"`
-		Message string `json:"message"`
-	}
-	if err := conn.ReadJSON(&hello); err != nil {
+	if err := conn.ReadJSON(&answer); err != nil {
 		conn.Close()
-		return nil, err
+		return nil, answer, err
 	}
 	if err := conn.WriteJSON(map[string]string{"type": "auth", "access_token": acc.Token}); err != nil {
 		conn.Close()
-		return nil, err
+		return nil, answer, err
 	}
-	if err := conn.ReadJSON(&hello); err != nil {
+	if err := conn.ReadJSON(&answer); err != nil {
 		conn.Close()
-		return nil, err
+		return nil, answer, err
 	}
-	if hello.Type == "auth_invalid" {
-		c.refuse(acc.Token)
-	}
-	if hello.Type != "auth_ok" {
-		conn.Close()
-		return nil, fmt.Errorf("hass: websocket auth: %s %s", hello.Type, hello.Message)
-	}
-	return &wsSession{conn: conn, deadline: caller}, nil
+	return conn, answer, nil
 }
 
 // call sends one command and returns its raw result, allowing it 30 seconds or what is left of the

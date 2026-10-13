@@ -42,7 +42,7 @@ func (c *Client) Stream(ctx context.Context, path string) (io.ReadCloser, error)
 		return nil, err
 	}
 	if resp.StatusCode == http.StatusUnauthorized {
-		c.refuse(acc.Token)
+		c.turnedAway(acc)
 	}
 	if resp.StatusCode/100 != 2 {
 		resp.Body.Close()

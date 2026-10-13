@@ -11,17 +11,30 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/lib/hass"
 )
 
-// keyNote is the line that says Home Assistant turned this device's token away, or nothing. It takes
-// the update's place, ahead of it, as nothing that needs Home Assistant works until the installer is
-// run again, and the device stops asking (lib/hass), so nobody would find out any other way.
+// keyNote is the line that says Home Assistant turned this device's token away, and why, or nothing.
+// It takes the update's place, ahead of it, as nothing that needs Home Assistant works until the key
+// is fixed, and the device stops asking (lib/hass), so nobody would find out any other way. Genbu
+// renews a gone key where Home Assistant's own records say it may, and raises a repair where a
+// person has to decide (GENBU-196); the line points there.
 func keyNote(short bool) string {
-	switch {
-	case !hass.Get().Refused():
-		return ""
-	case short:
-		return "Key refused"
+	switch hass.Get().KeyState() {
+	case hass.KeyGone:
+		if short {
+			return "Key refused"
+		}
+		return "Home Assistant refused this device · Settings › Repairs"
+	case hass.KeyRemote:
+		if short {
+			return "Home only"
+		}
+		return "Home Assistant lets this device in from home only · Settings › Repairs"
+	case hass.KeyOff:
+		if short {
+			return "User switched off"
+		}
+		return "This device's user is switched off in Home Assistant"
 	}
-	return "Home Assistant refused this device · rerun the installer"
+	return ""
 }
 
 // updateNote is the line that says an update is ready to install, or nothing. It shares the place a

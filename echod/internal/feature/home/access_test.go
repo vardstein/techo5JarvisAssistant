@@ -18,3 +18,21 @@ func TestTheAccessActionSaysWhetherTheTokenIsStored(t *testing.T) {
 		t.Fatalf("a call without a URL and token answered %v", got)
 	}
 }
+
+// Which key a Show holds is told over the encrypted API only, and only Genbu's two names are taken
+// (GENBU-196). The test machine has no API key, so both refuse.
+func TestTheKeyActionsWantTheEncryptedAPI(t *testing.T) {
+	names := map[string]bool{}
+	for _, a := range keyActions() {
+		names[a.Name] = true
+		if !a.Answers {
+			t.Errorf("%s does not answer", a.Name)
+		}
+		if got, err := a.Run(esphome.Call{}); err == nil {
+			t.Errorf("%s answered %v without an API key", a.Name, got)
+		}
+	}
+	if !names["home_assistant_key"] || !names["home_assistant_retry"] || len(names) != 2 {
+		t.Fatalf("actions %v", names)
+	}
+}

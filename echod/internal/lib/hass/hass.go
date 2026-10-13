@@ -23,6 +23,7 @@ import (
 	"unicode"
 
 	"github.com/HuskerMinion/techo5/echod/internal/layout"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/hook"
 )
 
 // Path is where the URL and token live: next to the PSK, readable by root only.
@@ -32,8 +33,11 @@ type access struct {
 	URL   string `json:"url"`
 	Token string `json:"token"`
 	// Refused is the sha256 of a token Home Assistant turned away, kept so that a restart does not
-	// try it again. Only a new token clears it.
+	// try it again. Only a new token clears it, or, for a home-only refusal, a new try (Retry).
 	Refused string `json:"refused,omitempty"`
+	// Reason is why, one of the Key states (key.go); "" was kept before there were reasons, and is
+	// KeyGone.
+	Reason string `json:"reason,omitempty"`
 }
 
 // ErrRefused is what every call gets, without going out, once Home Assistant has turned the token away.
@@ -57,6 +61,10 @@ type Client struct {
 	mu   sync.Mutex
 	acc  access
 	http *http.Client
+
+	// Changed fires when the key's state changes: a new token, a refusal, its reason, a retry.
+	// Listeners must not block.
+	Changed hook.Hook[struct{}]
 }
 
 // statusError is an answer Home Assistant gave with an HTTP error status.
@@ -98,9 +106,15 @@ func Get() *Client {
 	return shared
 }
 
-// Set stores the URL (like http://192.168.1.20:8123) and token.
+// Set stores the URL (like http://192.168.1.20:8123) and token. An empty URL keeps the one saved: Genbu
+// hands over a new key that way (GENBU-196) and never says where the Show goes.
 func (c *Client) Set(url, token string) error {
 	url, token = cleanURL(url), clean(token)
+	if url == "" {
+		c.mu.Lock()
+		url = c.acc.URL
+		c.mu.Unlock()
+	}
 	if url == "" || token == "" {
 		return errors.New("hass: url and token are both needed")
 	}
@@ -114,13 +128,15 @@ func (c *Client) Set(url, token string) error {
 	c.mu.Lock()
 	acc := access{URL: url, Token: token}
 	if sum(token) == c.acc.Refused {
-		acc.Refused = c.acc.Refused // the same token again is still the one Home Assistant turned away
+		// The same token again is still the one Home Assistant turned away, for the same reason.
+		acc.Refused, acc.Reason = c.acc.Refused, c.acc.Reason
 	}
 	c.acc = acc
 	c.mu.Unlock()
 	if acc.refused() {
 		slog.Warn("hass: given the token Home Assistant already turned away; it stays unused")
 	}
+	defer c.Changed.Emit(struct{}{})
 	return save(acc)
 }
 
@@ -201,22 +217,30 @@ func (c *Client) access() (access, error) {
 	return acc, nil
 }
 
-// refuse records that Home Assistant turned token away, and keeps it across a restart. Only while
-// token is still the one in use: an answer to a call made before a new token came says nothing about
-// the new one.
-func (c *Client) refuse(token string) {
+// refuse records that Home Assistant turned token away, and why, and keeps it across a restart. Only
+// while token is still the one in use and not refused yet: an answer to a call made before a new token
+// came says nothing about the new one, and a late 401 must not undo the reason heard since. It
+// reports whether it recorded anything.
+func (c *Client) refuse(token, why string) bool {
 	c.mu.Lock()
 	if c.acc.Token != token || c.acc.refused() {
 		c.mu.Unlock()
-		return
+		return false
 	}
-	c.acc.Refused = sum(token)
+	c.acc.Refused, c.acc.Reason = sum(token), why
 	acc := c.acc
 	c.mu.Unlock()
-	slog.Error("hass: Home Assistant turned this device's token away; no more calls until the installer gives a new one")
+	slog.Error("hass: Home Assistant turned this device's token away; no more calls with it", "reason", why)
+	c.keep(acc)
+	return true
+}
+
+// keep saves acc after its refusal changed, and tells the listeners.
+func (c *Client) keep(acc access) {
 	if err := save(acc); err != nil {
 		slog.Warn("hass: could not keep the refusal; the token is tried once more after a restart", "err", err)
 	}
+	c.Changed.Emit(struct{}{})
 }
 
 func (c *Client) do(method, path string, body any) ([]byte, error) {
@@ -250,7 +274,7 @@ func (c *Client) do(method, path string, body any) ([]byte, error) {
 		return nil, err
 	}
 	if resp.StatusCode == http.StatusUnauthorized {
-		c.refuse(acc.Token)
+		c.turnedAway(acc)
 	}
 	if resp.StatusCode/100 != 2 {
 		return nil, &statusError{method: method, path: path, status: resp.Status, code: resp.StatusCode}
