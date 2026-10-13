@@ -32,7 +32,7 @@ from typing import Any, Callable
 
 from . import labels
 from .home_assistant import (Chooser, HomeAssistant, HomeAssistantError, NotFound, node_slug, service_prefix,
-                             slug_key)
+                             slug_key, ASSISTANT_NAME)
 
 BLUEPRINT_FOLDER = "techo5"
 BLUEPRINT_SOURCE = "https://github.com/vardstein/techo5JarvisAssistant/blob/genbuShowCrown/blueprints/automation/"
@@ -76,6 +76,7 @@ class House:
     temperatures: dict[str, str] = field(default_factory=dict)   # area id -> its temperature sensor
     humidities: dict[str, str] = field(default_factory=dict)     # area id -> its humidity sensor
     weather: str | None = None
+    agent: str | None = None                                     # the assistant pipeline's model agent
     music_entry: str | None = None                               # Music Assistant's config entry
     players: list[str] = field(default_factory=list)             # its players that are in a room
     # From the registries, for the per-Show automation.
@@ -100,6 +101,7 @@ def look(ha: HomeAssistant) -> House:
         listed = {}
     house.german = any(str(p.get("language") or "").lower().startswith("de")
                        for p in listed.get("pipelines") or [] if isinstance(p, dict))
+    house.agent = assistant_agent(listed)
     house.areas = {a.get("area_id"): a.get("name") or a.get("area_id")
                    for a in ha.ws({"type": "config/area_registry/list"}) or [] if a.get("area_id")}
     entities, devices = _registries(ha)
@@ -148,6 +150,18 @@ def look(ha: HomeAssistant) -> House:
     return house
 
 
+def assistant_agent(listed: dict) -> str | None:
+    """The conversation agent of the Genbu Assistant pipeline, or of the preferred one, when it is not
+    Home Assistant's own. That one answers by its sentences already, so there is nothing to hand on."""
+    pipelines = [p for p in listed.get("pipelines") or [] if isinstance(p, dict)]
+    pipeline = next((p for p in pipelines if p.get("name") == ASSISTANT_NAME), None) or \
+        next((p for p in pipelines if p.get("id") and p.get("id") == listed.get("preferred_pipeline")), None)
+    agent = str((pipeline or {}).get("conversation_engine") or "")
+    if not _ENTITY_RE.fullmatch(agent) and not _ID_RE.fullmatch(agent):
+        return None
+    return None if agent in ("conversation.home_assistant", "homeassistant") else agent
+
+
 def room_words(areas: dict[str, str]) -> tuple[dict[str, str], dict[str, str]]:
     """For the house's areas: how German says "in" each one it knows, and the words for them."""
     phrases: dict[str, str] = {}
@@ -186,6 +200,27 @@ def where_are_we(house: House) -> dict:
             "wo (bist|stehst) du [gerade|hier|jetzt]",
             "welcher raum ist das"]}],
         "actions": [{"set_conversation_response": _fill(WHERE_ARE_WE, phrases=phrases)}],
+        "mode": "parallel",
+    }
+
+
+def greeting(house: House) -> dict:
+    # Home Assistant's own sentences answer "Hallo" and the like before the model is asked, even with the
+    # model as the pipeline's agent ("Hallo vom Home Assistant."). A sentence trigger comes before them,
+    # so this one hands the greeting on to the assistant's model, which answers as itself.
+    return {
+        "alias": "Genbu - Greeting",
+        "description": "Hands greetings like \"Hallo\" to the assistant's model. Home Assistant would "
+                       "answer them itself otherwise.",
+        "triggers": [{"trigger": "conversation", "command": [
+            "(hallo|hi|hey|guten tag|guten morgen|guten abend|servus|moin) [genbu|home assistant]"]}],
+        "actions": [
+            {"action": "conversation.process", "data": {
+                "agent_id": house.agent, "text": "{{ trigger.sentence }}",
+                "language": "{{ trigger.user_input.language | default('de', true) }}"},
+             "response_variable": "said", "continue_on_error": True},
+            {"set_conversation_response":
+                "{{ said.response.speech.plain.speech | default('Hallo.', true) if said is defined else 'Hallo.' }}"}],
         "mode": "parallel",
     }
 
@@ -1034,6 +1069,10 @@ def _set_up(run: _Run, show: str, entities: list[str]) -> None:
     run.blueprint(VOLUME)
     run.put("automation", "jarvis_local_volume", volume(house))
     run.put("automation", "jarvis_local_where_are_we", where_are_we(house))
+    if house.agent:
+        run.put("automation", "jarvis_local_greeting", greeting(house))
+    else:
+        progress("the assistant's agent is Home Assistant's own, so greetings stay with it")
     run.put("automation", "jarvis_local_room_temperature", room_temperature(house))
     run.put("automation", "jarvis_local_room_humidity", room_humidity(house))
     run.put("script", CLIMATE, room_climate(house))
