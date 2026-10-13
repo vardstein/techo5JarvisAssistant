@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/question"
 	"github.com/HuskerMinion/techo5/echod/internal/layout"
 	"github.com/HuskerMinion/techo5/echod/internal/update"
 )
@@ -91,6 +92,9 @@ func TestHouseLine(t *testing.T) {
 	}
 	if got := houseLine(f, "hall_show", now.Add(-time.Minute).Format(time.RFC3339), now); !strings.HasPrefix(got, "Following") {
 		t.Errorf("main gone a minute is not worth a word: %q", got)
+	}
+	if got := houseLine(f, "the house", "", now); got != "Following the house · version v1.0.3" {
+		t.Errorf("no main Show (Genbu 1.4.0): %q", got)
 	}
 	f.running, f.failed = "v1.0.2", "v1.0.3"
 	if got := houseLine(f, "hall_show", "", now); got != "Version v1.0.3 did not install here; staying on v1.0.2" {
@@ -196,5 +200,58 @@ func TestShowThatWasOffAsksOnce(t *testing.T) {
 	}
 	if c := config.Get().Update; c.HouseAsked != "v1.0.3-stable.52" {
 		t.Errorf("question not saved: %+v", c)
+	}
+}
+
+// GENBU-119: with Genbu 1.4.0 the Show Genbu names asks about the update waiting on the card, and a yes
+// moves the house without installing here first. The other Shows stay quiet.
+func TestNamedShowAsksAboutTheHouseUpdate(t *testing.T) {
+	u := followingShow(t, layout.Version, "[]")
+	if err := config.Set().Update().HouseSeen(layout.Version); err != nil {
+		t.Fatal(err)
+	}
+	oldInstall, oldHouse := install, updateHouse
+	t.Cleanup(func() { install, updateHouse = oldInstall, oldHouse })
+	install = func(*Firmware) { t.Fatal("installed here first") }
+	housed := make(chan bool, 1)
+	updateHouse = func() { housed <- true }
+	waiting := "v99.0.0"
+	asks := "hall_show"
+	lookHouse = func() sighting {
+		return sighting{version: layout.Version, haveVersion: true, mains: "[]", haveMains: true,
+			waiting: waiting, asks: asks}
+	}
+	var asked []string
+	ask = func(words string) bool { asked = append(asked, words); return true }
+
+	now := time.Now()
+	u.houseStep(context.Background(), now)
+	if len(asked) != 0 {
+		t.Fatalf("a Show Genbu did not name asked: %q", asked)
+	}
+	asks = "kitchen_show"
+	u.houseStep(context.Background(), now.Add(time.Minute))
+	u.houseStep(context.Background(), now.Add(2*time.Minute))
+	if want := "An update for your Shows is ready, version 99.0.0. Want me to install it now?"; len(asked) != 1 || asked[0] != want {
+		t.Fatalf("asked %q, want %q once", asked, want)
+	}
+	if !question.Answer("yes") || !<-housed {
+		t.Fatal("yes did not move the house")
+	}
+	if got := u.house.status; got != "Following the house · version "+layout.Version {
+		t.Errorf("status %q", got)
+	}
+
+	// Not newer than the house, or skipped (Genbu sends it empty): nothing to ask.
+	f := following{running: "v1.0.3", house: "v1.0.3"}
+	for _, w := range []string{"", "v1.0.3", "v1.0.2", "soon"} {
+		if asksAboutWaiting(sighting{waiting: w, asks: "kitchen_show"}, f, "kitchen_show") {
+			t.Errorf("asks about %q", w)
+		}
+	}
+	// A Show still behind the house moves first; it does not ask about the next one.
+	f.running = "v1.0.2"
+	if asksAboutWaiting(sighting{waiting: "v1.0.4", asks: "kitchen_show"}, f, "kitchen_show") {
+		t.Error("a Show behind the house asks about the house update")
 	}
 }

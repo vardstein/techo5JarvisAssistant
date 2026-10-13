@@ -93,7 +93,7 @@ async def test_a_new_house_starts_at_its_newest_show(hass: HomeAssistant):
     assert state.state == "v1.0.3-stable.52"
     assert state.attributes["main_shows"] == []
     assert state.attributes["main_missing_since"] == ""
-    assert state.attributes["update_waiting"] == ""
+    assert (state.attributes["update_waiting"], state.attributes["update_asks"]) == ("", "")
     assert set(state.attributes["shows"]) == {"hall", "kitchen"}
     assert hass.states.get("select.genbu_main_update_show") is None
     card = hass.states.get(UPDATE)
@@ -110,6 +110,7 @@ async def test_no_shows_no_version(hass: HomeAssistant):
 
 async def test_the_card_offers_the_channel_release(hass: HomeAssistant, hass_ws_client):
     add_show(hass, "hall", "v1.0.3")
+    add_show(hass, "attic", "v1.0.2")  # behind the house: it moves first, and does not ask
     entry = await setup(hass)
     release("v1.0.4", release_url="https://example.org/v1.0.4")
     await read(hass, entry)
@@ -117,7 +118,8 @@ async def test_the_card_offers_the_channel_release(hass: HomeAssistant, hass_ws_
     assert (card.state, card.attributes["latest_version"]) == ("on", "v1.0.4")
     assert card.attributes["release_summary"] == "Genbu v1.0.4"
     assert card.attributes["release_url"] == "https://example.org/v1.0.4"
-    assert hass.states.get("sensor.genbu_house_version").attributes["update_waiting"] == "v1.0.4"
+    state = hass.states.get("sensor.genbu_house_version")
+    assert (state.attributes["update_waiting"], state.attributes["update_asks"]) == ("v1.0.4", "hall")
     client = await hass_ws_client(hass)
     await client.send_json({"id": 1, "type": "update/release_notes", "entity_id": UPDATE})
     assert (await client.receive_json())["result"] == "What v1.0.4 brings"

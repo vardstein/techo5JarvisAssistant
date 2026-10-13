@@ -590,6 +590,8 @@ var de = lang{
 		"An update for this Show is ready, version {version}. It installs by itself tonight.":                 "Für diese Show liegt ein Update bereit, Version {version}. Es installiert sich heute Nacht von selbst.",
 		"An update for this Show is ready, version {version}. You can install it in Settings, under Updates.": "Für diese Show liegt ein Update bereit, Version {version}. Du kannst es in den Einstellungen unter Updates installieren.",
 		"An update for this Show is ready, version {version}. Want me to install it now?":                     "Für diese Show liegt ein Update bereit, Version {version}. Soll ich es jetzt installieren?",
+		"An update for your Shows is ready, version {version}. Want me to install it now?":                    "Für deine Shows liegt ein Update bereit, Version {version}. Soll ich es jetzt installieren?",
+		"An update for your Shows is ready, version {version}. You can install it in Home Assistant.":         "Für deine Shows liegt ein Update bereit, Version {version}. Du kannst es in Home Assistant installieren.",
 		"This Show is on version {running}, your other Shows are on {house}. Want me to switch to it now?":    "Diese Show läuft auf Version {running}, deine anderen Shows auf {house}. Soll ich jetzt wechseln?",
 		"Okay, installing it now.":     "Okay, ich installiere es jetzt.",
 		"Okay, I'll remind you later.": "Okay, ich erinnere dich später.",

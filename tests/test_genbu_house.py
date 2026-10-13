@@ -214,7 +214,7 @@ class FilesTests(unittest.TestCase):
     def test_fixed_entity_ids_match_the_show(self):
         go = (ROOT / "echod" / "internal" / "feature" / "firmware" / "house.go").read_text()
         const = (GENBU / "const.py").read_text()
-        for needle in ("sensor.genbu_house_version", "main_shows"):
+        for needle in ("sensor.genbu_house_version", "main_shows", "update_waiting", "update_asks"):
             self.assertIn(needle, go)
         self.assertIn('"sensor.genbu_house_version"', const)
 

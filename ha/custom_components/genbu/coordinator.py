@@ -257,6 +257,16 @@ class GenbuHouse:
             return ""
         return offered
 
+    @property
+    def asker(self) -> str:
+        """The one Show that asks out loud about the waiting update, so it is not asked in every room at
+        once (GENBU-119): the first online Show by node name that runs the house version; "" with
+        nothing waiting."""
+        if not self.waiting:
+            return ""
+        ready = sorted(s.node for s in self.shows if s.online and s.installed == self.house.version)
+        return ready[0] if ready else ""
+
     def progress(self) -> int | None:
         """How many of the Shows that are online run the house version, in percent, for a while after an
         install; None otherwise."""
