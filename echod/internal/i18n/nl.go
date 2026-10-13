@@ -301,6 +301,7 @@ var nl = lang{
 		"Pair a Music Assistant server from Home Assistant first": "Koppel eerst een Music Assistant-server vanuit Home Assistant",
 		"Microphone":                                              "Microfoon",
 		"The mute button does this too":                           "De dempknop doet dit ook",
+		"Press the mute button to turn it back on":                "Druk op de dempknop om hem weer aan te zetten",
 		"Wake word":                                               "Activeringswoord",
 		"Wake word sensitivity":                                   "Gevoeligheid van het activeringswoord",
 		"Higher wakes by mistake less often":                      "Hoger gaat minder vaak per ongeluk aan",

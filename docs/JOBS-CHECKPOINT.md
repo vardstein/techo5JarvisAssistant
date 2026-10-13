@@ -402,6 +402,7 @@ Rule: complete and validate one job before starting the next. Do not build a rel
   - Runtime security regression now includes the mute package; added Go policy/status tests plus six J46 source-contract tests and final-release acceptance checks.
   - Validation: 11/11 security-contract tests PASS; 65/65 security-sensitive installer/OTA tests PASS; 180/180 Python/static tests PASS with one unrelated Chromium skip; profile/workflow/shell/diff checks PASS. Full Go runtime execution remains blocked locally by Go 1.23.2 vs required Go 1.26.x; a temporary lowered-directive attempt could not fetch the missing `go-esphome-device` module in this sandbox.
   - Checkpoint commit: `0e63128` (`jarvis show: harden microphone remote unmute`).
+  - **Superseded by GENBU-166 (2026-10-13):** Jade decided on one mute state. The software mute and the remote-unmute permission are gone; HA and the touchscreen engage the privacy latch, only the button releases it, and an old saved software mute becomes the latch on start-up. Tests: `echod/internal/feature/mute/remote_test.go`, `tests/test_j46_mute_contract.py`.
 
 - [x] **J47 — JODS visual-system port / White Jade default**
   - Replace the upstream-looking fresh-device theme with the JODS design language used by the user's other appliance/admin surfaces.

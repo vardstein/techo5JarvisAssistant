@@ -110,9 +110,9 @@ func categoryRows(sv sheetView) (rows []settingRow, note string) {
 			settingRow{id: "answertime", label: "Answer time", sub: "How long an answer stays up; a tap clears it", kind: ctlChoice, value: answerTimes[answerTimeIndex()].label},
 		), ""
 	case catSound:
-		mic := "Listening"
+		mic, micSub := "Listening", "The mute button does this too"
 		if st.muted {
-			mic = "Muted"
+			mic, micSub = "Muted", "Press the mute button to turn it back on"
 		}
 		sendspinSub := "Play music in sync with other rooms"
 		if !sendspin.Get().Paired() {
@@ -120,7 +120,7 @@ func categoryRows(sv sheetView) (rows []settingRow, note string) {
 		}
 		return []settingRow{
 			{id: "volume", label: "Volume", kind: ctlStepper, value: i18n.Sprintf("%d of %d", st.volume, sheetVolumeSteps)},
-			{id: "mic", label: "Microphone", sub: "The mute button does this too", kind: ctlToggle, on: !st.muted, value: mic},
+			{id: "mic", label: "Microphone", sub: micSub, kind: ctlToggle, on: !st.muted, value: mic},
 			{id: "dnd", label: "Do not disturb", sub: "Silence announcements and doorbells; turn away incoming calls", kind: ctlToggle, on: config.Get().Home.DoNotDisturb},
 			{id: "wakeword", label: "Wake word", kind: ctlChoice, value: st.wakeWord},
 			{id: "wakesens", label: "Wake word sensitivity", sub: "Higher wakes by mistake less often", kind: ctlStepper,
@@ -820,7 +820,9 @@ func (d *Display) rowTap(id string, p part, opt int) {
 			media.Get().Adjust(+1)
 		}
 	case "mic":
-		mute.Get().LocalToggle()
+		// Mutes, or says why it cannot unmute: only the button does that (GENBU-166). Off the touch loop,
+		// since a mute waits for the microphones to go quiet.
+		go mute.Get().ScreenToggle()
 	case "wakesens":
 		v := config.Get().Wake.Slot(0).Threshold
 		switch p {
