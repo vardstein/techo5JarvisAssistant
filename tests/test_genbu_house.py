@@ -61,234 +61,116 @@ class VersionTests(unittest.TestCase):
 
 
 class HouseVersionTests(unittest.TestCase):
-    def test_newest_committed_among_the_mains(self):
-        h = house.House({"mains": ["hall", "kitchen"]})
-        h.see([show("hall", "v1.0.2-stable.48"), show("kitchen", "v1.0.3-stable.52"),
-               show("attic", "v1.0.4-dev.60")], NOW)
-        self.assertEqual(h.version, "v1.0.3-stable.52")  # attic is no main, it cannot pull the house
-        self.assertEqual(h.since, NOW.isoformat())
+    """GENBU-119: no main update Show. The house version moves only by an install."""
 
-    def test_installed_but_not_committed_does_not_move_the_house(self):
-        h = house.House({"mains": ["hall"]})
-        h.see([show("hall", "v1.0.2-stable.48")], NOW)
-        h.see([show("hall", "v1.0.2-stable.48", installed="v1.0.3-stable.52")], NOW)
-        self.assertEqual(h.version, "v1.0.2-stable.48")
+    def test_a_new_house_starts_at_its_newest_show(self):
+        h = house.House()
+        self.assertTrue(h.see([show("hall", "v1.0.3-stable.52"), show("kitchen", "v1.0.2-stable.48")], NOW))
+        self.assertEqual((h.version, h.since), ("v1.0.3-stable.52", NOW.isoformat()))
 
-    def test_kept_while_the_main_is_unavailable(self):
-        h = house.House({"mains": ["hall"]})
+    def test_installed_but_not_committed_does_not_count(self):
+        h = house.House()
+        h.see([show("hall", "", installed="v1.0.4-stable.53")], NOW)
+        self.assertEqual(h.version, "")
+
+    def test_a_newer_show_does_not_move_the_house(self):
+        h = house.House()
         h.see([show("hall", "v1.0.3-stable.52")], NOW)
-        h.see([show("hall", "unavailable", online=False)], NOW + timedelta(hours=3))
-        self.assertEqual(h.version, "v1.0.3-stable.52")
-        self.assertEqual(h.data["committed"]["hall"], "v1.0.3-stable.52")
-
-    def test_no_main_keeps_the_last_house_version(self):
-        h = house.House({"mains": ["hall"]})
-        h.see([show("hall", "v1.0.3-stable.52")], NOW)
-        h.replace("hall", None, NOW)
-        h.see([show("hall", "v1.0.4-stable.53")], NOW)
+        h.see([show("hall", "v1.0.3-stable.52"), show("attic", "v1.0.9-stable.70")], NOW)
         self.assertEqual(h.version, "v1.0.3-stable.52")
 
-    def test_a_rollback_on_the_main_does_not_move_the_house(self):
-        # A release that broke the main never commits, so the main reports the old version again.
-        h = house.House({"mains": ["hall"]})
-        h.see([show("hall", "v1.0.3-stable.52")], NOW)
-        h.see([show("hall", "v1.0.3-stable.52", installed="v1.0.4-stable.53")], NOW)
-        self.assertEqual(h.version, "v1.0.3-stable.52")
+    def test_move_up_and_back(self):
+        h = house.House()
+        h.see([show("hall", "v1.0.3")], NOW)
+        h.move("v1.0.4", NOW + timedelta(hours=1))
+        self.assertEqual((h.version, h.before), ("v1.0.4", "v1.0.3"))
+        h.move("v1.0.3", NOW + timedelta(hours=2))
+        self.assertEqual((h.version, h.before), ("v1.0.3", "v1.0.4"))
+        h.move("v1.0.3", NOW + timedelta(hours=3))  # the same version is no move
+        self.assertEqual((h.before, h.since), ("v1.0.4", (NOW + timedelta(hours=2)).isoformat()))
+        with self.assertRaises(ValueError):
+            h.move("latest", NOW)
 
-    def test_survives_a_restart(self):
-        h = house.House({"mains": ["hall"]})
+    def test_survives_a_restart_without_the_old_keys(self):
+        h = house.House({"mains": ["hall"], "missing_since": {}, "wait_until": {}, "told": [], "seeded": True})
         h.see([show("hall", "v1.0.3-stable.52")], NOW)
+        h.pick_channel("staging")
+        h.set_night(True)
         again = house.House(json.loads(json.dumps(h.data)))
-        self.assertEqual((again.version, again.mains), ("v1.0.3-stable.52", ["hall"]))
+        self.assertEqual((again.version, again.channel, again.night), ("v1.0.3-stable.52", "staging", True))
+        self.assertFalse(set(house.OLD_KEYS) & set(again.data))
 
     def test_see_says_when_something_changed(self):
-        h = house.House({"mains": ["hall"]})
+        h = house.House()
         self.assertTrue(h.see([show("hall", "v1.0.3-stable.52")], NOW))
         self.assertFalse(h.see([show("hall", "v1.0.3-stable.52")], NOW + timedelta(minutes=1)))
+        self.assertFalse(h.see([show("hall", online=False)], NOW + timedelta(minutes=2)))
 
-
-class MissingTests(unittest.TestCase):
-    def test_timeline(self):
-        since = NOW
-        for after, want in [
-            (timedelta(0), house.QUIET),
-            (timedelta(minutes=59), house.QUIET),
-            (timedelta(hours=1), house.STATUS),
-            (timedelta(hours=23), house.STATUS),
-            (timedelta(hours=24), house.ASK),
-            (timedelta(days=6, hours=23), house.ASK),
-            (timedelta(days=7), house.PICK),
-        ]:
-            self.assertEqual(house.missing_step(since, since + after), want, after)
-        self.assertEqual(house.missing_step(None, NOW), house.PRESENT)
-
-    def test_keep_waiting_moves_the_pick(self):
-        since = NOW
-        answered = since + timedelta(days=2)
-        wait = answered + house.WAIT_MORE
-        self.assertEqual(house.missing_step(since, since + timedelta(days=7), wait), house.STATUS)
-        self.assertEqual(house.missing_step(since, wait - timedelta(hours=24), wait), house.ASK)
-        self.assertEqual(house.missing_step(since, wait, wait), house.PICK)
-
-    def test_one_entry_per_main_however_many_shows(self):
-        h = house.House({"mains": ["hall"]})
-        shows = [show("hall", "v1.0.3-stable.52", online=False)] + [show(f"room{i}") for i in range(10)]
-        h.see(shows, NOW)
-        self.assertEqual(h.missing(NOW + timedelta(days=1)), {"hall": house.ASK})
-
-    def test_missing_since_only_when_every_main_is_gone(self):
-        h = house.House({"mains": ["hall", "kitchen"]})
-        h.see([show("hall", online=False), show("kitchen")], NOW)
-        self.assertEqual(h.missing_since(), "")
-        later = NOW + timedelta(hours=2)
-        h.see([show("hall", online=False), show("kitchen", online=False)], later)
-        self.assertEqual(h.missing_since(), later.isoformat())
-
-    def test_coming_back_clears_the_spell(self):
-        h = house.House({"mains": ["hall"]})
-        h.see([show("hall", online=False)], NOW)
-        h.wait_more("hall", NOW + timedelta(days=1))
-        self.assertTrue(h.tell_once("hall"))
-        self.assertFalse(h.tell_once("hall"))
-        h.see([show("hall")], NOW + timedelta(days=2))
-        self.assertEqual((h.missing_since(), h.data["wait_until"], h.data["told"]), ("", {}, {}))
-        self.assertEqual(h.missing(NOW), {"hall": house.PRESENT})
-
-    def test_a_show_absent_from_home_assistant_counts_as_gone(self):
-        h = house.House({"mains": ["hall"]})
-        h.see([show("kitchen")], NOW)
-        self.assertEqual(h.gone_since("hall"), NOW)
-
-
-class PickTests(unittest.TestCase):
-    def test_recommend_prefers_the_house_version_then_the_newest(self):
-        shows = [show("attic", "v1.0.4-dev.60"), show("kitchen", "v1.0.3-stable.52"),
-                 show("bath", "v1.0.3-stable.52"), show("cellar", "v1.0.5", online=False)]
-        self.assertEqual(house.recommend(shows, "v1.0.3-stable.52"), "bath")
-        self.assertEqual(house.recommend(shows, "v0.9.0"), "attic")
-        self.assertEqual(house.recommend(shows, "v1.0.3-stable.52", leaving="bath"), "kitchen")
-        self.assertIsNone(house.recommend([show("cellar", online=False)], ""))
-
-    def test_recommend_takes_a_show_without_a_version_last(self):
-        shows = [show("new", "unknown"), show("old", "v0.9.0")]
-        self.assertEqual(house.recommend(shows, ""), "old")
-
-    def test_auto_pick_takes_the_recommended_show(self):
-        h = house.House({"mains": ["hall"]})
-        shows = [show("hall", "v1.0.3-stable.52")]
-        h.see(shows, NOW)
-        shows = [show("hall", online=False), show("kitchen", "v1.0.3-stable.52"), show("attic", "v1.0.4-dev.60")]
-        h.see(shows, NOW)
-        self.assertEqual(h.auto_pick("hall", shows, NOW + timedelta(days=7)), "kitchen")
-        self.assertEqual(h.mains, ["kitchen"])
-        self.assertEqual(h.version, "v1.0.3-stable.52")
-        self.assertEqual(h.missing(NOW), {"kitchen": house.PRESENT})
-
-    def test_auto_pick_with_another_main_just_drops_the_gone_one(self):
-        h = house.House({"mains": ["hall", "kitchen"]})
-        shows = [show("hall", online=False), show("kitchen", "v1.0.3-stable.52"), show("attic")]
-        h.see(shows, NOW)
-        self.assertEqual(h.auto_pick("hall", shows, NOW), "")
-        self.assertEqual(h.mains, ["kitchen"])
-
-    def test_auto_pick_waits_with_nothing_online(self):
-        h = house.House({"mains": ["hall"]})
-        shows = [show("hall", online=False), show("kitchen", online=False)]
-        h.see(shows, NOW)
-        self.assertIsNone(h.auto_pick("hall", shows, NOW))
-        self.assertEqual(h.mains, ["hall"])
-
-    def test_old_main_comes_back_as_a_follower(self):
-        h = house.House({"mains": ["hall"]})
-        h.see([show("hall", online=False), show("kitchen", "v1.0.3-stable.52")], NOW)
-        h.replace("hall", "kitchen", NOW)
-        h.see([show("hall", "v1.0.2-stable.48"), show("kitchen", "v1.0.3-stable.52")], NOW)
-        self.assertEqual(h.mains, ["kitchen"])
-        self.assertEqual(h.version, "v1.0.3-stable.52")
-
-    def test_make_main_and_extras(self):
+    def test_a_renamed_show_keeps_its_version(self):
         h = house.House()
-        h.make_main("hall", NOW)
-        h.set_extra(["kitchen", "hall", "kitchen"], NOW)
-        self.assertEqual(h.mains, ["hall", "kitchen"])
-        h.make_main("kitchen", NOW)
-        self.assertEqual(h.mains, ["kitchen"])
-        h.set_extra([], NOW)
-        self.assertEqual(h.mains, ["kitchen"])
-
-    def test_replace_keeps_the_place(self):
-        h = house.House({"mains": ["hall", "kitchen"]})
-        h.replace("hall", "attic", NOW)
-        self.assertEqual(h.mains, ["attic", "kitchen"])
-        h.replace("attic", "kitchen", NOW)
-        self.assertEqual(h.mains, ["kitchen"])
-
-    def test_forgets_state_of_shows_that_are_no_main_any_more(self):
-        h = house.House({"mains": ["hall"]})
-        h.see([show("hall", online=False)], NOW)
-        h.wait_more("hall", NOW)
-        h.make_main("kitchen", NOW)
-        self.assertEqual((h.data["missing_since"], h.data["wait_until"]), ({}, {}))
-
-
-    def test_a_renamed_main_keeps_its_place(self):
-        h = house.House({"mains": ["hall", "attic"]})
-        hall = show("hall", "v1.0.3-stable.52")
+        hall = show("hall", "v1.0.3")
         hall.device = "d1"
-        h.see([hall, show("attic", online=False)], NOW)
-        flur = show("flur", "v1.0.3-stable.52")
+        h.see([hall], NOW)
+        flur = show("flur")
         flur.device = "d1"
-        h.see([flur, show("attic", online=False)], NOW + timedelta(minutes=1))
-        self.assertEqual(h.mains, ["flur", "attic"])
-        self.assertEqual(h.missing(NOW), {"flur": house.PRESENT, "attic": house.QUIET})
-        self.assertEqual(h.data["committed"], {"flur": "v1.0.3-stable.52"})
-        self.assertEqual(h.version, "v1.0.3-stable.52")
+        h.see([flur], NOW)
+        self.assertEqual(h.data["committed"], {"flur": "v1.0.3"})
+
+
+class ChannelTests(unittest.TestCase):
+    def test_channel_of(self):
+        for v, ch in (("v1.4.0", "stable"), ("v1.4.0-stable.60", "stable"), ("v1.4.0-staging.55", "staging"),
+                      ("1.4.0-dev.70_abc", "dev"), ("v1.4.0-rc.1", "stable")):
+            self.assertEqual(house.channel_of(v), ch, v)
+
+    def test_the_house_reads_its_own_channel_until_one_is_picked(self):
+        h = house.House()
+        self.assertEqual(h.channel, "stable")
+        h.see([show("hall", "v1.0.3-dev.70")], NOW)
+        self.assertEqual(h.channel, "dev")
+        h.pick_channel("stable")
+        self.assertEqual(h.channel, "stable")
+        with self.assertRaises(ValueError):
+            h.pick_channel("beta")
+
+    def test_manifest_addresses(self):
+        self.assertTrue(house.manifest_url("stable").endswith("/releases/latest/download/manifest.json"))
+        self.assertTrue(house.manifest_url("dev").endswith("/releases/download/channel-dev/manifest.json"))
+        self.assertTrue(house.tag_url("v1.4.0").endswith("/releases/download/v1.4.0/manifest.json"))
+
+    def test_the_addresses_are_echods(self):
+        show = (ROOT / "echod" / "internal" / "update" / "releases_cronos.go").read_text()
+        channel = (ROOT / "echod" / "internal" / "update" / "channel.go").read_text()
+        self.assertIn(f'"{house.RELEASES}"', show)
+        self.assertIn('"channel-dev"', channel)
 
 
 class ForgetTests(unittest.TestCase):
     """genbu.forget_show, which the installer's --remove-show calls once the Show is out of ESPHome."""
 
-    def house_of(self, mains):
+    def house_of(self):
         h = house.House()
         flur, attic = show("flur", "v1.0.3-stable.52"), show("attic", "v1.0.3-stable.50")
         flur.device, attic.device = "d1", "d2"
-        for node in reversed(mains):
-            h.make_main(node, NOW)
         h.see([flur, attic], NOW)
         h.choose_music("d1", "media_player.kitchen")
         h.choose_music("d2", "media_player.attic")
+        h.set_switch("d2", "recipes", False)
         return h
 
-    def test_a_follower_leaves_no_trace(self):
-        h = self.house_of(["flur"])
-        h.forget("attic", NOW)
-        self.assertEqual(h.mains, ["flur"])
+    def test_it_leaves_no_trace(self):
+        h = self.house_of()
+        h.forget("attic")
         self.assertNotIn("attic", h.data["committed"])
         self.assertEqual(h.data["devices"], {"d1": "flur"})
         self.assertEqual(h.data["music"], {"d1": "media_player.kitchen"})
-
-    def test_the_only_main_hands_over(self):
-        h = self.house_of(["flur"])
-        h.see([show("flur", online=False)], NOW + timedelta(hours=30))
-        h.forget("flur", NOW + timedelta(hours=30), new="attic")
-        self.assertEqual(h.mains, ["attic"])
-        self.assertEqual(h.data["missing_since"], {})
-        self.assertNotIn("flur", h.data["committed"])
-        self.assertEqual(h.data["devices"], {"d2": "attic"})
-        self.assertEqual(h.data["music"], {"d2": "media_player.attic"})
-
-    def test_a_second_main_just_leaves(self):
-        h = self.house_of(["flur", "attic"])
-        h.forget("attic", NOW)
-        self.assertEqual(h.mains, ["flur"])
-        h.forget("flur", NOW)
-        self.assertEqual(h.mains, [])
-        self.assertEqual(h.data["devices"], {})
+        self.assertEqual(h.data["switches"], {})
+        self.assertEqual(h.version, "v1.0.3-stable.52")  # the house stays where it is
 
     def test_an_unknown_show_changes_nothing(self):
-        h = self.house_of(["flur"])
+        h = self.house_of()
         before = repr(h.data)
-        h.forget("cellar", NOW)
+        h.forget("cellar")
         self.assertEqual(repr(h.data), before)
 
 
@@ -305,13 +187,17 @@ class FilesTests(unittest.TestCase):
             other = json.loads((GENBU / "translations" / f"{lang}.json").read_text())
             self.assertEqual(keys(other), keys(strings), lang)
 
-    def test_every_issue_has_its_texts(self):
+    def test_no_issues_any_more(self):
         strings = json.loads((GENBU / "strings.json").read_text())
-        for issue in ("main_missing", "no_main", "main_picked", "main_dropped"):
-            self.assertIn("title", strings["issues"][issue], issue)
-        steps = strings["issues"]["main_missing"]["fix_flow"]["step"]
-        self.assertEqual(set(steps["init"]["menu_options"]), {"pick", "wait", "gone"})
-        self.assertEqual(set(strings["options"]["step"]["second"]["menu_options"]), {"second_no", "second_yes"})
+        self.assertNotIn("issues", strings)
+        self.assertEqual(set(strings["options"]["step"]), {"init"})
+        self.assertFalse((GENBU / "repairs.py").exists())
+
+    def test_the_house_entities_have_their_texts(self):
+        entity = json.loads((GENBU / "strings.json").read_text())["entity"]
+        self.assertEqual(set(entity["select"]["release_channel"]["state"]), set(house.CHANNELS))
+        self.assertIn("install_at_night", entity["switch"])
+        self.assertIn("show_firmware", entity["update"])
 
     def test_forget_show_is_described(self):
         strings = json.loads((GENBU / "strings.json").read_text())
@@ -328,7 +214,7 @@ class FilesTests(unittest.TestCase):
     def test_fixed_entity_ids_match_the_show(self):
         go = (ROOT / "echod" / "internal" / "feature" / "firmware" / "house.go").read_text()
         const = (GENBU / "const.py").read_text()
-        for needle in ("sensor.genbu_house_version", "main_shows", "main_missing_since"):
+        for needle in ("sensor.genbu_house_version", "main_shows"):
             self.assertIn(needle, go)
         self.assertIn('"sensor.genbu_house_version"', const)
 

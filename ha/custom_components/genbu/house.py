@@ -1,6 +1,6 @@
-"""The Genbu house without Home Assistant: how versions rank, which version the house runs, how long a main
-update Show has been gone and what to do about it, and which Show to recommend in its place. The glue in
-coordinator.py feeds it what Home Assistant sees and acts on what it answers. See docs/update-leader.md.
+"""The Genbu house without Home Assistant: how versions rank, which version the house runs, which release
+channel it reads, and where that channel's manifest is. The glue in coordinator.py feeds it what Home
+Assistant sees, and update.py offers what the channel has. See docs/update-leader.md.
 
 Everything here is plain Python so the tests run without Home Assistant installed."""
 
@@ -8,21 +8,18 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # The shape a Show's version has to have before the house believes it, the same as echod's
 # update.ValidVersion: dotted numerals, optionally a prerelease and _build detail.
 VERSION = re.compile(r"^v?\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?(_[0-9A-Za-z.-]+)?$")
 
-# When a main update Show has been gone this long, the house says so (the Shows put it on their update
-# page), asks you in Repairs, and picks a new main by itself.
-STATUS_AFTER = timedelta(hours=1)
-ASK_AFTER = timedelta(hours=24)
-PICK_AFTER = timedelta(days=7)
-WAIT_MORE = timedelta(days=7)  # "keep waiting 7 more days" in the fix flow
+# Where the Shows' releases are, the same addresses as echod's update/channel.go.
+RELEASES = "https://github.com/vardstein/techo5JarvisAssistant/releases"
+CHANNELS = ("stable", "staging", "dev")
 
-# What missing() says about each main update Show.
-PRESENT, QUIET, STATUS, ASK, PICK = "present", "quiet", "status", "ask", "pick"
+# What Genbu before 1.4.0 kept about main update Shows, dropped on the first start of 1.4.0 (GENBU-119).
+OLD_KEYS = ("mains", "missing_since", "wait_until", "told", "seeded")
 
 
 def valid(v: str | None) -> bool:
@@ -112,7 +109,7 @@ def newer(a: str, b: str) -> bool:
 class Show:
     """A Genbu Show as Home Assistant sees it right now."""
 
-    node: str  # the ESPHome node name, the one a Show finds in main_shows
+    node: str  # the ESPHome node name, the one a Show calls itself by
     name: str  # what Home Assistant calls it
     installed: str = ""  # installed_version of its firmware update entity
     committed: str = ""  # its committed_version sensor
@@ -124,132 +121,79 @@ class Show:
     mac: str = ""  # its MAC, which a rename doesn't change
 
 
+def channel_of(version: str) -> str:
+    """The channel a version was built for: v1.4.0-staging.55 is staging, a plain v1.4.0 is stable."""
+    pre = version.removeprefix("v").split("_", 1)[0].partition("-")[2]
+    name = pre.split(".", 1)[0]
+    return name if name in CHANNELS else "stable"
+
+
+def manifest_url(channel: str) -> str:
+    """Where a channel's newest manifest is."""
+    if channel == "stable":
+        return f"{RELEASES}/latest/download/manifest.json"
+    return f"{RELEASES}/download/channel-{channel}/manifest.json"
+
+
+def tag_url(version: str) -> str:
+    """Where one version's own manifest is, for going back to it."""
+    return f"{RELEASES}/download/{version}/manifest.json"
+
+
 def _iso(t: datetime | None) -> str:
-    return t.replace(microsecond=0).isoformat() if t else ""  # the Shows read it as RFC 3339
-
-
-def _time(s: str | None) -> datetime | None:
-    try:
-        return datetime.fromisoformat(s) if s else None
-    except ValueError:
-        return None
-
-
-def missing_step(since: datetime | None, now: datetime, wait_until: datetime | None = None) -> str:
-    """Where a main update Show that has been gone since `since` stands. "Keep waiting" moves the pick
-    to wait_until, and the question comes back a day before it."""
-    if since is None:
-        return PRESENT
-    pick_at, ask_at = since + PICK_AFTER, since + ASK_AFTER
-    if wait_until and wait_until > pick_at:
-        pick_at, ask_at = wait_until, max(ask_at, wait_until - ASK_AFTER)
-    if now >= pick_at:
-        return PICK
-    if now >= ask_at:
-        return ASK
-    if now - since >= STATUS_AFTER:
-        return STATUS
-    return QUIET
-
-
-def recommend(shows: list[Show], house: str, leaving: str | None = None) -> str | None:
-    """The Show to make the main update Show: one that is online, preferably already on the house
-    version, then the newest one. None when no Show is online."""
-    best: tuple | None = None
-    for s in shows:
-        if not s.online or s.node == leaving:
-            continue
-        mine = s.committed or s.installed
-        key = (bool(house) and mine == house, mine if valid(mine) else "", s.node)
-        if best is None or _better(key, best):
-            best = key
-    return best[2] if best else None
-
-
-def _better(a: tuple, b: tuple) -> bool:
-    if a[0] != b[0]:
-        return a[0]
-    if (c := compare(a[1], b[1]) if a[1] and b[1] else (1 if a[1] else -1 if b[1] else 0)) != 0:
-        return c > 0
-    return a[2] < b[2]
+    return t.replace(microsecond=0).isoformat() if t else ""
 
 
 class House:
     """What the integration remembers about the house, kept in a dict it stores across restarts:
 
-    mains          the main update Shows, by node name; only this class changes it
     committed      each Show's last committed version, kept while it is offline
-    missing_since  when each main update Show was first seen gone
-    wait_until     a later pick, from "keep waiting"
-    told           the missing spells already pushed to a phone
     devices        each Show's node name by device id, to notice a rename
     music          the player picked in each Show's "Music plays on", by device id
     switches       each Show's Recipes and Updates by voice, by device id, when somebody switched them
-    house, since   the house version and when it last changed
+    house, since   the house version, the one every Show moves to, and when it last changed
+    channel        the release channel the house reads; empty for the house version's own
+    night          whether a waiting update installs by itself at night
+    before         the house version before the last install, for going back
     """
 
     def __init__(self, data: dict | None = None) -> None:
         self.data = data if data is not None else {}
-        for k in ("committed", "missing_since", "wait_until", "told", "devices", "music", "switches"):
+        for k in OLD_KEYS:
+            self.data.pop(k, None)
+        for k in ("committed", "devices", "music", "switches"):
             self.data.setdefault(k, {})
-        self.data.setdefault("mains", [])
-        self.data.setdefault("house", "")
-        self.data.setdefault("since", "")
-
-    @property
-    def mains(self) -> list[str]:
-        return list(self.data["mains"])
+        for k in ("house", "since", "channel", "before"):
+            self.data.setdefault(k, "")
+        self.data.setdefault("night", False)
 
     def see(self, shows: list[Show], now: datetime) -> bool:
         """Takes in what Home Assistant shows now; True when anything worth storing changed."""
         before = repr(self.data)
         self._renamed(shows)
-        online = {s.node for s in shows if s.online}
         for s in shows:
             if valid(s.committed):
                 self.data["committed"][s.node] = s.committed
-        for node in self.data["mains"]:
-            if node in online:
-                self.data["missing_since"].pop(node, None)
-                self.data["wait_until"].pop(node, None)
-                self.data["told"].pop(node, None)
-            else:
-                self.data["missing_since"].setdefault(node, _iso(now))
-        self._forget_old()
-        self._settle(now)
+        if not self.data["house"]:
+            # A new house starts where its newest Show is, which is where the Shows came from: nothing moves.
+            newest = ""
+            for v in self.data["committed"].values():
+                if valid(v) and (not newest or newer(v, newest)):
+                    newest = v
+            if newest:
+                self.data["house"], self.data["since"] = newest, _iso(now)
         return repr(self.data) != before
 
     def _renamed(self, shows: list[Show]) -> None:
-        # A renamed Show comes back under a new node name on the same device. A main keeps its place.
+        # A renamed Show comes back under a new node name on the same device.
         devices = self.data["devices"]
         for s in shows:
             if not s.device:
                 continue
             old = devices.get(s.device)
             devices[s.device] = s.node
-            if not old or old == s.node:
-                continue
-            if old in self.data["mains"] and s.node not in self.data["mains"]:
-                self.data["mains"] = [s.node if m == old else m for m in self.data["mains"]]
-            for k in ("committed", "missing_since", "wait_until", "told"):
-                if old in self.data[k]:
-                    self.data[k].setdefault(s.node, self.data[k].pop(old))
-
-    def _forget_old(self) -> None:
-        for k in ("missing_since", "wait_until", "told"):
-            for node in [n for n in self.data[k] if n not in self.data["mains"]]:
-                del self.data[k][node]
-
-    def _settle(self, now: datetime) -> None:
-        # The newest version a main update Show has committed. With no main, or none that has
-        # committed anything yet, the house stays where it was.
-        best = ""
-        for node in self.data["mains"]:
-            v = self.data["committed"].get(node, "")
-            if valid(v) and (not best or newer(v, best)):
-                best = v
-        if best and best != self.data["house"]:
-            self.data["house"], self.data["since"] = best, _iso(now)
+            if old and old != s.node and old in self.data["committed"]:
+                self.data["committed"].setdefault(s.node, self.data["committed"].pop(old))
 
     @property
     def version(self) -> str:
@@ -259,74 +203,43 @@ class House:
     def since(self) -> str:
         return self.data["since"]
 
-    def missing_since(self) -> str:
-        """When the house lost its last main update Show, for the Shows' update page; empty while one
-        of them is there."""
-        mains = self.data["mains"]
-        times = [self.data["missing_since"].get(n) for n in mains]
-        if not mains or not all(times):
-            return ""
-        return max(times)
+    @property
+    def channel(self) -> str:
+        """The channel the house reads: the one picked, else the house version's own."""
+        return self.data["channel"] or (channel_of(self.version) if self.version else "stable")
 
-    def missing(self, now: datetime) -> dict[str, str]:
-        """Each main update Show and where it stands; one entry per main, however many Shows follow."""
-        return {node: missing_step(_time(self.data["missing_since"].get(node)), now,
-                                   _time(self.data["wait_until"].get(node)))
-                for node in self.data["mains"]}
+    def pick_channel(self, channel: str) -> None:
+        if channel not in CHANNELS:
+            raise ValueError(channel)
+        self.data["channel"] = channel
 
-    def gone_since(self, node: str) -> datetime | None:
-        return _time(self.data["missing_since"].get(node))
+    @property
+    def night(self) -> bool:
+        return bool(self.data["night"])
 
-    def pick_at(self, node: str) -> datetime | None:
-        since = self.gone_since(node)
-        if since is None:
-            return None
-        wait = _time(self.data["wait_until"].get(node))
-        return max(since + PICK_AFTER, wait) if wait else since + PICK_AFTER
+    def set_night(self, on: bool) -> None:
+        self.data["night"] = on
 
-    def tell_once(self, node: str) -> bool:
-        """True the first time a spell of this main being gone is worth a push."""
-        since = self.data["missing_since"].get(node, "")
-        if not since or self.data["told"].get(node) == since:
-            return False
-        self.data["told"][node] = since
-        return True
+    @property
+    def before(self) -> str:
+        return self.data["before"]
 
-    def make_main(self, node: str, now: datetime) -> None:
-        """The select: node becomes the main update Show, in the first place if there are more."""
-        rest = [m for m in self.data["mains"][1:] if m != node]
-        self.data["mains"] = [node, *rest]
-        self._forget_old()
-        self._settle(now)
+    def move(self, version: str, now: datetime) -> None:
+        """Install: the house goes to version, up or down, and every Show follows."""
+        if not valid(version):
+            raise ValueError(version)
+        if version != self.data["house"]:
+            self.data["before"] = self.data["house"]
+            self.data["house"], self.data["since"] = version, _iso(now)
 
-    def set_extra(self, nodes: list[str], now: datetime) -> None:
-        """The options: more main update Shows next to the first."""
-        first = self.data["mains"][:1]
-        self.data["mains"] = first + [n for n in dict.fromkeys(nodes) if n not in first]
-        self._forget_old()
-        self._settle(now)
-
-    def replace(self, gone: str, new: str | None, now: datetime) -> None:
-        """A main update Show is gone for good: new takes its place, or with None, it just leaves."""
-        mains = [m for m in self.data["mains"] if m != new]
-        if new and gone in mains:
-            mains[mains.index(gone)] = new
-        else:
-            mains = [m for m in mains if m != gone]
-        self.data["mains"] = mains
-        self._forget_old()
-        self._settle(now)
-
-    def forget(self, node: str, now: datetime, new: str | None = None) -> None:
-        """A Show taken out of the house for good (the installer's --remove-show): it leaves the main
-        update Shows, new taking its place when given, and nothing about it is kept."""
-        if node in self.data["mains"]:
-            self.replace(node, new, now)
+    def forget(self, node: str) -> None:
+        """A Show taken out of the house for good (the installer's --remove-show): nothing about it is
+        kept."""
         self.data["committed"].pop(node, None)
         for device in [d for d, n in self.data["devices"].items() if n == node]:
             del self.data["devices"][device]
             self.data["music"].pop(device, None)
-        self._forget_old()
+            self.data["switches"].pop(device, None)
 
     def music_choice(self, device: str) -> str:
         return self.data["music"].get(device, "")
@@ -351,20 +264,3 @@ class House:
             mine[key] = on
         if not mine:
             del self.data["switches"][device]
-
-    def wait_more(self, node: str, now: datetime) -> None:
-        self.data["wait_until"][node] = _iso(now + WAIT_MORE)
-
-    def auto_pick(self, node: str, shows: list[Show], now: datetime) -> str | None:
-        """What the house does when nobody answered for PICK_AFTER: with another main update Show still
-        there, the gone one just leaves; otherwise the recommended Show takes its place. Returns the new
-        main, "" when the gone one just left, or None when nothing could be done yet (no Show online)."""
-        online = {s.node for s in shows if s.online}
-        if any(m in online for m in self.data["mains"] if m != node):
-            self.replace(node, None, now)
-            return ""
-        new = recommend(shows, self.version, leaving=node)
-        if new is None:
-            return None
-        self.replace(node, new, now)
-        return new

@@ -1,6 +1,6 @@
 """Genbu Assistant: one update point per house. Finds the Genbu Shows that Home Assistant knows through
-ESPHome, keeps which of them are main update Shows, publishes the house version the others follow in
-sensor.genbu_house_version, and asks in Repairs when a main update Show goes missing. The Genbu Control
+ESPHome, publishes the house version they all follow in sensor.genbu_house_version, and offers the
+release channel's next version on one update card, update.genbu_show_firmware (GENBU-119). The Genbu Control
 Center in the sidebar has a card per Show, made from its ESPHome entities (frontend/). Genbu also serves
 the Jarvis dashboard's cards and loads them on every page (ha-dashboard/README.md). And it gives the voice
 assistant its tools, Show by Show (llm.py). See docs/update-leader.md and docs/genbu-assistant.md."""
@@ -27,9 +27,9 @@ except ImportError:
 
 from .const import (CARDS, CONF_SEARXNG, DOMAIN, MANUFACTURERS, NAME, OLD_NAME, OLD_RECIPES, PANEL, PANEL_FILES,
                     PANEL_TITLE, SERVICE_FORGET, SERVICE_INSTALL, STORE_KEY, STORE_VERSION)
-from .coordinator import GenbuHouse, install_waiting, unhide
+from .coordinator import GenbuHouse, unhide
 
-PLATFORMS = [Platform.SENSOR, Platform.SELECT, Platform.SWITCH]
+PLATFORMS = [Platform.SENSOR, Platform.SELECT, Platform.SWITCH, Platform.UPDATE]
 FORGET_SCHEMA = vol.Schema({vol.Required("node"): cv.string})
 INSTALL_SCHEMA = vol.Schema({vol.Optional("except_node", default=""): cv.string})
 
@@ -133,7 +133,7 @@ def _drop_copies(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def _forget_show(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
     """genbu.forget_show {node}: what the installer's --remove-show calls once the Show's ESPHome entry is
-    gone, so the house keeps nothing about it. Answers with the main update Shows left."""
+    gone, so the house keeps nothing about it."""
     entry = next((e for e in hass.config_entries.async_entries(DOMAIN) if e.state is ConfigEntryState.LOADED),
                  None)
     if entry is None:
@@ -145,12 +145,17 @@ async def _forget_show(hass: HomeAssistant, call: ServiceCall) -> ServiceRespons
 
 
 async def _install_updates(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
-    """genbu.install_updates {except_node}: what a Show calls when somebody says yes to its update, and
-    the voice kit's "install the updates". Every Show with an update waiting installs it, even when the
-    one that asked has none. except_node is the Show that asked and is installing already: a second
+    """genbu.install_updates {except_node}: what a Show calls when somebody says yes to an update, and the
+    voice kit's "install the updates". When the house's card has one waiting, the house moves and every
+    Show follows. Without one, each Show still behind with an update of its own installs it, except
+    except_node, the Show that asked and is installing already (a Show from before 1.4.0 does): a second
     install on top of its own would start the same download twice. Answers with who started and who is
-    up to date; a Show that is offline has no update to install and is left out."""
-    return await install_waiting(hass, call.data.get("except_node", ""))
+    up to date; a Show that is offline is left out."""
+    entry = next((e for e in hass.config_entries.async_entries(DOMAIN) if e.state is ConfigEntryState.LOADED),
+                 None)
+    if entry is None:
+        raise ServiceValidationError("Genbu is not running")
+    return await entry.runtime_data.async_install_updates(call.data.get("except_node", ""))
 
 
 async def _options_changed(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -162,8 +167,8 @@ async def _options_changed(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    # The ESPHome originals Genbu 1.2.0 hid come back, if they haven't yet. Set up again, it starts from what the installer or the
-    # form says, not from the old house.
+    # The ESPHome originals Genbu 1.2.0 hid come back, if they haven't yet. Set up again, it starts from
+    # where the Shows are, not from the old house.
     store = Store(hass, STORE_VERSION, STORE_KEY)
     unhide(hass, (await store.async_load() or {}).get("hidden", {}))
     await store.async_remove()

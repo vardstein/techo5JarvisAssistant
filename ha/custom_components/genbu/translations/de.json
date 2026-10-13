@@ -3,13 +3,7 @@
     "step": {
       "user": {
         "title": "Genbu Assistant",
-        "description": "Genbu hält deine Genbu Shows auf einer Version. Einer davon, der Haupt-Update-Show, sucht nach Updates und fragt nach; die anderen folgen seiner Version. Gefundene Shows: {count}.",
-        "data": {
-          "main_show": "Haupt-Update-Show"
-        },
-        "data_description": {
-          "main_show": "Leer lassen, um später in select.genbu_main_update_show zu wählen."
-        }
+        "description": "Genbu hält deine Genbu Shows auf einer Version, der Hausversion. Sie fängt bei deiner neuesten Show an, und die Karte Genbu Show Firmware am Gerät Genbu Assistant bietet die nächste an. Gefundene Shows: {count}."
       }
     },
     "abort": {
@@ -21,24 +15,12 @@
     "step": {
       "init": {
         "title": "Genbu Assistant",
-        "description": "{main} ist der Haupt-Update-Show. Ändern kannst du das in select.genbu_main_update_show.",
+        "description": "Die Update-Karte des Hauses, sein Release-Kanal und die Installation in der Nacht sind am Gerät Genbu Assistant.",
         "data": {
-          "extra_mains": "Weitere Haupt-Update-Shows",
-          "notify_service": "Handy für Hinweise",
           "searxng_url": "Rezeptsuche"
         },
         "data_description": {
-          "extra_mains": "Einer reicht meistens. Mit mehreren folgen die anderen Shows dem, der die neueste Version hat.",
-          "notify_service": "Ein Notify-Dienst, z. B. mobile_app_mein_handy. Er bekommt eine Nachricht, wenn ein Haupt-Update-Show einen Tag offline ist.",
-          "searxng_url": "Die Adresse deines SearXNG, z. B. http://10.0.0.5:8080. Damit kann ein Genbu Show auf Zuruf ein Rezept suchen und auf seinem Bildschirm zeigen (sein Schalter Rezepte). Leer: keine Rezepte."
-        }
-      },
-      "second": {
-        "title": "Ein zweiter Haupt-Update-Show?",
-        "description": "{main} ist schon der Haupt-Update-Show. Mit zwei folgen die anderen Shows dem, der neuer ist. Sie kommen sich nicht in die Quere, aber dann fragen zwei Shows nach Updates.",
-        "menu_options": {
-          "second_no": "Nein, bei einem bleiben",
-          "second_yes": "Ja, hinzufügen"
+          "searxng_url": "Die Adresse deines SearXNG, z. B. http://10.0.0.5:8080. Damit kann eine Genbu Show auf Zuruf ein Rezept suchen und auf ihrem Bildschirm zeigen (ihr Schalter Rezepte). Leer: keine Rezepte."
         }
       }
     },
@@ -46,75 +28,16 @@
       "searxng": "Das ist keine http- oder https-Adresse."
     }
   },
-  "issues": {
-    "main_missing": {
-      "title": "Haupt-Update-Show {name} ist offline",
-      "fix_flow": {
-        "step": {
-          "init": {
-            "title": "{name} ist offline",
-            "description": "Home Assistant hat {name} seit {since} nicht gesehen. Die anderen Shows bleiben auf ihrer Version, bis es wieder einen Haupt-Update-Show gibt. Wenn niemand antwortet, macht Genbu am {pick_at} {pick} zum Haupt-Update-Show.",
-            "menu_options": {
-              "pick": "Neuen Haupt-Update-Show wählen",
-              "wait": "Noch 7 Tage warten",
-              "gone": "{name} kommt nicht wieder"
-            }
-          },
-          "pick": {
-            "title": "Neuer Haupt-Update-Show",
-            "description": "Deine Shows sind auf {version}. Der empfohlene Show ist online und am nächsten dran.",
-            "data": {
-              "show": "Show"
-            }
-          }
-        },
-        "abort": {
-          "none_online": "Gerade ist kein Genbu Show online. Versuch es wieder, wenn einer da ist."
-        }
-      }
-    },
-    "no_main": {
-      "title": "Kein Haupt-Update-Show",
-      "fix_flow": {
-        "step": {
-          "pick": {
-            "title": "Neuer Haupt-Update-Show",
-            "description": "Deine Shows sind auf {version}. Der empfohlene Show ist online und am nächsten dran.",
-            "data": {
-              "show": "Show"
-            }
-          }
-        },
-        "abort": {
-          "none_online": "Gerade ist kein Genbu Show online. Versuch es wieder, wenn einer da ist."
-        }
-      }
-    },
-    "main_picked": {
-      "title": "{new} ist jetzt der Haupt-Update-Show",
-      "fix_flow": {
-        "step": {
-          "confirm": {
-            "title": "{new} ist jetzt der Haupt-Update-Show",
-            "description": "{gone} war 7 Tage offline und niemand hat geantwortet, also hat Genbu {new} zum Haupt-Update-Show gemacht. Die Version deiner Shows bleibt gleich. Ändern kannst du das in {select}."
-          }
-        }
-      }
-    },
-    "main_dropped": {
-      "title": "{gone} ist kein Haupt-Update-Show mehr",
-      "fix_flow": {
-        "step": {
-          "confirm": {
-            "title": "{gone} ist kein Haupt-Update-Show mehr",
-            "description": "{gone} war 7 Tage offline und niemand hat geantwortet. Der andere Haupt-Update-Show macht weiter. Ändern kannst du das in {select}."
-          }
-        }
-      }
-    }
-  },
   "entity": {
     "select": {
+      "release_channel": {
+        "name": "Release-Kanal",
+        "state": {
+          "stable": "Stabil",
+          "staging": "Staging",
+          "dev": "Dev"
+        }
+      },
       "music_plays_on": {
         "name": "Musik spielt auf"
       }
@@ -125,28 +48,36 @@
       }
     },
     "switch": {
+      "install_at_night": {
+        "name": "Nachts installieren"
+      },
       "recipes": {
         "name": "Rezepte"
       },
       "voice_updates": {
         "name": "Updates per Sprache"
       }
+    },
+    "update": {
+      "show_firmware": {
+        "name": "Genbu Show Firmware"
+      }
     }
   },
   "services": {
     "forget_show": {
       "name": "Show vergessen",
-      "description": "Vergisst eine Show, die das Haus für immer verlassen hat: Sie ist kein Haupt-Update-Show mehr (war sie die einzige, übernimmt die empfohlene Show), ihre Versionen und ihre Musikwahl werden gelöscht. Der Installer ruft das mit --remove-show auf, sobald die Show aus ESPHome raus ist.",
+      "description": "Vergisst eine Show, die das Haus für immer verlassen hat: Ihre Versionen, ihre Musikwahl und ihre Schalter werden gelöscht. Der Installer ruft das mit --remove-show auf, sobald die Show aus ESPHome raus ist.",
       "fields": {
         "node": {
           "name": "Node-Name",
-          "description": "Der ESPHome-Node-Name der Show, wie in main_shows am Hausversion-Sensor."
+          "description": "Der ESPHome-Node-Name der Show, wie in shows am Hausversion-Sensor."
         }
       }
     },
     "install_updates": {
       "name": "Updates auf allen Shows installieren",
-      "description": "Jede Show, für die ein Update bereitliegt, installiert es. Eine Show ruft das auf, wenn jemand bei ihrem Update Ja sagt, damit das ganze Haus aktualisiert, auch wenn sie selbst keins hat; das \"installiere die Updates\" des Voice Kits ruft es auch auf.",
+      "description": "Liegt auf der Karte Genbu Show Firmware ein Update bereit, installiert das Haus es und jede Show folgt. Sonst installiert jede Show, die mit einem eigenen Update zurückliegt, dieses. Eine Show ruft das auf, wenn jemand bei einem Update Ja sagt; das \"installiere die Updates\" des Voice Kits ruft es auch auf.",
       "fields": {
         "except_node": {
           "name": "Außer Node",

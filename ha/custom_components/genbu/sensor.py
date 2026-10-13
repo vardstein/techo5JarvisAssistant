@@ -1,6 +1,8 @@
-"""sensor.genbu_house_version: the version the house runs, the one every following Show moves to. The
-Shows read it and two of its attributes over their ESPHome link: main_shows (am I a main update Show?)
-and main_missing_since (for the line on their update page).
+"""sensor.genbu_house_version: the version the house runs, the one every Show moves to. The Shows read it
+and three of its attributes over their ESPHome link. main_shows is always empty since 1.4.0 (GENBU-119):
+every Show follows, none decides; it is left out while the house has no version yet, so the Shows stay
+as they are. main_missing_since is always empty. update_waiting is the house update the card offers and
+nobody skipped, which a Show asks about out loud.
 
 music_players is where music asked for at each Show plays, by the Show's device id and by its
 assist_satellite, for the music automation and scripts the installer makes.
@@ -62,11 +64,13 @@ class HouseVersion(SensorEntity):
     @callback
     def _changed(self) -> None:
         house = self.hub.house
-        # No version yet (no main update Show has committed one): the Shows stay where they are.
+        # No version yet (no Show has committed one): the Shows stay where they are.
         self._attr_native_value = house.version or None
+        mains = {"main_shows": []} if house.version else {}
         self._attr_extra_state_attributes = {
-            "main_shows": house.mains,
-            "main_missing_since": house.missing_since(),
+            **mains,
+            "main_missing_since": "",
+            "update_waiting": self.hub.waiting,
             "since": house.since,
             "shows": {s.node: {"name": s.name, "installed": s.installed, "committed": s.committed,
                                "online": s.online} for s in self.hub.shows},

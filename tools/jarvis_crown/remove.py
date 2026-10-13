@@ -10,9 +10,8 @@ What goes, in this order, all of it saved with keep first:
      Show is off the network: Music Assistant makes a connected player again at once. Music Assistant
      tells Home Assistant, which then drops the player's device too;
   4. its ESPHome entry, which takes its devices, their entities and their area links with it;
-  5. its place in Genbu (main update Show, music choice), through genbu.forget_show, after the ESPHome
-     entry so that Genbu does not pick it up again first. When it was the only main update Show, Genbu
-     makes the one it recommends main instead;
+  5. its place in Genbu (its last version, music choice, switches), through genbu.forget_show, after the
+     ESPHome entry so that Genbu does not pick it up again first;
   6. the Show's label, once nothing carries it any more.
 What stays: everything with only the "Genbu Show installed" label (the house-wide jarvis_local_*
 automations, the music scripts), the blueprints, the room's area and dashboard, the calendars, and
@@ -68,18 +67,17 @@ class Found:
     players: list[dict] = field(default_factory=list)
     genbu: bool = False          # Genbu is set up
     forget_action: bool = False  # and has genbu.forget_show (1.1.0 on)
-    main: bool = False           # the Show is a main update Show there
 
     @property
     def anything(self) -> bool:
         return bool(self.entry or self.automations or self.scripts or self.labels or self.users
-                    or self.music_users or self.players or self.main)
+                    or self.music_users or self.players)
 
     @property
     def in_genbu(self) -> bool:
-        """Whether Genbu has the Show to forget: one still in ESPHome, or still a main update Show. Its
-        music choice is not visible from outside, and forgetting twice does no harm."""
-        return self.genbu and bool(self.node) and (self.entry is not None or self.main)
+        """Whether Genbu has the Show to forget: one still in ESPHome. What Genbu keeps about it is not
+        visible from outside, and forgetting twice does no harm."""
+        return self.genbu and bool(self.node) and self.entry is not None
 
     @property
     def gone_now(self) -> list[dict]:
@@ -188,7 +186,6 @@ def _genbu(ha: HomeAssistant, found: Found) -> None:
     services = next((d.get("services") or {} for d in ha.request("GET", "/api/services") or []
                      if d.get("domain") == genbu.DOMAIN), {})
     found.forget_action = "forget_show" in services
-    found.main = bool(found.node) and found.node in genbu.house(ha).mains
 
 
 def find(ha: HomeAssistant, name: str, *, also: list[str] = (), mac: str = "",
@@ -259,11 +256,9 @@ def plan(found: Found) -> tuple[list[str], list[str], list[str]]:
                     f"{len(found.entities)} entities and their area links")
     if found.in_genbu:
         if found.forget_action:
-            goes.append(f"{found.node}'s place in Genbu" + (" (main update Show; Genbu picks another)"
-                                                            if found.main else ""))
+            goes.append(f"{found.node}'s place in Genbu")
         else:
-            stays.append(f"{found.node}'s place in Genbu: Genbu here is older than 1.1.0 ({genbu.HOW_TO_ADD})"
-                         + (f"; pick another main update Show in {genbu.MAIN_SELECT}" if found.main else ""))
+            stays.append(f"{found.node}'s place in Genbu: Genbu here is older than 1.1.0 ({genbu.HOW_TO_ADD})")
     for label in found.labels:
         goes.append(f"label {label.get('name')!r}")
     if not found.music_asked:
@@ -290,7 +285,7 @@ def snapshot(found: Found) -> dict:
                                       for u in found.music_users],
             "music_assistant_players": [{k: p.get(k) for k in ("player_id", "provider", "name", "available")}
                                         for p in found.players],
-            "genbu": {"node": found.node, "main": found.main}}
+            "genbu": {"node": found.node}}
 
 
 def remove(ha: HomeAssistant, found: Found, *, keep: Keep, drop: Drop | None = None,
@@ -339,11 +334,9 @@ def remove(ha: HomeAssistant, found: Found, *, keep: Keep, drop: Drop | None = N
             failed += 1
             progress(f"WARN: Genbu did not forget {found.node}: {exc}")
         else:
+            # Genbu before 1.4.0 names the main update Show it picked instead.
             new = str((answer.get("service_response") or {}).get("new_main") or "")
             progress(f"Genbu forgot {found.node}" + (f"; {new} is the main update Show now" if new else ""))
-    elif found.genbu and found.main:
-        progress(f"WARN: {found.node} is still a main update Show in Genbu, which is older than 1.1.0; pick "
-                 f"another in {genbu.MAIN_SELECT}")
     for label in found.labels:
         name = f"label {label.get('name')!r}"
         try:

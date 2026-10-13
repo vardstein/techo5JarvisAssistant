@@ -29,7 +29,7 @@ def entity(entity_id, device="MAIN"):
 class FakeHA:
     """A house with genbuShow5 in it the way the installer left it, and a little of somebody else's."""
 
-    def __init__(self, *, genbu="1.1.0", mains=("genbushow5",)):
+    def __init__(self, *, genbu="1.1.0", new_main=None):
         self.entries = [{"entry_id": "E1", "domain": "esphome", "title": "genbuShow5"},
                         {"entry_id": "E2", "domain": "esphome", "title": "livingRoomEcho8"}]
         self.devices = [
@@ -60,7 +60,7 @@ class FakeHA:
         self.scripts = {}
         self.labels = []
         self.genbu = genbu
-        self.mains = list(mains)
+        self.new_main = new_main  # what a Genbu before 1.4.0 answers forget_show with
         self.calls = []
         self.fail = set()
 
@@ -79,7 +79,7 @@ class FakeHA:
         if path == "/api/states":
             return list(self.states.values())
         if path == "/api/states/sensor.genbu_house_version":
-            return {"state": "1.4.0", "attributes": {"main_shows": self.mains}}
+            return {"state": "1.4.0", "attributes": {}}
         if path.startswith("/api/states/"):
             if path[12:] not in self.states:
                 raise ha.NotFound(path)
@@ -105,10 +105,7 @@ class FakeHA:
             self.entities = [e for e in self.entities if e["config_entry_id"] != entry_id]
             return {"require_restart": False}
         if path == "/api/services/genbu/forget_show?return_response":
-            was = list(self.mains)
-            self.mains = [m for m in self.mains if m != body["node"]] or (["livingroomecho8"] if was else [])
-            new = self.mains[0] if body["node"] in was and len(was) == 1 else None
-            return {"changed_states": [], "service_response": {"mains": self.mains, "new_main": new}}
+            return {"changed_states": [], "service_response": {"new_main": self.new_main} if self.new_main else {}}
         raise AssertionError(f"unexpected {method} {path}")
 
     def ws(self, message):
@@ -183,7 +180,7 @@ class FindTests(unittest.TestCase):
         self.assertEqual([item for item, _ in found.automations], ["techo5_turn_room_down_genbushow5"])
         self.assertEqual([u["id"] for u in found.users], ["U1"])
         self.assertEqual(music.asked, [(["genbuShow5"], MAC)])
-        self.assertTrue(found.main and found.forget_action)
+        self.assertTrue(found.forget_action)
         # somebody else's automation and script, and the dashboard, are listed and left alone
         self.assertEqual(found.uses, ["automation.mine", "dashboard lovelace", "script.wake"])
 
@@ -200,7 +197,7 @@ class FindTests(unittest.TestCase):
         self.assertEqual(found.skipped_users, ["show_old"])
 
     def test_a_second_run_finds_what_is_left_by_name_and_kept_mac(self):
-        house, music = FakeHA(mains=()), Music()
+        house, music = FakeHA(), Music()
         house.entries = house.entries[1:]
         found = remove.find(house, "genbuShow5", mac=MAC, music=music.find)
         self.assertIsNone(found.entry)
@@ -209,7 +206,7 @@ class FindTests(unittest.TestCase):
         self.assertEqual(music.asked, [(["genbuShow5"], MAC)])
 
     def test_nothing_left_is_nothing(self):
-        house = FakeHA(mains=())
+        house = FakeHA()
         house.entries, house.automations, house.users = [], {}, []
         found = remove.find(house, "genbuShow5", music=Music(players=()).find)
         found.music_users = []
@@ -230,7 +227,7 @@ class PlanTests(unittest.TestCase):
         self.assertIn("Home Assistant user 'show_genbushow5'", goes)
         self.assertIn("Music Assistant user 'genbushow5'", goes)
         self.assertTrue(any(g.startswith("ESPHome entry 'genbuShow5' with its 2 devices") for g in goes))
-        self.assertTrue(any("place in Genbu (main update Show" in g for g in goes))
+        self.assertIn("genbushow5's place in Genbu", goes)
         self.assertEqual(len(later), 1)
         self.assertIn("waits until the Show is unplugged", later[0])
         self.assertTrue(any(s.startswith("automation.mine uses it") for s in stays))
@@ -245,7 +242,7 @@ class PlanTests(unittest.TestCase):
         found = remove.find(FakeHA(genbu="1.0.0"), "genbuShow5")
         goes, _, stays = remove.plan(found)
         self.assertFalse(any("Genbu" in g for g in goes))
-        self.assertTrue(any("older than 1.1.0" in s and "select.genbu_main_update_show" in s for s in stays))
+        self.assertTrue(any("older than 1.1.0" in s for s in stays))
 
 
 class RemoveTests(unittest.TestCase):
@@ -272,7 +269,13 @@ class RemoveTests(unittest.TestCase):
         self.assertIn("mine", house.automations)
         self.assertEqual([u["id"] for u in house.users], ["U2", "U0"])
         self.assertEqual([e["entry_id"] for e in house.entries], ["E2"])
-        self.assertTrue(any("livingroomecho8 is the main update Show now" in line for line in lines))
+        self.assertIn("Genbu forgot genbushow5", lines)
+
+    def test_an_older_genbu_says_which_show_is_main_now(self):
+        house = FakeHA(new_main="livingroomecho8")
+        lines = []
+        remove.remove(house, remove.find(house, "genbuShow5"), keep=kept()[1], progress=lines.append)
+        self.assertIn("Genbu forgot genbushow5; livingroomecho8 is the main update Show now", lines)
 
     def test_a_connected_player_is_not_sent(self):
         house, music = FakeHA(), Music()
@@ -296,7 +299,7 @@ class RemoveTests(unittest.TestCase):
         lines = []
         remove.remove(house, found, keep=kept()[1], progress=lines.append)
         self.assertNotIn("forget_show", json.dumps(house.calls))
-        self.assertTrue(any(line.startswith("WARN: genbushow5 is still a main update Show") for line in lines))
+        self.assertFalse(any("Genbu" in line for line in lines))
 
     def test_run_twice_the_second_finds_only_the_player(self):
         house, music = FakeHA(), Music()

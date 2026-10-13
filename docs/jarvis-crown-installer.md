@@ -526,6 +526,12 @@ What happens with the answers:
      `--caldav-url`, `--caldav-user` and `--caldav-password-file` add (or replace) an account without asking,
      `--calendars` says which calendars ahead of time, and `--calendars ''` leaves them alone. A
      server with a self-signed certificate has to be added by hand, with **Verify SSL** off.
+  10. puts the Show in the house's updates ([update-leader.md](update-leader.md), "Installer flow").
+     With the Genbu integration copied to Home Assistant but not set up yet, it sets it up; the form
+     asks nothing. When Home Assistant doesn't have Genbu, it says how to copy it and asks to check
+     again or skip; skipped, the Show looks for updates on its own channel. When the house already has
+     a version, the Show follows it, and the tool waits up to 15 minutes for it to get there. Updates
+     then come on one card in Home Assistant, **Genbu Show firmware**.
 
   The Show's actions are named after its ESPHome node (`esphome.<node>_dashboard_server` and so on).
   The tool takes the node from Home Assistant, so a Show renamed since it was installed is still
@@ -674,10 +680,8 @@ this order:
    is still on the network after 10 minutes, the rest goes and the player stays for the next run. Home
    Assistant drops the player's device when Music Assistant removes it;
 4. its ESPHome entry, which takes its devices, their entities and their area links with it;
-5. its place in Genbu (main update Show, music choice), with `genbu.forget_show`. When it was the only
-   main update Show, Genbu makes the one it recommends main. A Genbu older than 1.1.0 has no such action:
-   copy the new folder over and restart Home Assistant, or pick another main in
-   `select.genbu_main_update_show` yourself;
+5. its place in Genbu (its last version, music choice and switches), with `genbu.forget_show`. A Genbu
+   older than 1.1.0 has no such action: copy the new folder over and restart Home Assistant;
 6. the Show's label, once nothing carries it any more.
 
 What stays: everything with only the "Genbu Show installed" label (the house-wide `jarvis_local_*`

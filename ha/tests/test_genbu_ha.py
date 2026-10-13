@@ -1,10 +1,12 @@
-"""The genbu integration inside a real Home Assistant: finding the Shows, the house version sensor,
-the select, the Repairs issue after a day and its fix flow, the pick after 7 days."""
+"""The genbu integration inside a real Home Assistant: finding the Shows, the house version sensor, and the
+house's update card with its release channel and Install at night (GENBU-119)."""
 
 from datetime import timedelta
 
 import pytest
+from conftest import RELEASES
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
@@ -12,7 +14,12 @@ from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
+from custom_components.genbu.house import manifest_url, tag_url
+
 DOMAIN = "genbu"
+UPDATE = "update.genbu_show_firmware"
+CHANNEL = "select.genbu_release_channel"
+NIGHT = "switch.genbu_install_at_night"
 
 
 def add_show(hass: HomeAssistant, node: str, version: str, manufacturer: str = "OpenJade") -> str:
@@ -38,13 +45,30 @@ def set_show(hass, up, done, version, online=True):
     hass.states.async_set(done, version if online else "unavailable")
 
 
-async def setup(hass, main=None):
+
+async def setup(hass):
     await async_setup_component(hass, "repairs", {})
-    entry = MockConfigEntry(domain=DOMAIN, data={"main_show": main} if main else {}, unique_id=DOMAIN)
+    entry = MockConfigEntry(domain=DOMAIN, data={}, unique_id=DOMAIN)
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     return entry
+
+
+def release(version, channel="stable", **more):
+    """Puts a release on a channel, the way GitHub would answer."""
+    RELEASES[manifest_url(channel)] = {"version": version, "title": f"Genbu {version}",
+                                       "notes": f"What {version} brings", **more}
+
+
+def tag(version):
+    """A release that is there to go back to."""
+    RELEASES[tag_url(version)] = {"version": version}
+
+
+async def read(hass, entry):
+    await entry.runtime_data.async_read_release()
+    await hass.async_block_till_done()
 
 
 @pytest.mark.parametrize(("before", "after"), [("Genbu", "Genbu Assistant"), ("Haus", "Haus")])
@@ -59,199 +83,234 @@ async def test_the_entry_takes_the_new_name(hass: HomeAssistant, before: str, af
     assert entry.title == after
 
 
-async def test_house_version_from_the_main(hass: HomeAssistant):
+async def test_a_new_house_starts_at_its_newest_show(hass: HomeAssistant):
+    """GENBU-119: no main update Show to pick. The house starts where its newest Show is, so nothing moves."""
     add_show(hass, "hall", "v1.0.3-stable.52")
     add_show(hass, "kitchen", "v1.0.2-stable.48")
     add_show(hass, "speaker", "v9.9.9", manufacturer="Someone")
-    await setup(hass, main="hall")
+    await setup(hass)
     state = hass.states.get("sensor.genbu_house_version")
     assert state.state == "v1.0.3-stable.52"
-    assert state.attributes["main_shows"] == ["hall"]
+    assert state.attributes["main_shows"] == []
     assert state.attributes["main_missing_since"] == ""
+    assert state.attributes["update_waiting"] == ""
     assert set(state.attributes["shows"]) == {"hall", "kitchen"}
-    select = hass.states.get("select.genbu_main_update_show")
-    assert select.state == "hall"
-    assert select.attributes["options"] == ["hall", "kitchen"]
+    assert hass.states.get("select.genbu_main_update_show") is None
+    card = hass.states.get(UPDATE)
+    assert (card.state, card.attributes["installed_version"]) == ("off", "v1.0.3-stable.52")
+    assert hass.states.get(CHANNEL).state == "stable"
+    assert hass.states.get(NIGHT).state == "off"
 
 
-async def test_select_moves_the_main(hass: HomeAssistant):
-    add_show(hass, "hall", "v1.0.3-stable.52")
-    add_show(hass, "kitchen", "v1.0.4-stable.53")
-    await setup(hass, main="hall")
-    await hass.services.async_call("select", "select_option", {
-        "entity_id": "select.genbu_main_update_show", "option": "kitchen"}, blocking=True)
-    await hass.async_block_till_done()
-    state = hass.states.get("sensor.genbu_house_version")
-    assert (state.state, state.attributes["main_shows"]) == ("v1.0.4-stable.53", ["kitchen"])
-
-
-async def test_no_main_asks_in_repairs(hass: HomeAssistant):
-    add_show(hass, "hall", "v1.0.3-stable.52")
+async def test_no_shows_no_version(hass: HomeAssistant):
     await setup(hass)
     assert hass.states.get("sensor.genbu_house_version").state == "unknown"
-    assert ir.async_get(hass).async_get_issue(DOMAIN, "no_main")
+    assert hass.states.get(UPDATE).state == "unknown"
 
 
-async def test_missing_main_timeline(hass: HomeAssistant, freezer):
-    up = add_show(hass, "hall", "v1.0.3-stable.52")
-    add_show(hass, "kitchen", "v1.0.3-stable.52")
-    await setup(hass, main="hall")
-    set_show(hass, up, up.replace("update.", "sensor.").replace("_firmware", "_committed_version"),
-             "", online=False)
-    await hass.async_block_till_done()
-    issues = ir.async_get(hass)
-    assert hass.states.get("sensor.genbu_house_version").attributes["main_missing_since"]
-    assert issues.async_get_issue(DOMAIN, "main_missing_hall") is None
+async def test_the_card_offers_the_channel_release(hass: HomeAssistant, hass_ws_client):
+    add_show(hass, "hall", "v1.0.3")
+    entry = await setup(hass)
+    release("v1.0.4", release_url="https://example.org/v1.0.4")
+    await read(hass, entry)
+    card = hass.states.get(UPDATE)
+    assert (card.state, card.attributes["latest_version"]) == ("on", "v1.0.4")
+    assert card.attributes["release_summary"] == "Genbu v1.0.4"
+    assert card.attributes["release_url"] == "https://example.org/v1.0.4"
+    assert hass.states.get("sensor.genbu_house_version").attributes["update_waiting"] == "v1.0.4"
+    client = await hass_ws_client(hass)
+    await client.send_json({"id": 1, "type": "update/release_notes", "entity_id": UPDATE})
+    assert (await client.receive_json())["result"] == "What v1.0.4 brings"
 
-    freezer.tick(timedelta(hours=24, minutes=1))
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done()
-    issue = issues.async_get_issue(DOMAIN, "main_missing_hall")
-    assert issue and issue.is_fixable
-    assert hass.states.get("sensor.genbu_house_version").state == "v1.0.3-stable.52"
-
-    freezer.tick(timedelta(days=6))
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done()
-    state = hass.states.get("sensor.genbu_house_version")
-    assert (state.state, state.attributes["main_shows"]) == ("v1.0.3-stable.52", ["kitchen"])
-    assert issues.async_get_issue(DOMAIN, "main_missing_hall") is None
-    assert issues.async_get_issue(DOMAIN, "main_picked_kitchen")
+    # An older one on the channel is no update.
+    release("v1.0.2")
+    await read(hass, entry)
+    assert hass.states.get(UPDATE).state == "off"
 
 
-async def test_fix_flow_picks_the_new_main(hass: HomeAssistant, freezer):
-    from homeassistant.components.repairs import repairs_flow_manager
-
-    up = add_show(hass, "hall", "v1.0.3-stable.52")
-    add_show(hass, "kitchen", "v1.0.3-stable.52")
-    await setup(hass, main="hall")
-    set_show(hass, up, up.replace("update.", "sensor.").replace("_firmware", "_committed_version"),
-             "", online=False)
-    freezer.tick(timedelta(hours=25))
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done()
-
-    # What the Repairs page drives (its HTTP view sits on the same manager).
-    manager = repairs_flow_manager(hass)
-    result = await manager.async_init(DOMAIN, data={"issue_id": "main_missing_hall"})
-    assert result["type"] == "menu" and result["menu_options"] == ["pick", "wait", "gone"]
-    result = await manager.async_configure(result["flow_id"], {"next_step_id": "pick"})
-    assert result["type"] == "form"
-    result = await manager.async_configure(result["flow_id"], {"show": "kitchen"})
-    assert result["type"] == "create_entry"
-    await hass.async_block_till_done()
-    assert hass.states.get("sensor.genbu_house_version").attributes["main_shows"] == ["kitchen"]
-    assert ir.async_get(hass).async_get_issue(DOMAIN, "main_missing_hall") is None
-
-
-async def test_setup_form_lists_the_shows(hass: HomeAssistant):
-    add_show(hass, "hall", "v1.0.3-stable.52")
-    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
-    assert result["type"] == "form"
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"main_show": "hall"})
-    assert result["type"] == "create_entry"
-    await hass.async_block_till_done()
-    assert hass.states.get("select.genbu_main_update_show").state == "hall"
-
-
-async def test_second_main_warns_and_no_keeps_one(hass: HomeAssistant):
-    add_show(hass, "hall", "v1.0.3-stable.52")
-    add_show(hass, "kitchen", "v1.0.3-stable.52")
-    entry = await setup(hass, main="hall")
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {"extra_mains": ["kitchen"]})
-    assert (result["type"], result["step_id"]) == ("menu", "second")
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "second_no"})
-    assert result["type"] == "create_entry"
-    await hass.async_block_till_done()
-    assert hass.states.get("sensor.genbu_house_version").attributes["main_shows"] == ["hall"]
-
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {"extra_mains": ["kitchen"]})
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "second_yes"})
-    await hass.async_block_till_done()
-    assert hass.states.get("sensor.genbu_house_version").attributes["main_shows"] == ["hall", "kitchen"]
-
-
-async def _gone_a_day(hass, freezer, notify=None):
-    up = add_show(hass, "hall", "v1.0.3-stable.52")
-    add_show(hass, "kitchen", "v1.0.3-stable.52")
-    entry = await setup(hass, main="hall")
-    if notify:
-        hass.config_entries.async_update_entry(entry, options={"notify_service": notify})
-        await hass.async_block_till_done()
-    set_show(hass, up, up.replace("update.", "sensor.").replace("_firmware", "_committed_version"),
-             "", online=False)
-    freezer.tick(timedelta(hours=25))
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done()
-
-
-async def test_fix_flow_wait_and_gone(hass: HomeAssistant, freezer):
-    from homeassistant.components.repairs import repairs_flow_manager
-
-    await _gone_a_day(hass, freezer)
-    manager = repairs_flow_manager(hass)
-    result = await manager.async_init(DOMAIN, data={"issue_id": "main_missing_hall"})
-    result = await manager.async_configure(result["flow_id"], {"next_step_id": "wait"})
-    assert result["type"] == "create_entry"
-    await hass.async_block_till_done()
-    # Waiting moves the pick a week on: day 8 picks nothing, and the question is back the day before.
-    freezer.tick(timedelta(days=6))
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done()
-    assert hass.states.get("sensor.genbu_house_version").attributes["main_shows"] == ["hall"]
-    assert ir.async_get(hass).async_get_issue(DOMAIN, "main_missing_hall")
-
-    result = await manager.async_init(DOMAIN, data={"issue_id": "main_missing_hall"})
-    result = await manager.async_configure(result["flow_id"], {"next_step_id": "gone"})
-    assert result["type"] == "create_entry"
+async def test_install_moves_the_house_and_the_shows_follow(hass: HomeAssistant):
+    up = add_show(hass, "hall", "v1.0.3")
+    add_show(hass, "kitchen", "v1.0.3")
+    entry = await setup(hass)
+    release("v1.0.4")
+    await read(hass, entry)
+    await hass.services.async_call("update", "install", {"entity_id": UPDATE}, blocking=True)
     await hass.async_block_till_done()
     state = hass.states.get("sensor.genbu_house_version")
-    assert (state.state, state.attributes["main_shows"]) == ("v1.0.3-stable.52", [])
-    assert ir.async_get(hass).async_get_issue(DOMAIN, "no_main")
-
-
-async def test_no_main_fix_flow(hass: HomeAssistant):
-    from homeassistant.components.repairs import repairs_flow_manager
-
-    add_show(hass, "hall", "v1.0.3-stable.52")
-    await setup(hass)
-    manager = repairs_flow_manager(hass)
-    result = await manager.async_init(DOMAIN, data={"issue_id": "no_main"})
-    assert result["type"] == "form" and result["step_id"] == "pick"
-    result = await manager.async_configure(result["flow_id"], {"show": "hall"})
-    assert result["type"] == "create_entry"
+    assert (state.state, state.attributes["update_waiting"]) == ("v1.0.4", "")
+    card = hass.states.get(UPDATE)
+    assert (card.state, card.attributes["installed_version"]) == ("off", "v1.0.4")
+    # Half the Shows are there: the card shows how far.
+    assert card.attributes["in_progress"] is True and card.attributes["update_percentage"] == 0
+    set_show(hass, up, up.replace("update.", "sensor.").replace("_firmware", "_committed_version"), "v1.0.4")
+    await entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
-    assert hass.states.get("sensor.genbu_house_version").state == "v1.0.3-stable.52"
-    assert ir.async_get(hass).async_get_issue(DOMAIN, "no_main") is None
+    assert hass.states.get(UPDATE).attributes["update_percentage"] == 50
+    assert entry.runtime_data.house.before == "v1.0.3"
 
 
-async def test_push_once_per_spell(hass: HomeAssistant, freezer):
+async def test_install_with_a_backup(hass: HomeAssistant):
     from pytest_homeassistant_custom_component.common import async_mock_service
 
-    calls = async_mock_service(hass, "notify", "mobile_app_phone")
-    await _gone_a_day(hass, freezer, notify="notify.mobile_app_phone")
-    assert len(calls) == 1
-    assert "Hall" in calls[0].data["message"]
-    assert calls[0].data["data"]["url"] == "/config/repairs"
-    freezer.tick(timedelta(hours=2))
-    async_fire_time_changed(hass)
+    add_show(hass, "hall", "v1.0.3")
+    entry = await setup(hass)
+    backups = async_mock_service(hass, "backup", "create_automatic")
+    release("v1.0.4")
+    await read(hass, entry)
+    await hass.services.async_call("update", "install", {"entity_id": UPDATE, "backup": True}, blocking=True)
+    assert len(backups) == 1
+    assert hass.states.get("sensor.genbu_house_version").state == "v1.0.4"
+
+
+async def test_going_back_skips_what_was_left(hass: HomeAssistant):
+    """A version picked by hand moves the house back; the release left behind stays skipped, so neither the
+    night nor the Shows bring it back. A newer release is offered again."""
+    up = add_show(hass, "hall", "v1.0.3")
+    entry = await setup(hass)
+    release("v1.0.4")
+    await read(hass, entry)
+    await hass.services.async_call("update", "install", {"entity_id": UPDATE}, blocking=True)
     await hass.async_block_till_done()
-    assert len(calls) == 1
+    # Like any update card, it takes no other install while the Shows are on their way.
+    tag("v1.0.3")
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call("update", "install", {"entity_id": UPDATE, "version": "v1.0.3"},
+                                       blocking=True)
+    set_show(hass, up, up.replace("update.", "sensor.").replace("_firmware", "_committed_version"), "v1.0.4")
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get(UPDATE).attributes["in_progress"] is False
 
-
-async def test_a_renamed_main_stays_main(hass: HomeAssistant, freezer):
-    add_show(hass, "hall", "v1.0.3-stable.52")
-    await setup(hass, main="hall")
-    esphome = hass.config_entries.async_entries("esphome")[0]
-    hass.config_entries.async_update_entry(esphome, data={**esphome.data, "device_name": "flur"})
-    freezer.tick(timedelta(minutes=1))
-    async_fire_time_changed(hass)
+    # Not a release: nothing moves.
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call("update", "install", {"entity_id": UPDATE, "version": "v1.0.1"},
+                                       blocking=True)
+    await hass.services.async_call("update", "install", {"entity_id": UPDATE, "version": "v1.0.3"},
+                                   blocking=True)
     await hass.async_block_till_done()
     state = hass.states.get("sensor.genbu_house_version")
-    assert (state.state, state.attributes["main_shows"]) == ("v1.0.3-stable.52", ["flur"])
+    assert (state.state, state.attributes["update_waiting"]) == ("v1.0.3", "")
+    card = hass.states.get(UPDATE)
+    assert (card.state, card.attributes["skipped_version"]) == ("off", "v1.0.4")
+
+    release("v1.0.5")
+    await read(hass, entry)
+    assert hass.states.get(UPDATE).state == "on"
+    assert hass.states.get("sensor.genbu_house_version").attributes["update_waiting"] == "v1.0.5"
+
+
+async def test_skip_on_the_card(hass: HomeAssistant):
+    add_show(hass, "hall", "v1.0.3")
+    entry = await setup(hass)
+    release("v1.0.4")
+    await read(hass, entry)
+    await hass.services.async_call("update", "skip", {"entity_id": UPDATE}, blocking=True)
+    await hass.async_block_till_done()
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.genbu_house_version").attributes["update_waiting"] == ""
+    # Nothing waiting: the voice's install starts no house update.
+    assert (await entry.runtime_data.async_install_updates())["updating"] == []
+    assert entry.runtime_data.house.version == "v1.0.3"
+
+
+async def test_the_channel_select_reads_the_other_channel(hass: HomeAssistant):
+    add_show(hass, "hall", "v1.0.3-stable.52")
+    entry = await setup(hass)
+    release("v1.0.4-staging.60", channel="staging")
+    await read(hass, entry)
+    assert hass.states.get(UPDATE).state == "off"
+    await hass.services.async_call("select", "select_option", {"entity_id": CHANNEL, "option": "staging"},
+                                   blocking=True)
+    await hass.async_block_till_done()
+    assert hass.states.get(CHANNEL).state == "staging"
+    assert hass.states.get(UPDATE).attributes["latest_version"] == "v1.0.4-staging.60"
+
+
+async def test_a_dev_house_reads_dev(hass: HomeAssistant):
+    add_show(hass, "hall", "v1.0.3-dev.70")
+    await setup(hass)
+    assert hass.states.get(CHANNEL).state == "dev"
+
+
+async def test_install_at_night(hass: HomeAssistant, freezer):
+    add_show(hass, "hall", "v1.0.3")
+    entry = await setup(hass)
+    release("v1.0.4")
+
+    async def three_oclock():
+        now = dt_util.now()
+        at = now.replace(hour=3, minute=0, second=0, microsecond=0)
+        freezer.move_to(at if at > now else at + timedelta(days=1))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+
+    await three_oclock()
+    assert entry.runtime_data.house.version == "v1.0.3"  # off unless somebody switches it on
+
+    await hass.services.async_call("switch", "turn_on", {"entity_id": NIGHT}, blocking=True)
+    await hass.async_block_till_done()
+    assert hass.states.get(NIGHT).state == "on"
+    await three_oclock()
+    assert entry.runtime_data.house.version == "v1.0.4"
+
+
+async def test_install_updates_moves_the_house(hass: HomeAssistant):
+    from pytest_homeassistant_custom_component.common import async_mock_service
+
+    add_show(hass, "hall", "v1.0.3")
+    add_show(hass, "kitchen", "v1.0.3")
+    entry = await setup(hass)
+    installs = async_mock_service(hass, "update", "install")
+    release("v1.0.4")
+    await read(hass, entry)
+    answer = await hass.services.async_call("genbu", "install_updates", {"except_node": "hall"},
+                                            blocking=True, return_response=True)
+    assert sorted(answer["updating"]) == ["Hall", "Kitchen"] and answer["current"] == []
+    assert entry.runtime_data.house.version == "v1.0.4"
+    assert installs == []  # the Shows follow the house by themselves
+
+
+async def test_what_1_3_left_is_cleared(hass: HomeAssistant, hass_storage):
+    """The main update Shows of before 1.4.0: their keys leave the store, their issues leave Repairs."""
+    from custom_components.genbu.const import STORE_KEY, STORE_VERSION
+
+    hass_storage[STORE_KEY] = {"version": STORE_VERSION, "key": STORE_KEY, "data": {
+        "mains": ["hall"], "missing_since": {}, "wait_until": {}, "told": [], "seeded": True,
+        "committed": {"hall": "v1.0.3"}}}
+    add_show(hass, "hall", "v1.0.3")
+    await async_setup_component(hass, "repairs", {})
+    ir.async_create_issue(hass, DOMAIN, "no_main", is_fixable=True, severity=ir.IssueSeverity.WARNING,
+                          translation_key="no_main")
+    entry = MockConfigEntry(domain=DOMAIN, data={"main_show": "hall"}, unique_id=DOMAIN)
+    entry.add_to_hass(hass)
+    er.async_get(hass).async_get_or_create("select", DOMAIN, f"{entry.entry_id}_main_update_show",
+                                           config_entry=entry, suggested_object_id="genbu_main_update_show")
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
     assert not [i for (d, i) in ir.async_get(hass).issues if d == DOMAIN]
+    assert er.async_get(hass).async_get("select.genbu_main_update_show") is None
+    data = entry.runtime_data.house.data
+    assert not {"mains", "missing_since", "wait_until", "told", "seeded"} & set(data)
+    assert data["committed"] == {"hall": "v1.0.3"} and data["house"] == "v1.0.3"
+
+
+async def test_the_setup_form_asks_nothing(hass: HomeAssistant):
+    add_show(hass, "hall", "v1.0.3")
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    assert result["type"] == "form"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert (result["type"], result["data"]) == ("create_entry", {})
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.genbu_house_version").state == "v1.0.3"
+
+
+async def test_options_only_the_recipe_search(hass: HomeAssistant):
+    entry = await setup(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert (result["type"], result["step_id"]) == ("form", "init")
+    assert [str(k) for k in result["data_schema"].schema] == ["searxng_url"]
+
 
 
 async def test_install_updates_starts_every_show_with_one(hass: HomeAssistant):

@@ -1,5 +1,5 @@
-"""select.genbu_main_update_show: which Show is the house's main update Show. Picking another one here
-is how the main moves by hand; a second main is added in the integration's options.
+"""select.genbu_release_channel: the release channel the house's update card reads, stable, staging or
+dev. Until somebody picks one it is the house version's own. On the Genbu Assistant device.
 
 And for each Show, "Music plays on": where music asked for at that Show plays. Automatic is the room's
 speaker, else the Show itself, which is also where music goes while a speaker is offline (music.py); its
@@ -14,9 +14,9 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from .const import CHANGED, MAIN_SELECT
-from .coordinator import show_device
-from .house import Show
+from .const import CHANGED, CHANNEL_SELECT
+from .coordinator import house_device, show_device
+from .house import CHANNELS, Show
 from .music import AUTO
 
 # Automatic says what it does: the speaker in the Show's room, else the Show itself, and why. Where the
@@ -34,7 +34,7 @@ GONE = {"de": "{name} (offline)", "en": "{name} (offline)"}
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add) -> None:
     hub = entry.runtime_data
-    add([MainShow(entry)])
+    add([ReleaseChannel(entry)])
     made: set[str] = set()
 
     @callback
@@ -49,16 +49,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add) -> Non
     entry.async_on_unload(async_dispatcher_connect(hass, CHANGED, new_shows))
 
 
-class MainShow(SelectEntity):
-    _attr_icon = "mdi:crown-outline"
-    _attr_name = "Genbu main update Show"
+class ReleaseChannel(SelectEntity):
+    _attr_has_entity_name = True
+    _attr_translation_key = "release_channel"
+    _attr_icon = "mdi:source-branch"
     _attr_should_poll = False
+    _attr_options = list(CHANNELS)
 
     def __init__(self, entry: ConfigEntry) -> None:
-        self.entity_id = MAIN_SELECT
-        self._attr_unique_id = f"{entry.entry_id}_main_update_show"
+        self.entity_id = CHANNEL_SELECT
+        self._attr_unique_id = f"{entry.entry_id}_release_channel"
+        self._attr_device_info = house_device(entry)
         self.hub = entry.runtime_data
-        self._attr_options = []
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(async_dispatcher_connect(self.hass, CHANGED, self._changed))
@@ -66,15 +68,11 @@ class MainShow(SelectEntity):
 
     @callback
     def _changed(self) -> None:
-        # By ESPHome node name, the name a Show finds itself by in main_shows. A main that HA lost
-        # stays in the list so the select still says who it is.
-        mains = self.hub.house.mains
-        self._attr_options = sorted({s.node for s in self.hub.shows} | set(mains))
-        self._attr_current_option = mains[0] if mains else None
+        self._attr_current_option = self.hub.house.channel
         self.async_write_ha_state()
 
     async def async_select_option(self, option: str) -> None:
-        await self.hub.async_make_main(option)
+        await self.hub.async_pick_channel(option)
 
 
 class MusicPlaysOn(SelectEntity):

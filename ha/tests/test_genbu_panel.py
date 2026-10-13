@@ -30,7 +30,7 @@ def add_show(hass: HomeAssistant, node: str = "hall") -> str:
 
 async def setup(hass: HomeAssistant, entry: MockConfigEntry | None = None) -> MockConfigEntry:
     await async_setup_component(hass, "repairs", {})
-    entry = entry or MockConfigEntry(domain=DOMAIN, data={"main_show": "hall"}, unique_id=DOMAIN)
+    entry = entry or MockConfigEntry(domain=DOMAIN, data={}, unique_id=DOMAIN)
     if not hass.config_entries.async_get_entry(entry.entry_id):
         entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -98,7 +98,7 @@ async def test_after_1_2_0_copies_go_and_originals_come_back(hass: HomeAssistant
     entities = er.async_get(hass)
     entities.async_update_entity(light, hidden_by=er.RegistryEntryHider.INTEGRATION)
     reg_id = entities.async_get(light).id
-    entry = MockConfigEntry(domain=DOMAIN, data={"main_show": "hall"}, unique_id=DOMAIN)
+    entry = MockConfigEntry(domain=DOMAIN, data={}, unique_id=DOMAIN)
     entry.add_to_hass(hass)
     copy = entities.async_get_or_create("light", DOMAIN, f"{entry.entry_id}_copy_somedevice_screen",
                                         config_entry=entry)

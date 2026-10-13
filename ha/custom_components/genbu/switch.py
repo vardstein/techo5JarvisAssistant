@@ -1,7 +1,11 @@
 """For each Show, "Recipes" and "Updates by voice": whether the voice assistant gets the recipe search and
 the firmware tool when it is asked at that Show (llm.py). Recipes is there only while a recipe search is set
 up. They sit on the Show's small genbu device (coordinator.show_device), and Genbu keeps them, not the
-recorder, so llm.py reads them without a state lookup."""
+recorder, so llm.py reads them without a state lookup.
+
+And switch.genbu_install_at_night on the Genbu Assistant device: when on, an update waiting on the house's
+card installs by itself at 03:00, and the Shows follow while nobody uses them. Off until somebody turns it
+on."""
 
 from __future__ import annotations
 
@@ -13,8 +17,8 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from .const import CHANGED, CONF_SEARXNG, RECIPES, VOICE_UPDATES
-from .coordinator import show_device
+from .const import CHANGED, CONF_SEARXNG, NIGHT_SWITCH, RECIPES, VOICE_UPDATES
+from .coordinator import house_device, show_device
 from .house import Show
 
 ICONS = {RECIPES: "mdi:chef-hat", VOICE_UPDATES: "mdi:account-voice"}
@@ -22,6 +26,7 @@ ICONS = {RECIPES: "mdi:chef-hat", VOICE_UPDATES: "mdi:account-voice"}
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add) -> None:
     hub = entry.runtime_data
+    add([InstallAtNight(entry)])
     keys = [RECIPES, VOICE_UPDATES] if entry.options.get(CONF_SEARXNG) else [VOICE_UPDATES]
     made: set[str] = set()
 
@@ -67,3 +72,32 @@ class ShowSwitch(SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.hub.async_switch(self.device, self.key, False)
+
+
+class InstallAtNight(SwitchEntity):
+    _attr_has_entity_name = True
+    _attr_translation_key = "install_at_night"
+    _attr_icon = "mdi:weather-night"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_should_poll = False
+
+    def __init__(self, entry: ConfigEntry) -> None:
+        self.entity_id = NIGHT_SWITCH
+        self._attr_unique_id = f"{entry.entry_id}_install_at_night"
+        self._attr_device_info = house_device(entry)
+        self.hub = entry.runtime_data
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(async_dispatcher_connect(self.hass, CHANGED, self._changed))
+        self._changed()
+
+    @callback
+    def _changed(self) -> None:
+        self._attr_is_on = self.hub.house.night
+        self.async_write_ha_state()
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self.hub.async_set_night(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self.hub.async_set_night(False)

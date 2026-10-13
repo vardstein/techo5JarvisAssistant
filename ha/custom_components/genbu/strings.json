@@ -3,13 +3,7 @@
     "step": {
       "user": {
         "title": "Genbu Assistant",
-        "description": "Genbu keeps your Genbu Shows on one version. One of them, the main update Show, looks for updates and asks about them; the others follow the version it runs. Shows found: {count}.",
-        "data": {
-          "main_show": "Main update Show"
-        },
-        "data_description": {
-          "main_show": "Leave it empty to pick later in select.genbu_main_update_show."
-        }
+        "description": "Genbu keeps your Genbu Shows on one version, the house version. It starts where your newest Show is, and the Genbu Show firmware card on the Genbu Assistant device offers the next one. Shows found: {count}."
       }
     },
     "abort": {
@@ -21,24 +15,12 @@
     "step": {
       "init": {
         "title": "Genbu Assistant",
-        "description": "{main} is the main update Show. Change it in select.genbu_main_update_show.",
+        "description": "The house's update card, its release channel and the night install are on the Genbu Assistant device.",
         "data": {
-          "extra_mains": "More main update Shows",
-          "notify_service": "Phone to tell",
           "searxng_url": "Recipe search"
         },
         "data_description": {
-          "extra_mains": "One is usually enough. With more, the other Shows follow whichever of them runs the newest version.",
-          "notify_service": "A notify service, like mobile_app_my_phone. It gets a push when a main update Show has been offline for a day.",
           "searxng_url": "The address of your SearXNG, like http://10.0.0.5:8080. With it, a Genbu Show can look up a recipe and put it on its screen when asked (its Recipes switch). Empty: no recipes."
-        }
-      },
-      "second": {
-        "title": "A second main update Show?",
-        "description": "{main} is already the main update Show. With two, the other Shows follow whichever of them is newer. They cannot fight, but you get two Shows that ask about updates.",
-        "menu_options": {
-          "second_no": "No, keep one",
-          "second_yes": "Yes, add it"
         }
       }
     },
@@ -46,75 +28,16 @@
       "searxng": "That is no http or https address."
     }
   },
-  "issues": {
-    "main_missing": {
-      "title": "Main update Show {name} is offline",
-      "fix_flow": {
-        "step": {
-          "init": {
-            "title": "{name} is offline",
-            "description": "Home Assistant has not seen {name} since {since}. The other Shows stay on their version until there is a main update Show again. If nobody answers, Genbu makes {pick} the main update Show on {pick_at}.",
-            "menu_options": {
-              "pick": "Pick a new main update Show",
-              "wait": "Keep waiting 7 more days",
-              "gone": "{name} is gone for good"
-            }
-          },
-          "pick": {
-            "title": "New main update Show",
-            "description": "Your Shows are on {version}. The recommended Show is online and closest to it.",
-            "data": {
-              "show": "Show"
-            }
-          }
-        },
-        "abort": {
-          "none_online": "No Genbu Show is online right now. Try again when one is."
-        }
-      }
-    },
-    "no_main": {
-      "title": "No main update Show",
-      "fix_flow": {
-        "step": {
-          "pick": {
-            "title": "New main update Show",
-            "description": "Your Shows are on {version}. The recommended Show is online and closest to it.",
-            "data": {
-              "show": "Show"
-            }
-          }
-        },
-        "abort": {
-          "none_online": "No Genbu Show is online right now. Try again when one is."
-        }
-      }
-    },
-    "main_picked": {
-      "title": "{new} is now the main update Show",
-      "fix_flow": {
-        "step": {
-          "confirm": {
-            "title": "{new} is now the main update Show",
-            "description": "{gone} was offline for 7 days and nobody answered, so Genbu made {new} the main update Show. The version your Shows are on did not change. To change it, use {select}."
-          }
-        }
-      }
-    },
-    "main_dropped": {
-      "title": "{gone} is no main update Show any more",
-      "fix_flow": {
-        "step": {
-          "confirm": {
-            "title": "{gone} is no main update Show any more",
-            "description": "{gone} was offline for 7 days and nobody answered. The other main update Show carries on. To change it, use {select}."
-          }
-        }
-      }
-    }
-  },
   "entity": {
     "select": {
+      "release_channel": {
+        "name": "Release channel",
+        "state": {
+          "stable": "Stable",
+          "staging": "Staging",
+          "dev": "Dev"
+        }
+      },
       "music_plays_on": {
         "name": "Music plays on"
       }
@@ -125,28 +48,36 @@
       }
     },
     "switch": {
+      "install_at_night": {
+        "name": "Install at night"
+      },
       "recipes": {
         "name": "Recipes"
       },
       "voice_updates": {
         "name": "Updates by voice"
       }
+    },
+    "update": {
+      "show_firmware": {
+        "name": "Genbu Show firmware"
+      }
     }
   },
   "services": {
     "forget_show": {
       "name": "Forget a Show",
-      "description": "Forgets a Show that has left the house for good: it stops being a main update Show (when it was the only one, the recommended Show takes over) and its versions and music choice are dropped. The installer's --remove-show calls this after the Show is out of ESPHome.",
+      "description": "Forgets a Show that has left the house for good: its versions, its music choice and its switches are dropped. The installer's --remove-show calls this after the Show is out of ESPHome.",
       "fields": {
         "node": {
           "name": "Node name",
-          "description": "The Show's ESPHome node name, as in main_shows on the house version sensor."
+          "description": "The Show's ESPHome node name, as in shows on the house version sensor."
         }
       }
     },
     "install_updates": {
       "name": "Install updates on every Show",
-      "description": "Every Show with an update waiting installs it. A Show calls this when somebody says yes to its update, so the whole house updates even when that Show has none itself; the voice kit's \"install the updates\" calls it too.",
+      "description": "When the Genbu Show firmware card has an update waiting, the house installs it and every Show follows. Otherwise each Show that is behind with an update of its own installs that. A Show calls this when somebody says yes to an update; the voice kit's \"install the updates\" calls it too.",
       "fields": {
         "except_node": {
           "name": "Except node",

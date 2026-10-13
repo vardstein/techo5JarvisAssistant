@@ -1,6 +1,8 @@
 # Genbu Assistant: one place in Home Assistant
 
-Status: proposal, 2026-10-12. Nothing here is built yet. Jade's decisions go under **Decided** at the end.
+Status: proposal, 2026-10-12. Jade's decisions go under **Decided** at the end. §1 is built in Home
+Assistant and the installer for Genbu 1.4.0 (GENBU-119, see [update-leader.md](update-leader.md)); the
+Show's own question about a waiting update comes with the next firmware.
 
 Jade asked for three things after the 1.3.0 tests:
 
@@ -135,7 +137,7 @@ among our signed releases, but cannot push its own files.
 |---|---|
 | **Gains** | One check per house instead of one per Show every 10 minutes. One place that picks the version, and it is the place people already look. Release notes and backup like Core. Channels and going back from Home Assistant. Voice by meaning. HA's skip and `update.became_available` work. A lot of code goes: picking a main Show, the missing-main Repairs timeline, the 7-day auto-pick and the spoken update questions. |
 | **Losses** | The Show no longer asks "want me to update?" by itself; you ask it instead. A house whose Home Assistant is down does not move. Its Shows stay where they are, and a Show that never reaches Home Assistant is free after 10 minutes, as today. |
-| **Breaks** | The main update Show select (`select.genbu_main_update_show`), the installer's `--main-update-show` and `--follow`, and the main-Show parts of [update-leader.md](update-leader.md). `sensor.genbu_house_version` keeps its id, because the Shows read it. |
+| **Breaks** (done in 1.4.0) | The main update Show select (`select.genbu_main_update_show`), the installer's `--main-update-show` and `--follow`, and the main-Show parts of [update-leader.md](update-leader.md). `sensor.genbu_house_version` keeps its id, because the Shows read it. |
 | **Moving over** | On the first start of the new version, the house version is whatever the current main update Show runs. Nothing moves, and nobody gets asked anything. |
 
 ## 2. Name and icon
