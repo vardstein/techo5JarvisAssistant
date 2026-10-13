@@ -21,7 +21,8 @@ def entity(eid, area=None, device=None, platform="test", **more):
 
 class FakeHA:
     """A small house: a living room with a Show, a speaker and a Music Assistant player, a kitchen with a
-    temperature sensor, a room the sentences do not know, and the weather."""
+    temperature and a humidity sensor beside a thermostat, a room the sentences do not know, and the
+    weather."""
 
     def __init__(self, language="de"):
         self.language = language
@@ -37,6 +38,8 @@ class FakeHA:
             entity("media_player.living_ma", area="living_room", platform="music_assistant"),
             entity("media_player.nowhere_ma", platform="music_assistant"),
             entity("sensor.kitchen_temp", device="dev-kitchen"),
+            entity("sensor.kitchen_humidity", device="dev-kitchen"),
+            entity("sensor.heater_humidity", device="dev-heat"),
             entity("sensor.kitchen_board_temp", device="dev-kitchen", entity_category="diagnostic"),
             entity("sensor.heater_temp", device="dev-heat"),
             entity("climate.heater", device="dev-heat"),
@@ -47,6 +50,8 @@ class FakeHA:
                        for e in self.entities}
         for e in ("sensor.kitchen_temp", "sensor.kitchen_board_temp", "sensor.heater_temp", "sensor.hidden_temp"):
             self.states[e]["attributes"] = dict(temp)
+        for e in ("sensor.kitchen_humidity", "sensor.heater_humidity"):
+            self.states[e]["attributes"] = {"device_class": "humidity", "unit_of_measurement": "%"}
         self.states["weather.forecast_home"] = {"entity_id": "weather.forecast_home", "state": "sunny",
                                                 "attributes": {}}
         self.entries = [{"domain": "music_assistant", "state": "loaded", "entry_id": MA_ENTRY}]
@@ -58,6 +63,7 @@ class FakeHA:
         self.labels = []            # the label registry
         self.item_labels = {}       # automation/script entity id -> label ids
         self.loaded = True          # Home Assistant has loaded what was saved, so it is in the registry
+        self.exposed = []           # entity ids exposed to Assist
 
     def ws(self, msg):
         self.ws_calls.append(msg)
@@ -91,6 +97,10 @@ class FakeHA:
                 raise AssertionError("saved over a blueprint without allow_override")
             self.blueprints[msg["path"]] = {"metadata": {"source_url": msg.get("source_url")}}
             return {"overrides_existing": msg.get("allow_override", False)}
+        if t == "homeassistant/expose_entity":
+            assert msg["assistants"] == ["conversation"] and msg["should_expose"] is True
+            self.exposed += msg["entity_ids"]
+            return None
         if t == "search/related":
             return {"automation": self.related.get(msg["item_id"], [])}
         raise AssertionError(f"unexpected ws {t}")
@@ -129,7 +139,9 @@ class LookTests(unittest.TestCase):
     def test_the_house_is_read_as_it_is(self):
         house = kit.look(FakeHA())
         self.assertTrue(house.german)
+        # The room's own sensors, not the thermostat's.
         self.assertEqual(house.temperatures, {"kitchen": "sensor.kitchen_temp"})
+        self.assertEqual(house.humidities, {"kitchen": "sensor.kitchen_humidity"})
         self.assertEqual(house.weather, "weather.forecast_home")
         self.assertEqual(house.music_entry, MA_ENTRY)
         self.assertEqual(house.players, ["media_player.living_ma"])
@@ -166,11 +178,11 @@ class SetUpTests(unittest.TestCase):
         self.assertEqual(set(fake.blueprints), {"techo5/turn-room-down.yaml", "techo5/volume-where-the-music-is.yaml"})
         self.assertEqual(sorted(fake.configs), [
             ("automation", "jarvis_local_forecast"), ("automation", "jarvis_local_music_stop"),
-            ("automation", "jarvis_local_random_music"), ("automation", "jarvis_local_room_temperature"),
-            ("automation", "jarvis_local_volume"),
+            ("automation", "jarvis_local_random_music"), ("automation", "jarvis_local_room_humidity"),
+            ("automation", "jarvis_local_room_temperature"), ("automation", "jarvis_local_volume"),
             ("automation", "jarvis_local_wecker"), ("automation", "jarvis_local_where_are_we"), ("automation", "techo5_turn_room_down_jarvis_show_5"),
             ("script", "jarvis_music_start"), ("script", "jarvis_play_mood"), ("script", "jarvis_play_radio"),
-            ("script", "play_random_music")])
+            ("script", "jarvis_room_climate"), ("script", "play_random_music")])
         duck = fake.configs[("automation", "techo5_turn_room_down_jarvis_show_5")]["use_blueprint"]["input"]
         # No speakers picked: it turns down whatever room the Show is in when it listens.
         self.assertEqual(duck, {"satellite": SHOW[0], "speakers": [], "part": 10, "quiet": 3,
@@ -181,6 +193,13 @@ class SetUpTests(unittest.TestCase):
         self.assertIn(MA_ENTRY, radio)
         self.assertIn("media_player.living_ma", radio)
         self.assertNotIn("WARN", "\n".join(log))
+        # The model's room-climate tool is exposed to Assist, the others are left to the house.
+        self.assertEqual(fake.exposed, ["script.jarvis_room_climate"])
+        climate = json.dumps(fake.configs[("script", "jarvis_room_climate")], ensure_ascii=False)
+        self.assertIn('\\"kitchen\\": \\"sensor.kitchen_humidity\\"', climate)
+        self.assertNotIn("sensor.heater", climate)
+        self.assertIn("current_temperature", climate)
+        self.assertNotIn("'temperature'", climate)   # the setpoint attribute
 
     def test_a_second_run_changes_nothing(self):
         fake = FakeHA()
@@ -188,7 +207,23 @@ class SetUpTests(unittest.TestCase):
         fake.posts.clear()
         log = run(fake)
         self.assertEqual(fake.posts, [])
-        self.assertEqual(sum("is already there" in line for line in log), 12)
+        self.assertEqual(sum("is already there" in line for line in log), 14)
+        self.assertEqual(fake.exposed, ["script.jarvis_room_climate"])
+
+    def test_one_taken_from_assist_by_hand_stays_that_way(self):
+        fake = FakeHA()
+        run(fake)
+        fake.exposed.clear()
+        run(fake)
+        self.assertEqual(fake.exposed, [])
+
+    def test_a_tool_home_assistant_has_not_loaded_is_said_and_nothing_hangs(self):
+        fake = FakeHA()
+        fake.loaded = False
+        now = [0.0]
+        log = run(fake, sleep=lambda s: now.__setitem__(0, now[0] + s), clock=lambda: now[0])
+        self.assertEqual(fake.exposed, [])
+        self.assertTrue(any("jarvis_room_climate yet, so it isn't exposed to Assist" in line for line in log), log)
 
     def test_a_name_of_its_own_is_not_a_difference(self):
         fake = FakeHA()
@@ -316,8 +351,8 @@ class SetUpTests(unittest.TestCase):
         self.assertNotIn("jarvis_local_forecast", made)
         self.assertNotIn("play_random_music", made)
         self.assertNotIn("jarvis_local_music_stop", made)
-        self.assertNotIn("draußen", json.dumps(fake.configs[("automation", "jarvis_local_room_temperature")],
-                                               ensure_ascii=False))
+        for item in ("jarvis_local_room_temperature", "jarvis_local_room_humidity"):
+            self.assertNotIn("draußen", json.dumps(fake.configs[("automation", item)], ensure_ascii=False))
         self.assertIn("no weather entity, so no local forecast", log)
         self.assertIn("no Music Assistant in Home Assistant, so no music sentences", log)
 
@@ -409,7 +444,7 @@ class LabelTests(unittest.TestCase):
             return real(msg)
         fake.ws = ws
         log = run(fake, node="jarvis-show-5")
-        self.assertEqual(len(fake.configs), 12)
+        self.assertEqual(len(fake.configs), 14)
         self.assertTrue(any(line.startswith("WARN: Home Assistant did not take the labels") for line in log))
 
     def test_a_hand_made_turn_down_gets_no_label(self):
@@ -480,7 +515,8 @@ class SentenceTests(unittest.TestCase):
         intents = {}
         for name, item in {"music": kit.local_music(house), "stop": kit.local_music_stop(house),
                            "wecker": kit.wecker(), "where": kit.where_are_we(house),
-                           "temperature": kit.room_temperature(house), "forecast": kit.forecast(house)}.items():
+                           "temperature": kit.room_temperature(house), "humidity": kit.room_humidity(house),
+                           "forecast": kit.forecast(house)}.items():
             for t in item["triggers"]:
                 intents[f"{name}:{t.get('id', '')}"] = {"data": [{"sentences": t["command"]}]}
         found = Intents.from_dict({"language": "de", "intents": intents})
@@ -531,6 +567,15 @@ class SentenceTests(unittest.TestCase):
         self.assertEqual(self.heard("Hör Radio Bob"), [("music:", "{'station': 'Bob'}")])
         self.assertEqual(self.heard("Spiel etwas leiser"), [("music:", "{'mood': 'leiser'}")])
         self.assertEqual(self.heard("Wo sind wir"), [("where:", "{}")])
+
+    def test_humidity_is_heard_and_not_taken_for_temperature(self):
+        for text, slots in [("Wie feucht ist es im Wohnzimmer", "{'raum': 'Wohnzimmer'}"),
+                            ("Wie hoch ist die Luftfeuchtigkeit in der Küche", "{'raum': 'Küche'}"),
+                            ("Wie ist die Luftfeuchtigkeit hier", "{}"),
+                            ("Wie viel Luftfeuchtigkeit haben wir gerade hier drin", "{}"),
+                            ("Wie feucht ist es draußen", "{}")]:
+            self.assertEqual(self.heard(text), [("humidity:", slots)], text)
+        self.assertEqual(self.heard("Wie warm ist es im Bad"), [("temperature:", "{'raum': 'Bad'}")])
 
 
 if __name__ == "__main__":
