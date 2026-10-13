@@ -441,6 +441,15 @@ RADIO_BEST = r"""{% set generic = ['radio', 'hit', 'fm', 'sender', 'the', 'der',
 {{ {'name': ns.name, 'uri': ns.uri, 'score': ns.score} }}"""
 
 
+# Whether a voice assistant near the player is thinking or speaking: the ones in the player's area, or
+# every one when the player has none.
+SATELLITES_BUSY_EXPR = (
+    "states.assist_satellite | selectattr('state', 'in', ['processing', 'responding'])"
+    " | map(attribute='entity_id') | select('in', area_entities(area_id(player)) if area_id(player)"
+    " else states.assist_satellite | map(attribute='entity_id') | list) | list | count > 0")
+SATELLITES_BUSY = "{{ " + SATELLITES_BUSY_EXPR + " }}"
+
+
 def music_start() -> dict:
     return {
         "alias": "Genbu Musik starten",
@@ -456,6 +465,18 @@ def music_start() -> dict:
             "enqueue": {"description": "replace (Standard) oder play."},
         },
         "sequence": [
+            # The answer first. Asked by voice, this starts while the voice assistant is still working
+            # out what to say, and the music would talk over it. So it waits until no voice assistant in
+            # the player's room is thinking or speaking (any of them, if the player has no room). That
+            # follows the answer however long it is: Home Assistant reports a satellite speaking until
+            # its reply has played. The second look is for the moment between thinking and speaking,
+            # when it can briefly read as idle.
+            {"if": [{"condition": "template", "value_template": SATELLITES_BUSY}],
+             "then": [{"wait_template": "{{ not (" + SATELLITES_BUSY_EXPR + ") }}",
+                       "timeout": 45, "continue_on_timeout": True},
+                      {"delay": {"milliseconds": 800}},
+                      {"wait_template": "{{ not (" + SATELLITES_BUSY_EXPR + ") }}",
+                       "timeout": 30, "continue_on_timeout": True}]},
             {"if": [{"condition": "template", "value_template": "{{ shuffle | default(false) | bool }}"}],
              "then": [{"action": "media_player.shuffle_set", "target": {"entity_id": "{{ player }}"},
                        "data": {"shuffle": True}, "continue_on_error": True}]},
