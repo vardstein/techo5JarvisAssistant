@@ -119,6 +119,8 @@ class Show:
     area: str = ""  # the room Home Assistant has it in
     satellite: str = ""  # its assist_satellite entity
     mac: str = ""  # its MAC, which a rename doesn't change
+    key: str = ""  # its "Home Assistant key" sensor, how its key stands (GENBU-196)
+    encrypted: bool = False  # whether its ESPHome connection has an encryption key
 
 
 def channel_of(version: str) -> str:
@@ -151,6 +153,7 @@ class House:
     devices        each Show's node name by device id, to notice a rename
     music          the player picked in each Show's "Music plays on", by device id
     switches       each Show's Recipes and Updates by voice, by device id, when somebody switched them
+    keys           the Home Assistant user each Show's key was seen to belong to, by device id (GENBU-196)
     house, since   the house version, the one every Show moves to, and when it last changed
     channel        the release channel the house reads; empty for the house version's own
     night          whether a waiting update installs by itself at night
@@ -161,7 +164,7 @@ class House:
         self.data = data if data is not None else {}
         for k in OLD_KEYS:
             self.data.pop(k, None)
-        for k in ("committed", "devices", "music", "switches"):
+        for k in ("committed", "devices", "music", "switches", "keys"):
             self.data.setdefault(k, {})
         for k in ("house", "since", "channel", "before"):
             self.data.setdefault(k, "")
@@ -240,6 +243,7 @@ class House:
             del self.data["devices"][device]
             self.data["music"].pop(device, None)
             self.data["switches"].pop(device, None)
+            self.data["keys"].pop(device, None)
 
     def music_choice(self, device: str) -> str:
         return self.data["music"].get(device, "")

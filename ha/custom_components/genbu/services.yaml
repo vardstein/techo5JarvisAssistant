@@ -12,3 +12,15 @@ install_updates:
       example: kitchen-show
       selector:
         text:
+show_key:
+  fields:
+    node:
+      required: true
+      example: kitchen-show
+      selector:
+        text:
+    url:
+      required: false
+      example: http://homeassistant.local:8123
+      selector:
+        text:

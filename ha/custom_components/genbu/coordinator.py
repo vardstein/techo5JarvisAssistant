@@ -4,7 +4,8 @@ update card (update.py), the night install or the voice moves (GENBU-119). It re
 manifest every few hours for what that card offers.
 
 Each look also works out where each Show's music plays (music.py), so a Show moved to another room
-plays there without anything being set up again. And it keeps each Show's Recipes and Updates by voice,
+plays there without anything being set up again, and asks a Show turned away by Home Assistant why
+(keycare.py). And it keeps each Show's Recipes and Updates by voice,
 which decide what the voice assistant is offered on that Show (llm.py)."""
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from datetime import datetime, timedelta
 
 import aiohttp
 
+from homeassistant.auth import EVENT_USER_ADDED, EVENT_USER_REMOVED, EVENT_USER_UPDATED
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_STATE_CHANGED, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Event, HomeAssistant, callback
@@ -34,6 +36,7 @@ from homeassistant.util import dt as dt_util
 from .const import (CHANGED, CONF_SEARXNG, DOMAIN, MANUFACTURERS, NAME, NIGHT_AT, PANEL, RECIPES, SHOW_RECIPE,
                     STORE_KEY, STORE_VERSION, UPDATE_ENTITY, VOICE_UPDATES)
 from .house import House, Show, manifest_url, newer, tag_url, valid
+from .keycare import ISSUE, KeyCare
 from .music import Player, falls_back_to, own_player, plays_on, room_player
 from .recipe import show_action
 
@@ -44,7 +47,7 @@ SETTLE = timedelta(minutes=30)  # how long after an install the card shows how f
 
 
 def find_shows(hass: HomeAssistant) -> list[Show]:
-    """Every Genbu Show the ESPHome integration knows, with the two entities the house reads."""
+    """Every Genbu Show the ESPHome integration knows, with the entities the house reads."""
     devices, entities = dr.async_get(hass), er.async_get(hass)
     shows: dict[str, Show] = {}
     for entry in hass.config_entries.async_entries("esphome"):
@@ -52,10 +55,12 @@ def find_shows(hass: HomeAssistant) -> list[Show]:
             if device.manufacturer not in MANUFACTURERS or device.via_device_id:
                 continue
             node = entry.data.get("device_name") or _slug(device.name or "")
-            firmware = committed = satellite = None
+            firmware = committed = satellite = key = None
             for e in er.async_entries_for_device(entities, device.id):
                 if e.domain == "assist_satellite" and not e.disabled_by:
                     satellite = e.entity_id
+                elif e.domain == "sensor" and e.unique_id.endswith("-home_assistant_key") and not e.disabled_by:
+                    key = e.entity_id
                 elif e.domain == "update" and (e.unique_id.endswith("-firmware") or e.entity_id.endswith("_firmware")):
                     firmware = e.entity_id
                 elif e.domain == "sensor" and (e.unique_id.endswith("-committed_version")
@@ -76,6 +81,8 @@ def find_shows(hass: HomeAssistant) -> list[Show]:
                 area=device.area_id or "",
                 satellite=satellite or "",
                 mac=next((v for k, v in device.connections if k == dr.CONNECTION_NETWORK_MAC), ""),
+                key=key or "",
+                encrypted=bool(entry.data.get("noise_psk")),
             )
     return sorted(shows.values(), key=lambda s: s.node)
 
@@ -174,6 +181,7 @@ class GenbuHouse:
         self.had_search = False  # whether a recipe search was set up when the entry was
         self.release: dict = {}  # the channel's newest manifest, {} until it was read
         self.installed_at: datetime | None = None  # the last install, for how far the Shows are
+        self.keycare = KeyCare(hass, self.house, self._save)
         self._watched: set[str] = set()
         self._player_ids: set[str] = set()
         self._stops: list = []
@@ -181,12 +189,13 @@ class GenbuHouse:
 
     async def async_start(self) -> None:
         self.house = House(await self.store.async_load() or {})
+        self.keycare = KeyCare(self.hass, self.house, self._save)
         self._save()  # without the main update Shows of before 1.4.0, if there were any
         if hidden := self.house.data.pop("hidden", None):
             # Left by 1.2.0, whose copies are gone (GENBU-114): the Shows' own entities come back.
             unhide(self.hass, hidden)
         for domain, issue in list(ir.async_get(self.hass).issues):
-            if domain == DOMAIN:  # the main update Show's issues of before 1.4.0
+            if domain == DOMAIN and not issue.startswith(ISSUE):  # the main update Show's of before 1.4.0
                 ir.async_delete_issue(self.hass, DOMAIN, issue)
         entities = er.async_get(self.hass)
         if old := entities.async_get_entity_id("select", DOMAIN, f"{self.entry.entry_id}_main_update_show"):
@@ -202,6 +211,9 @@ class GenbuHouse:
         # A player or a Show moved to another room, or a new player.
         self._stops.append(self.hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, self._changed,
                                                       event_filter=self._player_or_satellite))
+        # A user switched on, changed or deleted: the Shows turned away are asked again now.
+        for event in (EVENT_USER_ADDED, EVENT_USER_UPDATED, EVENT_USER_REMOVED):
+            self._stops.append(self.hass.bus.async_listen(event, self._user_changed))
         await self.async_refresh()
         # Not waited for: a slow GitHub must not hold Home Assistant's start up.
         self.entry.async_create_background_task(self.hass, self.async_read_release(), f"{DOMAIN} release")
@@ -233,6 +245,11 @@ class GenbuHouse:
     @callback
     def _changed(self, _event: Event) -> None:
         self.hass.async_create_task(self._debounce.async_call())
+
+    @callback
+    def _user_changed(self, event: Event) -> None:
+        self.keycare.again()
+        self._changed(event)
 
     async def _tick(self, _now: datetime) -> None:
         await self.async_refresh()
@@ -416,13 +433,17 @@ class GenbuHouse:
         self.fallback = {s.device: falls_back_to(self.house.music_choice(s.device), s.area, [s.name, s.node],
                                                  self.players, s.mac) for s in self.shows if s.device}
         # The house's card too: skipping its update there tells the Shows to stop asking.
-        self._watched = {e for s in self.shows for e in s.watch if e} | {UPDATE_ENTITY}
+        self._watched = ({e for s in self.shows for e in s.watch if e} | {s.key for s in self.shows if s.key}
+                         | {UPDATE_ENTITY})
         self._player_ids = {p.entity for p in self.players}
         changed = self._tidy()
         changed = self.house.see(self.shows, dt_util.utcnow()) or changed
         if changed:
             self._save()
         async_dispatcher_send(self.hass, CHANGED)
+        # Not waited for: asking a Show that hangs must not hold the look up.
+        self.entry.async_create_background_task(self.hass, self.keycare.async_look(list(self.shows)),
+                                                f"{DOMAIN} keys")
 
     def _tidy(self) -> bool:
         """Keeps the genbu device of each Show's music select in step with the Show: its name follows a

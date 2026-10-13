@@ -84,6 +84,103 @@
           "description": "The ESPHome node name of a Show to leave out, because it is installing already."
         }
       }
+    },
+    "show_key": {
+      "name": "Give a Show a new key",
+      "description": "Admins only. Makes a new Home Assistant key for the Show's user, and a user first if it has none (no admin, home only), and hands the key to the Show over its encrypted ESPHome connection. The user's old keys are deleted once the Show has stored the new one. The installer calls this.",
+      "fields": {
+        "node": {
+          "name": "Node name",
+          "description": "The Show's ESPHome node name."
+        },
+        "url": {
+          "name": "Home Assistant address",
+          "description": "Where the Show finds Home Assistant from now on, inside your home. Leave it empty to keep the one it has."
+        }
+      }
+    }
+  },
+  "issues": {
+    "key_gone": {
+      "title": "{show} lost its key to Home Assistant",
+      "description": "Home Assistant turned {show} away: the key it signs in with was deleted. That happens when someone deletes it under the user {user}, or switches that user off for a while, which deletes its keys too. If {show} was lost or stolen, leave this alone: that is the lock doing its job. Otherwise Genbu can give it a new key.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Give {show} a new key",
+            "description": "Genbu makes a new key for {show}'s user, hands it to {show} over its encrypted ESPHome connection, and deletes the user's old keys once {show} has stored the new one. Only do this for a Show that is in your home."
+          }
+        },
+        "abort": {
+          "no_show": "This Show is not in ESPHome right now.",
+          "still_away": "The Show was turned away again. Check how it reaches Home Assistant first.",
+          "no_answer": "The Show did not answer. Is it on and connected?",
+          "not_stored": "The Show did not store the new key. Nothing changed: the new key was deleted again.",
+          "not_encrypted": "The Show's ESPHome connection has no encryption key, and a key only goes over an encrypted one. Run the installer for it again.",
+          "user_off": "The Show's user is switched off. Switch it on in Settings → People first.",
+          "not_a_show_user": "The Show's user is an admin or may sign in from outside your home. A Show's user may neither.",
+          "no_provider": "Home Assistant has no sign-in with usernames to make the Show's user with.",
+          "name_taken": "Both sign-in names for the Show's user belong to someone else."
+        }
+      }
+    },
+    "no_user": {
+      "title": "{show} has no user in Home Assistant",
+      "description": "Home Assistant turned {show} away, and the user it signed in as is gone. If {show} was lost or stolen, leave this alone. Otherwise Genbu can make it a user again, the way the installer does, and give it a key.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Make {show} a user",
+            "description": "Genbu makes a user for {show} that is no admin and may only sign in from home, gives it a key, and hands that to {show} over its encrypted ESPHome connection. Only do this for a Show that is in your home."
+          }
+        },
+        "abort": {
+          "no_show": "This Show is not in ESPHome right now.",
+          "still_away": "The Show was turned away again. Check how it reaches Home Assistant first.",
+          "no_answer": "The Show did not answer. Is it on and connected?",
+          "not_stored": "The Show did not store the new key. Nothing changed: the new key was deleted again.",
+          "not_encrypted": "The Show's ESPHome connection has no encryption key, and a key only goes over an encrypted one. Run the installer for it again.",
+          "user_off": "The Show's user is switched off. Switch it on in Settings → People first.",
+          "not_a_show_user": "The Show's user is an admin or may sign in from outside your home. A Show's user may neither.",
+          "no_provider": "Home Assistant has no sign-in with usernames to make the Show's user with.",
+          "name_taken": "Both sign-in names for the Show's user belong to someone else."
+        }
+      }
+    },
+    "user_off": {
+      "title": "{show}'s user is switched off",
+      "description": "Home Assistant turned {show} away because its user, {user}, is switched off. Switching a user off deletes its keys as well. To let {show} back in, switch {user} on in Settings → People. Genbu then offers to give {show} a new key here."
+    },
+    "not_a_show_user": {
+      "title": "{show} signs in as a user it should not",
+      "description": "Home Assistant turned {show} away, and the user it signs in as, {user}, is an admin or may sign in from outside your home. A Show's key opens your whole home, so Genbu gives no key to a user like that. Make {user} a plain user that can only sign in from home in Settings → People, or run the installer for {show} again."
+    },
+    "not_encrypted": {
+      "title": "{show}'s ESPHome connection is not encrypted",
+      "description": "Home Assistant turned {show} away. Genbu could give it a new key, but only over an encrypted connection, and {show}'s ESPHome connection has no encryption key. Run the installer for {show} again: it sets one up."
+    },
+    "home_only": {
+      "title": "{show} comes in from outside your home",
+      "description": "{show}'s user may only sign in from your home network, and Home Assistant saw {show} come from outside it. Usually something on the way hides where it comes from: a VPN that rewrites addresses (a Tailscale subnet router keeps them with --snat-subnet-routes=false), a reverse proxy Home Assistant does not trust (trusted_proxies), or a Home Assistant Cloud address. Fix the way in, not the user: a Show's user stays home only. Then have {show} try again here.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Have {show} try again",
+            "description": "{show} signs in once more with the key it has. Do this after fixing how it reaches Home Assistant."
+          }
+        },
+        "abort": {
+          "no_show": "This Show is not in ESPHome right now.",
+          "still_away": "The Show was turned away again. Check how it reaches Home Assistant first.",
+          "no_answer": "The Show did not answer. Is it on and connected?",
+          "not_stored": "The Show did not store the new key. Nothing changed: the new key was deleted again.",
+          "not_encrypted": "The Show's ESPHome connection has no encryption key, and a key only goes over an encrypted one. Run the installer for it again.",
+          "user_off": "The Show's user is switched off. Switch it on in Settings → People first.",
+          "not_a_show_user": "The Show's user is an admin or may sign in from outside your home. A Show's user may neither.",
+          "no_provider": "Home Assistant has no sign-in with usernames to make the Show's user with.",
+          "name_taken": "Both sign-in names for the Show's user belong to someone else."
+        }
+      }
     }
   }
 }

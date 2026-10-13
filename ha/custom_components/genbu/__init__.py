@@ -17,6 +17,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.storage import Store
 from homeassistant.loader import async_get_integration
 
@@ -27,12 +28,14 @@ except ImportError:
 
 from . import claims
 from .const import (CARDS, CONF_SEARXNG, DOMAIN, FRESH, MANUFACTURERS, NAME, OLD_NAME, OLD_RECIPES, PANEL, PANEL_FILES,
-                    PANEL_TITLE, SERVICE_FORGET, SERVICE_INSTALL, STORE_KEY, STORE_VERSION)
+                    PANEL_TITLE, SERVICE_FORGET, SERVICE_INSTALL, SERVICE_SHOW_KEY, STORE_KEY, STORE_VERSION)
 from .coordinator import GenbuHouse, unhide
+from .keycare import KeyRefused
 
 PLATFORMS = [Platform.SENSOR, Platform.SELECT, Platform.SWITCH, Platform.UPDATE]
 FORGET_SCHEMA = vol.Schema({vol.Required("node"): cv.string})
 INSTALL_SCHEMA = vol.Schema({vol.Optional("except_node", default=""): cv.string})
+SHOW_KEY_SCHEMA = vol.Schema({vol.Required("node"): cv.string, vol.Optional("url", default=""): cv.string})
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -58,6 +61,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return await _install_updates(hass, call)
         hass.services.async_register(DOMAIN, SERVICE_INSTALL, install, schema=INSTALL_SCHEMA,
                                      supports_response=SupportsResponse.OPTIONAL)
+    if not hass.services.has_service(DOMAIN, SERVICE_SHOW_KEY):
+        async def show_key(call: ServiceCall) -> ServiceResponse:
+            return await _show_key(hass, call)
+        # Admins only: a Show's key opens the house as wide as an admin's own.
+        async_register_admin_service(hass, DOMAIN, SERVICE_SHOW_KEY, show_key, schema=SHOW_KEY_SCHEMA,
+                                     supports_response=SupportsResponse.OPTIONAL)
     await _add_panel(hass)
     return True
 
@@ -65,6 +74,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_remove(DOMAIN, SERVICE_FORGET)
     hass.services.async_remove(DOMAIN, SERVICE_INSTALL)
+    hass.services.async_remove(DOMAIN, SERVICE_SHOW_KEY)
     if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         return False
     frontend.async_remove_panel(hass, PANEL, warn_if_unknown=False)
@@ -177,6 +187,39 @@ async def _install_updates(hass: HomeAssistant, call: ServiceCall) -> ServiceRes
     if entry is None:
         raise ServiceValidationError("Genbu is not running")
     return await entry.runtime_data.async_install_updates(call.data.get("except_node", ""))
+
+
+async def _show_key(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
+    """genbu.show_key {node, url}: a Show gets a new Home Assistant key, for its user, and a user first
+    when it has none; its other keys go once it stored the new one. What the installer calls, and what
+    an admin does for a Show whose key was lost. url, when given, is where the Show finds Home Assistant
+    from now on. Admins only (GENBU-196)."""
+    entry = next((e for e in hass.config_entries.async_entries(DOMAIN) if e.state is ConfigEntryState.LOADED),
+                 None)
+    if entry is None:
+        raise ServiceValidationError("Genbu is not running")
+    hub = entry.runtime_data
+    node = call.data["node"].strip().lower()
+    show = next((s for s in hub.shows if s.node.lower() == node), None)
+    if show is None:
+        raise ServiceValidationError(f"no Genbu Show called {node} in ESPHome")
+    try:
+        return await hub.keycare.async_renew(show, call.data.get("url", "").strip().rstrip("/"))
+    except KeyRefused as err:
+        raise ServiceValidationError(f"{show.name} gets no new key: {REFUSALS.get(err.reason, err.reason)}") from err
+
+
+# Why genbu.show_key gave no key, in words (the Repairs button has them in its translations).
+REFUSALS = {
+    "not_encrypted": "its ESPHome connection has no encryption key, and a key only goes over an encrypted one",
+    "user_off": "its user is switched off; switch it on in Settings, People first",
+    "not_a_show_user": "its user is an admin or may sign in from outside the home; a Show's user may neither",
+    "not_stored": "the Show did not store it",
+    "no_provider": "Home Assistant has no sign-in with usernames to make the Show's user with",
+    "name_taken": "both sign-in names for its user are someone else's",
+    "not_an_address": "the address is no http:// or https:// address",
+    "cloud_address": "a Show's user may only sign in from home, so it can't use a Home Assistant Cloud address",
+}
 
 
 async def _options_changed(hass: HomeAssistant, entry: ConfigEntry) -> None:

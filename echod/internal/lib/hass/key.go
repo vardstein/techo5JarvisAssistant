@@ -152,18 +152,18 @@ func (c *Client) lift(token, why string) bool {
 	return true
 }
 
-// Retry tries a home-only refusal once more: the Show may be back home, or whoever runs the house
-// fixed the route that hid where it came from. One sign-in, which answers with the state after it. A
-// token Home Assistant does not know stays refused; only a new one helps there, and sending it again
-// would only be another failed login.
+// Retry signs in once more after a refusal and answers with the state after it. The Show calls it
+// for a home-only refusal when its addresses change; Genbu calls it (home_assistant_retry) when Home
+// Assistant's own records say the key should work: it still has the key, and its user is on and may
+// sign in from where the Show is. Never on a timer, as each try that fails is a failed login.
 func (c *Client) Retry() string {
 	c.mu.Lock()
 	acc := c.acc
 	c.mu.Unlock()
-	if !c.lift(acc.Token, KeyRemote) {
+	if !c.lift(acc.Token, "") {
 		return c.KeyState()
 	}
-	slog.Info("hass: trying the home-only key once more")
+	slog.Info("hass: trying the refused key once more", "reason", c.KeyState())
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if s, err := c.wsOpen(ctx); err == nil {

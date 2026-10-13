@@ -307,6 +307,73 @@ prompt already says to report only what a tool reported, so that alone does not 
   automation on the event can send a notification. Home Assistant's own and the local sentences are left
   out.
 
+## 5. A Show's key (GENBU-196)
+
+A Show signs in to Home Assistant with a long-lived token of a user of its own: not an admin, and only
+allowed to sign in from the home network (`local_only`). When Home Assistant turns it away, the Show stops
+asking, so the failed logins stop too. It then says why in its "Home Assistant key" sensor:
+
+| State | What Home Assistant said |
+|---|---|
+| `ok` | nothing wrong |
+| `none` | the Show has no key yet |
+| `gone` | it doesn't know the key ("Invalid access token") |
+| `remote` | the user may only sign in from home, and the Show came from outside |
+| `off` | the user is switched off |
+
+### What Genbu does about it
+
+Genbu asks the Show which key it holds, over its encrypted ESPHome connection. The Show names the key by
+the SHA-256 of its refresh token id, so the key itself never leaves it. Genbu then checks that against
+Home Assistant's own records (`keys.py`, `keycare.py`) and puts up one Repairs issue per Show:
+
+| Issue | When | What the admin does |
+|---|---|---|
+| `key_gone` | Home Assistant doesn't have the key any more | press the button: a new key |
+| `no_user` | the Show's user is gone too | press the button: a user like the installer's, and a key |
+| `user_off` | the user is switched off | switch it on in Settings → People; the issue then becomes `key_gone` |
+| `not_a_show_user` | the user is an admin or may sign in from outside | make it a plain home-only user, or run the installer again |
+| `not_encrypted` | the ESPHome connection has no encryption key | run the installer again |
+| `home_only` | the Show came from outside | fix the route, then press the button to try again |
+
+There is one case without an issue. If Home Assistant still has the key and the user is fine, the refusal
+was a slip on the way, such as a restore or a restart that was only half done. Genbu has the Show try
+once more (`home_assistant_retry`). It does that once per situation, because each failed try is a
+failed login in Home Assistant's notifications.
+
+Switching a user off deletes all of its tokens. That's in `async_deactivate_user` in Home Assistant's
+`auth/__init__.py`. So a Show whose user was switched off can't get back in by trying again. It needs a
+new key after the user is switched on.
+
+A new key comes only from an admin: the Repairs button (Home Assistant lets only admins use Repairs
+flows) or `genbu.show_key {node, url}` (an admin-only action, which the installer calls since 1.4.2).
+Genbu makes the new token first and hands it over the encrypted connection. It deletes the user's other
+tokens only after the Show says it stored the new one. If the Show doesn't take it, the new token is
+deleted again and nothing else changes.
+
+### Why Genbu never does it by itself, and why there is no "from anywhere"
+
+The first idea was to renew a lost key automatically, and later to offer a switch that lets a Show sign in
+from anywhere. Both were dropped after a security pass:
+
+- A Show's user is a normal Home Assistant user, and a normal user's policy is the admin policy. That's
+  `USER_POLICY` in `auth/permissions/const.py`. So a Show's key opens the whole house.
+- Deleting a token is how an admin locks out a Show that was lost or stolen. Home Assistant keeps nothing
+  that tells that apart from a key lost some other way. An automatic renewal would undo the lock.
+- Home-only has been bypassed in practice by whatever hides where a request comes from.
+  [CVE-2023-41894](https://github.com/home-assistant/core/security/advisories/GHSA-wx3j-3v2j-rf45): the
+  cloud's SniTun proxy made outside requests to local-only webhooks look local. Home Assistant now
+  refuses a `local_only` user on a cloud connection ("User is local only", `async_user_not_allowed_do_auth`
+  in `components/http/auth_util.py`).
+- A Show sits in a room and its storage can be read by whoever holds it, so its key has to be worth as
+  little as possible outside the home.
+
+So a Show's user always stays home-only, and Genbu never makes users, changes user flags or renews keys
+by itself. A `home_only` issue points at the route instead: a Tailscale subnet router that rewrites
+addresses (`--snat-subnet-routes=false` keeps them), a proxy missing from `trusted_proxies`, or a Home
+Assistant Cloud address. The installer refuses a `*.ui.nabu.casa` address for the Show, and so does
+`genbu.show_key`. The full write-up with sources is the security comment on GENBU-196.
+
 ## Decided
 
 Jade's answers on 2026-10-12:

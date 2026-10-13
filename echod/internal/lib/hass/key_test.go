@@ -118,32 +118,38 @@ func TestAnOldRefusalIsGone(t *testing.T) {
 	}
 }
 
-// Retry signs in once more for a home-only refusal only; a gone key stays where it is, unsent.
-func TestRetryIsForHomeOnly(t *testing.T) {
-	usePath(t)
-	var calls atomic.Int32
-	good := "other"
-	var takes atomic.Value
-	takes.Store(good)
-	srv := fakeTurnAway(t, func() string { return takes.Load().(string) }, "User cannot authenticate remotely", &calls)
-	c := &Client{http: srv.Client()}
-	if err := c.Set(srv.URL, "tok"); err != nil {
-		t.Fatal(err)
-	}
-	c.refuse("tok", KeyGone)
-	if got := c.Retry(); got != KeyGone || calls.Load() != 0 {
-		t.Fatalf("a gone key: %s after %d requests", got, calls.Load())
-	}
-	c.explain("tok", KeyRemote)
-	if got := c.Retry(); got != KeyRemote || calls.Load() != 1 {
-		t.Fatalf("still not from home: %s after %d requests", got, calls.Load())
-	}
-	takes.Store("tok") // the route was fixed
-	if got := c.Retry(); got != KeyOK || calls.Load() != 2 {
-		t.Fatalf("back home: %s after %d requests", got, calls.Load())
-	}
-	if kept(t).Refused != "" {
-		t.Fatal("the lifted refusal was kept")
+// Retry asks once for any refusal: Genbu only asks when Home Assistant's own records say the key works,
+// or when the route that hid where the Show came from was fixed.
+func TestRetryAsksOnce(t *testing.T) {
+	for _, c := range []struct{ why, state string }{
+		{"Invalid access token or password", KeyGone},
+		{"User cannot authenticate remotely", KeyRemote},
+	} {
+		t.Run(c.state, func(t *testing.T) {
+			usePath(t)
+			var calls atomic.Int32
+			var takes atomic.Value
+			takes.Store("other")
+			srv := fakeTurnAway(t, func() string { return takes.Load().(string) }, c.why, &calls)
+			cl := &Client{http: srv.Client()}
+			if err := cl.Set(srv.URL, "tok"); err != nil {
+				t.Fatal(err)
+			}
+			if got := cl.Retry(); got != KeyOK || calls.Load() != 0 {
+				t.Fatalf("nothing refused: %s after %d requests", got, calls.Load())
+			}
+			cl.refuse("tok", c.state)
+			if got := cl.Retry(); got != c.state || calls.Load() != 1 {
+				t.Fatalf("still refused: %s after %d requests", got, calls.Load())
+			}
+			takes.Store("tok")
+			if got := cl.Retry(); got != KeyOK || calls.Load() != 2 {
+				t.Fatalf("let in again: %s after %d requests", got, calls.Load())
+			}
+			if kept(t).Refused != "" {
+				t.Fatal("the lifted refusal was kept")
+			}
+		})
 	}
 }
 

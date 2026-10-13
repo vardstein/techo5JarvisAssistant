@@ -187,11 +187,12 @@ class FilesTests(unittest.TestCase):
             other = json.loads((GENBU / "translations" / f"{lang}.json").read_text())
             self.assertEqual(keys(other), keys(strings), lang)
 
-    def test_no_issues_any_more(self):
+    def test_no_main_update_issues_any_more(self):
+        # The main update Show's issues went with 1.4.0; the only issues now are a Show's key (GENBU-196).
         strings = json.loads((GENBU / "strings.json").read_text())
-        self.assertNotIn("issues", strings)
+        self.assertFalse(set(strings["issues"]) & {"main_missing", "no_main", "main_picked", "main_dropped"})
         self.assertEqual(set(strings["options"]["step"]), {"init"})
-        self.assertFalse((GENBU / "repairs.py").exists())
+        self.assertNotIn("main", (GENBU / "repairs.py").read_text())
 
     def test_the_house_entities_have_their_texts(self):
         entity = json.loads((GENBU / "strings.json").read_text())["entity"]
