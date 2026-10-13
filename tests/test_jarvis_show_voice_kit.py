@@ -229,6 +229,42 @@ class SetUpTests(unittest.TestCase):
         self.assertEqual(then["data"]["enqueue"], "add")
         self.assertIs(then["data"]["radio_mode"], True)
         self.assertTrue(then["continue_on_error"])
+        # The other seeds of the mix go in the same call, so Music Assistant builds it once.
+        self.assertEqual(then["data"]["media_id"], "{{ [media_id] + (mix | default([], true) | list) }}")
+
+    def test_random_music_mixes_three_songs_and_a_genre_for_the_time_of_day(self):
+        fake = FakeHA()
+        run(fake, genres={"library://genre/29": "Jazz", "library://genre/12": "Classical",
+                          "library://genre/39": "Pop", "library://genre/7": "Polka"})
+        steps = fake.configs[("script", "play_random_music")]["sequence"]
+        library = next(s for s in steps if s.get("action") == "music_assistant.get_library")
+        self.assertEqual(library["data"]["limit"], kit.RANDOM_SEEDS)
+        hours = next(s["variables"]["genre_hours"] for s in steps if "genre_hours" in s.get("variables", {}))
+        self.assertEqual(hours["night"], [{"uri": "library://genre/12", "name": "Klassik"},
+                                          {"uri": "library://genre/29", "name": "Jazz"}])
+        self.assertEqual(hours["day"], [{"uri": "library://genre/39", "name": "Pop"}])
+        self.assertNotIn("Polka", json.dumps(hours))
+        start = next(s for s in steps if s.get("action") == "script.turn_on")
+        mix = start["data"]["variables"]["mix"]
+        self.assertIn("random_track['items'][1:]", mix)
+        self.assertIn("genre.uri", mix)
+        answer = json.dumps(steps, ensure_ascii=False)
+        self.assertIn("etwas ' ~ genre.name", answer)
+
+    def test_random_music_without_genres_mixes_the_songs_alone(self):
+        fake = FakeHA()
+        run(fake)
+        steps = fake.configs[("script", "play_random_music")]["sequence"]
+        self.assertIn({"variables": {"genre": {}}}, steps)
+        self.assertNotIn("genre_hours", json.dumps(steps))
+
+    def test_genres_are_known_by_other_spellings(self):
+        hours = kit.genre_hours({"a": "Hip-Hop", "b": "RnB", "c": "Elektro", "d": "Klassik"})
+        self.assertIn({"uri": "a", "name": "Hip-Hop"}, hours["day"])
+        self.assertIn({"uri": "b", "name": "R und B"}, hours["evening"])
+        self.assertIn({"uri": "c", "name": "Elektro"}, hours["day"])
+        self.assertIn({"uri": "d", "name": "Klassik"}, hours["night"])
+        self.assertEqual(kit.genre_hours({})["night"], [])
 
     def test_music_waits_for_the_answer_to_be_spoken(self):
         fake = FakeHA()

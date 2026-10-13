@@ -79,6 +79,7 @@ class House:
     agent: str | None = None                                     # the assistant pipeline's model agent
     music_entry: str | None = None                               # Music Assistant's config entry
     players: list[str] = field(default_factory=list)             # its players that are in a room
+    genres: dict[str, str] = field(default_factory=dict)         # Music Assistant's genres, URI -> name
     # From the registries, for the per-Show automation.
     entity_area: dict[str, str] = field(default_factory=dict)
     entity_device: dict[str, str] = field(default_factory=dict)
@@ -496,6 +497,7 @@ def music_start() -> dict:
             "media_id": {"description": "URI aus Music Assistant."},
             "media_type": {"description": "track, artist, playlist, album oder radio."},
             "radio": {"description": "Ähnliche Lieder anhängen."},
+            "mix": {"description": "Weitere URIs, deren ähnliche Lieder mit hineingemischt werden (mit radio)."},
             "shuffle": {"description": "Zufällige Reihenfolge."},
             "enqueue": {"description": "replace (Standard) oder play."},
         },
@@ -518,15 +520,18 @@ def music_start() -> dict:
             # Played plainly first, so it starts at once. With radio mode Music Assistant builds the
             # whole mix of similar songs before the first note (15-20 s); added behind the playing
             # track, it builds it there instead and leaves the track playing. The mix keeps the queue
-            # going on its own, and if it cannot be made the track still plays.
+            # going on its own, and if it cannot be made the track still plays. The mix's other seeds go in
+            # the same call, so Music Assistant builds it once: each becomes a source of the queue's mix,
+            # weighted equally, a genre included (Music Assistant makes a genre's mix from its songs and
+            # similar ones). One it cannot find is left out.
             {"action": "music_assistant.play_media",
              "data": {"media_id": "{{ media_id }}", "media_type": "{{ media_type }}",
                       "enqueue": "{{ enqueue | default('replace') }}"},
              "target": {"entity_id": "{{ player }}"}},
             {"if": [{"condition": "template", "value_template": "{{ radio | default(false) | bool }}"}],
              "then": [{"action": "music_assistant.play_media",
-                       "data": {"media_id": "{{ media_id }}", "media_type": "{{ media_type }}",
-                                "enqueue": "add", "radio_mode": True},
+                       "data": {"media_id": "{{ [media_id] + (mix | default([], true) | list) }}",
+                                "media_type": "{{ media_type }}", "enqueue": "add", "radio_mode": True},
                        "target": {"entity_id": "{{ player }}"}, "continue_on_error": True}]},
         ],
     }
@@ -695,8 +700,48 @@ def play_mood(house: House) -> dict:
     }
 
 
+# The genres mixed into random music, by the time of day: calm ones at night, lighter ones in the
+# morning, the big ones by day, and the evening's warmer ones. Keys are genre names folded by _genre_key.
+GENRE_HOURS = {
+    "night": ["ambient", "classical", "jazz", "soul", "blues", "folk", "newage"],          # 22-6
+    "morning": ["soul", "funk", "folk", "pop", "swing", "jazz", "reggae", "country"],    # 6-11
+    "day": ["pop", "rock", "electronic", "hiphop", "funk", "disco", "latin", "dance", "reggae"],  # 11-18
+    "evening": ["jazz", "soul", "rb", "blues", "swing", "funk", "disco"],                # 18-22
+}
+GENRE_SLOT = ("{% set h = now().hour %}{{ 'night' if h >= 22 or h < 6 else 'morning' if h < 11 "
+              "else 'day' if h < 18 else 'evening' }}")
+_GENRE_ALIASES = {"klassik": "classical", "elektro": "electronic", "electronica": "electronic",
+                  "rap": "hiphop", "rnb": "rb", "rhythmandblues": "rb"}
+_GENRE_SPOKEN = {"classical": "Klassik", "electronic": "Elektro", "rb": "R und B", "newage": "New Age"}
+
+
+def _genre_key(name: str) -> str:
+    key = re.sub(r"[^a-z0-9]", "", name.lower())
+    return _GENRE_ALIASES.get(key, key)
+
+
+def genre_hours(genres: dict[str, str]) -> dict[str, list[dict[str, str]]]:
+    """The house's genres for each time of day, as GENRE_HOURS has them, with the name the answer says."""
+    keyed = {}
+    for uri, name in sorted(genres.items()):
+        keyed.setdefault(_genre_key(name), (uri, name))
+    return {slot: [{"uri": keyed[k][0], "name": _GENRE_SPOKEN.get(k, keyed[k][1])} for k in keys if k in keyed]
+            for slot, keys in GENRE_HOURS.items()}
+
+
+# Random music is three random songs from the library: the first plays at once, and all three seed the
+# mix of similar songs that follows, so it does not stay near one song. With the house's genres known, a
+# genre that fits the time of day is a fourth seed, about a quarter of what plays.
+RANDOM_SEEDS = 3
+
+
 def play_random(house: House) -> dict:
     first = "random_track['items'][0]"
+    hours = genre_hours(house.genres) if house.genres else {}
+    genre = [{"variables": {"genre_hours": hours, "genre_slot": GENRE_SLOT}},
+             {"variables": {"genre": "{% set g = genre_hours.get(genre_slot) or [] %}"
+                                     "{{ g | random if g else {} }}"}}] if any(hours.values()) else \
+            [{"variables": {"genre": {}}}]
     return {
         "alias": "Play Random Music",
         "description": "Startet sofort zufällige Musik auf dem Lautsprecher im Raum. Dieses Werkzeug ist für "
@@ -708,19 +753,25 @@ def play_random(house: House) -> dict:
             {"variables": {"players": house.players, "target_player": TARGET_PLAYER}},
             *_no_player(),
             {"action": "music_assistant.get_library", "data": {
-                "config_entry_id": house.music_entry, "limit": 1, "media_type": "track", "order_by": "random"},
+                "config_entry_id": house.music_entry, "limit": RANDOM_SEEDS, "media_type": "track",
+                "order_by": "random"},
              "response_variable": "random_track"},
             {"if": [{"condition": "template",
                      "value_template": "{{ random_track.get('items', []) | length == 0 }}"}],
              "then": [{"variables": {"result": {"message": "Keine Musik in der Music-Assistant-Bibliothek gefunden.",
                                                 "success": False}}},
                       {"response_variable": "result", "stop": "Keine Musik verfügbar."}]},
-            _start("{{ " + first + ".uri }}", "track", radio=True, enqueue="play"),
+            *genre,
+            _start("{{ " + first + ".uri }}", "track", radio=True, enqueue="play",
+                   mix="{{ (random_track['items'][1:] | map(attribute='uri') | select | list)"
+                       " + ([genre.uri] if genre.uri is defined else []) }}"),
             {"variables": {
                 "title": "{{ (" + first + ".name | " + SPOKEN + ") or " + first + ".name }}",
                 "artist": "{% set ar = " + first + ".artists | default([]) %}{{ ar[0].name if ar and ar[0] is "
                           "mapping else ar[0] if ar else '' }}",
-                "result": {"message": "Spiele {{ title }}{{ ' von ' ~ artist if artist }} und ähnliche Lieder.",
+                "result": {"message": "Spiele {{ title }}{{ ' von ' ~ artist if artist }}"
+                                      "{{ ', dazu ähnliche Lieder und etwas ' ~ genre.name if genre.name is defined "
+                                      "else ' und ähnliche Lieder' }}.",
                            "title": "{{ title }}", "artist": "{{ artist }}", "success": True}}},
             {"response_variable": "result", "stop": "Wiedergabe gestartet."},
         ],
@@ -1016,12 +1067,13 @@ def _rerun(show: str) -> str:
 
 def set_up(ha: HomeAssistant, show: str, entities: list[str], *, choose: Chooser | None = None,
            keep: Keep | None = None, progress: Callable[[str], None] = print, node: str = "",
-           sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic) -> None:
+           sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic,
+           genres: dict[str, str] | None = None) -> None:
     """Sets up the pieces this house can have, and this Show's turn-the-room-down automation. The ones
     that are there already and differ are asked about at the end, together. Then all of them get the
     installer's label, and the Show's own automation the Show's label too (node, its ESPHome name)."""
     run = _Run(ha, choose, keep, progress)
-    _set_up(run, show, entities)
+    _set_up(run, show, entities, genres or {})
     run.settle()
     own = [(k, i) for k, i in run.items if i.startswith(OURS)]
     start = clock()
@@ -1058,9 +1110,10 @@ def expose(ha: HomeAssistant, progress: Callable[[str], None], script: str, *,
         sleep(1)
 
 
-def _set_up(run: _Run, show: str, entities: list[str]) -> None:
+def _set_up(run: _Run, show: str, entities: list[str], genres: dict[str, str]) -> None:
     ha, progress = run.ha, run.progress
     house = look(ha)
+    house.genres = genres
     run.blueprint(TURN_ROOM_DOWN)
     _per_show(run, house, show, entities)
     if not house.german:

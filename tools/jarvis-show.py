@@ -427,6 +427,7 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
     opts = ha_api.DeployOptions(
         name=name, psk=psk, host=host, wake_word=args.wake_word or None, assistant=args.assistant or None,
         room=args.room or None, room_dashboard=args.room_dashboard, voice_extras=args.voice_extras,
+        music_genres=_music_genres(settings) if args.voice_extras is not False else None,
         assistant_name=getattr(args, "genbu_assistant", None), keep_replaced=_keeper(backups), calendars=args.calendars, caldav=caldav,
         ask_caldav=_caldav_asker(args), rename_entities=getattr(args, "rename_entities", None), renamed=renamed,
         settings=ha_api.DeviceSettings(dashcast=settings.dashcast, dashcast_key=settings.dashcast_key,
@@ -510,6 +511,18 @@ def _music_assistant_login(settings: Settings):
                     + ("made, for the lyrics" if made else "was there; its token renewed"))
         return token
     return login
+
+
+def _music_genres(settings: Settings) -> dict[str, str] | None:
+    """Music Assistant's genres, for the random music to mix in one that fits the time of day. Read only;
+    without them it mixes songs like the random ones only."""
+    if not (settings.music_assistant and settings.music_assistant_token):
+        return None
+    try:
+        return ma_api.library_genres(settings.music_assistant, settings.music_assistant_token)
+    except ma_api.MusicAssistantError as exc:
+        ui.out.warn(f"Music Assistant: {exc}; the random music mixes in no genres until this runs again")
+        return None
 
 
 def music_assistant_metadata(settings: Settings) -> None:

@@ -471,6 +471,12 @@ What happens with the answers:
        the Show itself, never another room's; the Show itself too while that speaker is offline), and says so when there is nowhere. The scripts behind it (`play_random_music`, `jarvis_play_mood`,
        `jarvis_play_radio`) are there for the model too. Moods find playlists by words in their
        names, so "laute Musik" plays a playlist with "metal" or "rock" in its name if there is one.
+       "Spiel Musik" plays a random song at once and goes on with songs like it and like two more
+       random ones. With the installer's Music Assistant token it also reads the library's genres
+       (read only, those with at least 12 songs) and mixes in one that fits the time of day, about
+       a quarter of what plays: Ambient, Classical or Jazz at night, Soul, Funk or Pop in the
+       morning, Pop, Rock or Electronic by day, Jazz, Soul or Blues in the evening. Run the
+       installer again after the library gains a genre.
 
      The rooms are matched by their names in English or German (Living Room, Wohnzimmer, Küche,
      Bad, Büro, Flur and so on); a room the sentences don't know is still answered with its own name.

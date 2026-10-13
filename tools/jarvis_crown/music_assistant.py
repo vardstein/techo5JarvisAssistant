@@ -21,6 +21,9 @@ That token is either an admin's long-lived one, or one the installer gets by sig
 with a username and password (sign_in, Music Assistant's own auth/login). A sign-in's token is
 revoked again when the run ends (sign_out).
 
+The random music mixes in a genre that fits the time of day. Home Assistant's integration cannot
+look genres up, so the installer reads them here (library_genres) and writes them into the script.
+
 A Show taken out of the house (--remove-show) loses its user here and its player (show_leftovers,
 remove_leftovers). The player is found by the Show's MAC, which is the Sendspin client id it connects
 with, or by its name when the MAC is not known any more. Music Assistant refuses to remove a player that
@@ -140,6 +143,33 @@ def _connected(host: str, timeout: float, connect: Callable[..., Any], run: Call
         raise MusicAssistantError(str(exc)) from None
     finally:
         sock.close()
+
+
+# A genre needs this many songs to be mixed in; with fewer, its mix is mostly other genres' songs.
+GENRE_LEAST_TRACKS = 12
+
+
+def genres_exchange(sock: Any, host: str, token: str, *, least: int = GENRE_LEAST_TRACKS,
+                    key: str | None = None) -> dict[str, str]:
+    """Logs in on a connected socket; returns the library's genres that have at least least songs,
+    their URI to their name. Read only."""
+    session = _login(sock, host, token, key=key)
+    found = {}
+    for genre in session.call("music/genres/library_items", limit=500) or []:
+        uri, name, item_id = genre.get("uri"), genre.get("name"), str(genre.get("item_id") or "")
+        # The filter takes the library's numeric ids; given as text, it is ignored and every song counts.
+        if not (uri and name and item_id.isdigit()):
+            continue
+        tracks = session.call("music/tracks/library_items", genre=[int(item_id)], limit=least) or []
+        if len(tracks) >= least:
+            found[str(uri)] = str(name)
+    return found
+
+
+def library_genres(host: str, token: str, *, timeout: float = 20.0,
+                   connect: Callable[..., Any] = socket.create_connection) -> dict[str, str]:
+    """The genres of Music Assistant's library with enough songs to mix in, URI to name."""
+    return _connected(host, timeout, connect, lambda sock, peer: genres_exchange(sock, peer, token))
 
 
 def local_metadata_only(host: str, token: str, *, timeout: float = 20.0,
