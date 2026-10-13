@@ -25,6 +25,7 @@ try:  # Home Assistant 2026.10 and later
 except ImportError:
     import voluptuous as vol
 
+from . import claims
 from .const import (CARDS, CONF_SEARXNG, DOMAIN, MANUFACTURERS, NAME, OLD_NAME, OLD_RECIPES, PANEL, PANEL_FILES,
                     PANEL_TITLE, SERVICE_FORGET, SERVICE_INSTALL, STORE_KEY, STORE_VERSION)
 from .coordinator import GenbuHouse, unhide
@@ -45,6 +46,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.runtime_data = hub
     entry.async_on_unload(hub.async_stop)
     entry.async_on_unload(entry.add_update_listener(_options_changed))
+    entry.async_on_unload(claims.async_watch(hass))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     if not hass.services.has_service(DOMAIN, SERVICE_FORGET):
         async def forget(call: ServiceCall) -> ServiceResponse:
