@@ -181,6 +181,17 @@ class JarvisRoomEnvironmentCard extends HTMLElement {
   }
 }
 
-if (!customElements.get("jarvis-room-environment-card")) {
-  customElements.define("jarvis-room-environment-card", JarvisRoomEnvironmentCard);
+// Genbu loads this before Home Assistant's app, which then puts its own
+// registry (the scoped-elements polyfill) in place of window.customElements.
+// A card defined only before that is "Custom element doesn't exist"; which
+// cards it hit depended on load order. So it is defined again once the app
+// has defined <home-assistant>, into whatever registry is there by then.
+{
+  const defineCard = () => {
+    if (!window.customElements.get("jarvis-room-environment-card")) {
+      window.customElements.define("jarvis-room-environment-card", JarvisRoomEnvironmentCard);
+    }
+  };
+  defineCard();
+  customElements.whenDefined("home-assistant").then(defineCard);
 }

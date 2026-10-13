@@ -74,7 +74,12 @@ async def test_dashboard_cards_load_on_every_page(hass: HomeAssistant, hass_clie
     for card in CARDS:
         resp = await client.get(f"/genbu_panel/{card}.js")
         assert resp.status == 200
-        assert card in await resp.text()
+        text = await resp.text()
+        assert card in text
+        # Loaded before Home Assistant's app swaps in its own registry, so each card defines itself
+        # again once <home-assistant> is there; without it the calendar said "Custom element doesn't exist".
+        assert 'customElements.whenDefined("home-assistant").then(defineCard)' in text
+        assert f'window.customElements.define("{card}"' in text
     # The calendar card shows a list of calendars, which the installer sets (docs/calendars.md).
     assert "entities" in await (await client.get("/genbu_panel/jarvis-calendar-card.js")).text()
 
