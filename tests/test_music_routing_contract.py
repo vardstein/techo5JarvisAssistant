@@ -30,7 +30,7 @@ class MusicRoutingContractTests(unittest.TestCase):
     def test_next_explicit_play_returns_to_healthy_primary_and_stops_local_fallback(self):
         source = (ROOT / "echod/internal/feature/home/music_route.go").read_text(encoding="utf-8")
         self.assertIn('"media_player", "media_stop"', source)
-        self.assertIn('wasFallback && target != local', source)
+        self.assertIn('(wasFallback || localCarried()) && target != local', source)
         self.assertIn('"music_assistant", "play_media"', source)
         self.assertIn('"media_id":  mediaID', source)
 
