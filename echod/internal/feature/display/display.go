@@ -1472,8 +1472,9 @@ func (d *Display) closeWifi() {
 
 func (d *Display) refreshWifi() {
 	st := wifi.Current(context.Background())
+	saved := wifi.Saved()
 	d.mu.Lock()
-	d.wifi.status = st
+	d.wifi.status, d.wifi.saved = st, saved
 	d.mu.Unlock()
 	d.wake()
 }
@@ -1536,6 +1537,8 @@ func (d *Display) wifiGesture(g touch.Gesture) {
 		d.wifi.scanning, d.wifi.err = true, ""
 		d.mu.Unlock()
 		go d.wifiScan()
+	case z.kind == zoneAction && w.pick == nil && strings.HasPrefix(z.id, "forget:"):
+		d.wifiForget(strings.TrimPrefix(z.id, "forget:"))
 	case z.kind == zoneAction && w.pick != nil:
 		if k, ok := strings.CutPrefix(z.id, "key:"); ok {
 			d.wifiKey(k)
@@ -1609,6 +1612,46 @@ func (d *Display) wifiJoin(n wifi.Network, passphrase string) {
 		} else {
 			d.wifi.pick, d.wifi.text = nil, ""
 			slog.Info("wifi: joined", "ssid", n.SSID)
+		}
+		d.mu.Unlock()
+		d.refreshWifi()
+	}()
+}
+
+// forgetWifi takes a network out of the supplicant's configuration; a test stands in for it.
+var forgetWifi = wifi.Forget
+
+// wifiForget is a tap on a saved network's Forget. The first arms it; a second within restartWindow
+// takes the network out of the configuration in the background. Forgetting the one in use drops the
+// connection, and the page stays up for joining another.
+func (d *Display) wifiForget(ssid string) {
+	d.mu.Lock()
+	if d.wifi.busy != "" {
+		d.mu.Unlock()
+		return
+	}
+	armed := d.wifi.forget == ssid && time.Since(d.wifi.forgetAt) < restartWindow
+	if !armed {
+		d.wifi.forget, d.wifi.forgetAt = ssid, time.Now()
+		d.mu.Unlock()
+		d.wake()
+		return
+	}
+	d.wifi.forget, d.wifi.forgetAt = "", time.Time{}
+	d.wifi.busy, d.wifi.err = i18n.F("Forgetting {name}…", "name", ssid), ""
+	d.mu.Unlock()
+	d.wake()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		err := forgetWifi(ctx, ssid)
+		d.mu.Lock()
+		d.wifi.busy = ""
+		if err != nil {
+			d.wifi.err = i18n.F("Couldn't forget {name}", "name", ssid) + ": " + err.Error()
+			slog.Warn("wifi: forget failed", "ssid", ssid, "err", err)
+		} else {
+			slog.Info("wifi: forgot a network", "ssid", ssid)
 		}
 		d.mu.Unlock()
 		d.refreshWifi()
