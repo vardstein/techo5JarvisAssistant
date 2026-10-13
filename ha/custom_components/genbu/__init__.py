@@ -24,11 +24,13 @@ try:  # Home Assistant 2026.10 and later
 except ImportError:
     import voluptuous as vol
 
-from .const import CARDS, DOMAIN, MANUFACTURERS, PANEL, PANEL_FILES, SERVICE_FORGET, STORE_KEY, STORE_VERSION
-from .coordinator import GenbuHouse, unhide
+from .const import (CARDS, DOMAIN, MANUFACTURERS, PANEL, PANEL_FILES, SERVICE_FORGET, SERVICE_INSTALL,
+                    STORE_KEY, STORE_VERSION)
+from .coordinator import GenbuHouse, find_shows, unhide
 
 PLATFORMS = [Platform.SENSOR, Platform.SELECT]
 FORGET_SCHEMA = vol.Schema({vol.Required("node"): cv.string})
+INSTALL_SCHEMA = vol.Schema({vol.Optional("except_node", default=""): cv.string})
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -44,12 +46,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return await _forget_show(hass, call)
         hass.services.async_register(DOMAIN, SERVICE_FORGET, forget, schema=FORGET_SCHEMA,
                                      supports_response=SupportsResponse.OPTIONAL)
+    if not hass.services.has_service(DOMAIN, SERVICE_INSTALL):
+        async def install(call: ServiceCall) -> ServiceResponse:
+            return await _install_updates(hass, call)
+        hass.services.async_register(DOMAIN, SERVICE_INSTALL, install, schema=INSTALL_SCHEMA,
+                                     supports_response=SupportsResponse.OPTIONAL)
     await _add_panel(hass)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_remove(DOMAIN, SERVICE_FORGET)
+    hass.services.async_remove(DOMAIN, SERVICE_INSTALL)
     if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         return False
     frontend.async_remove_panel(hass, PANEL, warn_if_unknown=False)
@@ -118,6 +126,28 @@ async def _forget_show(hass: HomeAssistant, call: ServiceCall) -> ServiceRespons
     if not node:
         raise ServiceValidationError("node is empty")
     return await entry.runtime_data.async_forget(node)
+
+
+async def _install_updates(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
+    """genbu.install_updates {except_node}: what a Show calls when somebody says yes to its update, and
+    the voice kit's "install the updates". Every Show with an update waiting installs it, even when the
+    one that asked has none. except_node is the Show that asked and is installing already: a second
+    install on top of its own would start the same download twice. Answers with who started and who is
+    up to date; a Show that is offline has no update to install and is left out."""
+    skip = call.data.get("except_node", "").strip().lower()
+    updating, current = [], []
+    for show in find_shows(hass):
+        if skip and show.node.lower() == skip:
+            continue
+        state = hass.states.get(show.watch[0]) if show.watch else None
+        if state is None or state.state not in ("on", "off"):
+            continue
+        if state.state == "on":
+            await hass.services.async_call("update", "install", {"entity_id": show.watch[0]}, blocking=False)
+            updating.append(show.name)
+        else:
+            current.append(show.name)
+    return {"updating": updating, "current": current}
 
 
 async def _options_changed(hass: HomeAssistant, entry: ConfigEntry) -> None:

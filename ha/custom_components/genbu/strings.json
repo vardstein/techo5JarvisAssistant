@@ -130,6 +130,16 @@
           "description": "The Show's ESPHome node name, as in main_shows on the house version sensor."
         }
       }
+    },
+    "install_updates": {
+      "name": "Install updates on every Show",
+      "description": "Every Show with an update waiting installs it. A Show calls this when somebody says yes to its update, so the whole house updates even when that Show has none itself; the voice kit's \"install the updates\" calls it too.",
+      "fields": {
+        "except_node": {
+          "name": "Except node",
+          "description": "The ESPHome node name of a Show to leave out, because it is installing already."
+        }
+      }
     }
   }
 }

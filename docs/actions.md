@@ -602,6 +602,40 @@ actions:
 mode: queued
 ```
 
+### Updating every Show by voice
+
+"Installiere die Updates" or "aktualisiere die Shows", said at any Show, starts the update on every Show
+that has one waiting, also when the Show you said it to has none of its own. It answers with the Shows
+that started ("Die Updates starten auf Küche und Flur.") or that all of them are up to date. It needs the
+Genbu integration, 1.3.2 or newer, which does the work (`genbu.install_updates`, see
+[update-leader.md](update-leader.md)). Saying yes when a Show asks about its own update does the same.
+
+The installer's voice extras set it up as `jarvis_local_genbu_update` when an Assist pipeline speaks
+German. By hand:
+
+```yaml
+alias: Genbu - Updates installieren
+triggers:
+  - trigger: conversation
+    command:
+      - "(installier|installiere|starte|start|mach|mache) [bitte] [alle|die] updates"
+      - "(aktualisier|aktualisiere|update) [bitte] [alle|die] shows"
+actions:
+  - choose:
+      - conditions: "{{ states('sensor.genbu_house_version') in ['unknown', 'unavailable'] }}"
+        sequence:
+          - set_conversation_response: "Genbu läuft gerade nicht in Home Assistant, deshalb kann ich keine Updates starten."
+    default:
+      - action: genbu.install_updates
+        data: {}
+        response_variable: started
+      - set_conversation_response: >-
+          {%- set u = started.updating if started is mapping else [] -%}
+          {%- if u -%}Die Updates starten auf {% if u | count == 1 %}{{ u[0] }}{% else %}{{ u[:-1] | join(', ') }} und {{ u[-1] }}{% endif %}.
+          {%- else -%}Alle Shows sind auf dem neuesten Stand.{%- endif -%}
+mode: single
+```
+
 ## Delete an alarm
 
 In YAML, refer to this action as `esphome.<node>_alarm_delete`.

@@ -431,6 +431,33 @@ def wecker() -> dict:
     }
 
 
+# Who started, as said: "Küche", "Küche und Flur", "Küche, Flur und Bad".
+GENBU_UPDATING = r"""{%- set u = started.updating if started is mapping else [] -%}{%- if u -%}Die Updates starten auf {% if u | count == 1 %}{{ u[0] }}{% else %}{{ u[:-1] | join(', ') }} und {{ u[-1] }}{% endif %}.{%- else -%}Alle Shows sind auf dem neuesten Stand.{%- endif -%}"""
+
+
+def genbu_update() -> dict:
+    """GENBU-125: told at any Show, every Show with an update installs it, even when the one told has
+    none itself. The genbu integration does the work (genbu.install_updates); a yes to a Show's own
+    question asks it the same way."""
+    return {
+        "alias": "Genbu - Updates installieren",
+        "description": 'Startet die Updates auf allen Shows, die eins haben, egal welche gefragt wurde: '
+                       '"installiere die Updates", "aktualisiere die Shows". Braucht die Genbu-Integration.',
+        "triggers": [{"trigger": "conversation", "command": [
+            "(installier|installiere|starte|start|mach|mache) [bitte] [alle|die] updates",
+            "(aktualisier|aktualisiere|update) [bitte] [alle|die] shows"]}],
+        "actions": [
+            {"choose": [
+                {"conditions": "{{ states('sensor.genbu_house_version') in ['unknown', 'unavailable'] }}",
+                 "sequence": [{"set_conversation_response":
+                               "Genbu läuft gerade nicht in Home Assistant, deshalb kann ich keine Updates starten."}]}],
+             "default": [
+                 {"action": "genbu.install_updates", "data": {}, "response_variable": "started"},
+                 {"set_conversation_response": GENBU_UPDATING}]}],
+        "mode": "single",
+    }
+
+
 # --------------------------------------------------------------------------------------------- music
 
 # Where music asked for at a Show plays: what the genbu integration says for it (its "Music plays on",
@@ -1130,6 +1157,7 @@ def _set_up(run: _Run, show: str, entities: list[str], genres: dict[str, str]) -
     run.put("automation", "jarvis_local_room_humidity", room_humidity(house))
     run.put("script", CLIMATE, room_climate(house))
     run.put("automation", "jarvis_local_wecker", wecker())
+    run.put("automation", "jarvis_local_genbu_update", genbu_update())
     if house.weather:
         run.put("automation", "jarvis_local_forecast", forecast(house))
     else:

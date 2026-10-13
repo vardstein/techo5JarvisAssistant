@@ -71,16 +71,20 @@ func TestUpdateIsSaidAndRepeated(t *testing.T) {
 // reminder, and either is answered out loud.
 func TestUpdateIsAsked(t *testing.T) {
 	config.Use(filepath.Join(t.TempDir(), "state.json"))
-	oldSay, oldAsk, oldCan, oldQuiet, oldInstall := say, ask, canSay, quiet, install
-	t.Cleanup(func() { say, ask, canSay, quiet, install = oldSay, oldAsk, oldCan, oldQuiet, oldInstall })
+	oldSay, oldAsk, oldCan, oldQuiet, oldInstall, oldHouse := say, ask, canSay, quiet, install, updateHouse
+	t.Cleanup(func() {
+		say, ask, canSay, quiet, install, updateHouse = oldSay, oldAsk, oldCan, oldQuiet, oldInstall, oldHouse
+	})
 	said := make(chan string, 4)
 	installed := make(chan bool, 1)
+	housed := make(chan bool, 1)
 	var asked []string
 	say = func(words string) { said <- words }
 	ask = func(words string) bool { asked = append(asked, words); return true }
 	canSay = func() bool { return true }
 	quiet = func() bool { return false }
 	install = func(*Firmware) { installed <- true }
+	updateHouse = func() { housed <- true }
 
 	u := &Firmware{}
 	at := time.Date(2026, 10, 9, 18, 0, 0, 0, time.Local)
@@ -98,6 +102,9 @@ func TestUpdateIsAsked(t *testing.T) {
 	}
 	if !question.Answer("yes, sure") || <-said != "Okay, installing it now." || !<-installed {
 		t.Fatal("yes did not install")
+	}
+	if !<-housed {
+		t.Fatal("yes did not ask for the other Shows too")
 	}
 	select {
 	case w := <-said:

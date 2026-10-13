@@ -5,3 +5,10 @@ forget_show:
       example: kitchen-show
       selector:
         text:
+install_updates:
+  fields:
+    except_node:
+      required: false
+      example: kitchen-show
+      selector:
+        text:
