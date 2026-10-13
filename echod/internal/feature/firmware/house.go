@@ -152,10 +152,10 @@ type house struct {
 	status        string
 }
 
-// inUse is somebody using the Show: something playing, a call, a timer counting or ringing, or an alarm
-// about to go off.
+// inUse is somebody using the Show: music playing or paused a short while ago, a call, a timer
+// counting or ringing, or an alarm about to go off.
 var inUse = func(now time.Time) bool {
-	if playing, _ := media.Get().Playing(); playing {
+	if playing, paused := media.Get().ScreenState(); musicHolds(playing, paused, now) {
 		return true
 	}
 	if ring.IsSounding() || update.Installing() || phone.Get().Busy() {
@@ -168,6 +168,35 @@ var inUse = func(now time.Time) bool {
 	}
 	next := alarm.Get().View(now).Next
 	return next != nil && next.At.Sub(now) < dueSoon
+}
+
+// pausedHolds is how long paused music keeps a following Show from moving: as long as the Show keeps a
+// paused track of its own before ending it (media's stoppedFor). Music Assistant leaves a queue paused
+// for as long as nobody touches it, so without an end a paused song would hold the update for good.
+const pausedHolds = 30 * time.Minute
+
+// paused is when the Show's music was first seen paused, zero while it is not. It is only looked at
+// while the Show has somewhere to move, so a pause from before that counts from then: later, never
+// sooner.
+var paused struct {
+	mu    sync.Mutex
+	since time.Time
+}
+
+// musicHolds is the music keeping the Show in use. What the screen shows is what counts: the Show's
+// own stream, and Music Assistant's through Sendspin, which stops the Show's own stream when it takes
+// the speaker, so the Show's own stream alone reads as idle in the middle of a song (GENBU-134).
+func musicHolds(playing, isPaused bool, now time.Time) bool {
+	paused.mu.Lock()
+	defer paused.mu.Unlock()
+	if !isPaused {
+		paused.since = time.Time{}
+		return playing
+	}
+	if paused.since.IsZero() {
+		paused.since = now
+	}
+	return now.Sub(paused.since) < pausedHolds
 }
 
 // sighting is what Home Assistant last sent about the house; have* says whether a value arrived at all.
