@@ -83,6 +83,24 @@ func TestAnswer(t *testing.T) {
 	}
 }
 
+// Whisper writes Hessian "Joa gerne" as these (Show 5, 2026-10-13).
+func TestKindly(t *testing.T) {
+	for want, said := range map[Said][]string{
+		Yes: {" Jörg Erne!", " Du auch gerne!", "Gern, du", "Joa gerne", "Okey"},
+		Other: {"", "Jein", "Naja", "Mal sehen", "Nein danke Jörg", "Gerne, aber nicht jetzt", "Jörg Erne, nee",
+			"Untertitel im Auftrag des ZDF", "Wie spät ist es?", "Erste Hilfe"},
+	} {
+		for _, s := range said {
+			if got := Kindly(s); got != want {
+				t.Errorf("%q read kindly as %v, want %v", s, got, want)
+			}
+		}
+	}
+	if !oneApart([]rune("erne"), []rune("gerne")) || oneApart([]rune("erste"), []rune("gerne")) {
+		t.Error("oneApart is off")
+	}
+}
+
 // In the turn opened for the question, what is not an answer goes nowhere; after a wake word it goes on
 // to the assistant. Either way the question is over, when it has no way to be asked again.
 func TestTakeDropsWhatIsNotAnAnswer(t *testing.T) {
@@ -102,6 +120,16 @@ func TestTakeDropsWhatIsNotAnAnswer(t *testing.T) {
 	ask()
 	if Take("Wie spät ist es?", false) {
 		t.Fatal("a request after a wake word was dropped")
+	}
+
+	ask()
+	if !Take(" Jörg Erne!", true) || <-answered != "yes" {
+		t.Fatal("a misheard \"Joa gerne\" was not taken in the question's own turn")
+	}
+
+	ask()
+	if Take(" Du auch gerne!", false) {
+		t.Fatal("a short reply after a wake word was read kindly")
 	}
 
 	ask()

@@ -11,6 +11,9 @@
 // for silence, or nobody answers before listening runs out. Then the question is asked once more, and
 // the same goes for words in that turn that answer nothing: a television gets one more asking, and a
 // "yes" said some way this does not know gets a second chance.
+//
+// In that turn a short reply is also read more kindly (see Kindly): Whisper does not know Hessian, and
+// writes "Joa gerne" as "Jörg Erne!" or "Du auch gerne!".
 package question
 
 import (
@@ -112,7 +115,11 @@ func Take(text string, forIt bool) bool {
 	if q == nil || now().After(q.until) {
 		return false
 	}
-	switch Reply(text) {
+	said := Reply(text)
+	if said == Other && forIt {
+		said = Kindly(text)
+	}
+	switch said {
 	case Yes:
 		slog.Info("question answered yes", "question", q.what, "text", text)
 		safe.Go("answer "+q.what, q.yes)
@@ -168,13 +175,17 @@ func set(words string) map[string]bool {
 	return m
 }
 
-// Reply reads a transcript as an answer to a yes-or-no question.
-func Reply(text string) Said {
-	words := strings.FieldsFunc(dotted.Replace(strings.ToLower(text)), func(r rune) bool {
+// words is a transcript in lower case, without its punctuation.
+func words(text string) []string {
+	return strings.FieldsFunc(dotted.Replace(strings.ToLower(text)), func(r rune) bool {
 		return !unicode.IsLetter(r) && r != '\''
 	})
+}
+
+// Reply reads a transcript as an answer to a yes-or-no question.
+func Reply(text string) Said {
 	yes, no := false, false
-	for _, w := range words {
+	for _, w := range words(text) {
 		if !noWords[w] && !yesWords[w] && !fillWords[w] {
 			w = squeeze(w) // "jaaa", "neeein"
 		}
@@ -195,6 +206,69 @@ func Reply(text string) Said {
 		return Yes
 	}
 	return Other
+}
+
+// kindWords is the most words a reply read kindly may have; a television says more than that.
+const kindWords = 3
+
+// Kindly reads a short transcript, heard in the turn opened for the question, as a yes when one of its
+// words is a yes or one letter away from one ("Erne" is "gerne") and none is a no or near one ("Jein").
+// Words it does not know are let through, since Whisper makes them up from a dialect it does not know.
+// Anything that sounds like a no is not taken either way, and the question is asked again.
+func Kindly(text string) Said {
+	ws := words(text)
+	if len(ws) == 0 || len(ws) > kindWords {
+		return Other
+	}
+	yes := false
+	for _, w := range ws {
+		w = squeeze(w)
+		switch {
+		case noWords[w] || near(w, noWords):
+			return Other
+		case yesWords[w] || near(w, yesWords):
+			yes = true
+		}
+	}
+	if yes {
+		return Yes
+	}
+	return Other
+}
+
+// near reports whether w is one letter (added, dropped or changed) away from a word in the set. Only
+// for words of four letters or more: "ja" is one letter from too much.
+func near(w string, set map[string]bool) bool {
+	if len([]rune(w)) < 4 {
+		return false
+	}
+	for v := range set {
+		if len([]rune(v)) >= 4 && oneApart([]rune(w), []rune(v)) {
+			return true
+		}
+	}
+	return false
+}
+
+// oneApart reports whether a and b differ by exactly one added, dropped or changed letter.
+func oneApart(a, b []rune) bool {
+	if len(a) < len(b) {
+		a, b = b, a
+	}
+	if len(a)-len(b) > 1 {
+		return false
+	}
+	i := 0
+	for i < len(b) && a[i] == b[i] {
+		i++
+	}
+	if i == len(b) {
+		return len(a) == len(b)+1
+	}
+	if len(a) == len(b) {
+		return string(a[i+1:]) == string(b[i+1:])
+	}
+	return string(a[i+1:]) == string(b[i:])
 }
 
 // squeeze is a word drawn out the way it is said, back to its letters: "jaaa" to "ja", "neeein" to
