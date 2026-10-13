@@ -187,6 +187,10 @@ type Display struct {
 	touchedAt time.Time
 	nightDark bool
 
+	// pausedKey is the song a paused page is up for, and pausedSince when it paused (music_paused.go).
+	pausedKey   string
+	pausedSince time.Time
+
 	// menuSince is when the drawer or a settings, Wi-Fi or Bluetooth page last came up; menuUp is one
 	// being up at the last frame (menu_idle.go).
 	menuSince time.Time
@@ -1976,6 +1980,11 @@ func (d *Display) frame() time.Duration {
 		// Jarvis Show treats Music Assistant as a dedicated full-screen surface for the complete
 		// active/paused session. Radio may still use the legacy timed strip setting.
 		s.nowPlaying = wants
+	}
+	// A paused song gives the screen back after a while, strip and all: Music Assistant keeps a speaker
+	// paused for good. Play, or another song, brings the page back (see pausedTooLong).
+	if d.pausedTooLong(now, s.radio.Title+"\x00"+s.radio.Now+"\x00"+s.music.Entity, wants && s.paused && !s.playing) {
+		wants, s.nowPlaying = false, false
 	}
 	d.mu.Lock()
 	// Not under the sunrise light, which draws no strip: taps on a strip nobody can see would still act.
