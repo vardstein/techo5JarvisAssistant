@@ -12,11 +12,25 @@ from jarvis_crown.unlock import AMONET_UNLOCK_SHA256  # noqa: E402
 
 
 class AntiBrickContractTests(unittest.TestCase):
-    def test_only_first_gen_crown_and_checkers_are_product_targets(self):
-        self.assertEqual(set(PROFILES), {"crown", "checkers"})
+    def test_only_crown_checkers_and_cronos_are_product_targets(self):
+        self.assertEqual(set(PROFILES), {"crown", "checkers", "cronos"})
         self.assertEqual(PROFILES["crown"].fastboot_product, "CROWN")
         self.assertEqual(PROFILES["checkers"].fastboot_product, "CHECKERS")
-        self.assertIn("CRONOS", KNOWN_UNSUPPORTED_PRODUCTS)
+        self.assertEqual(PROFILES["cronos"].fastboot_product, "CRONOS")
+        self.assertNotIn("CRONOS", KNOWN_UNSUPPORTED_PRODUCTS)
+
+    def test_cronos_boot_is_pinned_but_twrp_and_amonet_are_not(self):
+        from jarvis_crown.assets import assets_for
+        # Upstream TECHO5 v0.7.16 techo5-boot-v0.7.16.img, the last release with a cronos boot image.
+        self.assertEqual(
+            BOOT_SHA256_BY_BOARD["cronos"],
+            "7e9ce93a54fc613cbfab5d15929aa06bfd6f63c2c432d6f8261b3599fc3cd791",
+        )
+        self.assertIsNone(TWRP_SHA256_BY_BOARD["cronos"])
+        amonet = [a for a in assets_for("cronos") if a.kind == "amonet"]
+        self.assertEqual(len(amonet), 1)
+        self.assertEqual(amonet[0].sha256, "")
+        self.assertTrue(amonet[0].manual)
 
     def test_checkers_boot_and_twrp_are_pinned_but_unlock_stays_blocked(self):
         self.assertEqual(

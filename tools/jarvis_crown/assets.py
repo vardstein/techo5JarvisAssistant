@@ -35,10 +35,13 @@ class Asset:
 LINEAGE_RELEASES = "https://github.com/amazon-oss/releases/releases/download"
 TECHO5_RELEASES = "https://github.com/HuskerMinion/techo5/releases/download"
 XDA_ATTACHMENTS = "https://xdaforums.com/attachments"
+XDA_CRONOS_THREAD = (
+    "https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-show-5-2nd-gen-2021-cronos.4772596/"
+)
 
 # Where the open-source parts of each Amonet package live, so a downloaded zip can be compared file by
 # file before anyone pins it. The XDA threads link mt8163-echo-show; the per-board branches came first.
-AMONET_SOURCE = ("R0rt1z2/amonet", ("mt8163-echo-show", "mt8163-checkers", "mt8163-crown"))
+AMONET_SOURCE = ("R0rt1z2/amonet", ("mt8163-echo-show", "mt8163-checkers", "mt8163-crown", "mt8163-cronos"))
 
 # LineageOS 18.1 builds from amazon-oss/releases. Each sha256 is the one the release notes publish and
 # the one GitHub reports as the asset digest. 20260904 is the first build whose kernel is
@@ -92,6 +95,29 @@ ASSETS: dict[str, tuple[Asset, ...]] = {
             f"{XDA_ATTACHMENTS}/amonet-checkers-v2-0-1-zip.6373840/",
             "770324a8ed5ab922c0383f8ba072d70fc0190cc2c879f12f67b8d6cfa3ad30ee", 63836775,
             "XDA thread 4762900 (R0rt1z2), browser download (XDA's CDN refuses scripts)",
+            manual=True,
+        ),
+    ),
+    "cronos": (
+        Asset(
+            "lineage", "lineage-18.1-20260904-UNOFFICIAL-cronos.zip",
+            f"{LINEAGE_RELEASES}/lineage-18.1-cronos-v0.4/lineage-18.1-20260904-UNOFFICIAL-cronos.zip",
+            "4c355998061a454792128d4b730932b47ed05a3d2a6d2628599218f44cc84678", 484847340,
+            "amazon-oss/releases lineage-18.1-cronos-v0.4",
+        ),
+        # Upstream stopped shipping a cronos boot image after v0.7.16; see BOOT_SHA256_BY_BOARD.
+        Asset(
+            "boot", "techo5-boot-v0.7.16.img",
+            f"{TECHO5_RELEASES}/v0.7.16/techo5-boot-v0.7.16.img",
+            BOOT_SHA256_BY_BOARD["cronos"] or "", 13553664,
+            "HuskerMinion/techo5 v0.7.16 (signed manifest)",
+        ),
+        # Not reviewed yet: no sha256, so the fetcher only inspects it and the installer never uses it.
+        # The attachment link is on the first post of the thread.
+        Asset(
+            "amonet", "amonet-cronos-v2.0.1.zip",
+            XDA_CRONOS_THREAD, "", 0,
+            "XDA thread 4772596 (R0rt1z2), browser download, not reviewed yet",
             manual=True,
         ),
     ),

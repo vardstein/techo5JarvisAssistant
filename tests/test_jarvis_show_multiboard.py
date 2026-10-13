@@ -52,13 +52,16 @@ def make_lineage(root: pathlib.Path, board: str):
     return path
 
 
-def make_shared_rootfs(root: pathlib.Path, boards=("crown", "checkers"), version="v1-test"):
+def make_shared_rootfs(root: pathlib.Path, boards=("crown", "checkers"), version="v1-test", more_boards=None):
     path = root / "jarvis-show-rootfs.tar.gz"
-    payload = json.dumps({
+    marker = {
         "product": "genbu-show-v1",
         "boards": list(boards),
         "version": version,
-    }).encode()
+    }
+    if more_boards is not None:
+        marker["more_boards"] = list(more_boards)
+    payload = json.dumps(marker).encode()
     with tarfile.open(path, "w:gz") as archive:
         marker = tarfile.TarInfo("./etc/jarvis-show-release.json")
         marker.mode = 0o644
@@ -265,6 +268,41 @@ class MultiBoardTests(unittest.TestCase):
             crown_only = make_shared_rootfs(td, boards=("crown",), version="crown-only")
             with self.assertRaisesRegex(InstallError, "not requested board 'checkers'"):
                 verify_jarvis_rootfs(crown_only, digest(crown_only), board="checkers")
+
+    def test_cronos_comes_from_more_boards_and_stays_off_older_markers(self):
+        with tempfile.TemporaryDirectory() as td_s:
+            td = pathlib.Path(td_s)
+            newer = make_shared_rootfs(td, more_boards=("cronos",), version="with-cronos")
+            identity = verify_jarvis_rootfs(newer, digest(newer), board="cronos")
+            self.assertEqual(identity.boards, ("crown", "checkers", "cronos"))
+            older = make_shared_rootfs(td, version="before-cronos")
+            with self.assertRaisesRegex(InstallError, "not requested board 'cronos'"):
+                verify_jarvis_rootfs(older, digest(older), board="cronos")
+            broken = make_shared_rootfs(td, more_boards=("rooks",), version="unknown-board")
+            with self.assertRaisesRegex(InstallError, "invalid supported boards"):
+                verify_jarvis_rootfs(broken, digest(broken), board="crown")
+
+    def test_cronos_unlock_and_twrp_stay_closed_until_pinned(self):
+        identity = DeviceIdentity("CRN123", "CRONOS", False, "lk")
+        with tempfile.TemporaryDirectory() as td_s:
+            td = pathlib.Path(td_s)
+            amonet, _ = make_amonet(td, "cronos")
+            run = mock.Mock(return_value=cp(["bash", "fastbrick.sh"]))
+            with self.assertRaisesRegex(unlock.UnlockError, "not been cryptographically pinned"):
+                unlock.unlock_show(identity, amonet, confirmation="UNLOCK", run=run)
+            run.assert_not_called()
+            twrp = td / "bundle" / "amonet" / "bin" / "twrp.img"
+            twrp.parent.mkdir(parents=True)
+            twrp.write_bytes(b"twrp")
+            with self.assertRaisesRegex(recovery.RecoveryError, "cronos TWRP image has not been cryptographically pinned"):
+                recovery._pinned_twrp(td / "bundle", "cronos")
+
+    def test_cronos_reads_its_own_signed_manifest(self):
+        import techo5lib
+        self.assertEqual(techo5lib.manifest_name("cronos"), "manifest-cronos.json")
+        self.assertEqual(techo5lib.manifest_name("crown"), "manifest.json")
+        self.assertEqual(techo5lib.manifest_name("checkers"), "manifest.json")
+        self.assertEqual(techo5lib.manifest_name(None), "manifest.json")
 
     def test_checkers_install_plan_requires_pinned_boot_and_checkers_confirmation(self):
         with tempfile.TemporaryDirectory() as td_s:

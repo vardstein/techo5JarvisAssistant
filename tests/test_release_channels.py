@@ -107,6 +107,25 @@ class ChannelMoveTests(unittest.TestCase):
         with self.assertRaisesRegex(rc.ChannelError, "did not settle"):
             move(gh, "dev", attempts=3)
 
+    def test_carries_the_cronos_manifest_when_the_release_has_it(self):
+        cronos = {"manifest-cronos.json": b"cronos manifest of dev.50", "manifest-cronos.json.sig": b"cronos sig of dev.50"}
+        gh = FakeGitHub("v1.0.2-dev.46", "v1.0.2-dev.50", channels={"channel-dev": pair("v1.0.2-dev.46")})
+        gh.files["v1.0.2-dev.50"].update(cronos)
+        self.assertEqual(move(gh, "dev"), "v1.0.2-dev.50")
+        self.assertEqual(gh.files["channel-dev"], {**pair("v1.0.2-dev.50"), **cronos})
+
+    def test_an_older_release_leaves_the_cronos_manifest_alone(self):
+        cronos = {"manifest-cronos.json": b"cronos manifest", "manifest-cronos.json.sig": b"cronos sig"}
+        gh = FakeGitHub("v1.0.2-dev.46", channels={"channel-dev": {**pair("v1.0.2-dev.46"), **cronos}})
+        move(gh, "dev")
+        self.assertEqual(gh.uploads, [])
+
+    def test_half_a_cronos_pair_is_refused(self):
+        gh = FakeGitHub("v1.0.2-dev.46")
+        gh.files["v1.0.2-dev.46"]["manifest-cronos.json"] = b"no signature"
+        with self.assertRaisesRegex(rc.ChannelError, "missing its signed manifest"):
+            move(gh, "dev")
+
     def test_creates_a_missing_channel(self):
         gh = FakeGitHub("v1.0.2-staging.47")
         move(gh, "staging")

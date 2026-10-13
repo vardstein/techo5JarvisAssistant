@@ -31,7 +31,15 @@ RELEASE_KEY = 'hGZ6WbvLSUjOM09c79iktfAl5StTTFH3Dtps2iyy1nY='
 JARVIS_SHOW_PRODUCT = 'genbu-show-v1'
 # Where Jarvis Show releases are published; the daemon's updater has the same one compiled in.
 JARVIS_SHOW_REPO = os.environ.get('JARVIS_SHOW_RELEASE_REPO', 'vardstein/techo5JarvisAssistant')
-JARVIS_SHOW_BOARDS = ('crown', 'checkers')
+JARVIS_SHOW_BOARDS = ('crown', 'checkers', 'cronos')
+# Boards that came after the first release get a signed manifest of their own, so Shows from before
+# them never read one naming a board they refuse (echod's update.Manifest.ValidFor).
+OWN_MANIFEST_BOARDS = ('cronos',)
+
+
+def manifest_name(board):
+    """The signed manifest a release keeps for this board: manifest.json, or manifest-<board>.json."""
+    return 'manifest-%s.json' % board if board in OWN_MANIFEST_BOARDS else 'manifest.json'
 
 # The USB serial consoles: TECHO5 Linux on the Show 5 and the Spot (Linux Foundation ids, told apart by
 # the serial number on the kernel command line), and on the Dot (Google ids, with the unit's serial
@@ -261,15 +269,16 @@ class Release:
         base = 'https://github.com/%s/releases' % repo
         self.repo, self.tag = repo, tag
         self.dl = base + ('/latest/download' if tag == 'latest' else '/download/' + tag)
+        name = manifest_name(expected_board)
         try:
-            raw = fetch(self.dl + '/manifest.json')
+            raw = fetch(self.dl + '/' + name)
         except Exception as e:
-            fail('could not read the release manifest from %s: %s' % (self.dl, e))
+            fail('could not read the release manifest from %s/%s: %s' % (self.dl, name, e))
         try:
-            sig = fetch(self.dl + '/manifest.json.sig')
+            sig = fetch(self.dl + '/' + name + '.sig')
         except Exception as e:
-            fail('could not read the release signature from %s/manifest.json.sig: %s; a release without '
-                 'its signature is not installed' % (self.dl, e))
+            fail('could not read the release signature from %s/%s.sig: %s; a release without '
+                 'its signature is not installed' % (self.dl, name, e))
         # Checked before the manifest is parsed, the way the daemon's updater does it: until the release
         # key has vouched for them these are bytes off the network and nothing more.
         verify_manifest(raw, sig)

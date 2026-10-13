@@ -32,8 +32,8 @@ func main() {
 	if board == "" && envTrue("JARVIS_CROWN_MODE") {
 		board = "crown" // compatibility with the first Jarvis Crown deployment
 	}
-	if board != "" && board != "crown" && board != "checkers" {
-		slog.Error("JARVIS_SHOW_BOARD must be crown or checkers", "board", board)
+	if board != "" && board != "crown" && board != "checkers" && board != "cronos" {
+		slog.Error("JARVIS_SHOW_BOARD must be crown, checkers or cronos", "board", board)
 		os.Exit(2)
 	}
 	generation := strings.TrimSpace(os.Getenv("JARVIS_SHOW_UI_GENERATION"))

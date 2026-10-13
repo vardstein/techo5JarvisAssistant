@@ -52,7 +52,7 @@ import sys
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from techo5lib import (CONSOLE_TECHO5, Adb, Console, Fastboot, Release, ask_name, ask_wifi,  # noqa: E402
+from techo5lib import (CONSOLE_TECHO5, JARVIS_SHOW_BOARDS, Adb, Console, Fastboot, Release, ask_name, ask_wifi,  # noqa: E402
                        check_serial_access, confirm, console_hint, default_dir, fail, fetch_json, md5, need,
                        new_api_key, note, pick_unit, run_main, sha512_crypt, step, valid_api_key, wait_for,
                        wifi_conf, write_private)
@@ -528,7 +528,7 @@ def main():
     ap.add_argument('--lineage-zip', help='install from TWRP: the LineageOS 18.1 zip for this board, installed only for its drivers')
     ap.add_argument('--jarvis-show-prestaged', action='store_true', help=argparse.SUPPRESS)
     ap.add_argument('--jarvis-show-stage-lineage-only', action='store_true', help=argparse.SUPPRESS)
-    ap.add_argument('--jarvis-show-board', choices=('crown', 'checkers'), help=argparse.SUPPRESS)
+    ap.add_argument('--jarvis-show-board', choices=JARVIS_SHOW_BOARDS, help=argparse.SUPPRESS)
     ap.add_argument('--jarvis-show-version', help=argparse.SUPPRESS)
     # Legacy private flags retained only so an older Crown wrapper fails safely into the same path.
     ap.add_argument('--jarvis-crown-prestaged', action='store_true', help=argparse.SUPPRESS)
@@ -619,8 +619,8 @@ def main():
     elif a.jarvis_show_prestaged:
         if dev != a.jarvis_show_board:
             fail('--jarvis-show-prestaged was pinned for %s, but TWRP reports %s' % (a.jarvis_show_board, dev))
-        if dev not in ('crown', 'checkers'):
-            fail('--jarvis-show-prestaged supports crown/checkers only, got %s' % dev)
+        if dev not in JARVIS_SHOW_BOARDS:
+            fail('--jarvis-show-prestaged supports %s only, got %s' % ('/'.join(JARVIS_SHOW_BOARDS), dev))
         note('%s in TWRP; verified LineageOS vendor tree will be consumed without formatting/installing again' % dev)
     else:
         kr = adb.sh('uname -r')

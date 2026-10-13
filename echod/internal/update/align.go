@@ -16,7 +16,7 @@ import (
 const AlignFloor = ""
 
 // tagURL is where one release's own manifest lives, a variable so a test can serve it.
-var tagURL = func(tag string) string { return releases + "/download/" + tag + "/manifest.json" }
+var tagURL = func(tag string) string { return releases + "/download/" + tag + "/" + ManifestName(deviceBoard) }
 
 // FetchTag reads one release's own signed manifest. The tag comes from Home Assistant, so it has to be
 // a version before it goes into a URL, and the manifest found there has to name that same version:
