@@ -255,3 +255,58 @@ func TestNamedShowAsksAboutTheHouseUpdate(t *testing.T) {
 		t.Error("a Show behind the house asks about the house update")
 	}
 }
+
+// Music holds a following Show while it plays, and while it is paused for less than pausedHolds
+// (GENBU-134: a dev install rebooted a Show in the middle of a Music Assistant song).
+func TestMusicHoldsTheMove(t *testing.T) {
+	now := time.Date(2026, 10, 13, 20, 0, 0, 0, time.UTC)
+	reset := func() {
+		paused.mu.Lock()
+		paused.since = time.Time{}
+		paused.mu.Unlock()
+	}
+	reset()
+	t.Cleanup(reset)
+
+	if !musicHolds(true, false, now) {
+		t.Error("playing music does not hold")
+	}
+	if musicHolds(false, false, now) {
+		t.Error("no music holds")
+	}
+	if !musicHolds(false, true, now) {
+		t.Error("music paused just now does not hold")
+	}
+	if !musicHolds(false, true, now.Add(pausedHolds-time.Second)) {
+		t.Error("music paused a moment under pausedHolds does not hold")
+	}
+	if musicHolds(false, true, now.Add(pausedHolds)) {
+		t.Error("music paused for pausedHolds still holds")
+	}
+	// Playing again starts the count over.
+	if !musicHolds(true, false, now.Add(pausedHolds)) {
+		t.Error("music playing again does not hold")
+	}
+	if !musicHolds(false, true, now.Add(pausedHolds+time.Minute)) {
+		t.Error("a new pause counts from the old one")
+	}
+	if musicHolds(false, true, now.Add(2*pausedHolds+time.Minute)) {
+		t.Error("a new pause holds for more than pausedHolds")
+	}
+}
+
+// A busy Show stays where it is and says why.
+func TestBusyShowWaits(t *testing.T) {
+	f := following{running: "v1.0.2", house: "v1.0.3", seen: "v1.0.3", movedWhileUp: true, committed: true,
+		busy: true, now: time.Now()}
+	if got := decide(f); got != stay {
+		t.Errorf("busy Show: %v, want stay", got)
+	}
+	if got := houseLine(f, "the house", "", f.now); got != "Moving to v1.0.3 once nobody is using this Show" {
+		t.Errorf("busy Show says %q", got)
+	}
+	f.busy = false
+	if got := decide(f); got != align {
+		t.Errorf("idle Show: %v, want align", got)
+	}
+}

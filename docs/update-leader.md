@@ -159,7 +159,7 @@ state of `sensor.genbu_house_version` and its attributes. **No HA token is neede
 |---|---|
 | Fresh install, its version differs from the house (older **or newer**) | It moves to the house version without asking. The installer has already said so. |
 | It was off and boots on a different version than the house | It asks once by voice and on screen: "This Show is on version 1.0.2, your other Shows are on 1.0.3. Want me to switch to it now?" "Yes" installs. "No" asks again on the next boot or in 24 hours, never during quiet hours. |
-| It is running when the house version changes | It follows straight away once nobody is using it: no music, call, or timer or alarm due soon. It does not ask, because your Install counts for the house (Jade's choice). |
+| It is running when the house version changes | It follows straight away once nobody is using it: no music playing (its own or Music Assistant's) or paused in the last 30 minutes, no call, and no timer or alarm due soon. It does not ask, because your Install counts for the house (Jade's choice). |
 | The house version is not installable here | It stays and says so in `update_status`, for example when the release has no manifest for its product or board. |
 
 A following Show's HA update card shows `installed = its version` and `latest = house version`. Its Install
