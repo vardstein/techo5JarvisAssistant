@@ -37,7 +37,7 @@ from .home_assistant import (Chooser, HomeAssistant, HomeAssistantError, NotFoun
                              slug_key, ASSISTANT_NAME)
 
 BLUEPRINT_FOLDER = "techo5"
-BLUEPRINT_SOURCE = "https://github.com/vardstein/techo5JarvisAssistant/blob/genbuShowCrown/blueprints/automation/"
+BLUEPRINT_SOURCE = "https://github.com/vardstein/techo5JarvisAssistant/blob/stable/blueprints/automation/"
 # Ours from any branch: one saved while the branch had another name (jarvis-crown-v1) is still ours to update.
 _OUR_BLUEPRINT = re.compile(r"^https://github[.]com/vardstein/techo5JarvisAssistant/blob/[^/]+(?:/[^/]+)*?"
                             r"/blueprints/automation/(?P<name>[^/]+)$")

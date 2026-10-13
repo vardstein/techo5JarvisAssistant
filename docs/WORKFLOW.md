@@ -40,9 +40,12 @@ to stable on its own. Stable gets a release when a feature, or a set of them, is
   stop and look.
 - After a merge, the branch is deleted on origin and locally, and its worktree removed.
 - Every branch is pushed while it is worked on, so nothing lives only on one laptop.
-- `genbuShowCrown` predates this and stays under its name: it is the feature branch for everything built
-  until now. New jobs for it are cut from it as `task/` and `fix/` branches, and it goes into `dev` like any
-  feature. After that, new features are cut from `dev`.
+- A bug in a feature that is already in `dev` has no feature branch left to cut from. Its
+  `fix/genbu-<n>-<slug>` is cut from `dev` and merged back into `dev` with `--no-ff`, the way a hotfix is.
+- `genbuShowCrown` predates this. It was the feature branch for everything built before 2026-10-11, went
+  into `dev` like any feature and was retired on 2026-10-13 (GENBU-197): nothing is pushed to it any more,
+  and links point at `stable`. It stays on origin until a stable release carries those links, because
+  installed blueprints and Genbu's documentation link still point at it.
 
 Who does what: Claude may create, push, merge and delete `feature/`, `task/` and `fix/` branches. Merging
 a feature into `dev`, and pushing `dev`, `staging` and `stable`, is Jade's, because each of those is a
