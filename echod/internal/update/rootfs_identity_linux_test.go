@@ -77,6 +77,31 @@ func TestRootfsIdentityMatchesSignedManifestAndBoard(t *testing.T) {
 	}
 }
 
+// Newer boards sit in more_boards, which Shows from before them ignore.
+func TestRootfsIdentityReadsMoreBoards(t *testing.T) {
+	restore := deviceBoard
+	t.Cleanup(func() { deviceBoard = restore })
+	body, err := json.Marshal(rootfsIdentity{
+		Product: JarvisShowProduct, Boards: []string{"crown", "checkers"}, MoreBoards: []string{"cronos"}, Version: "v1.3.0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := testRootfs(t, rootfsEntry{name: "./" + rootfsIdentityPath, body: body})
+	m := Manifest{Product: JarvisShowProduct, Boards: []string{"cronos"}, Version: "v1.3.0"}
+	for _, board := range []string{"crown", "checkers", "cronos"} {
+		deviceBoard = board
+		if err := verifyRootfsIdentity(path, m); err != nil {
+			t.Fatalf("%s refused a rootfs listing it: %v", board, err)
+		}
+	}
+	older := testRootfs(t, rootfsEntry{name: "./" + rootfsIdentityPath, body: marker(t, JarvisShowProduct, []string{"crown", "checkers"}, "v1.3.0")})
+	deviceBoard = "cronos"
+	if err := verifyRootfsIdentity(older, m); err == nil || !strings.Contains(err.Error(), "does not support this cronos board") {
+		t.Fatalf("cronos took a rootfs that doesn't list it: %v", err)
+	}
+}
+
 func TestRootfsIdentityRefusesConflictingOrAmbiguousArchive(t *testing.T) {
 	restore := deviceBoard
 	t.Cleanup(func() { deviceBoard = restore })

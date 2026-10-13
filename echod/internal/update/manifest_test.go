@@ -147,7 +147,7 @@ func TestValidForBindsProductAndBoard(t *testing.T) {
 		"wrong product":      func(m *Manifest) { m.Product = "techo5" },
 		"no boards":          func(m *Manifest) { m.Boards = nil },
 		"wrong board":        func(m *Manifest) { m.Boards = []string{"checkers"} },
-		"unknown board":      func(m *Manifest) { m.Boards = []string{"crown", "cronos"} },
+		"unknown board":      func(m *Manifest) { m.Boards = []string{"crown", "rooks"} },
 		"duplicate board":    func(m *Manifest) { m.Boards = []string{"crown", "crown"} },
 		"empty device board": func(m *Manifest) {},
 	} {

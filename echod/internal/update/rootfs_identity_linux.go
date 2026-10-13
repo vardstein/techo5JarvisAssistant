@@ -16,7 +16,10 @@ const rootfsIdentityPath = "etc/jarvis-show-release.json"
 type rootfsIdentity struct {
 	Product string   `json:"product"`
 	Boards  []string `json:"boards"`
-	Version string   `json:"version"`
+	// MoreBoards are boards added after the first release. Shows from before them ignore this field and
+	// would refuse the rootfs if they were in Boards.
+	MoreBoards []string `json:"more_boards"`
+	Version    string   `json:"version"`
 }
 
 // verifyRootfsIdentity checks the identity inside a fully downloaded, already hash-verified rootfs
@@ -70,7 +73,11 @@ func verifyRootfsIdentity(path string, m Manifest) error {
 	if identity == nil {
 		return fmt.Errorf("update: rootfs has no %s identity marker", rootfsIdentityPath)
 	}
-	identityManifest := Manifest{Product: identity.Product, Boards: identity.Boards, Version: m.Version}
+	identityManifest := Manifest{
+		Product: identity.Product,
+		Boards:  append(append([]string(nil), identity.Boards...), identity.MoreBoards...),
+		Version: m.Version,
+	}
 	if err := identityManifest.ValidFor(JarvisShowProduct, deviceBoard); err != nil {
 		return fmt.Errorf("update: rootfs identity rejected: %w", err)
 	}

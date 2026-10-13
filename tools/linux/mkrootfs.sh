@@ -129,6 +129,7 @@ cat > "$R/etc/jarvis-show-release.json" <<EOF
 {
   "product": "genbu-show-v1",
   "boards": ["crown", "checkers"],
+  "more_boards": ["cronos"],
   "version": "$VERSION"
 }
 EOF

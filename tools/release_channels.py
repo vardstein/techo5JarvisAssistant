@@ -28,6 +28,9 @@ from functools import cmp_to_key
 from pathlib import Path
 
 PAIR = ("manifest.json", "manifest.json.sig")
+# Boards older Shows' echod doesn't know read their own manifest (echod ManifestName); a release carries
+# it once its rootfs lists the board. A channel copies it along when its release has it.
+EXTRA = ("manifest-cronos.json", "manifest-cronos.json.sig")
 RANK = {"dev": 0, "staging": 1, "stable": 2}
 # Which releases a channel may carry.
 CARRIES = {"dev": {"dev", "staging", "stable"}, "staging": {"staging", "stable"}}
@@ -137,9 +140,9 @@ class GitHub:
         self._gh(*args)
 
     def download(self, tag: str, into: Path) -> dict[str, bytes]:
-        """The tag's manifest pair as it is now; a file the release lacks is left out."""
+        """The tag's manifests as they are now; a file the release lacks is left out."""
         got = {}
-        for name in PAIR:
+        for name in PAIR + EXTRA:
             try:
                 self._gh("release", "download", tag, "--repo", self.repo, "-p", name, "-D", str(into), "--clobber")
             except ChannelError:
@@ -182,9 +185,12 @@ def move(gh, channel: str, *, own: str | None = None, commit: str | None = None,
             if want is None:
                 raise ChannelError(f"no release with a signed manifest for the {channel} channel")
             pair = gh.download(want, work)
-            if set(pair) != set(PAIR):
+            if not set(PAIR) <= set(pair) or len(set(pair) & set(EXTRA)) not in (0, len(EXTRA)):
                 raise ChannelError(f"{want} is missing its signed manifest")
-            if gh.download(tag, work) == pair:
+            # A board manifest an older release lacks stays on the channel as it was: that board's Shows
+            # keep the last release that listed it, which is the one they could take anyway.
+            have = gh.download(tag, work)
+            if {k: v for k, v in have.items() if k in pair} == pair:
                 log(f"PASS: {channel} channel holds {want}")
                 return want
             log(f"{channel} channel: putting {want}'s signed manifest in place (try {n + 1})")

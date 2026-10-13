@@ -28,6 +28,8 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertIn('jarvis-show-release.json', source)
         self.assertIn('"product": "genbu-show-v1"', source)
         self.assertIn('"boards": ["crown", "checkers"]', source)
+        # cronos sits apart so older Shows, whose echod refuses unknown boards, still take the release.
+        self.assertIn('"more_boards": ["cronos"]', source)
         self.assertIn('"version": "$VERSION"', source)
 
     def test_release_workflow_uses_secret_and_attests_payloads(self):

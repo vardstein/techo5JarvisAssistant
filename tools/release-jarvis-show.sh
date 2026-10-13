@@ -12,6 +12,7 @@ ROOTFS=
 SIGN_KEY=${JARVIS_SHOW_SIGN_KEY:-}
 CROWN_BOOT=
 CHECKERS_BOOT=
+CRONOS_BOOT=
 PUBLISH=
 CHANNEL=
 TARGET=
@@ -20,11 +21,16 @@ OUT=${JARVIS_SHOW_RELEASE_OUT:-$ROOT/bin/release}
 usage() {
   cat <<USAGE
 usage: $0 --version vX.Y.Z[...prerelease] --notes TEXT --binary FILE --rootfs FILE \\
-          --sign-key FILE [--crown-boot FILE] [--checkers-boot FILE]
+          --sign-key FILE [--crown-boot FILE] [--checkers-boot FILE] [--cronos-boot FILE]
           [--channel stable|staging|dev] [--target COMMIT] [--publish]
 
 Without --publish the script only validates artifacts and writes signed manifest/SHA256SUMS into --out.
 It does not build the rootfs or boot images.
+
+When the rootfs lists cronos (in "more_boards"), the release also gets manifest-cronos.json: cronos
+reads its own signed manifest so crown and checkers Shows, which refuse a manifest naming a board they
+don't know, never see one that does. --cronos-boot is published as techo5-boot-VERSION.img, the name
+install-show.py looks for on cronos.
 
 --channel says which update channel the release is for, and must agree with the name: -stable.N or no
 suffix is stable, -staging.N or -rc.N is staging and anything else is dev. Without it the name decides.
@@ -43,6 +49,7 @@ while [ $# -gt 0 ]; do
     --sign-key) SIGN_KEY=$2; shift 2;;
     --crown-boot) CROWN_BOOT=$2; shift 2;;
     --checkers-boot) CHECKERS_BOOT=$2; shift 2;;
+    --cronos-boot) CRONOS_BOOT=$2; shift 2;;
     --out) OUT=$2; shift 2;;
     --channel) CHANNEL=$2; shift 2;;
     --target) TARGET=$2; shift 2;;
@@ -103,10 +110,17 @@ if [ -n "$CHECKERS_BOOT" ]; then
   cp "$CHECKERS_BOOT" "$OUT/techo5-boot-checkers-$VERSION.img"
   assets+=("$OUT/techo5-boot-checkers-$VERSION.img")
 fi
+cronos_assets=()
+if [ -n "$CRONOS_BOOT" ]; then
+  [ -f "$CRONOS_BOOT" ] || { echo "Cronos boot image not found: $CRONOS_BOOT" >&2; exit 2; }
+  cp "$CRONOS_BOOT" "$OUT/techo5-boot-$VERSION.img"
+  cronos_assets+=("$OUT/techo5-boot-$VERSION.img")
+fi
 
-# Rootfs has one shared product marker and must explicitly support both first-generation boards.
+# Rootfs has one shared product marker and must explicitly support both first-generation boards; cronos
+# is optional and comes from "more_boards". The last line printed says whether it is there.
 rootfs_sha=$(sha256sum "$ROOTFS" | awk '{print $1}')
-PYTHONPATH="$ROOT/tools" python3 - "$ROOTFS" "$rootfs_sha" "$VERSION" <<'PY'
+cronos=$(PYTHONPATH="$ROOT/tools" python3 - "$ROOTFS" "$rootfs_sha" "$VERSION" <<'PY'
 import pathlib, sys
 from jarvis_crown.install import verify_jarvis_rootfs
 path = pathlib.Path(sys.argv[1])
@@ -117,8 +131,13 @@ for board in ("crown", "checkers"):
         raise SystemExit("rootfs is not a shared genbu-show-v1 image")
     if ident.version != sys.argv[3]:
         raise SystemExit(f"rootfs marker version {ident.version!r} does not match release filename")
-print("PASS: shared Jarvis Show rootfs marker/version")
+print("PASS: shared Jarvis Show rootfs marker/version", file=sys.stderr)
+print("cronos" if "cronos" in ident.boards else "")
 PY
+)
+if [ -n "$CRONOS_BOOT" ] && [ "$cronos" != cronos ]; then
+  echo "--cronos-boot given, but the rootfs does not list cronos" >&2; exit 2
+fi
 
 from="https://github.com/$REPO/releases/download/$VERSION"
 mk=(run ./cmd/mkmanifest
@@ -136,12 +155,30 @@ mk=(run ./cmd/mkmanifest
   -sign-key "$SIGN_KEY")
 for asset in "${assets[@]}"; do mk+=(-asset "$asset"); done
 (cd "$ROOT/echod" && go "${mk[@]}")
+if [ "$cronos" = cronos ]; then
+  mkc=(run ./cmd/mkmanifest
+    -version "$VERSION"
+    -product "genbu-show-v1"
+    -board cronos
+    -title "Jarvis Show $VERSION"
+    -notes "$NOTES"
+    -release-url "https://github.com/$REPO/releases/tag/$VERSION"
+    -from "$from"
+    -arm "$OUT/echod-arm"
+    -rootfs-arm "$OUT/jarvis-show-rootfs-$VERSION.tar.gz"
+    -out "$OUT/manifest-cronos.json"
+    -sign-key "$SIGN_KEY")
+  for asset in "${cronos_assets[@]}"; do mkc+=(-asset "$asset"); done
+  (cd "$ROOT/echod" && go "${mkc[@]}")
+fi
 
 (
   cd "$OUT"
   files=(echod-arm "jarvis-show-rootfs-$VERSION.tar.gz" manifest.json manifest.json.sig)
   [ -z "$CROWN_BOOT" ] || files+=("techo5-boot-crown-$VERSION.img")
   [ -z "$CHECKERS_BOOT" ] || files+=("techo5-boot-checkers-$VERSION.img")
+  [ "$cronos" != cronos ] || files+=(manifest-cronos.json manifest-cronos.json.sig)
+  [ -z "$CRONOS_BOOT" ] || files+=("techo5-boot-$VERSION.img")
   sha256sum "${files[@]}" > SHA256SUMS
 )
 
@@ -153,7 +190,8 @@ release_args=(release create "$VERSION" --repo "$REPO" --title "Jarvis Show $VER
 # Stable is GitHub's "latest" release; everything else is a prerelease, so a stable device never sees it.
 if [ "$CHANNEL" = stable ]; then release_args+=(--latest); else release_args+=(--prerelease --latest=false); fi
 release_args+=("$OUT/echod-arm" "$OUT/jarvis-show-rootfs-$VERSION.tar.gz" "$OUT/manifest.json" "$OUT/manifest.json.sig" "$OUT/SHA256SUMS")
-release_args+=("${assets[@]}")
+[ "$cronos" != cronos ] || release_args+=("$OUT/manifest-cronos.json" "$OUT/manifest-cronos.json.sig")
+release_args+=("${assets[@]}" "${cronos_assets[@]}")
 gh "${release_args[@]}"
 
 # Staging and dev are rolling releases (channel-staging, channel-dev) holding only the signed manifest of

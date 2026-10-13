@@ -36,19 +36,23 @@ func (c Channel) Label() string {
 	return "stable"
 }
 
-// URL is where that channel's manifest lives.
+// URL is where that channel's manifest.json lives, the one crown and checkers read.
 //
 // All of them are plain asset downloads rather than api.github.com: the REST API allows sixty unauthenticated
 // requests an hour per address, which several devices behind one router would share with everything else
 // on the network. Asset paths do not count against it.
-func (c Channel) URL() string {
+func (c Channel) URL() string { return c.URLFor("") }
+
+// URLFor is where that channel keeps the manifest a board reads (ManifestName).
+func (c Channel) URLFor(board string) string {
+	name := ManifestName(board)
 	switch c {
 	case Staging:
-		return releases + "/download/" + stagingTag + "/manifest.json"
+		return releases + "/download/" + stagingTag + "/" + name
 	case Dev:
-		return releases + "/download/" + devTag + "/manifest.json"
+		return releases + "/download/" + devTag + "/" + name
 	}
-	return releases + "/latest/download/manifest.json"
+	return releases + "/latest/download/" + name
 }
 
 // Channels is every channel, in the order Home Assistant should offer them.

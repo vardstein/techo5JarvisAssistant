@@ -83,6 +83,23 @@ const flatArch = "arm64"
 // and each other's binaries would start and then drive the wrong hardware.
 var arch = runtime.GOARCH + archSuffix
 
+// supportedBoards is every board a Jarvis Show release may name. Shows built before a board was added
+// refuse any manifest naming it, which is why newer boards read a manifest of their own (ManifestName).
+var supportedBoards = map[string]bool{"crown": true, "checkers": true, "cronos": true}
+
+// ownManifestBoards came after the first release: each has its own signed manifest-<board>.json, so the
+// manifest.json older crown and checkers Shows read never names a board they don't know.
+var ownManifestBoards = map[string]bool{"cronos": true}
+
+// ManifestName is the signed manifest this board reads in a release: manifest.json, or
+// manifest-<board>.json for a board in ownManifestBoards.
+func ManifestName(board string) string {
+	if ownManifestBoards[board] {
+		return "manifest-" + board + ".json"
+	}
+	return "manifest.json"
+}
+
 // deviceBoard is variable only so tests can emulate Crown/Checkers without running on the hardware.
 var deviceBoard = layout.Board
 
@@ -143,8 +160,9 @@ func fetch(ctx context.Context, url string) (Manifest, error) {
 	return m, nil
 }
 
-// channelURL is Channel.URL, a variable so a test can serve the channel itself.
-var channelURL = Channel.URL
+// channelURL is where this board reads the channel's manifest, a variable so a test can serve the
+// channel itself.
+var channelURL = func(c Channel) string { return c.URLFor(deviceBoard) }
 
 // get fetches a small file through the updater's own client, refusing anything over max bytes.
 func get(ctx context.Context, url string, max int64) ([]byte, error) {
@@ -185,7 +203,7 @@ func (m Manifest) ValidFor(product, board string) error {
 	found := false
 	seen := make(map[string]bool, len(m.Boards))
 	for _, candidate := range m.Boards {
-		if candidate != "crown" && candidate != "checkers" {
+		if !supportedBoards[candidate] {
 			return fmt.Errorf("update: manifest names unsupported board %q", candidate)
 		}
 		if seen[candidate] {
