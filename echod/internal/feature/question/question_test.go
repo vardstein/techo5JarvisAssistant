@@ -84,7 +84,7 @@ func TestAnswer(t *testing.T) {
 }
 
 // In the turn opened for the question, what is not an answer goes nowhere; after a wake word it goes on
-// to the assistant. Either way the question is over.
+// to the assistant. Either way the question is over, when it has no way to be asked again.
 func TestTakeDropsWhatIsNotAnAnswer(t *testing.T) {
 	answered := make(chan string, 1)
 	ask := func() {
@@ -138,8 +138,38 @@ func TestMissedAsksOnceMore(t *testing.T) {
 	if Missed() {
 		t.Fatal("asked a third time")
 	}
-	if !Take("Joa", true) || <-answered != "yes" {
+	if !Take(" Joa!", true) || <-answered != "yes" {
 		t.Fatal("the answer to the second asking was not taken")
+	}
+
+	// Words that answer nothing, in the question's own turn, ask it once more as well; the second time
+	// they are only dropped.
+	again2 := make(chan bool, 2)
+	Ask("update", time.Minute, func() { answered <- "yes" }, func() { answered <- "no" }, func() { again2 <- true })
+	if !Take("Untertitel im Auftrag des ZDF", true) || !<-again2 {
+		t.Fatal("the question was not asked again after words that answer nothing")
+	}
+	if !Take("Mal sehen", true) {
+		t.Fatal("the second unclear reply went on to the assistant")
+	}
+	select {
+	case <-again2:
+		t.Fatal("asked a third time")
+	default:
+	}
+	if Take("ja", true) {
+		t.Fatal("the question outlived its second asking")
+	}
+
+	// A wake word's request is not an answer either, but it is not asked again for.
+	Ask("update", time.Minute, func() {}, func() {}, func() { again2 <- true })
+	if Take("Wie spät ist es?", false) {
+		t.Fatal("a request after a wake word was dropped")
+	}
+	select {
+	case <-again2:
+		t.Fatal("asked again after a request said after a wake word")
+	default:
 	}
 
 	// Asked only once when there is nothing to ask again with.
