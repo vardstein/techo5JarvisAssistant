@@ -4,11 +4,25 @@
       "user": {
         "title": "Genbu Rezepte",
         "description": "Der Assistent sucht Rezepte über dein SearXNG und zeigt sie auf dem Show, das gefragt wurde.",
-        "data": {"searxng_url": "SearXNG-Adresse"},
-        "data_description": {"searxng_url": "Wo Home Assistant SearXNG erreicht, z. B. http://10.0.0.5:8080. Die JSON-Ausgabe muss an sein (search.formats in settings.yml)."}
+        "data": {
+          "searxng_url": "SearXNG-Adresse"
+        },
+        "data_description": {
+          "searxng_url": "Wo Home Assistant SearXNG erreicht, z. B. http://10.0.0.5:8080. Die JSON-Ausgabe muss an sein (search.formats in settings.yml)."
+        }
       }
     },
-    "error": {"bad_url": "Gib die ganze Adresse an, mit http:// oder https:// vorne"},
-    "abort": {"already_configured": "Genbu Rezepte ist schon eingerichtet"}
+    "error": {
+      "bad_url": "Gib die ganze Adresse an, mit http:// oder https:// vorne"
+    },
+    "abort": {
+      "already_configured": "Genbu Rezepte ist schon eingerichtet"
+    }
+  },
+  "issues": {
+    "moved_to_genbu": {
+      "title": "Rezepte sind jetzt in Genbu Assistant",
+      "description": "Genbu Assistant sucht Rezepte jetzt selbst, für jeden Genbu Show mit eingeschalteten Rezepten, und hat die SearXNG-Adresse übernommen. Nimm den Haken bei „Genbu Rezepte“ in den Optionen deines Gesprächsagenten raus und entferne diese Integration. Sie hält sich schon zurück, es wird also nichts doppelt gesucht."
+    }
   }
 }

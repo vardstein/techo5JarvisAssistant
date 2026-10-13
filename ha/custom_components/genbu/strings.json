@@ -24,11 +24,13 @@
         "description": "{main} is the main update Show. Change it in select.genbu_main_update_show.",
         "data": {
           "extra_mains": "More main update Shows",
-          "notify_service": "Phone to tell"
+          "notify_service": "Phone to tell",
+          "searxng_url": "Recipe search"
         },
         "data_description": {
           "extra_mains": "One is usually enough. With more, the other Shows follow whichever of them runs the newest version.",
-          "notify_service": "A notify service, like mobile_app_my_phone. It gets a push when a main update Show has been offline for a day."
+          "notify_service": "A notify service, like mobile_app_my_phone. It gets a push when a main update Show has been offline for a day.",
+          "searxng_url": "The address of your SearXNG, like http://10.0.0.5:8080. With it, a Genbu Show can look up a recipe and put it on its screen when asked (its Recipes switch). Empty: no recipes."
         }
       },
       "second": {
@@ -39,6 +41,9 @@
           "second_yes": "Yes, add it"
         }
       }
+    },
+    "error": {
+      "searxng": "That is no http or https address."
     }
   },
   "issues": {
@@ -117,6 +122,14 @@
     "sensor": {
       "music_falls_back_to": {
         "name": "Music falls back to"
+      }
+    },
+    "switch": {
+      "recipes": {
+        "name": "Recipes"
+      },
+      "voice_updates": {
+        "name": "Updates by voice"
       }
     }
   },

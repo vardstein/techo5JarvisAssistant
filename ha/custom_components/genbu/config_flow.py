@@ -1,9 +1,11 @@
 """Sets Genbu up. The form asks which Show is the main update Show; the installer fills the same form
-over REST. The options add more main update Shows (after a warning) and a phone to tell."""
+over REST. The options add more main update Shows (after a warning), a phone to tell, and the recipe search
+(a SearXNG address) the voice assistant's genbu__recipe looks recipes up with."""
 
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlsplit
 
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
 from homeassistant.core import callback
@@ -14,12 +16,22 @@ try:  # Home Assistant 2026.10 and later
 except ImportError:
     import voluptuous as vol
 
-from .const import CONF_EXTRA, CONF_MAIN, CONF_NOTIFY, DOMAIN, NAME
+from .const import CONF_EXTRA, CONF_MAIN, CONF_NOTIFY, CONF_SEARXNG, DOMAIN, NAME
 from .coordinator import find_shows
 
 
 def _labels(shows) -> dict[str, str]:
     return {s.node: f"{s.name} · {s.committed or s.installed or '?'}" for s in shows}
+
+
+def _search(answer: dict[str, Any]) -> str | None:
+    """The SearXNG address as given, without a slash at the end; "" for none, None for one that is no
+    http or https address."""
+    url = str(answer.get(CONF_SEARXNG) or "").strip().rstrip("/")
+    if not url:
+        return ""
+    parts = urlsplit(url)
+    return url if parts.scheme in ("http", "https") and parts.hostname else None
 
 
 class GenbuFlow(ConfigFlow, domain=DOMAIN):
@@ -49,7 +61,7 @@ class GenbuOptions(OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         hub = self.config_entry.runtime_data
         mains = hub.house.mains
-        if user_input is not None:
+        if user_input is not None and _search(user_input) is not None:
             self.answer = user_input
             extra = user_input.get(CONF_EXTRA, [])
             if extra and set(extra) - set(mains[1:]):
@@ -60,8 +72,13 @@ class GenbuOptions(OptionsFlow):
             vol.Optional(CONF_EXTRA, default=[m for m in mains[1:] if m in others]): cv.multi_select(others),
             vol.Optional(CONF_NOTIFY, description={
                 "suggested_value": self.config_entry.options.get(CONF_NOTIFY, "")}): str,
+            vol.Optional(CONF_SEARXNG, description={
+                "suggested_value": self.config_entry.options.get(CONF_SEARXNG, "")}): str,
         })
-        return self.async_show_form(step_id="init", data_schema=schema, description_placeholders={
+        errors = {}
+        if user_input is not None:  # back here only when the search address was wrong
+            errors[CONF_SEARXNG] = "searxng"
+        return self.async_show_form(step_id="init", data_schema=schema, errors=errors, description_placeholders={
             "main": hub.name(mains[0]) if mains else "-"})
 
     async def async_step_second(self, user_input: dict[str, Any] | None = None):
@@ -82,4 +99,4 @@ class GenbuOptions(OptionsFlow):
         hub = self.config_entry.runtime_data
         await hub.async_set_extra(list(self.answer.get(CONF_EXTRA, [])))
         notify = str(self.answer.get(CONF_NOTIFY) or "").strip().removeprefix("notify.")
-        return self.async_create_entry(data={CONF_NOTIFY: notify})
+        return self.async_create_entry(data={CONF_NOTIFY: notify, CONF_SEARXNG: _search(self.answer) or ""})

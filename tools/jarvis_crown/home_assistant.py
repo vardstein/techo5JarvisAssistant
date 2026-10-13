@@ -875,6 +875,9 @@ def _room_dashboard(ha: HomeAssistant, entities: list[str], make: bool | None,
 
 JARVIS_BOARD = "jarvis-display"   # the Jarvis dashboard's address
 RECIPE_BOARD = "jarvis-rezept"    # the recipe page's, which the Show finds it by (docs/recipes.md)
+# The recipe last found: Genbu Assistant's (1.4.0 on, with a recipe search), else Genbu Rezepte's. The card
+# shows whichever of the two is newer, so a page made for either keeps working.
+RECIPE_SENSORS = ("sensor.genbu_recipe", "sensor.jarvis_recipe")
 
 
 def _jarvis_cards(room: str, temperature: str | None, humidity: str | None, weather: str | None,
@@ -923,8 +926,8 @@ def _jarvis_cards(room: str, temperature: str | None, humidity: str | None, weat
 def _jarvis_dashboard(ha: HomeAssistant, entities: list[str], make: bool | None,
                       choose: Chooser | None = None) -> str | None:
     """Makes the Jarvis dashboard (clock, the room, weather, timer and calendar) at jarvis-display, and the
-    recipe page when Genbu Rezepte is there, when the house has neither and make says so (None: choose is
-    asked). Their cards come with Genbu 1.3.1 and newer; the clock is wall-clock-card, from HACS. The
+    recipe page when there is a recipe search (Genbu Assistant's, or the old Genbu Rezepte), when the house
+    has neither and make says so (None: choose is asked). Their cards come with Genbu 1.3.1 and newer; the clock is wall-clock-card, from HACS. The
     calendar is the first the house has, until the calendar step points it at the chosen ones. Nothing
     there already is touched. None: nothing to say, Genbu has no cards to make them from."""
     try:
@@ -933,7 +936,8 @@ def _jarvis_dashboard(ha: HomeAssistant, entities: list[str], make: bool | None,
         return None
     have = {str(b.get("url_path")) for b in ha.ws({"type": "lovelace/dashboards/list"}) or []}
     states = {str(s.get("entity_id")): s for s in ha.request("GET", "/api/states") or [] if isinstance(s, dict)}
-    recipe = "sensor.jarvis_recipe" in states and RECIPE_BOARD not in have
+    found = next((e for e in RECIPE_SENSORS if e in states), None)
+    recipe = found is not None and RECIPE_BOARD not in have
     if JARVIS_BOARD in have and not recipe:
         return f"the Jarvis dashboard is there already ({JARVIS_BOARD})"
     if make is None:
@@ -949,7 +953,7 @@ def _jarvis_dashboard(ha: HomeAssistant, entities: list[str], make: bool | None,
                "icon": "mdi:chef-hat", "require_admin": False, "show_in_sidebar": False, "mode": "storage"})
         ha.ws({"type": "lovelace/config/save", "url_path": RECIPE_BOARD, "config": {"title": "Rezept", "views": [
             {"title": "Rezept", "path": "rezept", "type": "panel",
-             "cards": [{"type": "custom:jarvis-recipe-card", "entity": "sensor.jarvis_recipe"}]}]}})
+             "cards": [{"type": "custom:jarvis-recipe-card", "entity": found}]}]}})
         said.append(f"the recipe page {RECIPE_BOARD} made")
     if JARVIS_BOARD not in have:
         listed = ha.ws({"type": "lovelace/resources"}) or []

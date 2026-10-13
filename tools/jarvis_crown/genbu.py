@@ -17,6 +17,7 @@ DOMAIN = "genbu"
 HOUSE = "sensor.genbu_house_version"
 MAIN_SELECT = "select.genbu_main_update_show"
 CONF_MAIN, CONF_EXTRA, CONF_NOTIFY = "main_show", "extra_mains", "notify_service"  # the integration's const.py
+CONF_SEARXNG = "searxng_url"
 
 # What set_up came to, and what --main-update-show and --follow ask for.
 MAIN, FOLLOW, SKIPPED = "main", "follow", "skipped"
@@ -105,6 +106,8 @@ def _add_main(ha: HomeAssistant, entry_id: str, node: str) -> None:
         raise HomeAssistantError(f"Genbu's options do not offer {node} as a main update Show yet")
     extra = [str(m) for m in _suggested(form, CONF_EXTRA) or [] if m != node]
     answer = {CONF_EXTRA: extra + [node], CONF_NOTIFY: str(_suggested(form, CONF_NOTIFY) or "")}
+    if _suggested(form, CONF_SEARXNG):  # Genbu 1.4.0 and later
+        answer[CONF_SEARXNG] = str(_suggested(form, CONF_SEARXNG))
     done = ha.request("POST", f"{base}/{flow}", answer)
     if isinstance(done, dict) and done.get("type") == "menu":
         done = ha.request("POST", f"{base}/{flow}", {"next_step_id": "second_yes"})

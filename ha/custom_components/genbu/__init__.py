@@ -2,8 +2,8 @@
 ESPHome, keeps which of them are main update Shows, publishes the house version the others follow in
 sensor.genbu_house_version, and asks in Repairs when a main update Show goes missing. The Genbu Control
 Center in the sidebar has a card per Show, made from its ESPHome entities (frontend/). Genbu also serves
-the Jarvis dashboard's cards and loads them on every page (ha-dashboard/README.md). See
-docs/update-leader.md."""
+the Jarvis dashboard's cards and loads them on every page (ha-dashboard/README.md). And it gives the voice
+assistant its tools, Show by Show (llm.py). See docs/update-leader.md and docs/genbu-assistant.md."""
 
 from __future__ import annotations
 
@@ -25,11 +25,11 @@ try:  # Home Assistant 2026.10 and later
 except ImportError:
     import voluptuous as vol
 
-from .const import (CARDS, DOMAIN, MANUFACTURERS, NAME, OLD_NAME, PANEL, PANEL_FILES, PANEL_TITLE,
-                    SERVICE_FORGET, SERVICE_INSTALL, STORE_KEY, STORE_VERSION)
+from .const import (CARDS, CONF_SEARXNG, DOMAIN, MANUFACTURERS, NAME, OLD_NAME, OLD_RECIPES, PANEL, PANEL_FILES,
+                    PANEL_TITLE, SERVICE_FORGET, SERVICE_INSTALL, STORE_KEY, STORE_VERSION)
 from .coordinator import GenbuHouse, find_shows, unhide
 
-PLATFORMS = [Platform.SENSOR, Platform.SELECT]
+PLATFORMS = [Platform.SENSOR, Platform.SELECT, Platform.SWITCH]
 FORGET_SCHEMA = vol.Schema({vol.Required("node"): cv.string})
 INSTALL_SCHEMA = vol.Schema({vol.Optional("except_node", default=""): cv.string})
 
@@ -37,8 +37,10 @@ INSTALL_SCHEMA = vol.Schema({vol.Optional("except_node", default=""): cv.string}
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if entry.title == OLD_NAME:  # set up before 1.4.0; a title somebody chose stays
         hass.config_entries.async_update_entry(entry, title=NAME)
+    _take_recipe_search(hass, entry)
     _drop_copies(hass, entry)
     hub = GenbuHouse(hass, entry)
+    hub.had_search = bool(entry.options.get(CONF_SEARXNG))
     await hub.async_start()
     entry.runtime_data = hub
     entry.async_on_unload(hub.async_stop)
@@ -109,6 +111,17 @@ async def _add_cards(hass: HomeAssistant) -> None:
     hass.data[f"{DOMAIN}_cards"] = urls
 
 
+def _take_recipe_search(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """The recipe search moved here from Genbu Rezepte in 1.4.0: its SearXNG address comes along, once, as
+    long as Genbu Assistant has never been given one."""
+    if CONF_SEARXNG in entry.options:
+        return
+    old = next((e.data.get(CONF_SEARXNG) for e in hass.config_entries.async_entries(OLD_RECIPES)
+                if e.data.get(CONF_SEARXNG)), None)
+    if old:
+        hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_SEARXNG: str(old).rstrip("/")})
+
+
 def _drop_copies(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Genbu 1.2.0 copied each Show's controls onto its genbu device. The copies are gone since 1.3.0
     (GENBU-114), so their leftover registry entries go too; the coordinator shows the originals again."""
@@ -154,6 +167,10 @@ async def _install_updates(hass: HomeAssistant, call: ServiceCall) -> ServiceRes
 
 
 async def _options_changed(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    # A recipe search set up or taken away adds or drops the recipe sensor and the Recipes switches.
+    if bool(entry.options.get(CONF_SEARXNG)) != entry.runtime_data.had_search:
+        await hass.config_entries.async_reload(entry.entry_id)
+        return
     await entry.runtime_data.async_refresh()
 
 
