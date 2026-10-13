@@ -308,6 +308,7 @@ var fr = lang{
 		"Pair a Music Assistant server from Home Assistant first": "Associez d'abord un serveur Music Assistant depuis Home Assistant",
 		"Microphone":                                              "Micro",
 		"The mute button does this too":                           "Le bouton micro fait la même chose",
+		"Press the mute button to turn it back on":                "Appuyez sur le bouton micro pour le réactiver",
 		"Wake word":                                               "Mot d'activation",
 		"Wake word sensitivity":                                   "Sensibilité du mot d'activation",
 		"Higher wakes by mistake less often":                      "Plus haut, moins de réveils par erreur",
