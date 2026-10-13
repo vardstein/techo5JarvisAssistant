@@ -265,6 +265,17 @@ class JarvisCalendarCard extends HTMLElement {
   }
 }
 
-if (!customElements.get("jarvis-calendar-card")) {
-  customElements.define("jarvis-calendar-card", JarvisCalendarCard);
+// Genbu loads this before Home Assistant's app, which then puts its own
+// registry (the scoped-elements polyfill) in place of window.customElements.
+// A card defined only before that is "Custom element doesn't exist"; which
+// cards it hit depended on load order. So it is defined again once the app
+// has defined <home-assistant>, into whatever registry is there by then.
+{
+  const defineCard = () => {
+    if (!window.customElements.get("jarvis-calendar-card")) {
+      window.customElements.define("jarvis-calendar-card", JarvisCalendarCard);
+    }
+  };
+  defineCard();
+  customElements.whenDefined("home-assistant").then(defineCard);
 }
