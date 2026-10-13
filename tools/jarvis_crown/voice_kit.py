@@ -459,11 +459,19 @@ def music_start() -> dict:
             {"if": [{"condition": "template", "value_template": "{{ shuffle | default(false) | bool }}"}],
              "then": [{"action": "media_player.shuffle_set", "target": {"entity_id": "{{ player }}"},
                        "data": {"shuffle": True}, "continue_on_error": True}]},
+            # Played plainly first, so it starts at once. With radio mode Music Assistant builds the
+            # whole mix of similar songs before the first note (15-20 s); added behind the playing
+            # track, it builds it there instead and leaves the track playing. The mix keeps the queue
+            # going on its own, and if it cannot be made the track still plays.
             {"action": "music_assistant.play_media",
              "data": {"media_id": "{{ media_id }}", "media_type": "{{ media_type }}",
-                      "enqueue": "{{ enqueue | default('replace') }}",
-                      "radio_mode": "{{ radio | default(false) | bool }}"},
+                      "enqueue": "{{ enqueue | default('replace') }}"},
              "target": {"entity_id": "{{ player }}"}},
+            {"if": [{"condition": "template", "value_template": "{{ radio | default(false) | bool }}"}],
+             "then": [{"action": "music_assistant.play_media",
+                       "data": {"media_id": "{{ media_id }}", "media_type": "{{ media_type }}",
+                                "enqueue": "add", "radio_mode": True},
+                       "target": {"entity_id": "{{ player }}"}, "continue_on_error": True}]},
         ],
     }
 
