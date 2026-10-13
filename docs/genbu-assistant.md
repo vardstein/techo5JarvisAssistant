@@ -292,6 +292,21 @@ unticked; then it goes. Our house has no recipe entry set up, so nothing changes
 | **Losses** | Asking for a recipe from a phone or the app chat no longer works (it never showed anything there). Reading out steps needs one more ask. |
 | **Breaks** | A house that ticked "Genbu Rezepte" sees a Repairs note for one release, then the set goes. A house that runs the agent without "Control Home Assistant" gets no Genbu tools, as it gets none of HA's. |
 
+### Replies with nothing behind them (GENBU-139)
+
+Asked "Macht die Musik im Schlafzimmer aus", the model once said the music was off and called no tool. The
+prompt already says to report only what a tool reported, so that alone does not hold. Two things now do:
+
+- The local stop sentences take a room ("Mach die Musik im Schlafzimmer aus", "turn off the music in the
+  bedroom"), so this one never reaches the model. They also pause a Show's music player standing in that
+  room, which Home Assistant's own pause misses when the player has no room.
+- Genbu Assistant reads every finished turn of a language model (`claims.py`). When the reply says
+  something was switched, paused or set and no tool ran in that turn, it logs a warning and fires
+  `genbu_unbacked_claim` with `agent_id`, `asked` and `said`. It can't take the reply back; it shows how
+  often this happens and with which sentences, so they can become local ones or prompt lines. An
+  automation on the event can send a notification. Home Assistant's own and the local sentences are left
+  out.
+
 ## Decided
 
 Jade's answers on 2026-10-12:
