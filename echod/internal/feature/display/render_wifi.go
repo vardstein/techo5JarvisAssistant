@@ -7,14 +7,15 @@ import (
 	"image"
 	"image/color"
 	"strings"
+	"time"
 
 	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/wifi"
 )
 
-// The Wi-Fi pages: a list of the networks the radio hears, a row each, and a keyboard for the
-// passphrase. They open from the Connections card, and on their own when a device has
-// no address a while after boot — a fresh unit, or one carried to another house.
+// The Wi-Fi pages: a list of the networks the radio hears, a row each, the networks it keeps, and a
+// keyboard for the passphrase. They open from the Connections card, and on their own when a device
+// has no address a while after boot — a fresh unit, or one carried to another house.
 
 // wifiState is what the pages show.
 type wifiState struct {
@@ -26,8 +27,11 @@ type wifiState struct {
 	text     string        // the passphrase so far
 	shift    bool
 	symbols  bool
-	busy     string // "Connecting to X…" while a join runs
-	err      string // why the last join failed
+	busy     string    // "Connecting to X…" while a join runs
+	err      string    // why the last join failed
+	saved    []string  // the networks the supplicant keeps, in the order it tries them
+	forget   string    // the saved network a first tap on Forget armed
+	forgetAt time.Time // when; a second tap counts within restartWindow
 }
 
 var (
@@ -88,6 +92,9 @@ func (r *renderer) wifiList(s scene) int {
 	line, lineInk := wifiLine(w)
 	intro := r.lines(cf.small, line, x1-x0, 2)
 	total := len(intro)*r.cz(40) + max(len(w.nets), 1)*rowH
+	if len(w.saved) > 0 {
+		total += r.cz(savedHead) + len(w.saved)*rowH
+	}
 	maxScroll := max(total+r.cz(24)-list.Dy(), 0)
 	scroll := min(max(w.scroll, 0), maxScroll)
 
@@ -102,6 +109,7 @@ func (r *renderer) wifiList(s scene) int {
 			msg = i18n.T("Scanning") + "..."[:int(s.now.UnixMilli()/400%4)]
 		}
 		r.text(cf.value, msg, x0, mid(cf.value, y+rowH/2), softInk())
+		y += rowH
 	}
 	from := len(r.pending)
 	icon := r.cz(48)
@@ -126,10 +134,60 @@ func (r *renderer) wifiList(s scene) int {
 		}
 		y += rowH
 	}
+	if len(w.saved) > 0 {
+		r.text(cf.small, "Saved networks", x0, y+r.cz(52), softInk())
+		y += r.cz(savedHead)
+		for _, ssid := range w.saved {
+			if y < r.h && y+rowH > head {
+				r.savedRow(w, s.now, ssid, x0, x1, y, rowH)
+			}
+			y += rowH
+		}
+	}
 	r.clipZones(from, list)
 	r.listFades(list, scroll, maxScroll)
 	r.carHeader("Wi-Fi", []headerAction{{id: "rescan", label: "Rescan"}})
 	return maxScroll
+}
+
+// savedHead is the room the "Saved networks" heading takes over the rows it names.
+const savedHead = 64
+
+// savedRow is one network the supplicant keeps, with Forget at the right (GENBU-153). Forget asks
+// twice, as Restart does: the first tap turns it into Confirm, and only a second within restartWindow
+// takes the network out. The one in use is marked, and its Confirm says that the Show goes off the
+// network, which is what forgetting it means; the page stays up, so another can be joined from it.
+func (r *renderer) savedRow(w wifiState, now time.Time, ssid string, x0, x1, y, rowH int) {
+	cf := r.car()
+	cy := y + rowH/2
+	joined := w.status.Connected && ssid == w.status.SSID
+	armed := w.forget == ssid && now.Sub(w.forgetAt) < restartWindow
+	button, sub, subColor := "Forget", "", subInk()
+	switch {
+	case armed && joined:
+		button, sub, subColor = "Confirm", "Tap again: the Show goes offline", danger
+	case armed:
+		button, sub = "Confirm", "Tap again to forget it"
+	case joined:
+		sub = "Connected"
+	}
+	left := r.carPill(x1, cy, button, armed)
+	r.addZone(zone{r: image.Rect(left-r.cz(16), y, r.w, y+rowH), kind: zoneAction, id: "forget:" + ssid})
+
+	ink, icon := cream, "wifi"
+	if joined {
+		ink, icon = amber, "wifi-check"
+	}
+	size := r.cz(48)
+	r.mdiIcon(icon, x0, cy-size/2, zb(48), ink)
+	tx := x0 + size + r.cz(32)
+	room := left - r.cz(24) - tx
+	if sub == "" {
+		r.text(cf.label, r.fit(cf.label, ssid, room), tx, mid(cf.label, cy), ink)
+		return
+	}
+	r.text(cf.label, r.fit(cf.label, ssid, room), tx, mid(cf.label, cy-r.cz(18)), ink)
+	r.text(cf.small, r.fit(cf.small, sub, room), tx, mid(cf.small, cy+r.cz(22)), subColor)
 }
 
 // wifiIcon is a network's strength as the Wi-Fi icon with that many arcs, locked when it wants a
