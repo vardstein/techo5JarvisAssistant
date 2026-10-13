@@ -148,5 +148,12 @@ class RecipeAPI(llm.API):
         self._entry = entry
 
     async def async_get_api_instance(self, llm_context: llm.LLMContext) -> llm.APIInstance:
+        if _genbu_searches(self.hass):  # Genbu Assistant's genbu__recipe does it now
+            return llm.APIInstance(api=self, api_prompt="", llm_context=llm_context, tools=[])
         return llm.APIInstance(api=self, api_prompt=PROMPT, llm_context=llm_context,
                                tools=[RecipeTool(self._entry)])
+
+
+def _genbu_searches(hass: HomeAssistant) -> bool:
+    """Whether Genbu Assistant (1.4.0 and later) has a recipe search of its own."""
+    return any(e.options.get(CONF_SEARXNG) for e in hass.config_entries.async_entries("genbu"))

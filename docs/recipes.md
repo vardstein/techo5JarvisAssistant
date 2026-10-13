@@ -4,9 +4,9 @@ Ask the assistant "Wie mache ich Hackfleisch-Tacos?" and the recipe comes up on 
 ingredients on the left, steps on the right, big enough to read from the stove. The assistant says which
 dish it found and on which site, and doesn't read the whole thing out unless you ask.
 
-It is a real recipe from a recipe site, not one the language model makes up. Home Assistant's
-`jarvis_recipe` integration searches for it through your SearXNG, opens the first results until one
-has a recipe in it, and puts that on a dashboard at `jarvis-rezept`. The Show brings that dashboard
+It is a real recipe from a recipe site, not one the language model makes up. Genbu Assistant
+searches for it through your SearXNG, opens the first results until one has a recipe in it, and puts
+that on a dashboard at `jarvis-rezept`. Ask in English and it searches in English. The Show brings that dashboard
 up and keeps it there: it doesn't go back to the clock after 10 minutes. A swipe up brings it back
 later ([The recipe page](dashboards.md#the-recipe-page)).
 
@@ -32,17 +32,17 @@ later ([The recipe page](dashboards.md#the-recipe-page)).
 
 ## Installing
 
-1. Copy `ha/custom_components/jarvis_recipe/` to `/config/custom_components/jarvis_recipe/` on Home
-   Assistant (the File editor or Samba add-on will do), and restart Home Assistant.
-2. **Settings → Devices & services → Add integration → Genbu Rezepte.** It asks for SearXNG's
-   address, for example `http://10.0.0.5:8080`. This adds `sensor.jarvis_recipe`, which holds the
-   recipe last looked up.
-3. **Settings → Voice assistants**, open your assistant, then the conversation agent's options
-   (the cog next to it). Where it lets the assistant control Home Assistant, tick **Genbu Rezepte** as
-   well as **Assist**, and save.
-4. Make sure Genbu is 1.3.1 or newer: it brings the recipe card along with the others
-   ([ha-dashboard](../ha-dashboard/README.md)).
-5. Make the page. The installer makes it with the Jarvis dashboard (`--jarvis-dashboard`,
+Recipes are part of Genbu Assistant from 1.4.0. There is no separate integration and nothing to tick in
+the conversation agent: every agent that can control Home Assistant (the **Assist** tick) gets the recipe
+tool, `genbu__recipe`, but only for a question asked at a Genbu Show.
+
+1. **Settings → Devices & services → Genbu Assistant → Configure.** Put SearXNG's address under
+   **Recipe search**, for example `http://10.0.0.5:8080`. This adds `sensor.genbu_recipe`, which holds
+   the recipe last looked up, and a **Recipes** switch on each Show.
+2. **Recipes** is on for every Show whose firmware has the recipe page. Turn it off on a Show that
+   never cooks, in the Genbu Control Center or on the Show's Genbu device; that Show's assistant then
+   doesn't get the tool at all.
+3. Make the page. The installer makes it with the Jarvis dashboard (`--jarvis-dashboard`,
    [jarvis-crown-installer.md](jarvis-crown-installer.md)); by hand, it is
    **Settings → Dashboards → Add dashboard → New dashboard from scratch.** Call it "Rezept", and
    set its URL to `jarvis-rezept`: the Show finds the page by that address. Open it, **⋮ → Edit
@@ -51,33 +51,48 @@ later ([The recipe page](dashboards.md#the-recipe-page)).
 
 The Show notices the new dashboard within five minutes. Until then the swipe up does nothing.
 
+### Coming from Genbu Rezepte
+
+Before 1.4.0 this was a separate integration, Genbu Rezepte (`jarvis_recipe`). Genbu Assistant takes its
+SearXNG address over when it starts, and Genbu Rezepte 1.1.0 then stands back, so the assistant never
+gets two recipe tools. A note in **Settings → Repairs** says so. Untick **Genbu Rezepte** in the
+conversation agent's options and remove the integration when it suits you; Genbu Rezepte is dropped in
+the release after. The recipe page made for `sensor.jarvis_recipe` keeps working: the card shows the
+newer of the two sensors.
+
 ## Which Show it comes up on
 
-The one you asked. Home Assistant tells the integration which device the question came from, and
-the integration calls `esphome.<node>_recipe_show` on the Show with that name
-([actions.md](actions.md#show-the-recipe)).
+The one you asked. Home Assistant tells Genbu Assistant which device the question came from, and it
+calls `esphome.<node>_recipe_show` on that Show ([actions.md](actions.md#show-the-recipe)).
 
-Typed in the Home Assistant app instead, it comes up on your Show if you have only one. With more
-than one it stays on the dashboard and no Show is told; swipe up on the one in the kitchen. Asked
-from a voice device that isn't a Show, no Show is told either.
+Asked anywhere else (a phone, a Voice PE, the chat in the Home Assistant app), the assistant has no
+recipe tool. Recipes are for the screen in the kitchen, and an agent that never cooks keeps a shorter
+tool list.
 
 ## What it opens on the web, and what it doesn't
 
-The search results are pages from strangers, so the integration is careful with them:
+The search results are pages from strangers, so Genbu Assistant is careful with them:
 
-- It tries the first six results for "<dish> Rezept", no more.
+- It tries the first four results for "<dish> Rezept" ("<dish> recipe" in English), no more, and one
+  Show looks up one recipe at a time.
 - It only reads the recipe data recipe sites put in their pages for search engines
   ([schema.org Recipe](https://developers.google.com/search/docs/appearance/structured-data/recipe)).
   Nothing on the page runs, and a page without that data is skipped.
 - Only pages on the internet. A result that points at an address in your own network (the router,
   a NAS, Home Assistant itself, 192.168.x.x, localhost) is skipped, and so is one that redirects
-  there: it follows at most three redirects and checks each. A site whose name gives one address
-  when checked and another a moment later can still get through; that is a limit of looking the
-  name up before connecting.
+  there: it follows at most three redirects and checks each. The check is the lookup the connection
+  uses, so a name that answers with a public address first and a home one a moment later gets
+  nowhere.
 - Only plain `http` and `https` addresses, no user name or password in them, HTML only, at most
   2 MB of a page, and 8 seconds for each request.
 - What it keeps is the title, the picture's address, servings, time, up to 50 ingredients and 40
   steps, the site's name and the page's address. Nothing else from the page.
+
+The assistant itself gets less than the screen: the dish, the site, servings, time and how many
+ingredients and steps. The same assistant may unlock doors, so a stranger's page shouldn't talk to it.
+Only when you ask it to read the recipe out does it get the ingredients and up to 12 steps, as plain
+lines of at most 200 characters with the links taken out, marked as the page's text and not something
+to do.
 
 The recipe stays out of Home Assistant's history; only the dish's name is recorded. After a restart
 the last recipe is still there.
@@ -87,9 +102,9 @@ asks that site for it. It sends no referrer.
 
 ## When it doesn't work
 
-- **The assistant says it can't look up recipes, or makes one up.** The conversation agent doesn't have
-  **Genbu Rezepte** ticked (step 3), or the model ignored the tool; try asking again with
-  "Such mir ein Rezept für …".
+- **The assistant says it can't look up recipes, or makes one up.** No recipe search in Genbu
+  Assistant's options (step 1), **Recipes** is off on that Show (step 2), the agent doesn't have
+  **Assist** ticked, or the model ignored the tool; try asking again with "Such mir ein Rezept für …".
 - **"Kein Rezept gefunden".** SearXNG didn't answer or answered without results. Open
   `http://<searxng>/search?q=Pfannkuchen+Rezept&format=json` in a browser: a 403 means JSON answers
   are off. The assistant is also told which sites it tried; ask it, which helps when none of them carried
@@ -97,18 +112,18 @@ asks that site for it. It sends no referrer.
 - **The assistant found it, but the Show stays on the clock.** The Show has no `jarvis-rezept` dashboard
   yet (step 5, then up to five minutes), or no dashcast server, or the question came from a device
   that isn't a Show.
-- **The page says "sensor.jarvis_recipe fehlt".** The integration isn't set up (step 2).
+- **The page says "sensor.genbu_recipe fehlt".** No recipe search is set up (step 1).
 
 For more detail in Home Assistant's log:
 
 ```yaml
 logger:
   logs:
-    custom_components.jarvis_recipe: debug
+    custom_components.genbu.llm: debug
 ```
 
 ## Status
 
-The recipe reading and the choice of Show have tests (`tests/test_jarvis_recipe.py`), and the card
-was checked in a browser at 960×480 and 1280×800. The integration hasn't been run in a live Home
-Assistant yet.
+The recipe reading, the lines for the assistant and the choice of Show have tests
+(`tests/test_genbu_recipe.py`), and who gets the tool is tested in Home Assistant
+(`ha/tests/test_genbu_recipe_tool.py`). The card was checked in a browser at 960×480 and 1280×800.

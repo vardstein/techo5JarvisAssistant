@@ -173,7 +173,7 @@ async def test_the_select_follows_the_show(hass: HomeAssistant):
     assert mine.via_device_id == device
     assert mine.name == "Hall"
     on_it = {e.entity_id for e in er.async_entries_for_device(er.async_get(hass), mine.id)}
-    assert on_it == {"select.hall_music_plays_on", "sensor.hall_music_falls_back_to"}
+    assert on_it == {"select.hall_music_plays_on", "sensor.hall_music_falls_back_to", "switch.hall_updates_by_voice"}
 
     devices.async_update_device(device, name_by_user="Flur")
     await look(hass)

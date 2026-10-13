@@ -6,7 +6,11 @@ music_players is where music asked for at each Show plays, by the Show's device 
 assist_satellite, for the music automation and scripts the installer makes.
 
 And for each Show, "Music falls back to": where its music goes when the player it plays on now is
-offline. On the Show's genbu device, next to its "Music plays on" select."""
+offline. On the Show's genbu device, next to its "Music plays on" select.
+
+sensor.genbu_recipe, while a recipe search is set up: the recipe the assistant last found. Its state is the
+dish, its attributes the recipe, which jarvis-recipe-card.js draws. It comes back after a restart, and the
+recipe stays out of the recorder's history (it is big, and the last one is all anyone needs)."""
 
 from __future__ import annotations
 
@@ -14,8 +18,9 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import CHANGED, HOUSE_ENTITY
+from .const import CHANGED, CONF_SEARXNG, HOUSE_ENTITY, NEW_RECIPE, RECIPE_ENTITY
 from .coordinator import show_device
 from .house import Show
 
@@ -23,6 +28,8 @@ from .house import Show
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add) -> None:
     hub = entry.runtime_data
     add([HouseVersion(entry)])
+    if entry.options.get(CONF_SEARXNG):
+        add([RecipeSensor(entry)])
     made: set[str] = set()
 
     @callback
@@ -95,3 +102,32 @@ class MusicFallsBackTo(SensorEntity):
         self._attr_extra_state_attributes = {"player": player}
         self.async_write_ha_state()
 
+
+
+RECIPE_FIELDS = ("image", "servings", "minutes", "ingredients", "steps", "source", "url")
+
+
+class RecipeSensor(SensorEntity, RestoreEntity):
+    _attr_icon = "mdi:chef-hat"
+    _attr_name = "Genbu recipe"
+    _attr_should_poll = False
+    _unrecorded_attributes = frozenset(RECIPE_FIELDS)
+
+    def __init__(self, entry: ConfigEntry) -> None:
+        self.entity_id = RECIPE_ENTITY
+        self._attr_unique_id = f"{entry.entry_id}_recipe"
+        self._attr_native_value = None
+        self._attr_extra_state_attributes = {}
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if (last := await self.async_get_last_state()) and last.state not in ("unknown", "unavailable"):
+            self._attr_native_value = last.state
+            self._attr_extra_state_attributes = {k: last.attributes.get(k) for k in RECIPE_FIELDS}
+        self.async_on_remove(async_dispatcher_connect(self.hass, NEW_RECIPE, self._new))
+
+    @callback
+    def _new(self, recipe: dict) -> None:
+        self._attr_native_value = recipe["title"][:255]
+        self._attr_extra_state_attributes = {k: recipe.get(k) for k in RECIPE_FIELDS}
+        self.async_write_ha_state()

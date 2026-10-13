@@ -3,7 +3,8 @@ house.House, and does what it answers: Repairs issues, the push, the pick after 
 thing that ever changes which Shows are main update Shows, so nothing can race for the job.
 
 Each look also works out where each Show's music plays (music.py), so a Show moved to another room
-plays there without anything being set up again."""
+plays there without anything being set up again. And it keeps each Show's Recipes and Updates by voice,
+which decide what the voice assistant is offered on that Show (llm.py)."""
 
 from __future__ import annotations
 
@@ -24,10 +25,12 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import (CHANGED, CONF_MAIN, CONF_NOTIFY, DOMAIN, ISSUE_MISSING, ISSUE_NO_MAIN,
-                    ISSUE_PICKED, MAIN_SELECT, MANUFACTURERS, PUSH, STORE_KEY, STORE_VERSION)
+from .const import (CHANGED, CONF_MAIN, CONF_NOTIFY, CONF_SEARXNG, DOMAIN, ISSUE_MISSING, ISSUE_NO_MAIN,
+                    ISSUE_PICKED, MAIN_SELECT, MANUFACTURERS, PUSH, RECIPES, SHOW_RECIPE, STORE_KEY,
+                    STORE_VERSION, VOICE_UPDATES)
 from .house import ASK, PICK, House, Show, recommend
 from .music import Player, falls_back_to, own_player, plays_on, room_player
+from .recipe import show_action
 
 LOGGER = logging.getLogger(__name__)
 LOOK_EVERY = timedelta(minutes=1)
@@ -134,6 +137,8 @@ class GenbuHouse:
         self.players: list[Player] = []
         self.music: dict[str, str] = {}  # where each Show's music plays, by device id
         self.fallback: dict[str, str] = {}  # where it goes when that player is offline, by device id
+        self.cooking: set[str] = set()  # the Shows looking a recipe up right now, by device id
+        self.had_search = False  # whether a recipe search was set up when the entry was
         self._watched: set[str] = set()
         self._player_ids: set[str] = set()
         self._stops: list = []
@@ -237,6 +242,33 @@ class GenbuHouse:
         self._save()
         await self.async_refresh()
 
+    @property
+    def searxng(self) -> str:
+        return str(self.entry.options.get(CONF_SEARXNG) or "").rstrip("/")
+
+    def show(self, device: str | None) -> Show | None:
+        return next((s for s in self.shows if device and s.device == device), None)
+
+    def recipe_page(self, show: Show) -> bool:
+        """Whether the Show can put the recipe page up: its firmware has the action for it."""
+        actions = list(self.hass.services.async_services_for_domain("esphome"))
+        return show_action(actions, [show.name, show.node], True, SHOW_RECIPE) is not None
+
+    def switched_on(self, show: Show, key: str) -> bool:
+        """A Show's Recipes or Updates by voice. Until somebody switches it, Updates by voice is on, and
+        Recipes is on where there is a recipe search and the Show has the recipe page."""
+        on = self.house.switch(show.device, key)
+        if on is not None:
+            return on
+        if key == RECIPES:
+            return bool(self.searxng) and self.recipe_page(show)
+        return key == VOICE_UPDATES
+
+    async def async_switch(self, device: str, key: str, on: bool) -> None:
+        self.house.set_switch(device, key, on)
+        self._save()
+        async_dispatcher_send(self.hass, CHANGED)
+
     def usual_player(self, show: Show) -> str:
         """Where the Show's music goes when nothing is picked for it."""
         return plays_on("", show.area, [show.name, show.node], self.players, show.mac)
@@ -292,6 +324,7 @@ class GenbuHouse:
                 devices.async_remove_device(device.id)
                 forgot = forgot or bool(self.house.music_choice(show))
                 self.house.choose_music(show, "")
+                self.house.data["switches"].pop(show, None)
             elif show in names and device.name != names[show]:
                 devices.async_update_device(device.id, name=names[show])
         return forgot

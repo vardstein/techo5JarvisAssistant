@@ -24,11 +24,13 @@
         "description": "{main} ist der Haupt-Update-Show. Ändern kannst du das in select.genbu_main_update_show.",
         "data": {
           "extra_mains": "Weitere Haupt-Update-Shows",
-          "notify_service": "Handy für Hinweise"
+          "notify_service": "Handy für Hinweise",
+          "searxng_url": "Rezeptsuche"
         },
         "data_description": {
           "extra_mains": "Einer reicht meistens. Mit mehreren folgen die anderen Shows dem, der die neueste Version hat.",
-          "notify_service": "Ein Notify-Dienst, z. B. mobile_app_mein_handy. Er bekommt eine Nachricht, wenn ein Haupt-Update-Show einen Tag offline ist."
+          "notify_service": "Ein Notify-Dienst, z. B. mobile_app_mein_handy. Er bekommt eine Nachricht, wenn ein Haupt-Update-Show einen Tag offline ist.",
+          "searxng_url": "Die Adresse deines SearXNG, z. B. http://10.0.0.5:8080. Damit kann ein Genbu Show auf Zuruf ein Rezept suchen und auf seinem Bildschirm zeigen (sein Schalter Rezepte). Leer: keine Rezepte."
         }
       },
       "second": {
@@ -39,6 +41,9 @@
           "second_yes": "Ja, hinzufügen"
         }
       }
+    },
+    "error": {
+      "searxng": "Das ist keine http- oder https-Adresse."
     }
   },
   "issues": {
@@ -117,6 +122,14 @@
     "sensor": {
       "music_falls_back_to": {
         "name": "Musik weicht aus auf"
+      }
+    },
+    "switch": {
+      "recipes": {
+        "name": "Rezepte"
+      },
+      "voice_updates": {
+        "name": "Updates per Sprache"
       }
     }
   },

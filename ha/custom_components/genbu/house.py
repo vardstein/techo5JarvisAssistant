@@ -184,12 +184,13 @@ class House:
     told           the missing spells already pushed to a phone
     devices        each Show's node name by device id, to notice a rename
     music          the player picked in each Show's "Music plays on", by device id
+    switches       each Show's Recipes and Updates by voice, by device id, when somebody switched them
     house, since   the house version and when it last changed
     """
 
     def __init__(self, data: dict | None = None) -> None:
         self.data = data if data is not None else {}
-        for k in ("committed", "missing_since", "wait_until", "told", "devices", "music"):
+        for k in ("committed", "missing_since", "wait_until", "told", "devices", "music", "switches"):
             self.data.setdefault(k, {})
         self.data.setdefault("mains", [])
         self.data.setdefault("house", "")
@@ -336,6 +337,20 @@ class House:
             self.data["music"][device] = player
         else:
             self.data["music"].pop(device, None)
+
+    def switch(self, device: str, key: str) -> bool | None:
+        """A Show's switch as somebody set it; None while it is still at its default."""
+        return self.data["switches"].get(device, {}).get(key)
+
+    def set_switch(self, device: str, key: str, on: bool | None) -> None:
+        """None forgets it, back to the default."""
+        mine = self.data["switches"].setdefault(device, {})
+        if on is None:
+            mine.pop(key, None)
+        else:
+            mine[key] = on
+        if not mine:
+            del self.data["switches"][device]
 
     def wait_more(self, node: str, now: datetime) -> None:
         self.data["wait_until"][node] = _iso(now + WAIT_MORE)

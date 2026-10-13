@@ -1,10 +1,12 @@
 /*
- * The recipe Jarvis last looked up (sensor.jarvis_recipe, from the
- * jarvis_recipe integration): the dish and where it is from along the top,
+ * The recipe Jarvis last looked up (sensor.genbu_recipe, from Genbu
+ * Assistant's recipe search): the dish and where it is from along the top,
  * the ingredients on the left, the steps on the right, numbered. Big enough
  * to read from the stove.
  *
- * entity is the sensor, sensor.jarvis_recipe unless you renamed it.
+ * entity is the sensor, sensor.genbu_recipe unless you renamed it. While
+ * the old Genbu Rezepte (sensor.jarvis_recipe) is still there, the card
+ * shows whichever of the two found a recipe last.
  *
  * Every size is a multiple of --u, one pixel of the 1280x800 screen this
  * card was laid out on, limited by whichever side of the screen is
@@ -15,7 +17,7 @@
 class JarvisRecipeCard extends HTMLElement {
   setConfig(config) {
     this._config = {
-      entity: config.entity || "sensor.jarvis_recipe"
+      entity: config.entity || "sensor.genbu_recipe"
     };
     this._marker = undefined;
     this._render();
@@ -41,7 +43,7 @@ class JarvisRecipeCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    const state = hass.states[this._config?.entity];
+    const state = this._state();
     const marker = state ? state.state + "|" + state.last_updated : "-";
     if (marker !== this._marker) {
       this._marker = marker;
@@ -88,11 +90,24 @@ class JarvisRecipeCard extends HTMLElement {
     return facts;
   }
 
+  _state() {
+    // Genbu Rezepte's sensor and Genbu Assistant's stand in for each other for
+    // one release, so a page made for either shows the newest recipe.
+    const states = this._hass?.states || {};
+    const own = this._config?.entity;
+    const both = ["sensor.genbu_recipe", "sensor.jarvis_recipe"];
+    const names = both.includes(own) ? [own, ...both.filter((n) => n !== own)] : [own];
+    const found = names.map((n) => states[n]).filter(Boolean);
+    const full = found.filter((s) => !["unknown", "unavailable", ""].includes(s.state));
+    const pick = full.length ? full : found;
+    return pick.reduce((a, b) => (b.last_changed > a.last_changed ? b : a), pick[0]);
+  }
+
   _render() {
     if (!this._config) {
       return;
     }
-    const state = this._hass?.states[this._config.entity];
+    const state = this._state();
     const empty = !state || ["unknown", "unavailable", ""].includes(state.state);
     const attributes = state?.attributes || {};
     const ingredients = this._list(attributes.ingredients);
@@ -103,7 +118,7 @@ class JarvisRecipeCard extends HTMLElement {
     if (!this._hass) {
       body = `<div class="empty">Lade…</div>`;
     } else if (!state) {
-      body = `<div class="empty">${this._escape(this._config.entity)} fehlt<small>Ist Genbu Rezepte eingerichtet?</small></div>`;
+      body = `<div class="empty">${this._escape(this._config.entity)} fehlt<small>Ist in Genbu Assistant eine Rezeptsuche eingerichtet?</small></div>`;
     } else if (empty) {
       body = `<div class="empty">Noch kein Rezept<small>Frag Jarvis nach einem, etwa „Wie mache ich Pfannkuchen?“</small></div>`;
     } else {
