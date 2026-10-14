@@ -22,9 +22,8 @@ TWRP_SHA256_BY_BOARD: dict[str, str | None] = {
     "crown": TWRP_SHA256,
     # bin/twrp.img of the pinned amonet-checkers-v2.0.1.zip (jarvis_crown/assets.py), 16.1.0-20260812
     "checkers": "dcc75bb651894c343039d45af73c4d900594762f6f55187c1ebdaf12d0ae59f5",
-    # bin/twrp.img of amonet-cronos-v2.0.1.zip, pinned once that zip is reviewed. Until then recovery
-    # refuses to boot any TWRP on cronos.
-    "cronos": None,
+    # bin/twrp.img of the pinned amonet-cronos-v2.0.1.zip, 16.1.0-20260812
+    "cronos": "09a72dab093e9f4d444733bd4517af09444a0904a9a5243277df0ecd263873d8",
 }
 SMALL_PARTITIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 14, 15)
 BOOT_AREAS = ("boot0", "boot1")

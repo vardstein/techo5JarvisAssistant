@@ -58,10 +58,11 @@ compares every file in it with the public source (R0rt1z2/amonet) and sorts them
 - binaries only the zip carries (preloader, LK, TZ, kaeru, and so on).
 
 Then it stops. The hash goes into `tools/jarvis_crown/assets.py` only after someone has read that
-list. The crown and checkers 2.0.1 zips went through this on 2026-10-09 and are pinned.
-The cronos (Echo Show 5 2nd gen) zip has not been through it yet. Until it has, there is no pin for
-it or for its TWRP, so `unlock` refuses a cronos unless you pass reviewed hashes with `--amonet-hashes`,
-and recovery refuses to boot any TWRP on it. Its boot image is pinned: upstream TECHO5 stopped making
+list. The crown and checkers 2.0.1 zips went through this on 2026-10-09 and are pinned, and the
+cronos (Echo Show 5 2nd gen) zip on 2026-10-14, together with its TWRP. The unlock payload hashes are
+only built in for crown, the board they were proven on. A checkers or cronos `unlock` refuses until
+you pass the hashes of the unpacked files with `--amonet-hashes`, and that first run is the proof.
+The cronos boot image is pinned: upstream TECHO5 stopped making
 cronos boot images after v0.7.16, and that is the one used. A cronos install also needs a Genbu release
 whose root filesystem lists cronos; releases up to v1.2.2 don't. The OpenJade boot logo isn't there for
 cronos yet, so it keeps the stock one.

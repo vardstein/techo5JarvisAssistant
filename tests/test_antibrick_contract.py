@@ -19,18 +19,25 @@ class AntiBrickContractTests(unittest.TestCase):
         self.assertEqual(PROFILES["cronos"].fastboot_product, "CRONOS")
         self.assertNotIn("CRONOS", KNOWN_UNSUPPORTED_PRODUCTS)
 
-    def test_cronos_boot_is_pinned_but_twrp_and_amonet_are_not(self):
+    def test_cronos_boot_twrp_and_amonet_are_pinned_but_unlock_stays_blocked(self):
         from jarvis_crown.assets import assets_for
         # Upstream TECHO5 v0.7.16 techo5-boot-v0.7.16.img, the last release with a cronos boot image.
         self.assertEqual(
             BOOT_SHA256_BY_BOARD["cronos"],
             "7e9ce93a54fc613cbfab5d15929aa06bfd6f63c2c432d6f8261b3599fc3cd791",
         )
-        self.assertIsNone(TWRP_SHA256_BY_BOARD["cronos"])
+        # bin/twrp.img and the zip itself, reviewed 2026-10-14.
+        self.assertEqual(
+            TWRP_SHA256_BY_BOARD["cronos"],
+            "09a72dab093e9f4d444733bd4517af09444a0904a9a5243277df0ecd263873d8",
+        )
         amonet = [a for a in assets_for("cronos") if a.kind == "amonet"]
         self.assertEqual(len(amonet), 1)
-        self.assertEqual(amonet[0].sha256, "")
+        self.assertEqual(amonet[0].sha256, "07a49c8fb2b244330297810b261333ba23976eca5ab3e0d9032f45f4c9847621")
+        self.assertEqual(amonet[0].size, 44403627)
         self.assertTrue(amonet[0].manual)
+        unlock_source = (ROOT / "tools/jarvis_crown/unlock.py").read_text(encoding="utf-8")
+        self.assertIn("Amonet bundle has not been cryptographically pinned", unlock_source)
 
     def test_checkers_boot_and_twrp_are_pinned_but_unlock_stays_blocked(self):
         self.assertEqual(
