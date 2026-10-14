@@ -84,6 +84,12 @@ type Engine struct {
 	// gives none. See SecondTryReach.
 	SecondTry func(slot int) bool
 
+	// Playback is whether a slot's wake word is judged against NearMiss right now rather than its own
+	// threshold: while the device's own playback buries the word, an attempt that would only have been a
+	// near miss starts the turn at once instead of asking to be said again. It is given the id of the
+	// model in the slot, because only some models stay quiet enough over music for that. Nil never does.
+	Playback func(slot int, id string) bool
+
 	// OnNearMiss runs when an utterance peaked over NearMiss and fell away without firing, with the peak
 	// it reached, off the audio path. A near miss is the only sign the device gets that somebody tried
 	// and was not heard, which is the one moment when getting out of their way is worth something.
@@ -426,6 +432,9 @@ func (e *Engine) judge(n int, s *slot, score float64, now time.Time, source *mic
 	second := now.Before(s.eased) && e.SecondTry != nil && e.SecondTry(n)
 	if second {
 		cutoff = max(cutoff-SecondTryEase, SecondTryFloor)
+	}
+	if e.Playback != nil && e.Playback(n, s.model.ID) {
+		cutoff = min(cutoff, NearMiss)
 	}
 
 	if now.Before(s.quiet) {

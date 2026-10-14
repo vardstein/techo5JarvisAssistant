@@ -424,6 +424,11 @@ guessing. In ours, real wakes scored 0.94 and up, misses while music played 0.79
 and the music alone about 0.6. 0.80 catches the misses and stays clear of the music. Go up again
 if it wakes when nobody said anything.
 
+While the Show's own music is loud, Okay Nabu only has to reach 0.5, so saying it once over the
+music is enough. It gets that because four hours of songs with vocals never pushed it above 0.08.
+Other wake words keep their sensitivity over music. For them, **Lower music for a second try**
+turns the music down for a few seconds after a near miss, so the next try gets through.
+
 ## Music in the same room
 
 The Show turns down what it plays itself while you talk. A separate speaker in the room playing

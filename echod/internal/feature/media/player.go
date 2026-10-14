@@ -259,7 +259,7 @@ func build() *Player {
 		nearMiss: &esphome.Switch{
 			Base: esphome.Base{
 				ObjectID: "duck_on_near_miss",
-				Name:     "Duck after a near miss",
+				Name:     "Lower music for a second try",
 				Icon:     "mdi:volume-low",
 				Category: esphome.CategoryConfig,
 			},
