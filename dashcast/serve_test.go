@@ -126,6 +126,10 @@ func TestJarvisShowApplianceProfiles(t *testing.T) {
 	}{
 		{board: "crown", w: 1280, h: 800},
 		{board: "checkers", w: 960, h: 480},
+		{board: "cronos", w: 960, h: 480},
+	}
+	if len(tests) != len(showBoards) {
+		t.Fatalf("this table has %d boards and showBoards %v; add the new one here", len(tests), showBoardNames())
 	}
 	for _, tc := range tests {
 		t.Run(tc.board, func(t *testing.T) {
@@ -153,7 +157,7 @@ func TestGenericDashcastHelloIsUnchanged(t *testing.T) {
 
 func TestUnknownJarvisShowBoardFailsClosed(t *testing.T) {
 	h := hello{W: 1, H: 1, Path: "/bad"}
-	if applyApplianceProfile(&h, "cronos") {
+	if applyApplianceProfile(&h, "not-a-show") {
 		t.Fatal("unsupported board accepted")
 	}
 }

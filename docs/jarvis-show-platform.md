@@ -17,10 +17,11 @@ Crown destructive assets are pinned from the user's known-good archive. Checkers
 
 ## Dashcast
 
-Set `JARVIS_SHOW_BOARD=crown` or `JARVIS_SHOW_BOARD=checkers`. Appliance mode then owns the viewport and browser chrome:
+Set `JARVIS_SHOW_BOARD` to `crown`, `checkers` or `cronos`. Appliance mode then owns the viewport and browser chrome:
 
 - Crown: 1280x800
 - Checkers: 960x480
+- Cronos: 960x480
 - route: `/jarvis-display`
 - kiosk/headerless/sidebarless: enforced server-side
 

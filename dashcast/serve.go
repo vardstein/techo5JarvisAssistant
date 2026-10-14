@@ -15,6 +15,7 @@ import (
 	"image/png"
 	"log/slog"
 	"net"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -75,6 +76,26 @@ type hello struct {
 // (browser.go, musicScript): a screen anyone can touch is not where its providers and players are set up.
 const pageMusic = "music"
 
+// showBoards is every Jarvis Show board dashcast serves, with its screen size. main.go checks
+// JARVIS_SHOW_BOARD against it and applyApplianceProfile takes the size from it, so a board is either
+// here for both or for neither. tests/test_show_board_lists.py keeps it in step with echod's update
+// boards and the installer's board profiles.
+var showBoards = map[string]struct{ w, h int }{
+	"crown":    {1280, 800},
+	"checkers": {960, 480},
+	"cronos":   {960, 480},
+}
+
+// showBoardNames is showBoards' names in order, for messages.
+func showBoardNames() []string {
+	names := make([]string, 0, len(showBoards))
+	for name := range showBoards {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 func applyApplianceProfile(h *hello, board string) bool {
 	if board == "" {
 		return true
@@ -82,14 +103,11 @@ func applyApplianceProfile(h *hello, board string) bool {
 	// Jarvis Show is an appliance, not a generic browser client. The server owns the viewport,
 	// path and browser chrome contract so stale/misconfigured device state cannot reintroduce the
 	// old header/black-bar problems. Board geometry is fixed server-side.
-	switch board {
-	case "crown":
-		h.W, h.H = 1280, 800
-	case "checkers":
-		h.W, h.H = 960, 480
-	default:
+	size, ok := showBoards[board]
+	if !ok {
 		return false
 	}
+	h.W, h.H = size.w, size.h
 	h.Path = "/jarvis-display"
 	h.Kiosk = true
 	return true

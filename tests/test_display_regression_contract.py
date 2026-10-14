@@ -27,10 +27,10 @@ def kiosk_script() -> str:
 class DisplayRegressionContractTests(unittest.TestCase):
     def test_appliance_profiles_force_first_gen_geometry_and_jarvis_path(self):
         src = SERVE_GO.read_text(encoding="utf-8")
-        self.assertIn('case "crown":', src)
-        self.assertIn('h.W, h.H = 1280, 800', src)
-        self.assertIn('case "checkers":', src)
-        self.assertIn('h.W, h.H = 960, 480', src)
+        self.assertRegex(src, r'"crown":\s*\{1280, 800\}')
+        self.assertRegex(src, r'"checkers":\s*\{960, 480\}')
+        self.assertRegex(src, r'"cronos":\s*\{960, 480\}')
+        self.assertIn('h.W, h.H = size.w, size.h', src)
         self.assertIn('h.Path = "/jarvis-display"', src)
         self.assertIn('h.Kiosk = true', src)
 
