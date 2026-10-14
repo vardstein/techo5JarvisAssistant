@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/HuskerMinion/techo5/echod/internal/lib/alsa"
+	"github.com/HuskerMinion/techo5/echod/internal/service"
 )
 
 // flaky underruns a few times before taking anything, and keeps what it was handed each time.
@@ -149,5 +150,57 @@ func TestAWriterThatTakesNothingIsNotASpin(t *testing.T) {
 	err := p.send(context.Background(), writerFunc(func([]byte) (int, error) { return 0, nil }), []byte{1, 2})
 	if !errors.Is(err, io.ErrShortWrite) {
 		t.Errorf("send = %v, want io.ErrShortWrite", err)
+	}
+}
+
+// A driver that underruns after every few periods is stuck, not starved, and the stream has to be
+// opened again: re-preparing it is what a write already does, and it never came back from that
+// (GENBU-202). Asking for a restart is what gets the supervisor to close and open the device.
+func TestUnderrunsBackToBackAskForARestart(t *testing.T) {
+	p := &Player{}
+	writes := 0
+	stuck := writerFunc(func(b []byte) (int, error) {
+		writes++
+		if writes%4 == 0 {
+			return 0, alsa.ErrUnderrun
+		}
+		return len(b), nil
+	})
+
+	var err error
+	for range 1000 {
+		if err = p.send(context.Background(), stuck, []byte{1, 2}); err != nil {
+			break
+		}
+	}
+
+	if !errors.Is(err, errStuck) || !errors.Is(err, service.ErrRestart) {
+		t.Fatalf("send = %v, want errStuck asking for a restart", err)
+	}
+	if p.Underruns() != stormUnderruns {
+		t.Errorf("gave up after %d underruns, want %d", p.Underruns(), stormUnderruns)
+	}
+}
+
+// An underrun now and then is the loop being late, which a prepare recovers from. However many there
+// are over a day, a calm second between them means the stream is fine.
+func TestUnderrunsWithCalmBetweenThemDoNotRestart(t *testing.T) {
+	p := &Player{}
+	writes := 0
+	late := writerFunc(func(b []byte) (int, error) {
+		writes++
+		if writes%(calmPeriods+2) == 0 {
+			return 0, alsa.ErrUnderrun
+		}
+		return len(b), nil
+	})
+
+	for i := range stormUnderruns * 3 * (calmPeriods + 2) {
+		if err := p.send(context.Background(), late, []byte{1, 2}); err != nil {
+			t.Fatalf("send %d = %v after %d underruns, want nil", i, err, p.Underruns())
+		}
+	}
+	if p.Underruns() < 2*stormUnderruns {
+		t.Fatalf("only %d underruns, the test is not exercising anything", p.Underruns())
 	}
 }

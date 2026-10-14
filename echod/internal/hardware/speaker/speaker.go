@@ -39,7 +39,19 @@ const (
 	// codecSettle is how long the codec sits powered and idle before the amplifier is enabled,
 	// measured from the vendor HAL doing the same thing on a route change.
 	codecSettle = 1100 * time.Millisecond
+
+	// stormUnderruns underruns with no calm stretch between them mean the driver is stuck rather than
+	// the loop late, and calmPeriods (about a second of periods written without one) is that stretch.
+	// One stall costs one underrun, two at most; a stuck MediaTek DL1 ring (2026-10-14, GENBU-202)
+	// costs about fifteen a second for as long as nobody reopens the device.
+	stormUnderruns = 10
+	calmPeriods    = Rate / period
 )
+
+// errStuck is the stream underrunning back to back. Preparing it again, which is all a write does
+// after an underrun, does not bring the DL1 driver out of that state; closing and opening the device
+// does, so the speaker asks the supervisor for the restart that does both.
+var errStuck = fmt.Errorf("speaker: playback stuck underrunning: %w", service.ErrRestart)
 
 // VoiceRate is the rate Home Assistant's pipeline works at, and VoiceUpsample how many playback
 // samples each of its samples becomes.
@@ -103,6 +115,11 @@ type Player struct {
 	// underruns is the card running out while we were away. Write blocks against the whole ring, so
 	// each one means the loop was starved for as long as the ring is deep.
 	underruns atomic.Uint64
+
+	// streak is underruns since the stream last ran calm, and calm the periods written since the last
+	// underrun. Both belong to the write loop alone. See stormUnderruns.
+	streak int
+	calm   int
 
 	// deaf counts what was thrown away for want of a device.
 	deaf atomic.Uint64
@@ -372,7 +389,11 @@ func (p *Player) Run(ctx context.Context) error {
 	p.amp(true)
 	slog.Info("playback path up", "output", out)
 	p.OnOutput.Emit(out)
-	safe.Go("jack watcher", func() { p.watchJack(ctx) })
+	// The watcher lives as long as this Run: a restart starts its own.
+	jack, stop := context.WithCancel(ctx)
+	defer stop()
+	safe.Go("jack watcher", func() { p.watchJack(jack) })
+	p.streak, p.calm = 0, 0
 
 	silence := make([]byte, len(buf))
 	for {
@@ -404,11 +425,16 @@ func (p *Player) Run(ctx context.Context) error {
 //
 // The driver may also take only part of it: a signal that lands mid-write, and the runtime sends one
 // to preempt goroutines, ends the write with however many frames had gone in. The rest follow.
+//
+// Underruns that keep coming are errStuck: see stormUnderruns.
 func (p *Player) send(ctx context.Context, to io.Writer, buf []byte) error {
 	for {
 		n, err := to.Write(buf)
 		if err == nil {
 			if n >= len(buf) {
+				if p.calm++; p.calm >= calmPeriods {
+					p.streak = 0
+				}
 				return nil
 			}
 			if n <= 0 {
@@ -429,6 +455,12 @@ func (p *Player) send(ctx context.Context, to io.Writer, buf []byte) error {
 		}
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		p.calm = 0
+		if p.streak++; p.streak >= stormUnderruns {
+			slog.Warn("playback keeps underrunning, opening the device again", "underruns", p.streak)
+			p.streak = 0
+			return errStuck
 		}
 	}
 }
