@@ -112,12 +112,17 @@ ASSETS: dict[str, tuple[Asset, ...]] = {
             BOOT_SHA256_BY_BOARD["cronos"] or "", 13553664,
             "HuskerMinion/techo5 v0.7.16 (signed manifest)",
         ),
-        # Not reviewed yet: no sha256, so the fetcher only inspects it and the installer never uses it.
-        # The attachment link is on the first post of the thread.
+        # Reviewed 2026-10-14: update-binary and the scripts match R0rt1z2/amonet mt8163-echo-show
+        # (main.py/common.py as of 999f8d0ab5; the two commits after it only speed up bootrom-mode eMMC
+        # writes), fastbrick.sh and fastboot(32) are the bytes unlock.py pins for crown, device.prop says
+        # cronos, twrp.img is the 16.1.0-20260812 omni_cronos build, and cronos-kaeru.bin is the stock
+        # kaeru install-show.py's LOGO_KAERU pins. Preloader, LK, TZ and fastbrick.img exist only in
+        # this zip. The attachment link is on the first post of the thread.
         Asset(
             "amonet", "amonet-cronos-v2.0.1.zip",
-            XDA_CRONOS_THREAD, "", 0,
-            "XDA thread 4772596 (R0rt1z2), browser download, not reviewed yet",
+            XDA_CRONOS_THREAD,
+            "07a49c8fb2b244330297810b261333ba23976eca5ab3e0d9032f45f4c9847621", 44403627,
+            "XDA thread 4772596 (R0rt1z2), browser download (XDA's CDN refuses scripts)",
             manual=True,
         ),
     ),

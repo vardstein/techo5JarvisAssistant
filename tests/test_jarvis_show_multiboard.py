@@ -282,7 +282,7 @@ class MultiBoardTests(unittest.TestCase):
             with self.assertRaisesRegex(InstallError, "invalid supported boards"):
                 verify_jarvis_rootfs(broken, digest(broken), board="crown")
 
-    def test_cronos_unlock_and_twrp_stay_closed_until_pinned(self):
+    def test_cronos_unlock_stays_closed_and_twrp_is_held_to_its_pin(self):
         identity = DeviceIdentity("CRN123", "CRONOS", False, "lk")
         with tempfile.TemporaryDirectory() as td_s:
             td = pathlib.Path(td_s)
@@ -294,7 +294,7 @@ class MultiBoardTests(unittest.TestCase):
             twrp = td / "bundle" / "amonet" / "bin" / "twrp.img"
             twrp.parent.mkdir(parents=True)
             twrp.write_bytes(b"twrp")
-            with self.assertRaisesRegex(recovery.RecoveryError, "cronos TWRP image has not been cryptographically pinned"):
+            with self.assertRaisesRegex(recovery.RecoveryError, "TWRP image hash mismatch for cronos"):
                 recovery._pinned_twrp(td / "bundle", "cronos")
 
     def test_cronos_reads_its_own_signed_manifest(self):
