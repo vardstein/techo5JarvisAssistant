@@ -150,12 +150,16 @@ Before execution, Jarvis Crown SHA-256 verifies the exact known-good archived by
 - `bin/fastboot` and `bin/fastboot32`.
 
 A hash mismatch is fatal. The wrapper runs only the pinned `fastbrick.sh`; it does not duplicate or
-rewrite the exploit. When Amonet exits, Jarvis Crown treats the state as unproven until the read-only
-J18 gate sees the same fastboot serial, `product=CROWN`, and `unlock_status=true`. A timeout, Amonet
-error, serial change, or persistent locked state stops the workflow and requires re-identification
-before any retry.
+rewrite the exploit. Its output is shown as it runs. Only an exit after "Exploit most likely
+successful!" counts; worn-out eMMC and device mismatch are reported as such. The Show then writes for
+up to five minutes and boots TWRP, and Jarvis Crown waits for that by polling `adb devices` only. The
+state stays unproven until one TWRP device passes the board check with the same serial; failing that,
+one last read-only J18 check must see the same serial, `product=CROWN` and `unlock_status=true`. A
+timeout, Amonet error, serial change, or persistent locked state stops the workflow, tells the user to
+keep the Show powered, and requires re-identification before any retry.
 
-J19 does not flash TWRP, write TECHO5 partitions, or start the rootfs installer. Those operations are
+J19 itself does not flash TWRP (the Amonet payload installs the TWRP from its bundle), write TECHO5
+partitions, or start the rootfs installer. Those operations are
 separate later gates.
 
 ## J20 — TWRP handoff and recovery backup gate

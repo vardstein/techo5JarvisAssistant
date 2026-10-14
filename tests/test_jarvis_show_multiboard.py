@@ -174,18 +174,30 @@ class MultiBoardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td_s:
             td = pathlib.Path(td_s)
             amonet, hashes = make_amonet(td, "checkers")
-            run = mock.Mock(return_value=cp(["bash", "fastbrick.sh"]))
+            run = mock.Mock(return_value=unlock.FastbrickResult(0, "Exploit most likely successful!\n"))
             with self.assertRaisesRegex(unlock.UnlockError, "not been cryptographically pinned"):
                 unlock.unlock_show(identity, amonet, confirmation="UNLOCK", run=run)
             run.assert_not_called()
             with self.assertRaisesRegex(unlock.UnlockError, "exact confirmation"):
                 unlock.unlock_show(identity, amonet, confirmation="UNLOCK NOW", run=run, expected_hashes=hashes)
             run.assert_not_called()
+
+            def adb(argv, **kwargs):
+                if argv == ["adb", "devices"]:
+                    return cp(argv, stdout="List of devices attached\nTWRP-CHK\trecovery\n")
+                answers = {
+                    "getprop ro.product.device": "checkers",
+                    "id": "uid=0(root)",
+                    "test -b /dev/block/mmcblk0p9 && echo OK": "OK",
+                    "getprop ro.serialno": "CHK123",
+                }
+                return cp(argv, stdout=answers.get(argv[-1], "PLAIN") + "\n")
+
             result = unlock.unlock_show(
                 identity, amonet, confirmation="UNLOCK",
-                run=run, expected_hashes=hashes,
-                identify=lambda: DeviceIdentity("CHK123", "CHECKERS", True, "lk"),
-                sleep=lambda _: None,
+                run=run, expected_hashes=hashes, adb_run=adb,
+                identify=lambda: self.fail("fastboot is not asked when TWRP answers"),
+                sleep=lambda _: None, say=lambda _line: None,
             )
             self.assertTrue(result.amonet_invoked)
             self.assertTrue(result.identity.unlocked)
