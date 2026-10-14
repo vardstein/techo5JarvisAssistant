@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import functools
 import os
 from pathlib import Path
 import re
@@ -20,7 +21,7 @@ from jarvis_crown.assets import amonet_bundle_dir, asset_path, assets_for, defau
 from jarvis_crown.boot_logo import BootLogoError, SshClient, put_logo  # noqa: E402
 from jarvis_crown.boards import profile_for_board, profile_for_product  # noqa: E402
 from jarvis_crown.device_gate import DeviceGateError, identify_show  # noqa: E402
-from jarvis_crown.flow import FlowError, InstallInputs, run_install_flow  # noqa: E402
+from jarvis_crown.flow import FlowDeps, FlowError, InstallInputs, run_install_flow  # noqa: E402
 from jarvis_crown import genbu  # noqa: E402
 from jarvis_crown import home_assistant as ha_api  # noqa: E402
 from jarvis_crown import ui  # noqa: E402
@@ -33,7 +34,7 @@ from jarvis_crown.preflight import SERIAL_GROUPS, _group_names, preflight_ok, pr
 from jarvis_crown.recovery import RecoveryError, adb_recovery_serials, identify_recovery_show  # noqa: E402
 from jarvis_crown.to_fastboot import ToFastbootError, bring_to_fastboot  # noqa: E402
 from jarvis_crown.releases import CHANNELS, DEFAULT_CHANNEL, ReleaseError, fetch_rootfs  # noqa: E402
-from jarvis_crown.unlock import UnlockError, unlock_show  # noqa: E402
+from jarvis_crown.unlock import UnlockError, unlock_show, unlock_warnings  # noqa: E402
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -938,9 +939,9 @@ def _main() -> int:
 
         def confirm_unlock(p):
             build = identity.lk_build_desc if identity is not None else None
-            ui.out.caution(f"unlocking {p.model} runs the board-specific Amonet exploit.")
+            for line in unlock_warnings(p):
+                ui.out.caution(line)
             ui.out.caution(f"detected LK build: {build or 'UNREADABLE'}")
-            ui.out.caution("bootloader exploits inherently carry brick risk; keep mains power connected and do not interrupt writes.")
             return ui.out.typed(p.unlock_confirmation)
 
         def confirm_install(p):
@@ -981,6 +982,7 @@ def _main() -> int:
                     inputs,
                     confirm_unlock=confirm_unlock,
                     confirm_install=confirm_install,
+                    deps=FlowDeps(unlock=functools.partial(unlock_show, say=ui.out.note)),
                     progress=lambda stage: ui.out.step(STAGES.get(stage, stage)),
                     initial_identity=identity if identity_source == "recovery" else None,
                 )
@@ -1023,9 +1025,9 @@ def _main() -> int:
         ui.out.done(f"{profile.model} already unlocked; Amonet will not run")
         return 0
 
-    ui.out.caution(f"the next stage intentionally runs Amonet for {profile.board}.")
+    for line in unlock_warnings(profile):
+        ui.out.caution(line)
     ui.out.caution(f"detected LK build: {identity.lk_build_desc or 'UNREADABLE'}")
-    ui.out.caution("bootloader exploits inherently carry brick risk; keep mains power connected and do not interrupt writes.")
     confirmation = ui.out.typed(profile.unlock_confirmation)
     try:
         result = unlock_show(
@@ -1033,6 +1035,7 @@ def _main() -> int:
             amonet,
             confirmation=confirmation,
             expected_hashes=amonet_hashes,
+            say=ui.out.note,
         )
     except UnlockError as exc:
         ui.out.fail(f"{profile.board} unlock: {exc}")
@@ -1040,7 +1043,7 @@ def _main() -> int:
     if not result.identity.unlocked:
         ui.out.fail("unlock result was not proven")
         return 3
-    ui.out.done("unlock_status=true re-confirmed read-only after Amonet")
+    ui.out.done("bootloader unlocked: the same Show came up in TWRP, so it's safe to handle again")
     return 0
 
 

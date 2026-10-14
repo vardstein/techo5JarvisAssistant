@@ -13,7 +13,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from jarvis_crown.device_gate import DeviceGateError, identify_crown  # noqa: E402
 from jarvis_crown.preflight import preflight_ok, print_checks, run_preflight  # noqa: E402
-from jarvis_crown.unlock import CONFIRM_PHRASE, UnlockError, unlock_crown  # noqa: E402
+from jarvis_crown.boards import profile_for_board  # noqa: E402
+from jarvis_crown.unlock import CONFIRM_PHRASE, UnlockError, unlock_crown, unlock_warnings  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -71,8 +72,8 @@ def main() -> int:
         return 0
 
     print()
-    print("WARN: the next stage intentionally runs the pinned Amonet Crown unlock exploit.")
-    print("WARN: do not disconnect power/USB while Amonet is operating.")
+    for line in unlock_warnings(profile_for_board("crown")):
+        print(f"WARN: {line}")
     confirmation = input(f"Type {CONFIRM_PHRASE} to continue: ").strip()
     try:
         result = unlock_crown(
@@ -84,7 +85,7 @@ def main() -> int:
         print(f"FAIL: Crown unlock: {exc}", file=sys.stderr)
         return 3
     if result.identity.unlocked:
-        print("PASS: unlock_status=true re-confirmed read-only after Amonet")
+        print("PASS: bootloader unlocked; the same Show came up in TWRP")
         print("PASS: J19 complete; no TWRP/recovery/partition installation was performed")
         return 0
     print("FAIL: unlock result was not proven", file=sys.stderr)

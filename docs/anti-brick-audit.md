@@ -38,7 +38,7 @@ The known-good Crown Amonet v2.0.1 bundle, TWRP and boot image are SHA-256 pinne
 
 ## WARN — the Amonet unlock itself is inherently destructive
 
-This is the one unavoidable high-risk stage for a locked device. Amonet 2.x writes bootloader-class storage including preloader/LK/TEE/expdb as part of its exploit. Jarvis Show does not reimplement those writes; it executes only the pinned board-specific Amonet package after exact product checks and explicit confirmation, then requires the same device to return with `unlock_status=true`. Do not interrupt power during this stage.
+This is the one unavoidable high-risk stage for a locked device. Amonet 2.x writes bootloader-class storage including preloader/LK/TEE/expdb as part of its exploit. Jarvis Show does not reimplement those writes; it executes only the pinned board-specific Amonet package after exact product checks and explicit confirmation, then waits up to 15 minutes for the same serial to come up in TWRP, sending the Show nothing while it writes. Amonet runs in its own process group, so a timeout or Ctrl-C can't leave a `fastboot flash brick` attempt running behind the installer's back. A worn-out eMMC (`eMMC-RO`) and a refused payload (`Device mismatch`) get their own messages. Do not interrupt power during this stage: on cronos there is no BROM to recover from, so a brick here is permanent.
 
 For an already-unlocked device the Amonet exploit is skipped entirely.
 

@@ -10,7 +10,7 @@ TOOLS = ROOT / "tools"
 sys.path.insert(0, str(TOOLS))
 
 from jarvis_crown import timing, unlock, recovery  # noqa: E402
-from jarvis_crown.device_gate import DeviceGateError, DeviceIdentity  # noqa: E402
+from jarvis_crown.device_gate import DeviceIdentity  # noqa: E402
 from techo5lib import Fastboot  # noqa: E402
 
 SPEC = importlib.util.spec_from_file_location("jarvis_install_show_reconnect", TOOLS / "install-show.py")
@@ -55,7 +55,8 @@ class DummyAdb:
 
 class ReconnectTimingTests(unittest.TestCase):
     def test_stage_budgets_are_generous_but_bounded(self):
-        self.assertGreaterEqual(timing.POST_AMONET_FASTBOOT_TIMEOUT_SECONDS, 300)
+        # Upstream says the payload writes for up to five minutes after the exploit lands.
+        self.assertGreaterEqual(timing.POST_AMONET_TWRP_TIMEOUT_SECONDS, 600)
         self.assertGreaterEqual(timing.TWRP_REENUM_TIMEOUT_SECONDS, 300)
         self.assertGreaterEqual(timing.TWRP_DATA_REBOOT_TIMEOUT_SECONDS, 300)
         self.assertGreaterEqual(timing.FASTBOOT_REENUM_TIMEOUT_SECONDS, 180)
@@ -63,19 +64,35 @@ class ReconnectTimingTests(unittest.TestCase):
         self.assertGreaterEqual(timing.FIRST_BOOT_TIMEOUT_SECONDS, 600)
         self.assertLessEqual(timing.FIRST_BOOT_TIMEOUT_SECONDS, 900)
 
-    def test_unlock_wait_tolerates_device_disappearing_then_returning(self):
+    def test_unlock_wait_tolerates_adb_failing_while_the_show_writes(self):
         original = DeviceIdentity("SERIAL", "CROWN", False, "lk")
-        calls = {"n": 0}
+        calls = {"devices": 0}
+
+        def adb(argv, **kwargs):
+            if argv == ["adb", "devices"]:
+                calls["devices"] += 1
+                if calls["devices"] < 3:
+                    return subprocess.CompletedProcess(argv, 1, "", "daemon not running")
+                if calls["devices"] < 5:
+                    return subprocess.CompletedProcess(argv, 0, "List of devices attached\n", "")
+                return subprocess.CompletedProcess(argv, 0, "List of devices attached\nT1\trecovery\n", "")
+            answers = {
+                "getprop ro.product.device": "crown",
+                "id": "uid=0(root)",
+                "test -b /dev/block/mmcblk0p9 && echo OK": "OK",
+                "getprop ro.serialno": "SERIAL",
+            }
+            return subprocess.CompletedProcess(argv, 0, answers.get(argv[-1], "PLAIN") + "\n", "")
 
         def identify():
-            calls["n"] += 1
-            if calls["n"] < 4:
-                raise DeviceGateError("no fastboot device")
-            return DeviceIdentity("SERIAL", "CROWN", True, "lk")
+            raise AssertionError("fastboot is not asked while waiting for TWRP")
 
-        result = unlock._wait_for_unlocked(original, identify=identify, sleep=lambda _s: None, attempts=5)
+        result = unlock._wait_for_twrp(
+            original, "crown", adb_run=adb, identify=identify,
+            sleep=lambda _s: None, attempts=10, say=lambda _line: None,
+        )
         self.assertTrue(result.unlocked)
-        self.assertEqual(calls["n"], 4)
+        self.assertEqual(calls["devices"], 5)
 
     def test_twrp_default_wait_budget_matches_timing_contract(self):
         budget = recovery.TWRP_WAIT_ATTEMPTS * recovery.TWRP_WAIT_INTERVAL_SECONDS
