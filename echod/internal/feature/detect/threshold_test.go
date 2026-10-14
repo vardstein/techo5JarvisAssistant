@@ -2,7 +2,8 @@ package detect
 
 import "testing"
 
-// The stop word gets an allowance for a playing speaker; the wake words do not.
+// The stop word gets an allowance for a playing speaker; the wake words do not get that one (the few
+// measured safe over music go further, see playback_test.go).
 //
 // While the speaker plays loud, what reaches the detector is the residual and the word scores lower.
 // The stop word is always said over a playing speaker, so its threshold drops by playingSlack then. A
