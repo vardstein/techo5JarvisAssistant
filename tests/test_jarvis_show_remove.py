@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 from jarvis_crown import home_assistant as ha  # noqa: E402
 from jarvis_crown import music_assistant as ma  # noqa: E402
 from jarvis_crown import remove  # noqa: E402
+from jarvis_crown import show_reset  # noqa: E402
 from jarvis_crown.shows import known_shows, record_show, update_show  # noqa: E402
 
 MAC = "0c:ee:00:00:00:05"
@@ -221,32 +222,31 @@ class FindTests(unittest.TestCase):
     def test_music_that_could_not_look_is_said_so(self):
         found = remove.find(FakeHA(), "genbuShow5", music=lambda names, mac: None)
         self.assertFalse(found.music_asked)
-        stays = remove.plan(found)[2]
+        stays = remove.plan(found)[1]
         self.assertTrue(any("not looked at" in s for s in stays))
 
 
 class PlanTests(unittest.TestCase):
-    def test_a_connected_player_waits_for_a_later_run(self):
+    def test_a_connected_player_goes_too(self):
         found = remove.find(FakeHA(), "genbuShow5", music=Music().find)
-        goes, later, stays = remove.plan(found)
+        goes, stays = remove.plan(found)
         self.assertIn("automation techo5_turn_room_down_genbushow5", goes)
         self.assertIn("Home Assistant user 'show_genbushow5'", goes)
         self.assertIn("Music Assistant user 'genbushow5'", goes)
         self.assertTrue(any(g.startswith("ESPHome entry 'genbuShow5' with its 2 devices") for g in goes))
         self.assertIn("genbushow5's place in Genbu", goes)
-        self.assertEqual(len(later), 1)
-        self.assertIn("waits until the Show is unplugged", later[0])
+        self.assertIn("Music Assistant player 'Jarvis Show 5' (and its device in Home Assistant), connected now",
+                      goes)
         self.assertTrue(any(s.startswith("automation.mine uses it") for s in stays))
 
     def test_an_offline_player_goes_now(self):
         found = remove.find(FakeHA(), "genbuShow5", music=Music(players=[dict(PLAYER, available=False)]).find)
-        goes, later, _ = remove.plan(found)
-        self.assertFalse(later)
-        self.assertTrue(any(g.startswith("Music Assistant player 'Jarvis Show 5'") for g in goes))
+        goes, _ = remove.plan(found)
+        self.assertIn("Music Assistant player 'Jarvis Show 5' (and its device in Home Assistant)", goes)
 
     def test_an_older_genbu_is_left_with_a_hint(self):
         found = remove.find(FakeHA(genbu="1.0.0"), "genbuShow5")
-        goes, _, stays = remove.plan(found)
+        goes, stays = remove.plan(found)
         self.assertFalse(any("Genbu" in g for g in goes))
         self.assertTrue(any("older than 1.1.0" in s for s in stays))
 
@@ -283,11 +283,11 @@ class RemoveTests(unittest.TestCase):
         remove.remove(house, remove.find(house, "genbuShow5"), keep=kept()[1], progress=lines.append)
         self.assertIn("Genbu forgot genbushow5; livingroomecho8 is the main update Show now", lines)
 
-    def test_a_connected_player_is_not_sent(self):
+    def test_a_connected_player_is_sent_too(self):
         house, music = FakeHA(), Music()
         found = remove.find(house, "genbuShow5", music=music.find)
         remove.remove(house, found, keep=kept()[1], drop=music.drop, progress=lambda _: None)
-        self.assertEqual(music.dropped, [(["m1"], [])])
+        self.assertEqual(music.dropped, [(["m1"], ["upf6aac30e"])])
 
     def test_a_failed_step_is_reported_and_the_rest_runs(self):
         house = FakeHA()
@@ -309,15 +309,12 @@ class RemoveTests(unittest.TestCase):
 
     def test_run_twice_the_second_finds_only_the_player(self):
         house, music = FakeHA(), Music()
-        remove.remove(house, remove.find(house, "genbuShow5", music=music.find), keep=kept()[1],
-                      progress=lambda _: None)
-        music.users = []
-        music.players[0]["available"] = False
+        remove.remove(house, remove.find(house, "genbuShow5"), keep=kept()[1], progress=lambda _: None)
         again = remove.find(house, "genbuShow5", mac=MAC, music=music.find)
-        goes, later, _ = remove.plan(again)
-        self.assertEqual(len(goes), 1)
-        self.assertTrue(goes[0].startswith("Music Assistant player"))
-        self.assertFalse(later)
+        goes, _ = remove.plan(again)
+        self.assertEqual(len(goes), 2)
+        self.assertTrue(goes[0].startswith("Music Assistant user"))
+        self.assertTrue(goes[1].startswith("Music Assistant player"))
 
 
 SHOW_LABEL = {"label_id": "genbu_show_genbushow5", "name": "Genbu Show: genbushow5"}
@@ -356,7 +353,7 @@ class LabelTests(unittest.TestCase):
                          ["techo5_turn_room_down_genbushow5", "hall_lights_with_show5"])
         self.assertEqual([i for i, _ in found.scripts], ["show5_radio"])
         self.assertEqual([x["label_id"] for x in found.labels], ["genbu_show_genbushow5"])
-        goes, _, stays = remove.plan(found)
+        goes, stays = remove.plan(found)
         self.assertIn("script show5_radio", goes)
         self.assertIn("label 'Genbu Show: genbushow5'", goes)
         self.assertTrue(any("only the 'Genbu Show installed' label" in s for s in stays))
@@ -415,83 +412,86 @@ def _cli():
     return cli
 
 
-class Clock:
-    def __init__(self):
-        self.now = 0.0
+class RemoveShowCommandTests(unittest.TestCase):
+    """The run as a whole: the reset first when asked and it can be, then the house side."""
 
-    def __call__(self):
-        return self.now
-
-    def sleep(self, seconds):
-        self.now += seconds
-
-
-class WaitUnpluggedTests(unittest.TestCase):
     def setUp(self):
         self.cli = _cli()
-        self.found = remove.Found(name="genbuShow5", names=["genbuShow5"], mac=MAC)
-        self.found.players = [dict(PLAYER)]
+        self.reach = show_reset.Reach(host="10.0.0.5", serial="G0000000000005", keeps_wifi=True)
 
-    def wait(self, music, **kw):
-        clock = Clock()
-        with contextlib.redirect_stdout(io.StringIO()) as out:
-            self.cli._wait_unplugged(self.found, music, sleep=clock.sleep, clock=clock, **kw)
-        return out.getvalue(), clock.now
-
-    def test_waits_until_the_player_is_gone(self):
-        answers = iter([([], [dict(PLAYER)]), ([], [dict(PLAYER, available=False)])])
-        out, waited = self.wait(lambda names, mac: next(answers))
-        self.assertEqual(waited, 10)
-        self.assertFalse(self.found.players[0]["available"])
-        self.assertIn("Unplug the Show now", out)
-        self.assertIn("the Show is off the network", out)
-
-    def test_gives_up_after_the_wait_and_keeps_the_player(self):
-        asked = []
-        out, waited = self.wait(lambda names, mac: asked.append(mac) or ([], [dict(PLAYER)]), wait=30)
-        self.assertEqual(waited, 30)
-        self.assertEqual(asked, [MAC] * 6)
-        self.assertIn("still on the network", out)
-        self.assertTrue(self.found.players[0]["available"])
-
-    def test_music_assistant_not_answering_keeps_waiting(self):
-        answers = iter([None, ([], [])])
-        out, waited = self.wait(lambda names, mac: next(answers))
-        self.assertEqual(waited, 10)
-        self.assertIn("off the network", out)
-
-    def test_ctrl_c_while_waiting_removes_nothing(self):
+    def run_it(self, *, reset_show=True, keep_wifi=False, probe=None, reset=None, answers=(), no_questions=False,
+               players=(PLAYER,)):
         cli = self.cli
-        found = remove.find(FakeHA(), "genbuShow5", music=Music().find)
+        found = remove.find(FakeHA(), "genbuShow5", music=Music(players=players).find)
         settings = types.SimpleNamespace(ha_admin=True, ha_sign_in=object(), music_assistant="ma.example.org",
                                          music_assistant_token="t")
-        args = types.SimpleNamespace(name="genbuShow5", yes_remove=True, no_questions=False)
+        args = types.SimpleNamespace(name="genbuShow5", yes_remove=True, no_questions=no_questions,
+                                     reset_show=reset_show, keep_wifi=keep_wifi, host=None, ssh_identity=None)
+        asked = iter(answers)
+        asker = types.SimpleNamespace(yes=lambda label, **_: next(asked))
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch.object(cli, "gather", return_value=settings), \
-                mock.patch.object(cli.gone, "find", return_value=found), \
-                mock.patch.object(cli.gone, "remove") as removed, \
-                mock.patch.object(cli, "_wait_unplugged", side_effect=KeyboardInterrupt), \
-                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as err:
-            code = cli.remove_show_command(args, pathlib.Path(tmp))
-        self.assertEqual(code, 1)
-        removed.assert_not_called()
-        self.assertIn("stopped while waiting; nothing was removed", err.getvalue())
-
-    def test_an_offline_show_does_not_wait(self):
-        cli = self.cli
-        found = remove.find(FakeHA(), "genbuShow5", music=Music(players=[dict(PLAYER, available=False)]).find)
-        settings = types.SimpleNamespace(ha_admin=True, ha_sign_in=object(), music_assistant="ma.example.org",
-                                         music_assistant_token="t")
-        args = types.SimpleNamespace(name="genbuShow5", yes_remove=True, no_questions=False)
-        with tempfile.TemporaryDirectory() as tmp, \
-                mock.patch.object(cli, "gather", return_value=settings), \
+                mock.patch.object(cli, "_asker", return_value=asker), \
                 mock.patch.object(cli.gone, "find", return_value=found), \
                 mock.patch.object(cli.gone, "remove", return_value=0) as removed, \
-                mock.patch.object(cli, "_wait_unplugged") as waited, \
-                contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(cli.remove_show_command(args, pathlib.Path(tmp)), 0)
-        waited.assert_not_called()
+                mock.patch.object(cli.show_reset, "address", return_value="10.0.0.5"), \
+                mock.patch.object(cli.show_reset, "probe", side_effect=probe, return_value=self.reach) as probed, \
+                mock.patch.object(cli.show_reset, "reset", side_effect=reset) as reset_done, \
+                contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
+            code = cli.remove_show_command(args, pathlib.Path(tmp))
+        self.out = out.getvalue() + err.getvalue()
+        self.assertNotIn("10.0.0.5", self.out)
+        return code, removed, probed, reset_done
+
+    def test_reset_then_removed(self):
+        code, removed, _, reset_done = self.run_it(keep_wifi=True)
+        self.assertEqual(code, 0)
+        self.assertTrue(reset_done.call_args.kwargs["keep_wifi"])
         removed.assert_called_once()
+        self.assertIn("genbuShow5 is reset and removed", self.out)
+
+    def test_a_show_out_of_reach_is_removed_only(self):
+        code, removed, _, reset_done = self.run_it(probe=show_reset.ResetError("SSH: Connection timed out"))
+        self.assertEqual(code, 0)
+        reset_done.assert_not_called()
+        removed.assert_called_once()
+        self.assertIn("it can't be reset from here", self.out)
+        self.assertIn("genbuShow5 is removed only", self.out)
+
+    def test_keep_wifi_on_an_older_image_changes_nothing(self):
+        self.reach.keeps_wifi = False
+        code, removed, _, reset_done = self.run_it(keep_wifi=True)
+        self.assertEqual(code, 1)
+        reset_done.assert_not_called()
+        removed.assert_not_called()
+        self.assertIn("--keep-wifi no", self.out)
+
+    def test_no_reset_is_the_house_side_only(self):
+        code, removed, probed, _ = self.run_it(reset_show=False, keep_wifi=None)
+        self.assertEqual(code, 0)
+        probed.assert_not_called()
+        removed.assert_called_once()
+        self.assertIn("removed only", self.out)
+        self.assertIn("makes it again", self.out)
+
+    def test_a_reset_that_does_not_go_through_still_removes(self):
+        code, removed, _, _ = self.run_it(reset=show_reset.ResetError("the mark was not left (Permission denied)"))
+        self.assertEqual(code, 0)
+        removed.assert_called_once()
+        self.assertIn("the reset did not go through", self.out)
+        self.assertIn("removed only", self.out)
+
+    def test_left_out_it_asks(self):
+        code, _, _, reset_done = self.run_it(reset_show=None, keep_wifi=None, answers=[True, False])
+        self.assertEqual(code, 0)
+        self.assertFalse(reset_done.call_args.kwargs["keep_wifi"])
+
+    def test_nobody_to_ask_removes_nothing(self):
+        code, removed, probed, _ = self.run_it(reset_show=None, keep_wifi=None, answers=[None])
+        self.assertEqual(code, 1)
+        probed.assert_not_called()
+        removed.assert_not_called()
+        self.assertIn("--reset-show yes or no", self.out)
 
 
 class FlagTests(unittest.TestCase):
@@ -510,6 +510,17 @@ class FlagTests(unittest.TestCase):
         with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()) as err:
             self.parse("home-assistant", "--remove-show", "--name", "genbuShow5")
         self.assertIn("--remove-show is a run of its own", err.getvalue())
+
+    def test_yes_and_no_in_every_spelling(self):
+        for said, meant in (("yes", True), ("Y", True), ("true", True), ("1", True),
+                            ("no", False), ("n", False), ("FALSE", False), ("0", False)):
+            args = self.parse("--remove-show", "--name", "genbuShow5", "--reset-show", said, "--keep-wifi", said)
+            self.assertEqual((args.reset_show, args.keep_wifi), (meant, meant), said)
+        args = self.parse("--remove-show", "--name", "genbuShow5")
+        self.assertEqual((args.reset_show, args.keep_wifi), (None, None))
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()) as err:
+            self.parse("--remove-show", "--name", "genbuShow5", "--reset-show", "maybe")
+        self.assertIn("yes or no", err.getvalue())
 
     def test_the_old_command_is_gone(self):
         with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
@@ -609,7 +620,8 @@ class FilesTests(unittest.TestCase):
     def test_the_command_is_there(self):
         source = (ROOT / "tools/jarvis-show.py").read_text(encoding="utf-8")
         self.assertIn('"--remove-show"', source)
-        self.assertIn("_wait_unplugged(found, music)", source)
+        self.assertIn('"--reset-show"', source)
+        self.assertIn('"--keep-wifi"', source)
         self.assertIn("--yes-remove", source)
         self.assertIn("ui.out.typed(found.name)", source)
 

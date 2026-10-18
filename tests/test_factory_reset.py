@@ -74,6 +74,23 @@ class FactoryResetTests(unittest.TestCase):
         self.assertFalse((self.root / "data/misc/wifi/WifiConfigStore.xml").exists())
         self.assertTrue((self.root / "data/media/0/Download/keep.txt").exists())
 
+    def test_keep_wifi_keeps_the_networks_and_erases_the_rest(self):
+        (self.state / "factory_reset").write_text("ssh\nkeep-wifi\n")
+        r = reset(self.root)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("factory reset: keeping the Wi-Fi", r.stdout)
+        self.assertEqual(sorted(p.name for p in self.state.iterdir()), ["profile", "psk"])
+        self.assertNotEqual((self.state / "psk").read_text(), "b2xkIGtleQ==\n")
+        self.assertEqual(sorted(p.name for p in self.logs.iterdir()),
+                         ["rescue.log", "wpa_supplicant.conf", "wpa_supplicant.conf.prev"])
+        self.assertTrue((self.root / "data/misc/apexdata/com.android.wifi/WifiConfigStore.xml").exists())
+        self.assertTrue((self.root / "data/misc/wifi/WifiConfigStore.xml").exists())
+
+    def test_only_a_line_of_its_own_keeps_the_wifi(self):
+        (self.state / "factory_reset").write_text("screen keep-wifi-not\n")
+        reset(self.root)
+        self.assertFalse((self.logs / "wpa_supplicant.conf").exists())
+
     def test_runs_once(self):
         (self.state / "factory_reset").write_text("screen\n")
         reset(self.root)
@@ -89,6 +106,13 @@ class FactoryResetTests(unittest.TestCase):
         settings = (ROOT / "echod/internal/feature/display/settings.go").read_text()
         self.assertIn('layout.StateDir + "/factory_reset"', settings)
         self.assertIn("T5_RESET=/data/misc/techo5/factory_reset", LIB.read_text())
+        # What jarvis-show.py --remove-show looks for on the Show before it asks to keep the Wi-Fi.
+        from importlib import import_module
+        import sys
+        sys.path.insert(0, str(ROOT / "tools"))
+        show_reset = import_module("jarvis_crown.show_reset")
+        self.assertEqual(show_reset.LIB, "/lib/techo5-lib.sh")
+        self.assertRegex(LIB.read_text(), show_reset.KEEPS_WIFI)
 
 
 if __name__ == "__main__":

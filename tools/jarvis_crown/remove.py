@@ -6,9 +6,10 @@ What goes, in this order, all of it saved with keep first:
      assistant), and every automation and script with its label, "Genbu Show: <node>" (labels.py). One
      somebody made from the blueprint by hand stays theirs, unless they gave it the Show's label;
   2. its own Home Assistant user (show_<name>, under each name it went by), which ends its token;
-  3. its Music Assistant user (the one for the lyrics) and its player there. The player only goes once the
-     Show is off the network: Music Assistant makes a connected player again at once. Music Assistant
-     tells Home Assistant, which then drops the player's device too;
+  3. its Music Assistant user (the one for the lyrics) and its player there, connected or not. Music
+     Assistant tells Home Assistant, which then drops the player's device too. A Show that was reset first
+     (show_reset.py) has forgotten Music Assistant and stays away; one that was not and is still on the
+     network makes its player again;
   4. its ESPHome entry, which takes its devices, their entities and their area links with it;
   5. its place in Genbu (its last version, music choice, switches), through genbu.forget_show, after the
      ESPHome entry so that Genbu does not pick it up again first;
@@ -18,9 +19,7 @@ automations, the music scripts), the blueprints, the room's area and dashboard, 
 backups/<serial>, so the unit can be installed again. Other automations, scripts and dashboards that use its
 entities are listed, not changed.
 
-The Music Assistant player only goes once the Show is off the network, so jarvis-show.py waits for that
-before it removes anything. Run again later, it finds what is left by the names and the MAC kept from the
-first run.
+Run again later, it finds what is left by the names and the MAC kept from the first run.
 """
 from __future__ import annotations
 
@@ -78,11 +77,6 @@ class Found:
         """Whether Genbu has the Show to forget: one still in ESPHome. What Genbu keeps about it is not
         visible from outside, and forgetting twice does no harm."""
         return self.genbu and bool(self.node) and self.entry is not None
-
-    @property
-    def gone_now(self) -> list[dict]:
-        """The players that can go now: Music Assistant makes one that is connected again."""
-        return [p for p in self.players if not p.get("available")]
 
 
 def _mac(device: dict) -> str:
@@ -228,9 +222,9 @@ def _mask(mac: str) -> str:
     return "…" + mac[-5:] if len(mac) > 5 else mac
 
 
-def plan(found: Found) -> tuple[list[str], list[str], list[str]]:
-    """What goes now, what goes on a later run, and what stays, in words."""
-    goes, later, stays = [], [], []
+def plan(found: Found) -> tuple[list[str], list[str]]:
+    """What goes and what stays, in words."""
+    goes, stays = [], []
     for item, _ in found.automations:
         goes.append(f"automation {item}")
     for item, _ in found.scripts:
@@ -246,11 +240,8 @@ def plan(found: Found) -> tuple[list[str], list[str], list[str]]:
             stays.append(f"Music Assistant user {user.get('username')!r}: not a plain user, never removed here")
     for player in found.players:
         label = f"Music Assistant player {player.get('name') or player.get('player_id')!r}"
-        if player.get("available"):
-            later.append(f"{label}: Music Assistant keeps it while the Show is on the network, so this waits "
-                         "until the Show is unplugged")
-        else:
-            goes.append(f"{label} (and its device in Home Assistant)")
+        now = ", connected now" if player.get("available") else ""
+        goes.append(f"{label} (and its device in Home Assistant){now}")
     if found.entry is not None:
         goes.append(f"ESPHome entry {found.entry.get('title')!r} with its {len(found.devices)} devices, "
                     f"{len(found.entities)} entities and their area links")
@@ -269,7 +260,7 @@ def plan(found: Found) -> tuple[list[str], list[str], list[str]]:
     stays.append(f"what has only the {labels.INSTALLED!r} label (the house-wide jarvis_local_* automations, "
                  "the music scripts), the blueprints, the room and its dashboard, the calendars, and the Show's "
                  "backups")
-    return goes, later, stays
+    return goes, stays
 
 
 def snapshot(found: Found) -> dict:
@@ -315,7 +306,7 @@ def remove(ha: HomeAssistant, found: Found, *, keep: Keep, drop: Drop | None = N
         step(f"Home Assistant user {user.get('username')!r}",
              lambda user=user: ha.ws({"type": "config/auth/delete", "user_id": user["id"]}))
     users = [u["user_id"] for u in found.music_users if u.get("role") == "user" and u.get("user_id")]
-    players = [p["player_id"] for p in found.gone_now if p.get("player_id")]
+    players = [p["player_id"] for p in found.players if p.get("player_id")]
     if drop is not None and (users or players):
         problems = drop(users, players)
         for problem in problems:

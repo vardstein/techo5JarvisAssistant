@@ -138,6 +138,9 @@ t5_root_pw() {
 
 # T5_RESET is the mark the screen's Factory reset leaves before it restarts (echod's resetMark).
 T5_RESET=/data/misc/techo5/factory_reset
+# What a mark can ask to keep, one word a line after the first. jarvis-show.py --remove-show looks for
+# this line over SSH before it asks a Show to keep its Wi-Fi; an older image would erase it anyway.
+T5_RESET_KEEPS=wifi
 
 # t5_factory_reset [root]: when the mark is there, erases what this device was set up with before
 # anything that could write it back has started: the daemon's state and settings, its name, the Home
@@ -145,8 +148,10 @@ T5_RESET=/data/misc/techo5/factory_reset
 # too, or t5_wifi_conf would bring them back), ssh host keys and the logs. The profile stays: it is
 # what the image was installed as, not a setting. Android's other data on userdata stays as well.
 # The Home Assistant key is replaced with a random one nobody holds, not removed: a missing key is an
-# open device, and adding it again goes through the setup page's adoption window. The mark goes
-# last, so a power cut halfway erases again on the next boot. [root] is for the tests.
+# open device, and adding it again goes through the setup page's adoption window. A mark with a line
+# keep-wifi (left over SSH by jarvis-show.py --remove-show) keeps the Wi-Fi it knew, so the Show comes
+# back in setup mode on the same network. The mark goes last, so a power cut halfway erases again on
+# the next boot. [root] is for the tests.
 t5_factory_reset() {
 	r=${1:-}
 	st=$r/data/misc/techo5
@@ -158,11 +163,15 @@ t5_factory_reset() {
 		rm -rf "$f"
 	done
 	(umask 077; head -c 32 /dev/urandom | base64 > "$st/psk.new") && mv -f "$st/psk.new" "$st/psk"
-	rm -rf "$r/data/techo5-linux/wpa_supplicant.conf" "$r/data/techo5-linux/wpa_supplicant.conf".* \
-		"$r/data/techo5-linux/dropbear" "$r/data/techo5-linux/crash" \
+	rm -rf "$r/data/techo5-linux/dropbear" "$r/data/techo5-linux/crash" \
 		"$r/data/techo5-linux/techo5.log" "$r/data/techo5-linux/techo5.log".* \
 		"$r/data/techo5-linux/echod.log" "$r/data/techo5-linux/boot.log"
-	rm -f "$r/data/misc/apexdata/com.android.wifi/WifiConfigStore"* "$r/data/misc/wifi/WifiConfigStore"*
+	if grep -qx keep-wifi "$r$T5_RESET" 2>/dev/null; then
+		log "factory reset: keeping the Wi-Fi"
+	else
+		rm -rf "$r/data/techo5-linux/wpa_supplicant.conf" "$r/data/techo5-linux/wpa_supplicant.conf".*
+		rm -f "$r/data/misc/apexdata/com.android.wifi/WifiConfigStore"* "$r/data/misc/wifi/WifiConfigStore"*
+	fi
 	sync
 	rm -f "$r$T5_RESET"
 	sync

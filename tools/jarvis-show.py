@@ -27,6 +27,7 @@ from jarvis_crown import home_assistant as ha_api  # noqa: E402
 from jarvis_crown import ui  # noqa: E402
 from jarvis_crown import music_assistant as ma_api  # noqa: E402
 from jarvis_crown import remove as gone  # noqa: E402
+from jarvis_crown import show_reset  # noqa: E402
 from jarvis_crown.shows import known_shows, rename_show, show_named, update_show  # noqa: E402
 from jarvis_crown.show_ssh import ShowKeyError, identity_for, key_path, make_key, owner_of, public_key  # noqa: E402
 from jarvis_crown.settings import RUN, Asker, Settings, SettingsError, gather, read_secret_file, save_defaults, secret_files  # noqa: E402
@@ -51,6 +52,15 @@ STAGES = {
     "install": "installing Jarvis",
     "complete": "the install is through",
 }
+
+
+def _yes_no(value: str) -> bool:
+    said = value.strip().casefold()
+    if said in ("yes", "y", "true", "1"):
+        return True
+    if said in ("no", "n", "false", "0"):
+        return False
+    raise argparse.ArgumentTypeError(f"{value!r}: yes or no (true/false, 1/0)")
 
 
 def parse_args() -> argparse.Namespace:
@@ -147,8 +157,12 @@ def parse_args() -> argparse.Namespace:
     hass.add_argument("--key-file", type=Path, help="its encryption key (default backups/<serial>/home-assistant.key)")
     gone = parser.add_argument_group("--remove-show: take a Show out of Home Assistant and Music Assistant (--name)")
     gone.add_argument("--remove-show", action="store_true",
-                      help="take the Show called --name out of the house, instead of a command; waits for it to "
-                           "be unplugged when Music Assistant still has it")
+                      help="take the Show called --name out of the house, instead of a command")
+    gone.add_argument("--reset-show", type=_yes_no, metavar="yes|no",
+                      help="reset the Show first over SSH, so it forgets the house and comes back in setup mode "
+                           "(no: the house side only, for a Show that is dead or gone); asked when left out")
+    gone.add_argument("--keep-wifi", type=_yes_no, metavar="yes|no",
+                      help="with a reset: the Show keeps its Wi-Fi; asked when left out")
     gone.add_argument("--yes-remove", action="store_true",
                       help="remove without typing the Show's name first; without it, --no-questions only lists")
     logo = parser.add_argument_group("boot-logo: the OpenJade logo at boot on an installed Show (--name, --host)")
@@ -602,33 +616,30 @@ def home_assistant_command(args, backups: Path) -> int:
                                     wait_seconds=120, backups=backups)
 
 
-def _wait_unplugged(found, music, *, wait: float = 600, every: float = 5,
-                    sleep=time.sleep, clock=time.monotonic) -> None:
-    """Waits until Music Assistant no longer has the Show's player connected, asking Music Assistant again
-    every few seconds, so that the player goes in the same run. found's players are brought up to date."""
-    ui.out.caution("Unplug the Show now (or switch it off). Music Assistant keeps its player while it is on "
-                   f"the network. This waits up to {int(wait // 60)} minutes; Ctrl-C stops without removing "
-                   "anything.")
-    until = clock() + wait
-    while any(p.get("available") for p in found.players):
-        if clock() >= until:
-            ui.out.warn("the Show is still on the network; everything else goes now, the player stays")
-            return
-        sleep(every)
-        got = music(found.names, found.mac)
-        if got is not None:
-            found.music_users, found.players = got
-    ui.out.progress("the Show is off the network")
+def _reset_first(args, found, asker: Asker) -> tuple[bool, bool] | None:
+    """--reset-show and --keep-wifi, asked when left out. None when nobody answered."""
+    reset, keep = args.reset_show, args.keep_wifi
+    if reset is None:
+        reset = asker.yes(f"Reset {found.name} before removing it?",
+                          help="It forgets this house and comes back in setup mode. No: the house side only, "
+                               "for a Show that is dead or gone; it keeps its old secrets then.")
+    if reset and keep is None:
+        keep = asker.yes("Keep its Wi-Fi?", help="Yes: it comes back in setup mode on the same network.")
+    if reset is None or (reset and keep is None):
+        return None
+    return reset, bool(reset and keep)
 
 
 def remove_show_command(args, backups: Path) -> int:
-    """Everything of one Show out of Home Assistant and Music Assistant; see jarvis_crown/remove.py."""
+    """Everything of one Show out of Home Assistant and Music Assistant, the Show reset first when it can be;
+    see jarvis_crown/remove.py and jarvis_crown/show_reset.py."""
     if not args.name:
         ui.out.fail("--remove-show requires --name, the Show's name")
         return 1
     show = show_named(backups, args.name)
+    asker = _asker(args)
     try:
-        settings = gather(args, _asker(args), want_wifi=False, want_show=False)
+        settings = gather(args, asker, want_wifi=False, want_show=False)
     except SettingsError as exc:
         ui.out.fail(f"{exc}")
         return 1
@@ -663,9 +674,8 @@ def remove_show_command(args, backups: Path) -> int:
         return 5
     if show is not None and found.mac and found.mac != show.mac:
         update_show(show.folder, mac=found.mac)  # for the run after its ESPHome entry is gone
-    goes, later, stays = gone.plan(found)
-    for label, items, say in (("Goes now", goes, ui.out.step), ("Goes once the Show is unplugged", later, ui.out.warn),
-                              ("Stays", stays, ui.out.note)):
+    goes, stays = gone.plan(found)
+    for label, items, say in (("Goes", goes, ui.out.step), ("Stays", stays, ui.out.note)):
         if items:
             ui.out.heading(label)
             for item in items:
@@ -673,12 +683,39 @@ def remove_show_command(args, backups: Path) -> int:
     if not goes:
         ui.out.done(f"nothing of {args.name} is left to remove now")
         return 0
+    if args.no_questions and not args.yes_remove:
+        ui.out.heading("Nothing removed")
+        ui.out.note("--no-questions only lists; --yes-remove removes")
+        return 0
+    answer = _reset_first(args, found, asker)
+    if answer is None:
+        ui.out.fail("say whether to reset it first: --reset-show yes or no (and --keep-wifi with yes); "
+                    "nothing was removed")
+        return 1
+    reset, keep_wifi = answer
+    reach = None
+    name = show.name if show else found.name
+    identity = identity_for(name, args.ssh_identity)
+    if reset:
+        ui.out.heading(f"Reaching {found.name}")
+        try:
+            host = show_reset.address(hc, found.entities, host=args.host, folder=show.folder if show else None,
+                                      find_host=_find_host(name))
+            if not host:
+                raise show_reset.ResetError("its address isn't known; give it with --host")
+            reach = show_reset.probe(host, name=name, identity=identity,
+                                     expected=show.folder.name if show else None)
+        except show_reset.ResetError as exc:
+            ui.out.warn(f"it can't be reset from here: {exc}. Only the house side goes.")
+        else:
+            ui.out.progress("it answers over SSH with its own key")
+            if keep_wifi and not reach.keeps_wifi:
+                ui.out.fail("its image can't keep the Wi-Fi through a reset; update it first, or run again with "
+                            "--keep-wifi no. Nothing was changed.")
+                return 1
     if not args.yes_remove:
-        if args.no_questions:
-            ui.out.heading("Nothing removed")
-            ui.out.note("--no-questions only lists; --yes-remove removes")
-            return 0
-        ui.out.caution("Home Assistant cannot undo this; what goes is saved in backups/home-assistant first.")
+        ui.out.caution("Home Assistant cannot undo this; what goes is saved in backups/home-assistant first."
+                       + (" The Show is reset first." if reach else ""))
         try:
             typed = ui.out.typed(found.name)
         except EOFError:  # no terminal (piped or closed stdin) is a no, not a crash
@@ -687,23 +724,32 @@ def remove_show_command(args, backups: Path) -> int:
         if typed != found.name:
             ui.out.fail("not typed; nothing was removed")
             return 1
-    if later and music is not None:
+    was_reset = False
+    if reach is not None:
+        ui.out.heading(f"Resetting {found.name}")
         try:
-            _wait_unplugged(found, music)
-        except KeyboardInterrupt:
-            print()
-            ui.out.fail("stopped while waiting; nothing was removed")
-            return 1
+            show_reset.reset(reach, keep_wifi=keep_wifi, name=name, identity=identity)
+        except show_reset.ResetError as exc:
+            ui.out.warn(f"the reset did not go through: {exc}. Only the house side goes.")
+        else:
+            was_reset = True
+            ui.out.progress("it is restarting and erases on the way up"
+                            + (", keeping its Wi-Fi" if keep_wifi else ""))
     ui.out.heading(f"Taking {found.name} out")
     failed = gone.remove(hc, found, keep=_keeper(backups), drop=drop, progress=ui.out.progress)
     if failed:
-        ui.out.fail(f"{failed} step(s) failed; the rest went. Run --remove-show again to retry them.")
+        ui.out.fail(f"{failed} step(s) failed; the rest went. Run --remove-show again to retry them."
+                    + (f" {found.name} was reset." if was_reset else ""))
         return 5
-    if any(p.get("available") for p in found.players):
-        ui.out.done(f"{found.name} is out, but for its Music Assistant player: unplug the Show, then run "
-                    "--remove-show again")
+    if was_reset:
+        ui.out.done(f"{found.name} is reset and removed: it comes back in setup mode and can be added again as a "
+                    "new device")
     else:
-        ui.out.done(f"{found.name} is out of the house; it can be added again as a new device")
+        ui.out.done(f"{found.name} is removed only: the Show itself still has its old secrets. Reset it on its "
+                    "screen (Settings, General, Factory reset) before it goes anywhere")
+        if any(p.get("available") for p in found.players):
+            ui.out.note("Music Assistant had its player connected; while the Show is on the network it makes it "
+                        "again")
     return 0
 
 

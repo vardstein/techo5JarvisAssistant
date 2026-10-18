@@ -668,7 +668,7 @@ has the default given here.
 | `wifi` | Puts an installed Show on a Wi-Fi network over its USB cable, for when it is offline. | `--wifi` |
 | `home-assistant` | Adds an installed Show to Home Assistant and sets it up: the steps above. Safe to run again. | `--name` |
 | `boot-logo` | Puts the OpenJade logo in place of Amazon's at boot, over SSH ([boot logos](../tools/boot-logo/README.md)). | `--name` |
-| `--remove-show` | Not a command but a run of its own: takes a Show out of Home Assistant and Music Assistant, so it can be added again as a new device or given away ([Taking a Show out](#taking-a-show-out)). Lists first, asks you to type the Show's name, then waits for you to unplug the Show. | `--name`, an admin |
+| `--remove-show` | Not a command but a run of its own: takes a Show out of Home Assistant and Music Assistant, so it can be added again as a new device or given away ([Taking a Show out](#taking-a-show-out)). Lists first, asks whether to reset the Show over SSH first, then asks you to type the Show's name. | `--name`, an admin |
 
 ### The Show and its files
 
@@ -677,8 +677,8 @@ has the default given here.
 | `--name NAME` | install, home-assistant, boot-logo, --remove-show | The Show's name, as Home Assistant shows it. The installer records it in `backups/<serial>/show.json`, and the other commands find the unit by it. |
 | `--board crown\|checkers\|cronos` | all | Cross-checks the board. Normally it is detected; `amonet-upgrade` needs it, and `install` needs it to carry on from TWRP. |
 | `--serial SERIAL` | wifi, home-assistant | Which unit. `wifi` talks to that Show on USB (not needed when only one is attached); `home-assistant` takes its key from `backups/<serial>/`. |
-| `--host ADDRESS` | home-assistant, boot-logo, install, unlock | The Show's address, when `backups/<serial>/address`, mDNS and Home Assistant cannot find it (a Show on another VLAN, say). For `install` and `unlock`, where a Show running Jarvis is reached over SSH to send it to fastboot. |
-| `--ssh-identity FILE` | boot-logo, install, unlock | The private key that logs in to the Show over SSH. Default `~/.ssh/genbu_<name>` when it is there: each Show has a key of its own, which no other Show lets in. Without either, ssh picks a key the usual way. |
+| `--host ADDRESS` | home-assistant, boot-logo, install, unlock, --remove-show | The Show's address, when `backups/<serial>/address`, mDNS and Home Assistant cannot find it (a Show on another VLAN, say). For `install` and `unlock`, where a Show running Jarvis is reached over SSH to send it to fastboot. |
+| `--ssh-identity FILE` | boot-logo, install, unlock, --remove-show | The private key that logs in to the Show over SSH. Default `~/.ssh/genbu_<name>` when it is there: each Show has a key of its own, which no other Show lets in. Without either, ssh picks a key the usual way. |
 | `--key-file FILE` | home-assistant | The Show's ESPHome encryption key. Default `backups/<serial>/home-assistant.key`. |
 | `--lineage-zip ZIP` | install, amonet-upgrade, preflight | LineageOS 18.1 for this board. Default the cached one, which `install` downloads and checks when it isn't there yet. |
 | `--boot-image FILE` | install | The board's boot image. Default fetched and checked the same way. |
@@ -696,6 +696,8 @@ has the default given here.
 | `--no-ssh` | install | No key at all: SSH stays off, the USB console is the way in. |
 | `--amazon-logo` | boot-logo | Puts Amazon's logo back instead. |
 | `--yes-remove` | --remove-show | Removes without typing the Show's name first. Without it, `--no-questions` only lists what would go. |
+| `--reset-show yes\|no` | --remove-show | Reset the Show over SSH before it is removed (`no`: Home Assistant's side only, say for a Show that is dead or gone). Asked when left out. Also `true`/`false`, `1`/`0`. |
+| `--keep-wifi yes\|no` | --remove-show | With a reset: the Show keeps the Wi-Fi it knew and comes back in setup mode on the same network. Needs a Show image that can do this; an older one refuses before anything changes. Asked when left out. |
 
 ### Taking a Show out
 
@@ -704,21 +706,30 @@ python3 tools/jarvis-show.py --remove-show --name "Kitchen Show"
 ```
 
 It needs a Home Assistant admin, and a Music Assistant admin for the Show's user and player there
-(without one it says so and leaves Music Assistant alone). First it lists what goes, what waits for the
-Show to be unplugged, and what stays. Once you have typed the Show's name it asks you to unplug the Show
-when Music Assistant still has it connected, and waits for that (up to 10 minutes; Ctrl-C stops without
-removing anything). Then it saves everything that goes in `backups/home-assistant/` and removes it, in
-this order:
+(without one it says so and leaves Music Assistant alone). First it lists what goes and what stays.
+Then it asks whether to reset the Show first, and if so, whether it keeps its Wi-Fi (`--reset-show` and
+`--keep-wifi` answer that ahead).
+
+**The reset.** It logs in to the Show with its own key (`~/.ssh/genbu_<name>`) under its pinned host key,
+and checks that the serial it reports is the one in `backups/<serial>/`, so a stale address can't reset
+another Show. Its address comes from `--host`, its IP address sensor in Home Assistant, the install
+record, or mDNS, in that order, and is never printed. Once you have typed the Show's name it leaves the
+reset mark and restarts the Show, which erases the same as [Factory reset](install.md#factory-reset) on
+its screen and comes back in setup mode. With `--keep-wifi yes` it keeps the networks it knew; a Show
+whose image predates that refuses before anything changes, and you update it or answer no. A Show that
+can't be reached, or whose reset doesn't go through, is not waited for: the house side goes anyway, and
+the run ends with "removed only" and tells you to reset it on its screen.
+
+Then it saves everything that goes in `backups/home-assistant/` and removes it, in this order:
 
 1. our turn-the-room-down automation for it (`techo5_turn_room_down_<name>`), and every automation and
    script with the Show's label (below); one made from the blueprint by hand stays, unless you gave it
    the Show's label;
 2. its own Home Assistant user (`show_<name>`), which ends its token. Admins and the owner are never
    removed;
-3. its Music Assistant user (for the lyrics) and its player. Music Assistant keeps a player that is
-   connected and makes it again at once, which is why the run waits for the Show to be unplugged. If it
-   is still on the network after 10 minutes, the rest goes and the player stays for the next run. Home
-   Assistant drops the player's device when Music Assistant removes it;
+3. its Music Assistant user (for the lyrics) and its player, connected or not. A reset Show has forgotten
+   Music Assistant and stays away; one that was not reset and is still on the network makes its player
+   again, and the run says so. Home Assistant drops the player's device when Music Assistant removes it;
 4. its ESPHome entry, which takes its devices, their entities and their area links with it;
 5. its place in Genbu (its last version, music choice and switches), with `genbu.forget_show`. A Genbu
    older than 1.1.0 has no such action: copy the new folder over and restart Home Assistant;
@@ -739,7 +750,7 @@ pieces are found by name, as before.
 
 Run it again any time. It finds what is left by the names the Show went by and the MAC address it kept
 in `backups/<serial>/show.json` on the first run, and says so when nothing is left. To use the Show
-again, reset it ([Factory reset](install.md#factory-reset)) and add it the usual way.
+again after "removed only", reset it ([Factory reset](install.md#factory-reset)); then add it the usual way.
 
 ### What the Show is ready with
 

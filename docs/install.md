@@ -436,6 +436,9 @@ It comes back like a newly installed Show: the Wi-Fi page asks for a network, an
 closed. What it was installed as (the profile) and the TECHO5 version stay. LineageOS's own data on
 userdata (downloads and the like) isn't touched.
 
+`python3 tools/jarvis-show.py --remove-show --name NAME --reset-show yes` does the same over SSH, and
+with `--keep-wifi yes` the Show keeps its Wi-Fi networks (a Show image from GENBU-223 on).
+
 Your Home Assistant can't reach it any more: take it out with
 `python3 tools/jarvis-show.py --remove-show --name NAME`, which removes its device, user, automation,
 Music Assistant player and Genbu entry together ([Taking a Show out](jarvis-crown-installer.md#taking-a-show-out)),
