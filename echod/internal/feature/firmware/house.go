@@ -59,8 +59,11 @@ const (
 	dueSoon = 30 * time.Minute
 	// missingAfter is how long the main Show has to be gone before a following Show mentions it.
 	missingAfter = time.Hour
-	// fetchRetry is how long a house version that could not be fetched waits before the next try.
-	fetchRetry = 10 * time.Minute
+	// fetchRetry is how long a house version that could not be fetched waits before the next try: half a
+	// minute after the first miss, twice that after each further one, up to fetchRetryMost. A router rule
+	// that lets GitHub in shows within the minute, and a Show with no way out does not keep knocking.
+	fetchRetry     = 30 * time.Second
+	fetchRetryMost = 10 * time.Minute
 )
 
 type role int
@@ -109,6 +112,9 @@ type following struct {
 	seen string
 	// movedWhileUp is the house version changing while this process ran.
 	movedWhileUp bool
+	// retrying is a move whose fetch failed: the next try moves too. The version counts as seen by then,
+	// and bathroomShow5, shut out of GitHub on its first move, asked instead.
+	retrying bool
 	// failed is a house version that would not install here.
 	failed string
 	// askedThisBoot, asked and askedAt are the last "should I move?" question.
@@ -129,7 +135,7 @@ func decide(f following) move {
 		return stay
 	case f.house == f.failed, !f.committed, f.held, f.busy:
 		return stay
-	case f.seen == "" || f.movedWhileUp:
+	case f.seen == "" || f.movedWhileUp || f.retrying:
 		return align
 	case f.quiet:
 		return stay
@@ -149,6 +155,7 @@ type house struct {
 	movedWhileUp  bool
 	askedThisBoot bool
 	retryAt       time.Time
+	fetchMisses   int
 	status        string
 }
 
@@ -324,7 +331,7 @@ func (u *Firmware) houseStep(ctx context.Context, now time.Time) {
 	h := &u.house
 	h.mu.Lock()
 	f := following{
-		running: layout.Version, house: v, seen: c.HouseSeen, movedWhileUp: h.movedWhileUp,
+		running: layout.Version, house: v, seen: c.HouseSeen, movedWhileUp: h.movedWhileUp, retrying: h.fetchMisses > 0,
 		failed: c.HouseFailed, askedThisBoot: h.askedThisBoot, asked: c.HouseAsked, askedAt: c.HouseAskedAt,
 		quiet: quiet(), committed: committed(), held: update.Installing() || now.Before(h.retryAt), now: now,
 	}
@@ -372,6 +379,11 @@ func houseLine(f following, main, missing string, now time.Time) string {
 		return "Waiting for this version to settle before moving to " + f.house
 	case f.busy:
 		return "Moving to " + f.house + " once nobody is using this Show"
+	}
+	if update.Newer(f.running, f.house) {
+		// its own card offers nothing older, so it has no Install to point at
+		return "Your other Shows are on the older " + f.house + "; this one steps back when you say yes to its " +
+			"question, or they all move up with an update on the Genbu Show card"
 	}
 	return "Your other Shows are on " + f.house + "; install it from the update card"
 }
@@ -436,11 +448,18 @@ func (u *Firmware) alignTo(ctx context.Context, v string) {
 	if err != nil {
 		slog.Error("fetching the house version failed", "house", v, "err", err)
 		u.house.mu.Lock()
-		u.house.retryAt = time.Now().Add(fetchRetry)
+		wait := min(fetchRetry<<u.house.fetchMisses, fetchRetryMost)
+		if wait < fetchRetryMost {
+			u.house.fetchMisses++
+		}
+		u.house.retryAt = time.Now().Add(wait)
 		u.house.mu.Unlock()
 		u.houseStatus("Version " + v + " could not be fetched: " + err.Error())
 		return
 	}
+	u.house.mu.Lock()
+	u.house.fetchMisses = 0
+	u.house.mu.Unlock()
 	if err := u.put(ctx, m, update.Align); err != nil && !errors.Is(err, update.ErrInstalling) {
 		if serr := config.Set().Update().HouseFailed(v); serr != nil {
 			slog.Error("saving the failed house version failed", "err", serr)

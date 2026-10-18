@@ -131,6 +131,12 @@ class HouseTest(unittest.TestCase):
         _, lines, _ = run(fake)
         self.assertEqual(lines[-1], "Your other Shows are on v1.0.3; install it from the update card")
 
+    def test_a_show_ahead_of_the_house_is_not_waited_for(self):
+        line = ("Your other Shows are on the older v1.0.3; this one steps back when you say yes to its question, "
+                "or they all move up with an update on the Genbu Show card")
+        _, lines, _ = run(FakeHouse(entry=True, statuses=[line]))
+        self.assertEqual(lines[-1], line)
+
     def test_waiting_ends_and_leaves_it_to_the_show(self):
         fake = FakeHouse(entry=True, statuses=["Moving to v1.0.3 once nobody is using this Show"])
         _, lines, _ = run(fake, wait=60)

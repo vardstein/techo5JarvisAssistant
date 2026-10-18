@@ -53,6 +53,7 @@ func TestFollowingShowDecides(t *testing.T) {
 		{"fresh install, house newer: moves", func(f *following) { f.seen = "" }, align},
 		{"fresh install, house older: moves back", func(f *following) { f.seen, f.house = "", "v1.0.1-stable.40" }, align},
 		{"house moved while running: moves", func(f *following) { f.movedWhileUp = true }, align},
+		{"a move whose fetch failed tries again without asking", func(f *following) { f.retrying = true }, align},
 		{"moves only when nobody uses it", func(f *following) { f.movedWhileUp, f.busy = true, true }, stay},
 		{"a version that failed here is not tried again", func(f *following) { f.seen, f.failed = "", f.house }, stay},
 		{"not while its own update is on trial", func(f *following) { f.seen, f.committed = "", false }, stay},
@@ -99,6 +100,14 @@ func TestHouseLine(t *testing.T) {
 	f.running, f.failed = "v1.0.2", "v1.0.3"
 	if got := houseLine(f, "hall_show", "", now); got != "Version v1.0.3 did not install here; staying on v1.0.2" {
 		t.Errorf("failed: %q", got)
+	}
+	f.failed = ""
+	if got := houseLine(f, "hall_show", "", now); !strings.HasSuffix(got, "install it from the update card") {
+		t.Errorf("behind the house: %q", got)
+	}
+	f.running = "v1.0.4" // bathroomShow5: installed newer than the house, its own card has no Install
+	if got := houseLine(f, "hall_show", "", now); strings.Contains(got, "update card") || !strings.Contains(got, "older v1.0.3") {
+		t.Errorf("ahead of the house: %q", got)
 	}
 }
 
@@ -164,9 +173,21 @@ func TestFreshFollowingShowMovesWithoutAsking(t *testing.T) {
 	}
 	now := time.Now()
 	u.houseStep(context.Background(), now)
-	u.houseStep(context.Background(), now.Add(time.Minute))
+	u.houseStep(context.Background(), now.Add(20*time.Second))
 	if len(fetched) != 1 || fetched[0] != "v1.0.3-stable.52" {
 		t.Fatalf("fetched %q, want the house version once until the retry", fetched)
+	}
+	u.houseStep(context.Background(), now.Add(40*time.Second))
+	if len(fetched) != 2 {
+		t.Fatalf("fetched %d times, want a second try after half a minute", len(fetched))
+	}
+	if wait := time.Until(u.house.retryAt); wait < 50*time.Second || wait > time.Minute {
+		t.Errorf("the third try is %v away, want a minute: each miss waits twice as long", wait)
+	}
+	u.house.fetchMisses = 10
+	u.alignTo(context.Background(), "v1.0.3-stable.52")
+	if wait := time.Until(u.house.retryAt); wait < 9*time.Minute || wait > fetchRetryMost {
+		t.Errorf("a Show with no way out tries again in %v, want at most every %v", wait, fetchRetryMost)
 	}
 	if got := config.Get().Update.HouseSeen; got != "v1.0.3-stable.52" {
 		t.Errorf("house version seen %q", got)

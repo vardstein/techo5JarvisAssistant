@@ -87,7 +87,7 @@ def _wait_aligned(ha: HomeAssistant, entry_id: str, version: str, progress: Call
         if "did not install here" in line or "could not be fetched" in line or "not reachable since" in line:
             progress(f"WARN: {line}")
             return
-        if "install it from the update card" in line:
+        if "install it from the update card" in line or "with an update on the Genbu Show card" in line:
             # it was asked and said no (or nobody answered): it moves only when someone installs it
             progress(line)
             return
