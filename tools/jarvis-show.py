@@ -297,6 +297,62 @@ def _install_files(args, board: str, amonet: Path, work: Path, *, fetcher=_load_
     return files
 
 
+SERIAL_AGAIN = "JARVIS_SHOW_SERIAL_GROUP"  # set when the installer ran itself again under sg, so it does once
+
+
+def _in_group(group: str, user: str) -> bool:
+    """Whether the system lists the user in the group, which a login that started before it was added
+    does not have yet."""
+    import grp
+    import pwd
+
+    try:
+        g = grp.getgrnam(group)
+    except KeyError:
+        return False
+    return user in g.gr_mem or pwd.getpwnam(user).pw_gid == g.gr_gid
+
+
+def _serial_group(args) -> int | None:
+    """The Show's rescue console needs dialout (or uucp). A login added to it after it started has not got
+    it yet: the installer runs itself again under sg, which asks a member for no password. Someone not in
+    it is offered the usermod (sudo asks for their password), and told the NixOS line on NixOS, where a
+    usermod does not last. None: go on; exec does not come back."""
+    if os.geteuid() == 0 or _group_names() & SERIAL_GROUPS:
+        return None
+    import pwd
+
+    user = pwd.getpwuid(os.getuid()).pw_name
+    again = shlex.join([sys.executable, *sys.argv])
+    sg = shutil.which("sg")
+    listed = sorted(g for g in SERIAL_GROUPS if _in_group(g, user))
+    group = listed[0] if listed else "dialout"
+    if not listed and not Path("/etc/NIXOS").exists():
+        asked = _asker(args).yes(f"The install needs {user} in dialout for the Show's rescue console. Add "
+                                 f"{user} to it now? sudo asks for your password.")
+        if asked and subprocess.call(["sudo", "usermod", "-aG", "dialout", user]) == 0:
+            listed = ["dialout"]
+    if listed and sg and not os.environ.get(SERIAL_AGAIN):
+        ui.out.step(f"{user} is in {group}, this login just has not got it yet: running again under it")
+        sys.stdout.flush()
+        os.environ[SERIAL_AGAIN] = "1"
+        os.execv(sg, [sg, group, "-c", again])
+    if listed:
+        ui.out.fail(f"{user} is in {group}, but this login has not got it yet; nothing was touched. Log out "
+                    "and in again, or run this:")
+        ui.out.command(f"sg {group} -c {shlex.quote(again)}")
+    elif Path("/etc/NIXOS").exists():
+        ui.out.fail(f"{user} isn't in dialout, which the install needs for the Show's rescue console; nothing "
+                    f"was touched. Add \"dialout\" to users.users.{user}.extraGroups in your NixOS "
+                    "configuration, run nixos-rebuild switch, then this:")
+        ui.out.command(f"sg dialout -c {shlex.quote(again)}")
+    else:
+        ui.out.fail(f"{user} isn't in dialout, which the install needs for the Show's rescue console; nothing "
+                    "was touched. Add it and run the install under it:")
+        ui.out.command(f"sudo usermod -aG dialout {shlex.quote(user)} && sg dialout -c {shlex.quote(again)}")
+    return 1
+
+
 def _asker(args) -> Asker:
     return Asker(interactive=not args.no_questions and not os.environ.get("TECHO5_NO_PROMPT")
                  and sys.stdin.isatty() and sys.stdout.isatty())
@@ -929,11 +985,8 @@ def _main() -> int:
     # install and unlock start from fastboot; a Show that is on Android, TWRP or Jarvis is rebooted there
     # first (only rebooted, nothing written), so nobody has to hold buttons.
     if args.command in ("install", "unlock"):
-        if os.geteuid() != 0 and not _group_names() & SERIAL_GROUPS:
-            ui.out.fail("this login isn't in dialout (or uucp), which the install needs for the Show's rescue "
-                        "console; nothing was touched. Join it, then run this under it: "
-                        "sudo usermod -aG dialout \"$USER\", then sg dialout -c '<this command>'")
-            return 1
+        if (code := _serial_group(args)) is not None:
+            return code
         try:
             bring_to_fastboot(name=args.name, backups=backups, host=args.host, find_host=_find_host,
                               keep_recovery=args.command == "install" and args.board is not None,

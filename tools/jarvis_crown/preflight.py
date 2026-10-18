@@ -231,7 +231,7 @@ def run_preflight(
             checks.append(Check(
                 "FAIL",
                 "serial-permission",
-                "join dialout (or uucp) and log out/in before install; rescue console access is mandatory",
+                "this login is not in dialout (or uucp) yet, which the rescue console needs; install sorts it out or says what to run",
             ))
 
     if _modemmanager_active():
