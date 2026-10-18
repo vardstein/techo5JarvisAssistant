@@ -95,6 +95,9 @@ const (
 	evSpeaking                     // VAD detected speech has started
 	evSpokeEnd                     // the device heard the speaker finish; text is the turn's id
 	evLookHere                     // the answer put something on the screen: no listening again after it
+	evWoke                         // a wake word heard while Shows race for it: ask which one answers
+	evVerdict                      // the race is decided; text is the wake's id, code how it ended
+	evConfirmed                    // Home Assistant began recognising, so the run is this Show's; text is the turn's id when it is the wait running out
 )
 
 type event struct {
@@ -106,6 +109,7 @@ type event struct {
 	code  string
 	msg   string
 	at    time.Time
+	wake  Wake
 }
 
 // conversation runs one turn at a time: microphone audio up, pipeline events back, spoken reply out.
@@ -185,6 +189,17 @@ type conversation struct {
 	// method on it tolerates that, so the phases do not each have to check.
 	turn *activity.Turn
 
+	// racing is a wake word waiting to hear whether this Show answers it (race.go), nil when none.
+	racing *race
+
+	// confirmed is whether the open turn has been heard, sounded and lit. A turn that may have lost Home
+	// Assistant's first come to another Show waits for its STT_START before any of that (confirm), and
+	// confirmBy is how long it waits. tone tells the streamer when the tone went out, which is when the
+	// microphone may follow it.
+	confirmed bool
+	confirmBy *time.Timer
+	tone      chan time.Time
+
 	// pending is a turn owed once the current one has finished closing, nil when none.
 	//
 	// Home Assistant's events carry no run identifier, so a turn started while the last one is still
@@ -209,6 +224,12 @@ type nextTurn struct {
 	slot     int
 	followUp bool
 	asked    bool
+
+	// wokeAt is when the wake word fired, for a turn that waited for its race first: the audio from
+	// then on is what it sends ahead of the live frames. won says the race picked this Show, so Home
+	// Assistant's first come has nobody left to choose between.
+	wokeAt time.Time
+	won    bool
 }
 
 // reply is which answer is being spoken, and how. Only one of them is set: a url means it is being
@@ -342,7 +363,41 @@ func (c *conversation) Run(ctx context.Context) {
 func (c *conversation) handle(e event) {
 	switch e.kind {
 	case evStart:
+		// A button, or a wake word with no race to run, overtakes a race still waiting.
+		c.endRace()
 		c.start(nextTurn{slot: e.slot})
+
+	case evWoke:
+		// Only an idle Show races. One that is listening ignores the word and one that is busy is
+		// interrupted by it, as without a race: either way this Show is the one being talked to. A race
+		// already running is the same utterance heard by a second slot.
+		switch {
+		case c.phase != phaseIdle:
+			c.start(nextTurn{slot: e.slot})
+		case c.racing != nil:
+			slog.Info("wake word during a race, ignored", "slot", e.slot+1)
+		case !c.backendFor().Ready():
+			c.start(nextTurn{slot: e.slot})
+		default:
+			c.race(e.slot, e.wake)
+		}
+
+	case evVerdict:
+		if c.phase != phaseIdle {
+			c.endRace()
+			return
+		}
+		c.verdict(e.text, e.code)
+
+	case evConfirmed:
+		if c.phase == phaseIdle || c.confirmed || (e.text != "" && e.text != c.turn.ID()) {
+			return
+		}
+		if e.text != "" {
+			slog.Warn("no STT_START from home assistant, sounding the turn anyway", "slot", c.slot+1,
+				"after", confirmWait)
+		}
+		c.sounded(c.slot, c.followUp)
 
 	case evAsked:
 		c.start(nextTurn{slot: e.slot, asked: true})
@@ -546,6 +601,7 @@ func (c *conversation) handle(e event) {
 
 	case evCancel:
 		c.clearPending()
+		c.endRace()
 
 		// Stopping the sound comes first and does not care whether a turn is open: an announcement
 		// plays with nothing else happening, and used to be the one thing cancel could not reach.
@@ -658,23 +714,27 @@ func (c *conversation) start(n nextTurn) {
 		c.followUps = 0
 	}
 
-	// Before the chime, and before Home Assistant is told anything. Ducking is what the room hears
-	// first, and it has a second of queued music to get through, so every step it waits behind is a
-	// step of full-volume music over somebody who has already started talking.
-	//
-	// It also keeps the chime out of the duck: the chime is mixed into the queue after this, so it
-	// sounds at its own level rather than being faded along with the track underneath it.
-	c.hold(true)
+	// A wake word another Show may have heard as well, with no race to say which of them answers,
+	// opens its run quietly: Home Assistant keeps the first run and refuses the others, and a Show that
+	// beeped and lit up only to be refused has told the room the wrong Show is listening. So the duck,
+	// the tone and the ring wait for STT_START, which Home Assistant sends only to the run it kept.
+	// Through Home Assistant only: the direct backend has no first come.
+	_, viaHA := c.be.(ha)
+	c.confirmed = !viaHA || n.followUp || n.asked || n.won
+	c.tone = make(chan time.Time, 1)
+	if c.confirmed {
+		c.sounded(slot, n.followUp)
+	}
 
-	// A follow-up chimes like the wake word that started the conversation, unless the slot has been
-	// told a follow-up should be silent: the microphone is open again with nothing said to say so. It
-	// is not a wake, though, so it does not report a phrase nobody spoke.
-	wakeword.Chime(slot, n.followUp)
 	if !n.followUp {
 		c.log.Woke(phrase)
 	}
 	c.turn = c.log.Begin(slot+1, phrase)
 	recording.Get().Opens(c.turn.ID(), slot)
+	if !c.confirmed {
+		id := c.turn.ID()
+		c.confirmBy = time.AfterFunc(confirmWait, func() { c.post(event{kind: evConfirmed, text: id}) })
+	}
 	be := c.be
 	c.send("start", func() error { return be.Start(phrase) })
 
@@ -683,12 +743,8 @@ func (c *conversation) start(n nextTurn) {
 	c.turn.Listening()
 	c.reply = reply{}
 
-	if effect := wakeword.Effect(slot); effect != "" {
-		c.claim.Play(effect, c.ring.Base())
-	}
-
 	c.arm(c.listenFor(n))
-	c.startAudio(slot, n.followUp)
+	c.startAudio(slot, n.followUp, n.wokeAt, c.tone)
 	// The phrase is logged for a follow-up too, because it is what chose the pipeline — not because
 	// anyone said it.
 	slog.Info("turn started", "slot", slot+1, "phrase", phrase, "follow_up", n.followUp)
@@ -704,6 +760,33 @@ func (c *conversation) listenFor(n nextTurn) time.Duration {
 		}
 	}
 	return wakeword.MaxListen(n.slot)
+}
+
+// sounded gives a turn what says it is open: the duck, the tone and the ring, and tells the streamer
+// when the tone went out. A turn Home Assistant may yet refuse gets them when it is confirmed.
+//
+// The duck goes first. It is what the room hears first, and it has a second of queued music to get
+// through, so every step it waits behind is a step of full-volume music over somebody who has already
+// started talking. It also keeps the chime out of the duck: the chime is mixed into the queue after
+// this, so it sounds at its own level rather than being faded along with the track underneath it.
+func (c *conversation) sounded(slot int, followUp bool) {
+	c.confirmed = true
+	if c.confirmBy != nil {
+		c.confirmBy.Stop()
+		c.confirmBy = nil
+	}
+	c.hold(true)
+
+	// A follow-up chimes like the wake word that started the conversation, unless the slot has been
+	// told a follow-up should be silent: the microphone is open again with nothing said to say so.
+	wakeword.Chime(slot, followUp)
+	if effect := wakeword.Effect(slot); effect != "" {
+		c.claim.Play(effect, c.ring.Base())
+	}
+	select {
+	case c.tone <- time.Now():
+	default:
+	}
 }
 
 // think stops sending audio. The same animation turned around says the device has stopped listening
@@ -767,6 +850,10 @@ func (c *conversation) idle(why string, how activity.Outcome) {
 	was := c.phase
 	c.stopStreaming()
 	c.disarm()
+	if c.confirmBy != nil {
+		c.confirmBy.Stop()
+		c.confirmBy = nil
+	}
 
 	if was != phaseIdle {
 		c.send("stop", c.be.Stop)
@@ -909,6 +996,9 @@ func (c *conversation) pipeline(e esphome.PipelineEvent) {
 	switch e.Type {
 	case api.VoiceAssistantEvent_VOICE_ASSISTANT_STT_END:
 		c.post(event{kind: evHeard, text: e.Data["text"]})
+	case api.VoiceAssistantEvent_VOICE_ASSISTANT_STT_START:
+		// The run is this Show's: Home Assistant refuses a duplicate before speech to text starts.
+		c.post(event{kind: evConfirmed})
 	case api.VoiceAssistantEvent_VOICE_ASSISTANT_STT_VAD_START:
 		c.post(event{kind: evSpeaking})
 	case api.VoiceAssistantEvent_VOICE_ASSISTANT_STT_VAD_END:
@@ -988,7 +1078,10 @@ func audioSettings() *api.VoiceAssistantAudioSettings {
 
 // startAudio begins sending microphone frames. The streamer only reads, so it needs no coordination
 // beyond being told to stop.
-func (c *conversation) startAudio(slot int, followUp bool) {
+//
+// wokeAt is when the wake word was heard, for a turn that waited on a race since: what was said while
+// it waited is history too. tone says when the tone went out.
+func (c *conversation) startAudio(slot int, followUp bool, wokeAt time.Time, tone <-chan time.Time) {
 	ctx, cancel := context.WithCancel(context.Background())
 	c.stopAudio = cancel
 
@@ -997,7 +1090,7 @@ func (c *conversation) startAudio(slot int, followUp bool) {
 	// be kept out of the microphone.
 	id := c.turn.ID()
 	be := c.be
-	safe.Go("turn audio", func() { c.stream(ctx, be, slot, followUp, id) })
+	safe.Go("turn audio", func() { c.stream(ctx, be, slot, followUp, id, wokeAt, tone) })
 }
 
 func (c *conversation) stopStreaming() {
@@ -1101,7 +1194,8 @@ func (g *followGate) pass(samples []int16) []int16 {
 }
 
 // stream sends microphone frames until it is told to stop.
-func (c *conversation) stream(ctx context.Context, be backend, slot int, followUp bool, id string) {
+func (c *conversation) stream(ctx context.Context, be backend, slot int, followUp bool, id string,
+	wokeAt time.Time, tone <-chan time.Time) {
 	frames, unlisten := c.source.Listen("turn")
 	defer unlisten()
 
@@ -1113,7 +1207,11 @@ func (c *conversation) stream(ctx context.Context, be backend, slot int, followU
 	//
 	// A slot that chimes does not send it: whoever is talking waits for the tone, so the history holds
 	// the wake word rather than the request, and the tone itself is louder at the array than they are.
-	pre := c.source.Recent(mic.History)
+	history := mic.History
+	if !wokeAt.IsZero() {
+		history += time.Since(wokeAt)
+	}
+	pre := c.source.Recent(history)
 	if wakeword.Tones(slot, followUp) {
 		pre = nil
 	}
@@ -1178,11 +1276,13 @@ func (c *conversation) stream(ctx context.Context, be backend, slot int, followU
 	// stream explains a bad transcript better than anything downstream does.
 	// The tone plays as the turn opens and is louder at the array than a talker across the room, so
 	// nothing is sent while it is sounding. What the speaker still has queued says when that is, and
-	// hardwareTail is what the driver holds after the queue runs out.
+	// hardwareTail is what the driver holds after the queue runs out. A turn waiting to be confirmed
+	// has no tone yet, and whoever is talking is waiting for it, so nothing is sent until it has played.
 	var sounding time.Time
-	if wakeword.Tones(slot, followUp) {
-		sounding = time.Now().Add(wakeword.ChimeLength(slot, followUp) + speaker.HardwareTail)
+	if !wakeword.Tones(slot, followUp) {
+		tone = nil
 	}
+	waiting := tone != nil
 	var held int
 
 	var peak, samples int
@@ -1212,11 +1312,18 @@ func (c *conversation) stream(ctx context.Context, be backend, slot int, followU
 		select {
 		case <-ctx.Done():
 			return
+		case at := <-tone:
+			sounding = at.Add(wakeword.ChimeLength(slot, followUp) + speaker.HardwareTail)
+			tone, waiting = nil, false
 		case frame, ok := <-frames:
 			if !ok {
 				return
 			}
 
+			if waiting {
+				held += len(frame)
+				continue
+			}
 			if !sounding.IsZero() {
 				if time.Now().Before(sounding) {
 					held += len(frame)

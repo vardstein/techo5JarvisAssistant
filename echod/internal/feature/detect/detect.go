@@ -139,7 +139,10 @@ func newDetect() *Detect {
 			voice.Get().Interrupt()
 			return
 		}
-		voice.Get().Start(slot)
+		// Heard by the microphones, so it may have been heard by another Show too: the voice feature
+		// asks Home Assistant which of them answers, with what this one heard (GENBU-224).
+		score, cutoff := e.Crossing(slot)
+		voice.Get().Woke(slot, voice.Wake{Heard: mic.Get().Voice(), Score: score, Cutoff: cutoff})
 	}
 
 	d := &Detect{engine: e, busy: newWakeBusy(led.Get().Busy(), e.Ready)}

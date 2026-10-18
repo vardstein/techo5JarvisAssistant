@@ -124,6 +124,9 @@ type leveler struct {
 	bandPublished atomic.Uint32
 	level         atomic.Uint32
 	clipped       atomic.Uint64
+
+	// heard keeps the last second's band level and raw peaks, for Voice.
+	heard heard
 }
 
 // forget throws away what has been learned, so switching leveling off and on again is a way out of
@@ -215,6 +218,7 @@ func (l *leveler) observe(frame []int16) (rms, peak float32) {
 	l.bandPublished.Store(math.Float32bits(l.bandFloor))
 
 	l.publishLevel(l.bandRMS)
+	l.heard.push(l.bandRMS, peak)
 	return rms, peak
 }
 

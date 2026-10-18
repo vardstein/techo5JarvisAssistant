@@ -307,6 +307,19 @@ func (e *Engine) Ready(n int) bool {
 	return e.slots[n].scored
 }
 
+// Crossing is the score a slot's last detection fired on and the cutoff it crossed, read right after
+// OnDetect: how far over it went is how sure the model was, which is one part of the race between Shows
+// that heard the same word (GENBU-224). Zero for a slot that has not fired.
+func (e *Engine) Crossing(n int) (score, cutoff float64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if n < 0 || n >= len(e.slots) {
+		return 0, 0
+	}
+	return e.slots[n].crossing, e.slots[n].crossed
+}
+
 // Listening reports whether any slot has a wake word.
 func (e *Engine) Listening() bool {
 	e.mu.Lock()
