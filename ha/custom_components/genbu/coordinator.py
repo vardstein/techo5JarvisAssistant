@@ -5,7 +5,7 @@ manifest every few hours for what that card offers.
 
 Each look also works out where each Show's music plays (music.py), so a Show moved to another room
 plays there without anything being set up again, and asks a Show turned away by Home Assistant why
-(keycare.py). And it keeps each Show's Recipes and Updates by voice,
+(keycare.py). It puts the Genbu icon on each Show's firmware update (picture.py). And it keeps each Show's Recipes and Updates by voice,
 which decide what the voice assistant is offered on that Show (llm.py)."""
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from homeassistant.helpers.event import async_track_time_change, async_track_tim
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from . import race
+from . import picture, race
 from .const import (CHANGED, CONF_SEARXNG, DOMAIN, MANUFACTURERS, NAME, NIGHT_AT, PANEL, RECIPES, SHOW_RECIPE,
                     WAKE_EVENT, WAKE_RACE, WAKE_VERDICT,
                     STORE_KEY, STORE_VERSION, UPDATE_ENTITY, VOICE_UPDATES)
@@ -237,6 +237,7 @@ class GenbuHouse:
         for handle in self._closing.values():
             handle.cancel()
         self._closing.clear()
+        picture.undress(self.hass)
 
     @callback
     def _watching(self, data) -> bool:
@@ -477,6 +478,7 @@ class GenbuHouse:
         if changed:
             self._save()
         async_dispatcher_send(self.hass, CHANGED)
+        picture.dress(self.hass, {s.watch[0] for s in self.shows if s.watch and s.watch[0]})
         # Not waited for: asking a Show that hangs must not hold the look up.
         self.entry.async_create_background_task(self.hass, self.keycare.async_look(list(self.shows)),
                                                 f"{DOMAIN} keys")
