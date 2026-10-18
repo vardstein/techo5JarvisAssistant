@@ -353,6 +353,23 @@ def _serial_group(args) -> int | None:
     return 1
 
 
+def _show_name(value: str) -> str:
+    """A name the install takes (install.py checks the same)."""
+    value = value.strip()
+    if not value or len(value) > 64 or any(ord(ch) < 32 for ch in value):
+        raise ValueError("1 to 64 characters, no control characters")
+    return value
+
+
+def _install_name(args, asker: Asker | None = None) -> str | None:
+    """--name, or asked when it was not given; None when nobody can answer."""
+    if args.name:
+        return args.name
+    asker = asker or _asker(args)
+    asker.heading("Name", "What Home Assistant calls the Show, and what the other commands find it by.")
+    return asker.text("the Show's name", None, _show_name, "", help="Such as Kitchen or Bathroom.")
+
+
 def _asker(args) -> Asker:
     return Asker(interactive=not args.no_questions and not os.environ.get("TECHO5_NO_PROMPT")
                  and sys.stdin.isatty() and sys.stdout.isatty())
@@ -1023,8 +1040,9 @@ def _main() -> int:
         return 1
 
     if args.command == "install":
+        args.name = _install_name(args)
         if not args.name:
-            ui.out.fail("install requires --name")
+            ui.out.fail("the install needs the Show's name: give it with --name")
             return 1
         if bool(args.rootfs) != bool(args.rootfs_sha256):
             ui.out.fail("--rootfs and --rootfs-sha256 go together")

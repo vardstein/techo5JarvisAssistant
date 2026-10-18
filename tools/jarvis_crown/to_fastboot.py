@@ -74,7 +74,7 @@ def _address(name: str | None, backups: Path, host: str | None, find_host: Calla
 
 
 def _wait(say: Callable, *, run: Callable, sleep: Callable, clock: Callable, timeout: float, after: str) -> None:
-    say(f"waiting for it in fastboot (up to {int(timeout // 60)} min)")
+    say(f"waiting for it to reboot into fastboot (up to {int(timeout // 60)} min)")
     deadline = clock() + timeout
     while clock() < deadline:
         try:
