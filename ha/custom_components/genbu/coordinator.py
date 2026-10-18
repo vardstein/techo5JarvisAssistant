@@ -20,7 +20,7 @@ import aiohttp
 from homeassistant.auth import EVENT_USER_ADDED, EVENT_USER_REMOVED, EVENT_USER_UPDATED
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_STATE_CHANGED, STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.core import Event, EventOrigin, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.exceptions import HomeAssistantError
@@ -33,7 +33,9 @@ from homeassistant.helpers.event import async_track_time_change, async_track_tim
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from . import race
 from .const import (CHANGED, CONF_SEARXNG, DOMAIN, MANUFACTURERS, NAME, NIGHT_AT, PANEL, RECIPES, SHOW_RECIPE,
+                    WAKE_EVENT, WAKE_RACE, WAKE_VERDICT,
                     STORE_KEY, STORE_VERSION, UPDATE_ENTITY, VOICE_UPDATES)
 from .house import House, Show, manifest_url, newer, tag_url, valid
 from .keycare import ISSUE, KeyCare
@@ -84,6 +86,7 @@ def find_shows(hass: HomeAssistant) -> list[Show]:
                 mac=next((v for k, v in device.connections if k == dr.CONNECTION_NETWORK_MAC), ""),
                 key=key or "",
                 encrypted=bool(entry.data.get("noise_psk")),
+                model=device.model or "",
             )
     return sorted(shows.values(), key=lambda s: s.node)
 
@@ -185,6 +188,9 @@ class GenbuHouse:
         self.release: dict = {}  # the channel's newest manifest, {} until it was read
         self.installed_at: datetime | None = None  # the last install, for how far the Shows are
         self.keycare = KeyCare(hass, self.house, self._save)
+        self.referee = race.Referee()
+        self.racers: dict[str, str] = {}  # the Shows that race their wake words: device id → wake_verdict
+        self._closing: dict[str, asyncio.TimerHandle] = {}  # the races waiting out their window, by phrase
         self._watched: set[str] = set()
         self._player_ids: set[str] = set()
         self._stops: list = []
@@ -217,6 +223,7 @@ class GenbuHouse:
         # A user switched on, changed or deleted: the Shows turned away are asked again now.
         for event in (EVENT_USER_ADDED, EVENT_USER_UPDATED, EVENT_USER_REMOVED):
             self._stops.append(self.hass.bus.async_listen(event, self._user_changed))
+        self._stops.append(self.hass.bus.async_listen(WAKE_EVENT, self._wake))
         await self.async_refresh()
         # Not waited for: a slow GitHub must not hold Home Assistant's start up.
         self.entry.async_create_background_task(self.hass, self.async_read_release(), f"{DOMAIN} release")
@@ -227,6 +234,9 @@ class GenbuHouse:
             stop()
         self._stops.clear()
         self._debounce.async_cancel()
+        for handle in self._closing.values():
+            handle.cancel()
+        self._closing.clear()
 
     @callback
     def _watching(self, data) -> bool:
@@ -470,6 +480,88 @@ class GenbuHouse:
         # Not waited for: asking a Show that hangs must not hold the look up.
         self.entry.async_create_background_task(self.hass, self.keycare.async_look(list(self.shows)),
                                                 f"{DOMAIN} keys")
+        self._race_again()
+
+    # The wake race (GENBU-224, race.py).
+
+    def _race_again(self) -> None:
+        """Renews the lease of every Show online that can race, which lasts it three minutes: a Show this
+        no longer reaches stops waiting for verdicts by itself. Over the encrypted link only, which the
+        Show checks too."""
+        actions = list(self.hass.services.async_services_for_domain("esphome"))
+        self.racers, leases = {}, []
+        for s in self.shows:
+            if not (s.online and s.encrypted and s.device):
+                continue
+            verdict = show_action(actions, [s.name, s.node], True, WAKE_VERDICT)
+            lease = show_action(actions, [s.name, s.node], True, WAKE_RACE)
+            if verdict and lease:
+                self.racers[s.device] = verdict
+                leases.append(lease)
+        if leases:
+            self.entry.async_create_background_task(self.hass, self._lease(leases), f"{DOMAIN} wake race")
+
+    async def _lease(self, leases: list[str]) -> None:
+        await asyncio.gather(*(self._esphome(a, {}) for a in leases))
+
+    async def _esphome(self, action: str, data: dict) -> None:
+        try:
+            await self.hass.services.async_call("esphome", action, data, blocking=False)
+        except HomeAssistantError as exc:
+            LOGGER.debug("%s did not go out: %s", action, exc)
+
+    @callback
+    def _wake(self, event: Event) -> None:
+        """A Show heard its wake word and waits for its verdict."""
+        # The ESPHome integration fires a Show's events here; one fired through the API is somebody else.
+        if event.origin is not EventOrigin.local:
+            return
+        show = self.show(event.data.get("device_id"))
+        if show is None or not show.encrypted:
+            return
+        h = race.heard(show.device, show.name, event.data, show.model)
+        if h is None:
+            return
+        what = self.referee.hear(h, set(self.racers), self.hass.loop.time())
+        if what == "late":
+            LOGGER.info("wake race %r: %s heard it late, would have %s: %s", h.phrase, h.name,
+                        "won" if self.referee.would_have_won(h) else "lost", race.describe(h))
+            self._verdict(h, False)
+        elif what == "open":
+            self._closing[h.phrase] = self.hass.loop.call_later(race.WINDOW, self._close, h.phrase)
+        elif what == "close":
+            self._close(h.phrase)
+
+    @callback
+    def _close(self, phrase: str) -> None:
+        if (handle := self._closing.pop(phrase, None)) is not None:
+            handle.cancel()
+        v = self.referee.close(phrase, self.hass.loop.time())
+        if v is None:
+            return
+        self._verdict(v.winner, True)
+        for h in v.losers:
+            self._verdict(h, False)
+        last = self.referee.races[phrase].last
+        LOGGER.info("wake race %r: %s answers, after %.0f ms. %s", phrase, v.winner.name, v.waited * 1000,
+                    "; ".join(race.describe(h, last) for h in [v.winner, *v.losers]))
+        for h in [v.winner, *v.losers]:
+            if h.odd:
+                LOGGER.warning("wake race: %s said levels no microphone gives, taken as the lowest", h.name)
+        if v.flagged is not None:
+            LOGGER.warning("wake race: %s answered, but %s heard the voice %.0f dB further over its noise",
+                           v.winner.name, v.flagged.name, v.flagged.over_noise - v.winner.over_noise)
+
+    @callback
+    def _verdict(self, h: race.Heard, won: bool) -> None:
+        show = self.show(h.show)
+        action = self.racers.get(h.show) or (show_action(
+            list(self.hass.services.async_services_for_domain("esphome")), [show.name, show.node], True,
+            WAKE_VERDICT) if show else None)
+        if not action:
+            LOGGER.warning("wake race: no way to tell %s whether it answers; it opens its run by itself", h.name)
+            return
+        self.hass.async_create_task(self._esphome(action, {"wake": h.wake, "won": won}), eager_start=True)
 
     def _tidy(self) -> bool:
         """Keeps the genbu device of each Show's music select in step with the Show: its name follows a

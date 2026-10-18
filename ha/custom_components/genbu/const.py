@@ -22,6 +22,11 @@ CONF_SEARXNG = "searxng_url"  # the recipe search; without it nobody gets genbu_
 RECIPE_ENTITY = "sensor.genbu_recipe"  # the recipe last found, which the recipe page shows
 NEW_RECIPE = f"{DOMAIN}_recipe"  # dispatcher signal: a recipe was found
 SHOW_RECIPE = "recipe_show"  # the Show's ESPHome action that puts the recipe page up
+# Which Show answers a wake word several heard (GENBU-224, race.py): what a Show fires when it heard one,
+# its action that makes it wait for a verdict, and the one that gives it.
+WAKE_EVENT = "esphome.genbu_wake"
+WAKE_RACE = "wake_race"
+WAKE_VERDICT = "wake_verdict"
 OLD_RECIPES = "jarvis_recipe"  # Genbu Rezepte, whose recipe search moved here in 1.4.0
 # The per-Show switches the assistant's tools ask before they are offered, by key in House.switches.
 RECIPES = "recipes"

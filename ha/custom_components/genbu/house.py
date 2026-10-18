@@ -121,6 +121,7 @@ class Show:
     mac: str = ""  # its MAC, which a rename doesn't change
     key: str = ""  # its "Home Assistant key" sensor, how its key stands (GENBU-196)
     encrypted: bool = False  # whether its ESPHome connection has an encryption key
+    model: str = ""  # its board, as its device says (the wake race's board offset)
 
 
 def channel_of(version: str) -> str:
