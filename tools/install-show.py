@@ -944,7 +944,8 @@ def main():
     note('USB closed; Settings -> Privacy & Security -> USB debugging opens the serial console again')
 
     print("\nDone. '%s' runs %s %s from slot a; the slot commits itself after five healthy minutes." % (a.name, product, version))
-    print('Home Assistant finds it as an ESPHome device. When it asks for the encryption key, paste:\n\n    %s\n\n(kept in %s)' % (psk, key_file))
+    # the key itself never goes on the screen: terminal output ends up pasted in chats and tickets
+    print('Home Assistant finds it as an ESPHome device. The encryption key it asks for is in %s' % key_file)
     if settings:
         print('Ready for: %s.' % ', '.join(describe_settings(False, settings) + (['Home Assistant at %s' % settings['ha_url']] if settings.get('ha_url') else [])))
     if twrp and not wifi:

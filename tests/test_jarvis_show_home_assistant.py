@@ -977,29 +977,29 @@ class CalendarTests(unittest.TestCase):
             self.assertEqual(bool(fake.posted("/api/config/config_entries/flow/C1")), added)
             self.assertEqual(fake.sources(), [{"calendars": "calendar.personal"}] if added else [])
 
-    def test_an_account_it_has_is_replaced_or_the_step_skipped(self):
-        offered = {}
-
-        def chooser(answer):
-            def choose(label, current, options, names=None):
-                offered[label] = (options, names)
-                return {"calendar account": answer, "calendars": "all"}.get(label)
-            return choose
+    def test_an_account_it_has_is_never_asked_about_again(self):
+        """The account is the house's: the next Show's install keeps it without a question."""
         fake = FakeCalendarHA(calendars=("calendar.personal", "calendar.contact_birthdays"),
                               caldav_brings=("calendar.personal_2", "calendar.contact_birthdays_2"))
-        _, log = run_deploy(fake, choose=chooser("skip"), host="10.0.0.9", voice_extras=False,
+        asked = []
+
+        def choose(label, current, options, names=None):
+            asked.append(label)
+            return {"calendars": "all"}.get(label)
+        _, log = run_deploy(fake, choose=choose, host="10.0.0.9", voice_extras=False,
                             ask_caldav=lambda: self.fail("asked for an account"))
-        options, names = offered["calendar account"]
-        self.assertEqual(options, ["replace", "skip"])
-        self.assertEqual(names["replace"], "replace the CalDAV account old-user with another one")
-        self.assertEqual(names["skip"], "skip, keep old-user and its calendars: Contact_Birthdays, Personal")
+        self.assertNotIn("calendar account", asked)
+        self.assertIn("calendars", asked)
+        self.assertIn("the house's CalDAV account old-user stays; to swap it, run this again with --caldav-url", log)
         self.assertFalse(fake.posted("/api/config/config_entries/flow/C1"))
+        self.assertNotIn(("DELETE", "/api/config/config_entries/entry/OLD", None), fake.calls)
         self.assertEqual(fake.sources(), [{"calendars": "calendar.contact_birthdays, calendar.personal"}])
 
+    def test_only_a_given_account_replaces_the_one_it_has(self):
         fake = FakeCalendarHA(calendars=("calendar.personal", "calendar.contact_birthdays"),
                               caldav_brings=("calendar.personal_2", "calendar.contact_birthdays_2"))
-        _, log = run_deploy(fake, choose=chooser("replace"), host="10.0.0.9", voice_extras=False,
-                            ask_caldav=lambda: ACCOUNT)
+        _, log = run_deploy(fake, choose=lambda label, *_: {"calendars": "all"}.get(label), host="10.0.0.9",
+                            voice_extras=False, caldav=ACCOUNT)
         self.assertIn(("DELETE", "/api/config/config_entries/entry/OLD", None), fake.calls)
         self.assertEqual(sorted(fake.calendars), ["calendar.contact_birthdays", "calendar.personal"])
         self.assertEqual(set(fake.owner.values()), {"CAL1"})

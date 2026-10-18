@@ -116,7 +116,8 @@ class HouseTest(unittest.TestCase):
         result, lines, asked = run(fake, answers={})
         self.assertEqual((result, asked), (genbu.FOLLOW, []))
         self.assertTrue(lines[0].startswith(f"the house is on version v1.0.3; {NODE} follows it"), lines)
-        self.assertIn("restarting", lines)
+        self.assertIn(genbu.NO_STATUS, lines)
+        self.assertNotIn("restarting", lines)  # an unavailable status is not proof of a restart
         self.assertEqual(lines[-1], "Following the house · version v1.0.3")
         self.assertEqual(fake.posted("/api/config/config_entries/flow"), [])
 
@@ -124,6 +125,11 @@ class HouseTest(unittest.TestCase):
         fake = FakeHouse(entry=True, statuses=["Version v1.0.3 did not install here; staying on v1.0.2"])
         _, lines, _ = run(fake)
         self.assertEqual(lines[-1], "WARN: Version v1.0.3 did not install here; staying on v1.0.2")
+
+    def test_a_show_that_said_no_is_not_waited_for(self):
+        fake = FakeHouse(entry=True, statuses=["Your other Shows are on v1.0.3; install it from the update card"])
+        _, lines, _ = run(fake)
+        self.assertEqual(lines[-1], "Your other Shows are on v1.0.3; install it from the update card")
 
     def test_waiting_ends_and_leaves_it_to_the_show(self):
         fake = FakeHouse(entry=True, statuses=["Moving to v1.0.3 once nobody is using this Show"])

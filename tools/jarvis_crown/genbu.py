@@ -28,6 +28,9 @@ HOW_TO_ADD = ("copy ha/custom_components/genbu/ to /config/custom_components/gen
               "and restart it")
 ON_ITS_OWN = "the Show looks for updates on its own channel, as before"
 GONE = ("unavailable", "unknown", "")
+# Said for a status in GONE: the Show may be restarting, or Home Assistant may have lost its entities, so
+# it says only what is known.
+NO_STATUS = "Home Assistant has no update status from it right now"
 
 
 @dataclass
@@ -84,11 +87,14 @@ def _wait_aligned(ha: HomeAssistant, entry_id: str, version: str, progress: Call
         if "did not install here" in line or "could not be fetched" in line or "not reachable since" in line:
             progress(f"WARN: {line}")
             return
-        if clock() >= deadline:
-            progress(f"it carries on by itself ({line or 'restarting'}); its update card in Home Assistant "
-                     "shows how far it is")
+        if "install it from the update card" in line:
+            # it was asked and said no (or nobody answered): it moves only when someone installs it
+            progress(line)
             return
-        shown = "restarting" if line in GONE else line
+        shown = NO_STATUS if line in GONE else line
+        if clock() >= deadline:
+            progress(f"it carries on by itself ({shown}); its update card in Home Assistant shows how far it is")
+            return
         if shown != last:
             progress(shown)
             last = shown

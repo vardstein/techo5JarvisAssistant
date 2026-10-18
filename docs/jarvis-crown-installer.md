@@ -523,14 +523,16 @@ What happens with the answers:
      within a month; otherwise a new one replaces it. See [Lyrics](lyrics.md);
   9. sets up the calendars ([Calendars](calendars.md)). When there's someone at the terminal, it
      first asks whether to add a calendar account to Home Assistant. An account never comes in next
-     to one Home Assistant has (its calendars would all turn up twice, as `calendar.<name>_2`). When
-     there's a CalDAV account already, the question is replace or skip. Replace adds the new account,
+     to one Home Assistant has (its calendars would all turn up twice, as `calendar.<name>_2`). The
+     account is the whole house's, so when Home Assistant has a CalDAV account already, nothing is
+     asked and it stays; a quick answer while installing the next Show can't swap it. Only
+     `--caldav-url` replaces it: that adds the new account,
      and only once Home Assistant has taken it does it remove the old one and give the new calendars
      the ids the old ones had, so dashboards and Shows that use `calendar.personal` keep working. A
      refused password, or the same account again, leaves the old one as it is. Calendars from a
      `calendar:` block in `configuration.yaml` can't be removed over the API, so then no account is
-     added at all; the tool says to remove the block, restart Home Assistant and run it again. Yes or
-     replace asks for the CalDAV server's address, the user name and the password (an app password
+     added at all; the tool says to remove the block, restart Home Assistant and run it again. Yes
+     asks for the CalDAV server's address, the user name and the password (an app password
      where the server has them).
      It fills these into Home Assistant's own CalDAV form, which tries them before saving. The
      password goes to Home Assistant only. The installer doesn't write it anywhere, and the Show

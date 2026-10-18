@@ -144,7 +144,8 @@ def parse_args() -> argparse.Namespace:
                        help="the Home Assistant calendars the Show shows, like 'calendar.personal, calendar.family' "
                             "(default: ask; '' leaves them alone)")
     setup.add_argument("--caldav-url", help="add this CalDAV calendar account to Home Assistant (Nextcloud, iCloud, "
-                                            "mailbox.org ...), with --caldav-user and --caldav-password-file")
+                                            "mailbox.org ...), with --caldav-user and --caldav-password-file; it "
+                                            "replaces the one there, which is otherwise never asked about again")
     setup.add_argument("--caldav-user", help="its user name")
     setup.add_argument("--caldav-password-file", type=Path,
                        help="a file holding its password, best an app password; it goes to Home Assistant and "
@@ -419,8 +420,8 @@ QUESTIONS = {  # label: (question, help, names for the options, the answers Ente
     "new name": ("The Show has a new name. Give its entities the new name too?",
                  "Its automations, scripts and dashboards follow, each saved first. The history stays.", {}, ()),
     "calendar account": ("Add a calendar account to Home Assistant?",
-                         "For the dashboard's calendar card and the Show's own calendar page. One it has already is "
-                         "replaced, never added twice. Home Assistant "
+                         "For the dashboard's calendar card and the Show's own calendar page. Every Show uses it, "
+                         "so this is asked only once; --caldav-url swaps it later. Home Assistant "
                          "keeps the password; the installer and the Show don't.", {}, ()),
     "genbu missing": ("Genbu is not in Home Assistant yet. Check again?",
                       "Copy ha/custom_components/genbu/ to /config/custom_components/genbu/ on Home Assistant, "

@@ -199,7 +199,10 @@ After the HA sign-in (job 40):
 3. **The house has a version:** say that the Show follows it. The Show aligns on its own (the first row of
    the table above). The installer waits until the versions match or a failure is reported, and shows the
    result. It waits up to 15 minutes; a fresh Show lets its own version settle for 5 of them first. After
-   that the Show carries on by itself and its update card shows how far it is.
+   that the Show carries on by itself and its update card shows how far it is. A Show that asked and was
+   told no ("install it from the update card") moves only when someone installs it, so that ends the
+   wait at once. While Home Assistant has no update status from the Show, the installer says just that:
+   the Show may be restarting, or Home Assistant may have lost its entities.
 
 ## What changes where
 

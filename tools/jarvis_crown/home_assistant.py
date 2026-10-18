@@ -1211,7 +1211,8 @@ def _set_up_calendars(ha: HomeAssistant, prefix: str, opts: "DeployOptions", cho
                       clock: Callable[[], float]) -> None:
     """A CalDAV account for Home Assistant when one is given or wanted, then the calendars this Show
     shows, a quick check that each of them answers, and the dashboard's calendar card pointed at them. An account never comes in
-    next to one Home Assistant has: it replaces it, or the step is skipped."""
+    next to one Home Assistant has: it replaces it, or the step is skipped. The account is the house's, so
+    it is asked for only while Home Assistant has none; only --caldav-url replaces one."""
     have = _calendars(ha)
     old = _caldav_entries(ha)
     registered = {str(e.get("entity_id")) for e in ha.ws({"type": "config/entity_registry/list"}) or []}
@@ -1225,17 +1226,13 @@ def _set_up_calendars(ha: HomeAssistant, prefix: str, opts: "DeployOptions", cho
                  "is added. To replace it, remove the calendar: block there, restart Home Assistant and run "
                  "this again")
         account = None
+    elif asking and old:
+        # every Show shares it: a quick answer on the next Show's install must not swap it
+        accounts = ", ".join(str(e.get("title") or e.get("entry_id")) for e in old)
+        progress(f"the house's CalDAV account {accounts} stays; to swap it, run this again with --caldav-url")
     elif asking:
-        if old:
-            accounts = ", ".join(str(e.get("title") or e.get("entry_id")) for e in old)
-            its = "its" if len(old) == 1 else "their"
-            names = {"replace": f"replace the CalDAV account {accounts} with another one",
-                     "skip": f"skip, keep {accounts} and {its} calendars: " + ", ".join(sorted(set(have.values())))}
-            wanted = choose("calendar account", "", ["replace", "skip"], names) == "replace"
-        else:
-            names = {"yes": "yes, a CalDAV account (Nextcloud, iCloud, mailbox.org ...)", "no": "no"}
-            wanted = choose("calendar account", "", ["yes", "no"], names) == "yes"
-        if wanted:
+        names = {"yes": "yes, a CalDAV account (Nextcloud, iCloud, mailbox.org ...)", "no": "no"}
+        if choose("calendar account", "", ["yes", "no"], names) == "yes":
             account = opts.ask_caldav()
     if account is not None:
         try:
