@@ -33,7 +33,7 @@ import (
 var (
 	say         = func(words string) { safe.Go("update notice", func() { remind.Say(words) }) }
 	ask         = remind.Ask
-	canSay      = remind.CanSay
+	canSay      = func() bool { return remind.CanSay() && i18n.Known() } // never a guessed language
 	quiet       = config.Quiet
 	install     = func(u *Firmware) { safe.Go("update install", func() { u.Install(context.Background()) }) }
 	updateHouse = func() { safe.Go("house update", func() { installHouse(context.Background()) }) }

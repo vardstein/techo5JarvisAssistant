@@ -36,6 +36,15 @@ func Lang() string {
 	return ""
 }
 
+// Known is whether Lang is an answer and not a guess: the screen has a language, the direct pipeline
+// names one, or Home Assistant said its pipeline's. Until then Lang's English is only the fallback, and
+// words spoken through the pipeline may be in a language nobody there uses: bathroomShow5 asked about
+// its update in English through a German pipeline while its own way to Home Assistant was still shut.
+func Known() bool {
+	c := config.Get()
+	return c.Screen.Language != "" || c.Brain.Direct() || assistant.Load() != nil
+}
+
 // assistant is the language of Home Assistant's voice pipeline, which a screen with no language set
 // follows. Somebody who set up their assistant in German wants the screen in German too.
 var assistant atomic.Pointer[string]

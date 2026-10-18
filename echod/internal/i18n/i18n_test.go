@@ -47,6 +47,27 @@ func TestPickingALanguageChangesTheNextFrame(t *testing.T) {
 	}
 }
 
+// bathroomShow5 asked out loud in English through a German pipeline: English before anyone said a
+// language is a fallback, not an answer.
+func TestTheLanguageIsKnownOnlyOnceSaid(t *testing.T) {
+	speak(t, "")
+	old := assistant.Load()
+	assistant.Store(nil)
+	t.Cleanup(func() { assistant.Store(old) })
+	if Known() {
+		t.Fatal("known with no screen language and nothing from Home Assistant")
+	}
+	SetAssistant("de-DE")
+	if !Known() || Lang() != "de" {
+		t.Errorf("after Home Assistant said de-DE: known %v, lang %q", Known(), Lang())
+	}
+	speak(t, "en")
+	assistant.Store(nil)
+	if !Known() {
+		t.Error("a screen set to English is an answer")
+	}
+}
+
 func TestUntranslatedStaysEnglish(t *testing.T) {
 	speak(t, "de")
 	if got := T("Something nobody translated"); got != "Something nobody translated" {
