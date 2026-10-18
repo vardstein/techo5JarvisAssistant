@@ -368,11 +368,13 @@ func (c *conversation) handle(e event) {
 		c.start(nextTurn{slot: e.slot})
 
 	case evWoke:
-		// Only an idle Show races. One that is listening ignores the word and one that is busy is
-		// interrupted by it, as without a race: either way this Show is the one being talked to. A race
-		// already running is the same utterance heard by a second slot.
+		// A Show that is listening ignores the word, which is part of the sentence. Any other one races,
+		// a busy one too: being busy does not make it the Show being talked to, when it is busy with a
+		// wake word that misfired, and one that took the word without a race reached Home Assistant
+		// first and kept the run from the Show that won it. A race already running is the same
+		// utterance heard by a second slot.
 		switch {
-		case c.phase != phaseIdle:
+		case c.phase == phaseListening:
 			c.start(nextTurn{slot: e.slot})
 		case c.racing != nil:
 			slog.Info("wake word during a race, ignored", "slot", e.slot+1)
@@ -383,7 +385,9 @@ func (c *conversation) handle(e event) {
 		}
 
 	case evVerdict:
-		if c.phase != phaseIdle {
+		// A turn that opened while the race ran, from a button or a question, keeps the Show. The one
+		// the race was run over is the turn its verdict decides on.
+		if c.phase != phaseIdle && (c.racing == nil || c.racing.over != c.turn.ID()) {
 			c.endRace()
 			return
 		}
@@ -672,7 +676,7 @@ func (c *conversation) start(n nextTurn) {
 
 		// Held back before the turn ends, so that ending it does not hand the speaker back to a track
 		// for the moment it takes the next turn to open.
-		c.pending = &nextTurn{slot: slot, asked: n.asked}
+		c.pending = &nextTurn{slot: slot, asked: n.asked, wokeAt: n.wokeAt, won: n.won}
 		c.idle("interrupted", activity.Canceled)
 
 		// The stopped run has yet to close, and its last events are still on their way.

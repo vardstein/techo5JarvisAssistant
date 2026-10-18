@@ -65,6 +65,8 @@ type race struct {
 	slot  int
 	at    time.Time
 	timer *time.Timer
+	// over is the turn a win takes over, for a Show that was busy when it heard the word; "" when idle.
+	over string
 }
 
 // lease is until when this Show races its wake words, in Unix nanoseconds; zero is never.
@@ -137,6 +139,9 @@ const (
 func (c *conversation) race(slot int, w Wake) {
 	phrase, _ := c.phraseFor(slot)
 	r := &race{id: newWakeID(), slot: slot, at: time.Now()}
+	if c.phase != phaseIdle {
+		r.over = c.turn.ID()
+	}
 	r.timer = time.AfterFunc(verdictWait, func() {
 		c.post(event{kind: evVerdict, text: r.id, code: verdictNone})
 	})
@@ -171,6 +176,11 @@ func (c *conversation) verdict(id, verdict string) {
 
 	switch verdict {
 	case verdictLost:
+		if r.over != "" {
+			// The word was for another room; the turn this Show is in goes on, ring and all.
+			slog.Info("another Show answers this one, keeping its own turn", "slot", r.slot+1, "waited", waited)
+			return
+		}
 		slog.Info("another Show answers this one", "slot", r.slot+1, "waited", waited)
 		c.leds.Busy().Flash(led.WorkElsewhere, yieldFlash)
 	case verdictWon:

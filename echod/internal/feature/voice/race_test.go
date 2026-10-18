@@ -5,6 +5,8 @@ import (
 	"time"
 
 	esphome "github.com/ygelfand/go-esphome-device"
+
+	"github.com/HuskerMinion/techo5/echod/internal/feature/activity"
 )
 
 // A verdict decides whether a Show listens, so both race actions want the encrypted API. The test machine
@@ -86,6 +88,30 @@ func TestAConfirmationForNoTurn(t *testing.T) {
 	c.handle(event{kind: evConfirmed, text: "gone"})
 	if c.confirmed {
 		t.Fatal("an idle conversation took a confirmation")
+	}
+}
+
+// A Show busy with a turn races the wake word too, and losing leaves that turn alone: the word was for
+// another room. A turn that opened while the race ran is not taken over by its verdict either.
+func TestABusyShowRacesAndKeepsItsTurnWhenItLoses(t *testing.T) {
+	var log activity.Log
+	c := &conversation{events: make(chan event, 4), vs: &esphome.VoiceSatellite{},
+		phase: phaseThinking, turn: log.Begin(0, "Okay Nabu")}
+	c.race(0, Wake{Score: 0.9, Cutoff: 0.5})
+	if c.racing == nil || c.racing.over != c.turn.ID() {
+		t.Fatalf("race %+v over turn %s", c.racing, c.turn.ID())
+	}
+	c.handle(event{kind: evVerdict, text: c.racing.id, code: verdictLost})
+	if c.racing != nil || c.phase != phaseThinking {
+		t.Fatalf("after losing: race %+v, phase %v", c.racing, c.phase)
+	}
+
+	c.race(0, Wake{})
+	id := c.racing.id
+	c.turn = log.Begin(0, "Okay Nabu") // a question opened a turn of its own meanwhile
+	c.handle(event{kind: evVerdict, text: id, code: verdictWon})
+	if c.racing != nil || c.phase != phaseThinking || c.pending != nil {
+		t.Fatalf("a verdict took over a turn it was not run over: race %+v, pending %+v", c.racing, c.pending)
 	}
 }
 
