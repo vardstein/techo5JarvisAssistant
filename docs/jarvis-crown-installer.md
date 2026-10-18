@@ -716,9 +716,17 @@ another Show. Its address comes from `--host`, its IP address sensor in Home Ass
 record, or mDNS, in that order, and is never printed. Once you have typed the Show's name it leaves the
 reset mark and restarts the Show, which erases the same as [Factory reset](install.md#factory-reset) on
 its screen and comes back in setup mode. With `--keep-wifi yes` it keeps the networks it knew; a Show
-whose image predates that refuses before anything changes, and you update it or answer no. A Show that
-can't be reached, or whose reset doesn't go through, is not waited for: the house side goes anyway, and
-the run ends with "removed only" and tells you to reset it on its screen.
+whose image predates that refuses before anything changes, and you update it or answer no. The run
+then waits up to a minute for the Show to go down; one that still runs says so, and erases the next time
+it starts (unplug it and plug it back in). A Show that can't be reached, or whose reset doesn't go
+through, is not waited for: the house side goes anyway, and the run ends with "removed only" and tells
+you to reset it on its screen. A reset is noted in `backups/<serial>/show.json`: a later run can't log
+in any more (the keys went with the reset) and says the earlier run reset it. The Show has a new SSH
+host key after a reset, so ssh to it stops at the old one until an install over USB pins the new one.
+
+When nothing of the Show is left in Home Assistant (say, it was taken out without a reset), the run
+says so and still offers the reset, as long as this computer has the Show's key and no earlier run
+reset it.
 
 Then it saves everything that goes in `backups/home-assistant/` and removes it, in this order:
 
@@ -737,7 +745,9 @@ Then it saves everything that goes in `backups/home-assistant/` and removes it, 
 
 What stays: everything with only the "Genbu Show installed" label (the house-wide `jarvis_local_*`
 automations and the music scripts), the blueprints, the room and its dashboard, the calendars, and
-`backups/<serial>/`, so the unit can be installed again. Other automations, scripts
+`backups/<serial>/`, so the unit can be installed again. On this computer the Show's SSH key and its
+pinned host key stay (`~/.ssh/genbu_<name>*`), and so do any router rules made for its address; the
+run lists them. Other automations, scripts
 and dashboards that use the Show are listed, not changed: they show up as unavailable entities until
 you change them.
 

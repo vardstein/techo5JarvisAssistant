@@ -16,6 +16,7 @@ from __future__ import annotations
 import ipaddress
 import re
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -27,12 +28,17 @@ from .to_fastboot import SERIAL_PROBE
 LIB = "/lib/techo5-lib.sh"
 MARK = "/data/misc/techo5/factory_reset"
 KEEPS_WIFI = r"(?m)^T5_RESET_KEEPS=.*\bwifi\b"
+BOOT_ID = "/proc/sys/kernel/random/boot_id"
 PROBE = (f"test -d /data/misc/techo5 && echo genbu; grep -q '^T5_RESET_KEEPS=.*wifi' {LIB} && echo keeps-wifi; "
          f"{SERIAL_PROBE}")
 
 
 class ResetError(RuntimeError):
     pass
+
+
+class NotRestarted(ResetError):
+    """The mark is on the Show but it still runs: it erases the next time it starts."""
 
 
 @dataclass
@@ -99,21 +105,39 @@ def probe(host: str, *, name: str, identity: Path | None, expected: str | None,
     return Reach(host=host, serial=serial, keeps_wifi="keeps-wifi" in r.stdout.split())
 
 
-def reset(reach: Reach, *, keep_wifi: bool, name: str, identity: Path, run: Callable = subprocess.run) -> None:
-    """Leaves the mark, checks it is there, and restarts the Show; the boot script erases. ResetError when
-    the mark could not be left: then nothing on the Show changed."""
+def reset(reach: Reach, *, keep_wifi: bool, name: str, identity: Path, run: Callable = subprocess.run,
+          wait: float = 60, sleep: Callable[[float], None] = time.sleep,
+          clock: Callable[[], float] = time.monotonic) -> None:
+    """Leaves the mark, checks it is there, restarts the Show and waits until it has gone down; the boot
+    script erases. ResetError when the mark could not be left: then nothing on the Show changed.
+    NotRestarted when it still runs the same boot after wait seconds."""
     if keep_wifi and not reach.keeps_wifi:
         raise ResetError("its image can't keep the Wi-Fi through a reset")
     lines = "ssh keep-wifi" if keep_wifi else "ssh"
     try:
         r = _ssh(reach.host, f"umask 077; printf '%s\\n' {lines} > {MARK}.new && mv -f {MARK}.new {MARK} && sync "
-                             f"&& cat {MARK}", name=name, identity=identity, run=run)
+                             f"&& cat {MARK} && cat {BOOT_ID}", name=name, identity=identity, run=run)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ResetError(f"SSH did not answer ({type(exc).__name__})") from None
-    if r.returncode != 0 or r.stdout.split() != lines.split():
+    said = r.stdout.split()
+    if r.returncode != 0 or said[:-1] != lines.split():
         raise ResetError(f"the mark was not left ({_why(r, reach.host)})")
+    boot = said[-1]
     try:
         # The connection drops with the restart, so how ssh ends says nothing.
         _ssh(reach.host, "reboot", name=name, identity=identity, run=run, timeout=15)
     except (OSError, subprocess.TimeoutExpired):
         pass
+    # Gone down is enough: it stops answering, or answers from a new boot. Its shutdown gives the daemon
+    # up to ten seconds before SSH stops.
+    end = clock() + wait
+    while True:
+        try:
+            r = _ssh(reach.host, f"cat {BOOT_ID}", name=name, identity=identity, run=run, timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            return
+        if r.returncode != 0 or r.stdout.strip() != boot:
+            return
+        if clock() >= end:
+            raise NotRestarted("it did not restart. The mark is on it, so it erases the next time it starts")
+        sleep(5)

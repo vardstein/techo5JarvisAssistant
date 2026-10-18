@@ -420,7 +420,7 @@ class RemoveShowCommandTests(unittest.TestCase):
         self.reach = show_reset.Reach(host="10.0.0.5", serial="G0000000000005", keeps_wifi=True)
 
     def run_it(self, *, reset_show=True, keep_wifi=False, probe=None, reset=None, answers=(), no_questions=False,
-               players=(PLAYER,)):
+               players=(PLAYER,), nothing_left=False, key=True, record=None):
         cli = self.cli
         found = remove.find(FakeHA(), "genbuShow5", music=Music(players=players).find)
         settings = types.SimpleNamespace(ha_admin=True, ha_sign_in=object(), music_assistant="ma.example.org",
@@ -429,8 +429,11 @@ class RemoveShowCommandTests(unittest.TestCase):
                                      reset_show=reset_show, keep_wifi=keep_wifi, host=None, ssh_identity=None)
         asked = iter(answers)
         asker = types.SimpleNamespace(yes=lambda label, **_: next(asked))
+        plan = remove.plan(found) if not nothing_left else ([], ["the blueprints"])
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch.object(cli, "gather", return_value=settings), \
+                mock.patch.object(cli.gone, "plan", return_value=plan), \
+                mock.patch.object(cli, "identity_for", return_value=pathlib.Path("/k/genbu_genbuShow5") if key else None), \
                 mock.patch.object(cli, "_asker", return_value=asker), \
                 mock.patch.object(cli.gone, "find", return_value=found), \
                 mock.patch.object(cli.gone, "remove", return_value=0) as removed, \
@@ -438,7 +441,12 @@ class RemoveShowCommandTests(unittest.TestCase):
                 mock.patch.object(cli.show_reset, "probe", side_effect=probe, return_value=self.reach) as probed, \
                 mock.patch.object(cli.show_reset, "reset", side_effect=reset) as reset_done, \
                 contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
+            folder = pathlib.Path(tmp) / "G0000000000005"
+            if record is not None:
+                record_show(folder, name="genbuShow5", board="crown")
+                update_show(folder, **record)
             code = cli.remove_show_command(args, pathlib.Path(tmp))
+            self.record = known_shows(pathlib.Path(tmp))
         self.out = out.getvalue() + err.getvalue()
         self.assertNotIn("10.0.0.5", self.out)
         return code, removed, probed, reset_done
@@ -485,6 +493,52 @@ class RemoveShowCommandTests(unittest.TestCase):
         code, _, _, reset_done = self.run_it(reset_show=None, keep_wifi=None, answers=[True, False])
         self.assertEqual(code, 0)
         self.assertFalse(reset_done.call_args.kwargs["keep_wifi"])
+
+    def test_the_reset_is_kept_in_the_record(self):
+        self.run_it(record={})
+        self.assertTrue(self.record[0].reset)
+        self.run_it(record={}, reset_show=False, keep_wifi=None)
+        self.assertEqual(self.record[0].reset, "")
+
+    def test_a_rerun_after_a_reset_says_so(self):
+        code, removed, _, _ = self.run_it(record={"reset": "2026-10-18T10:00:00+00:00"},
+                                          probe=show_reset.ResetError("SSH: Permission denied (publickey)"))
+        self.assertEqual(code, 0)
+        removed.assert_called_once()
+        self.assertIn("An earlier run reset it on 2026-10-18", self.out)
+
+    def test_a_show_that_does_not_restart_erases_later(self):
+        code, removed, _, _ = self.run_it(reset=show_reset.NotRestarted("it did not restart"))
+        self.assertEqual(code, 0)
+        removed.assert_called_once()
+        self.assertIn("is removed and erases the next time it starts", self.out)
+        self.assertNotIn("removed only", self.out)
+
+    def test_nothing_left_in_the_house_can_still_be_reset(self):
+        code, removed, _, reset_done = self.run_it(nothing_left=True)
+        self.assertEqual(code, 0)
+        reset_done.assert_called_once()
+        removed.assert_not_called()
+        self.assertIn("nothing of genbuShow5 is left in the house", self.out)
+        self.assertIn("genbuShow5 is reset: it comes back in setup mode", self.out)
+
+    def test_nothing_left_and_no_reset_is_done(self):
+        code, removed, probed, _ = self.run_it(nothing_left=True, reset_show=False, keep_wifi=None)
+        self.assertEqual(code, 0)
+        probed.assert_not_called()
+        removed.assert_not_called()
+
+    def test_nothing_left_and_out_of_reach_says_reset_it_by_hand(self):
+        code, removed, _, _ = self.run_it(nothing_left=True, probe=show_reset.ResetError("SSH did not answer"))
+        self.assertEqual(code, 1)
+        removed.assert_not_called()
+        self.assertIn("Reset it on its screen", self.out)
+
+    def test_nothing_left_without_a_key_or_after_a_reset_asks_nothing(self):
+        for kw in ({"key": False}, {"record": {"reset": "2026-10-18T10:00:00+00:00"}}):
+            code, _, probed, _ = self.run_it(nothing_left=True, reset_show=None, keep_wifi=None, **kw)
+            self.assertEqual(code, 0, kw)
+            probed.assert_not_called()
 
     def test_nobody_to_ask_removes_nothing(self):
         code, removed, probed, _ = self.run_it(reset_show=None, keep_wifi=None, answers=[None])

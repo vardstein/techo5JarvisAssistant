@@ -32,6 +32,7 @@ from . import genbu, labels
 from .home_assistant import (HomeAssistant, HomeAssistantError, NotFound, find_entry, node_name, node_slug,
                              service_prefix, show_usernames)
 from .rename import _dashboards, device_name, show_devices, swap
+from .show_ssh import key_path
 from .voice_kit import duck_existing
 
 Keep = Callable[[str, Any], str]
@@ -260,6 +261,8 @@ def plan(found: Found) -> tuple[list[str], list[str]]:
     stays.append(f"what has only the {labels.INSTALLED!r} label (the house-wide jarvis_local_* automations, "
                  "the music scripts), the blueprints, the room and its dashboard, the calendars, and the Show's "
                  "backups")
+    stays.append(f"on this computer, its SSH key and pinned host key (~/.ssh/{key_path(found.name).name}*); on "
+                 "the router, any rules made for its address")
     return goes, stays
 
 

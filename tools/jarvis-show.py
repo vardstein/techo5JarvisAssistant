@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import json
 import functools
 import os
@@ -680,9 +681,16 @@ def remove_show_command(args, backups: Path) -> int:
             ui.out.heading(label)
             for item in items:
                 say(item)
+    name = show.name if show else found.name
+    identity = identity_for(name, args.ssh_identity)
+    earlier = f"an earlier run reset it on {show.reset[:10]}" if show and show.reset else ""
     if not goes:
-        ui.out.done(f"nothing of {args.name} is left to remove now")
-        return 0
+        ui.out.done(f"nothing of {args.name} is left in the house")
+        if earlier or identity is None:  # nothing left to do, or no key to do it with
+            if earlier:
+                ui.out.note(earlier)
+            return 0
+        ui.out.note("the Show itself may still have its old secrets; it can be reset from here")
     if args.no_questions and not args.yes_remove:
         ui.out.heading("Nothing removed")
         ui.out.note("--no-questions only lists; --yes-remove removes")
@@ -693,9 +701,9 @@ def remove_show_command(args, backups: Path) -> int:
                     "nothing was removed")
         return 1
     reset, keep_wifi = answer
+    if not goes and not reset:
+        return 0
     reach = None
-    name = show.name if show else found.name
-    identity = identity_for(name, args.ssh_identity)
     if reset:
         ui.out.heading(f"Reaching {found.name}")
         try:
@@ -706,7 +714,13 @@ def remove_show_command(args, backups: Path) -> int:
             reach = show_reset.probe(host, name=name, identity=identity,
                                      expected=show.folder.name if show else None)
         except show_reset.ResetError as exc:
-            ui.out.warn(f"it can't be reset from here: {exc}. Only the house side goes.")
+            if not goes:
+                ui.out.fail(f"it can't be reset from here: {exc}. Reset it on its screen (Settings, General, "
+                            "Factory reset)")
+                return 1
+            ui.out.warn(f"it can't be reset from here: {exc}. Only the house side goes."
+                        + (f" {earlier[0].upper()}{earlier[1:]}, which is enough unless it was set up again "
+                           "since." if earlier else ""))
         else:
             ui.out.progress("it answers over SSH with its own key")
             if keep_wifi and not reach.keeps_wifi:
@@ -714,44 +728,63 @@ def remove_show_command(args, backups: Path) -> int:
                             "--keep-wifi no. Nothing was changed.")
                 return 1
     if not args.yes_remove:
-        ui.out.caution("Home Assistant cannot undo this; what goes is saved in backups/home-assistant first."
-                       + (" The Show is reset first." if reach else ""))
+        if goes:
+            ui.out.caution("Home Assistant cannot undo this; what goes is saved in backups/home-assistant first."
+                           + (" The Show is reset first." if reach else ""))
+        else:
+            ui.out.caution("The Show is reset: it forgets this house and comes back in setup mode.")
         try:
             typed = ui.out.typed(found.name)
         except EOFError:  # no terminal (piped or closed stdin) is a no, not a crash
             print()
             typed = ""
         if typed != found.name:
-            ui.out.fail("not typed; nothing was removed")
+            ui.out.fail("not typed; nothing was " + ("removed" if goes else "reset"))
             return 1
-    was_reset = False
+    was_reset = ""  # done, or pending when the mark is on it but it did not restart
     if reach is not None:
         ui.out.heading(f"Resetting {found.name}")
         try:
             show_reset.reset(reach, keep_wifi=keep_wifi, name=name, identity=identity)
+        except show_reset.NotRestarted as exc:
+            ui.out.warn(f"{exc}: unplug it and plug it back in")
+            was_reset = "pending"
         except show_reset.ResetError as exc:
-            ui.out.warn(f"the reset did not go through: {exc}. Only the house side goes.")
+            ui.out.warn(f"the reset did not go through: {exc}." + (" Only the house side goes." if goes else ""))
         else:
-            was_reset = True
+            was_reset = "done"
             ui.out.progress("it is restarting and erases on the way up"
                             + (", keeping its Wi-Fi" if keep_wifi else ""))
-    ui.out.heading(f"Taking {found.name} out")
-    failed = gone.remove(hc, found, keep=_keeper(backups), drop=drop, progress=ui.out.progress)
-    if failed:
-        ui.out.fail(f"{failed} step(s) failed; the rest went. Run --remove-show again to retry them."
-                    + (f" {found.name} was reset." if was_reset else ""))
-        return 5
-    if was_reset:
-        ui.out.done(f"{found.name} is reset and removed: it comes back in setup mode and can be added again as a "
-                    "new device")
+        if was_reset and show is not None:
+            # A rerun can't log in any more (its keys went with the reset); this says why that is fine.
+            update_show(show.folder, reset=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    if goes:
+        ui.out.heading(f"Taking {found.name} out")
+        failed = gone.remove(hc, found, keep=_keeper(backups), drop=drop, progress=ui.out.progress)
+        if failed:
+            ui.out.fail(f"{failed} step(s) failed; the rest went. Run --remove-show again to retry them."
+                        + (f" {found.name} was reset." if was_reset else ""))
+            return 5
+    if was_reset == "done":
+        ui.out.done(f"{found.name} is reset" + (" and removed" if goes else "") + ": it comes back in setup "
+                    "mode and can be added again as a new device")
+        ui.out.note("it has a new SSH host key now: ssh to it stops at the old one until an install over USB "
+                    "pins the new one")
+    elif was_reset == "pending":
+        ui.out.done(f"{found.name} " + ("is removed and " if goes else "") + "erases the next time it starts: "
+                    "unplug it and plug it back in")
+    elif not goes:
+        ui.out.fail("nothing was reset; reset it on its screen (Settings, General, Factory reset)")
+        return 1
     else:
         ui.out.done(f"{found.name} is removed only: the Show itself still has its old secrets. Reset it on its "
                     "screen (Settings, General, Factory reset) before it goes anywhere")
+        if earlier:
+            ui.out.note(f"{earlier[0].upper()}{earlier[1:]}; that is enough unless it was set up again since")
         if any(p.get("available") for p in found.players):
             ui.out.note("Music Assistant had its player connected; while the Show is on the network it makes it "
                         "again")
     return 0
-
 
 def amonet_upgrade(args, backups: Path) -> int:
     """Amonet 1.x -> 2.x for a unit already in TWRP; see jarvis_crown/amonet_upgrade.py."""

@@ -15,14 +15,15 @@ from jarvis_crown import show_reset  # noqa: E402
 HOST = "10.0.0.5"
 KEY = pathlib.Path("/home/someone/.ssh/genbu_genbuShow5")
 SERIAL = "G0000000000005"
+BOOT = "6f1c2a7e-0000-4000-8000-000000000005"
 
 
 class Ssh:
     """ssh as the Show answers it: the probe's lines, the mark it leaves, the restart."""
 
-    def __init__(self, *, genbu=True, keeps_wifi=True, serial=SERIAL, refused=False, mark_ok=True):
+    def __init__(self, *, genbu=True, keeps_wifi=True, serial=SERIAL, refused=False, mark_ok=True, restarts=True):
         self.genbu, self.keeps_wifi, self.serial = genbu, keeps_wifi, serial
-        self.refused, self.mark_ok = refused, mark_ok
+        self.refused, self.mark_ok, self.restarts = refused, mark_ok, restarts
         self.commands = []
 
     def __call__(self, argv, **kw):
@@ -39,9 +40,13 @@ class Ssh:
             if not self.mark_ok:
                 return subprocess.CompletedProcess(argv, 1, "", "sh: can't create: Read-only file system\n")
             lines = command.split("printf '%s\\n' ", 1)[1].split(" >", 1)[0]
-            return subprocess.CompletedProcess(argv, 0, "\n".join(lines.split()) + "\n", "")
+            return subprocess.CompletedProcess(argv, 0, "\n".join(lines.split()) + f"\n{BOOT}\n", "")
         if command == "reboot":
             raise subprocess.TimeoutExpired(argv, 15)
+        if command == f"cat {show_reset.BOOT_ID}":
+            if self.restarts:
+                return subprocess.CompletedProcess(argv, 255, "", f"ssh: connect to host {HOST} port 22: refused\n")
+            return subprocess.CompletedProcess(argv, 0, BOOT + "\n", "")
         raise AssertionError(command)
 
 
@@ -112,6 +117,30 @@ class ResetTests(unittest.TestCase):
         with self.assertRaisesRegex(show_reset.ResetError, "the mark was not left"):
             show_reset.reset(self.reach(), keep_wifi=False, name="genbuShow5", identity=KEY, run=ssh)
         self.assertNotIn("reboot", ssh.commands)
+
+    def test_a_show_that_still_runs_the_same_boot_is_not_restarted(self):
+        ssh, now = Ssh(restarts=False), [0.0]
+
+        def sleep(seconds):
+            now[0] += seconds
+        with self.assertRaisesRegex(show_reset.NotRestarted, "erases the next time it starts"):
+            show_reset.reset(self.reach(), keep_wifi=False, name="genbuShow5", identity=KEY, run=ssh,
+                             wait=60, sleep=sleep, clock=lambda: now[0])
+        self.assertGreaterEqual(now[0], 60)
+        self.assertTrue(issubclass(show_reset.NotRestarted, show_reset.ResetError))
+
+    def test_a_new_boot_counts_as_restarted(self):
+        ssh = Ssh(restarts=False)
+        calls = []
+
+        def run(argv, **kw):
+            if argv[-1] == f"cat {show_reset.BOOT_ID}" and calls:
+                return subprocess.CompletedProcess(argv, 0, "another-boot\n", "")
+            if argv[-1] == f"cat {show_reset.BOOT_ID}":
+                calls.append(1)
+            return ssh(argv, **kw)
+        show_reset.reset(self.reach(), keep_wifi=False, name="genbuShow5", identity=KEY, run=run,
+                         sleep=lambda s: None)
 
     def test_the_mark_is_what_the_boot_script_reads(self):
         lib = (ROOT / "tools/linux/techo5-lib.sh").read_text()
