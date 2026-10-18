@@ -18,9 +18,10 @@ def cp(argv, stdout="", stderr="", code=0):
 
 
 class FakeClient:
-    def __init__(self, *, corrupt=None):
+    def __init__(self, *, corrupt=None, empty=None):
         self.serial = "ADB-CROWN"
         self.corrupt = corrupt
+        self.empty = dict(empty or {})  # block: how many reads come back empty first
         self.data = {}
         self.names = {}
         for number in recovery.SMALL_PARTITIONS:
@@ -48,6 +49,9 @@ class FakeClient:
 
     def dump_block(self, block, destination):
         body = self.data[block]
+        if self.empty.get(block):
+            self.empty[block] -= 1
+            body = b""
         if self.corrupt == block:
             body = b"X" * len(body)
         destination.write_bytes(body)
@@ -187,6 +191,24 @@ class RecoveryTests(unittest.TestCase):
             verified = recovery.verify_backup(result.path)
             self.assertTrue(verified.reused)
             self.assertFalse((pathlib.Path(td) / "partitions.partial").exists())
+
+    def test_an_empty_read_from_a_twrp_just_up_is_read_again(self):
+        block = "/dev/block/mmcblk0p1"
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(recovery, "POLL_SECONDS", 0):
+            result = recovery.backup_recovery_state(
+                FakeClient(empty={block: 2}), pathlib.Path(td), fastboot_identity=self.identity()
+            )
+            self.assertEqual(result.files, len(recovery.SMALL_PARTITIONS) + 2)
+
+    def test_reads_that_stay_empty_still_stop_the_install(self):
+        block = "/dev/block/mmcblk0p1"
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(recovery, "POLL_SECONDS", 0):
+            with self.assertRaisesRegex(recovery.RecoveryError, "size mismatch.*got 0"):
+                recovery.backup_recovery_state(
+                    FakeClient(empty={block: recovery.READ_ATTEMPTS}), pathlib.Path(td),
+                    fastboot_identity=self.identity()
+                )
+            self.assertFalse((pathlib.Path(td) / "partitions").exists())
 
     def test_hash_mismatch_removes_partial_and_never_certifies_backup(self):
         with tempfile.TemporaryDirectory() as td:

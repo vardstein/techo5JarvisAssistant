@@ -29,6 +29,9 @@ SMALL_PARTITIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 14, 15)
 BOOT_AREAS = ("boot0", "boot1")
 TWRP_WAIT_INTERVAL_SECONDS = POLL_SECONDS
 TWRP_WAIT_ATTEMPTS = int(TWRP_REENUM_TIMEOUT_SECONDS / TWRP_WAIT_INTERVAL_SECONDS)
+# A TWRP that has only just come up can hand back an empty read (adb exec-out passes no exit status on),
+# seen on a cronos right after the TWRP handoff. Reading again is harmless; a short read never counts.
+READ_ATTEMPTS = 5
 
 
 class RecoveryError(RuntimeError):
@@ -321,11 +324,16 @@ def _backup_one(
     sys_name: str,
     filename: str,
     destination: Path,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> tuple[str, int]:
     expected_size = _block_size(client, sys_name)
     out = destination / filename
-    client.dump_block(block, out)
-    actual_size = out.stat().st_size
+    for attempt in range(READ_ATTEMPTS):
+        client.dump_block(block, out)
+        actual_size = out.stat().st_size
+        if actual_size >= expected_size or attempt + 1 == READ_ATTEMPTS:
+            break
+        sleep(POLL_SECONDS)
     if actual_size != expected_size:
         raise RecoveryError(
             f"backup size mismatch for {block}: got {actual_size}, expected {expected_size}"

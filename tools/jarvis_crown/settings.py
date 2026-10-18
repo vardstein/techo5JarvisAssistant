@@ -714,15 +714,11 @@ def _saved_it(asker: Asker) -> None:
 
 
 def _keyring_hint(asker: Asker, label: str, attrs: str) -> None:
-    # the command has to work as it is typed, also where secret-tool is not on PATH
-    tool = secret_tool()
-    if not tool or shutil.which("secret-tool") == tool:
-        tool = "secret-tool"
-    else:
-        home = os.path.expanduser("~")
-        tool = "~" + tool[len(home):] if tool.startswith(home + os.sep) else shlex.quote(tool)
+    # always the plain name: a path that only exists on this computer is no use in a hint
     asker.note("To skip this next time, keep it in the desktop keyring:")
-    asker.command(f"{tool} store --label='Jarvis Show: {label}' application jarvis-show {attrs}")
+    asker.command(f"secret-tool store --label='Jarvis Show: {label}' application jarvis-show {attrs}")
+    if not shutil.which("secret-tool"):
+        asker.note("secret-tool is not on PATH here; it comes with libsecret (libsecret-tools on Debian and Ubuntu).")
 
 
 def ma_check_token(value: str) -> str:

@@ -1086,6 +1086,11 @@ def _main() -> int:
         except (ShowKeyError, OSError) as exc:
             ui.out.fail(f"{exc}")
             return 1
+        if asker.interactive and not asker.yes("Start the install?", help=(
+                "Nothing on the Show has been touched yet. Yes puts TWRP on it and backs it up first; "
+                "the steps that wipe it still ask on their own.")):
+            ui.out.fail("stopped; nothing on the Show was touched")
+            return 1
 
         def confirm_unlock(p):
             build = identity.lk_build_desc if identity is not None else None

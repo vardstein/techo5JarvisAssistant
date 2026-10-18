@@ -392,7 +392,7 @@ these that has it:
 1. its switch (`--ha-token-file`, `--ha-admin-token-file`, `--dashcast-key-file`,
    `--wifi-passphrase-file`, `--music-assistant-token-file`);
 2. the desktop keyring, through `secret-tool` (or `$JARVIS_SHOW_SECRET_TOOL`; on OpenJade desktops
-   it is `~/.local/share/jplane/libsecret/bin/secret-tool`, which the installer finds by itself);
+   the installer also finds jplane's own copy by itself);
 3. a hidden question.
 
 To keep them in the keyring:
