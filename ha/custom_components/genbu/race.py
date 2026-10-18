@@ -11,6 +11,12 @@ the same word at the same moment can be apart. It closes as soon as every Show t
 a house with one Show waits for nothing. A Show heard later is told it lost and logged with whether it
 would have won, which is what the window gets tuned from.
 
+Each verdict also gives every Show its share of the voice (the scores as power, adding up to 1), and says
+whether the pick was unsure: the winner less than UNSURE_DB ahead of the next one, or the only Show that
+heard it while others were listening too, or a Show heard late that would have won (GENBU-233). An unsure
+winner is not "still talked to": it gets no bonus and no tie preference in the next race. Otherwise one
+misfire hands the next close race to the same wrong Show, which is what the race test found (wiki 737).
+
 Nothing in here waits or talks to Home Assistant: the coordinator does, and calls this with the time."""
 from __future__ import annotations
 
@@ -26,6 +32,7 @@ CERTAINTY = 0.25  # weight of how far the model went over its cutoff, which is 0
 CERTAINTY_DB = 6.0
 BARELY_HEARD_DB = 3.0  # less over its noise than this: it only answers when nobody else heard it
 TIE_DB = 1.5
+UNSURE_DB = 3.0  # a winner less than this ahead of the next one was an unsure pick
 FLAG_DB = 10.0  # a winner another Show heard this much further over the noise is flagged
 SILENCE_DB = -96.0  # the quietest a 16-bit microphone can say, and so the lowest level taken
 # Per board, measured once with the same voice at the same distance (wiki 734). None measured yet.
@@ -96,11 +103,27 @@ def describe(h: Heard, last: str = "") -> str:
             f"its noise, sure {h.certainty:.2f}{notes})")
 
 
+def scores(everyone: list[Heard], last: str = "") -> dict[str, float]:
+    """Each Show's points by its wake id, for the Shows that heard it clearly when any did: one that
+    barely heard it only counts when nobody else heard it clearly."""
+    clear = [h for h in everyone if h.over_noise >= BARELY_HEARD_DB] or everyone
+    return {h.wake: points(h, h.show == last) for h in clear}
+
+
+def shares(score: dict[str, float]) -> dict[str, float]:
+    """The scores as each Show's share of the voice, adding up to 1: dB as power, so 3 dB ahead is about
+    two thirds."""
+    best = max(score.values())
+    power = {wake: 10 ** ((p - best) / 10) for wake, p in score.items()}
+    total = sum(power.values())
+    return {wake: p / total for wake, p in power.items()}
+
+
 def pick(everyone: list[Heard], last: str = "") -> Heard:
     """The Show that answers: the best score, from the Shows that heard it clearly when any did. Within
     TIE_DB of the best: the one last used, then the one further over its noise, then by name."""
-    clear = [h for h in everyone if h.over_noise >= BARELY_HEARD_DB] or everyone
-    score = {h.wake: points(h, h.show == last) for h in clear}
+    score = scores(everyone, last)
+    clear = [h for h in everyone if h.wake in score]
     best = max(score.values())
     close = [h for h in clear if best - score[h.wake] <= TIE_DB]
     return min(close, key=lambda h: (h.show != last, -h.over_noise, h.name.lower(), h.show))
@@ -114,6 +137,7 @@ class Race:
     winner: Heard | None = None
     closed: float = 0.0
     last: str = ""  # the Show still being talked to when it closed
+    racers: set[str] = field(default_factory=set)  # the Shows that could have heard it
 
 
 @dataclass
@@ -122,6 +146,8 @@ class Verdict:
     losers: list[Heard]
     waited: float  # seconds from the first Show that heard it
     flagged: Heard | None = None  # a Show that heard it far more clearly than the winner
+    shares: dict[str, float] = field(default_factory=dict)  # each Show's share of the voice, by wake id
+    unsure: str = ""  # why the pick was unsure, "" when it was not
 
 
 class Referee:
@@ -145,10 +171,13 @@ class Referee:
         r = self.races.get(h.phrase)
         if r is not None and r.winner is not None:
             r.everyone.append(h)
+            if self.would_have_won(h) and self.last[0] == r.winner.show:
+                self.last = ("", -math.inf)  # the wrong Show answered: it is not the one talked to
             return "late"
         new = r is None
         if new:
             r = self.races[h.phrase] = Race(phrase=h.phrase, opened=now)
+        r.racers |= racers
         if all(e.show != h.show for e in r.everyone):
             r.everyone.append(h)
         if racers <= {e.show for e in r.everyone}:
@@ -163,12 +192,19 @@ class Referee:
         r.last = self.still_talking(now)
         r.winner = pick(r.everyone, r.last)
         r.closed = now
-        self.last = (r.winner.show, now)
+        score = scores(r.everyone, r.last)
+        ahead = score[r.winner.wake] - max((p for w, p in score.items() if w != r.winner.wake), default=-math.inf)
+        unsure = ""
+        if ahead < UNSURE_DB:
+            unsure = f"only {ahead:.1f} dB ahead"
+        elif len(r.everyone) == 1 and r.racers - {r.winner.show}:
+            unsure = "the only Show that heard it"
+        self.last = ("", -math.inf) if unsure else (r.winner.show, now)
         flagged = max((h for h in r.everyone if h is not r.winner), key=lambda h: h.over_noise, default=None)
         if flagged is not None and flagged.over_noise - r.winner.over_noise < FLAG_DB:
             flagged = None
         return Verdict(winner=r.winner, losers=[h for h in r.everyone if h is not r.winner],
-                       waited=now - r.opened, flagged=flagged)
+                       waited=now - r.opened, flagged=flagged, shares=shares(score), unsure=unsure)
 
     def would_have_won(self, h: Heard) -> bool:
         """Whether a late Show would have answered, had it been in time."""

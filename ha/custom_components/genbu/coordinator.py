@@ -35,7 +35,7 @@ from homeassistant.util import dt as dt_util
 
 from . import picture, race
 from .const import (CHANGED, CONF_SEARXNG, DOMAIN, MANUFACTURERS, NAME, NIGHT_AT, PANEL, RECIPES, SHOW_RECIPE,
-                    WAKE_EVENT, WAKE_RACE, WAKE_VERDICT,
+                    RACED, WAKE_EVENT, WAKE_RACE, WAKE_VERDICT,
                     STORE_KEY, STORE_VERSION, UPDATE_ENTITY, VOICE_UPDATES)
 from .house import House, Show, manifest_url, newer, tag_url, valid
 from .keycare import ISSUE, KeyCare
@@ -191,6 +191,7 @@ class GenbuHouse:
         self.referee = race.Referee()
         self.racers: dict[str, str] = {}  # the Shows that race their wake words: device id → wake_verdict
         self._closing: dict[str, asyncio.TimerHandle] = {}  # the races waiting out their window, by phrase
+        self.raced: dict = {}  # the last race, as sensor.genbu_wake_race shows it
         self._watched: set[str] = set()
         self._player_ids: set[str] = set()
         self._stops: list = []
@@ -526,8 +527,13 @@ class GenbuHouse:
             return
         what = self.referee.hear(h, set(self.racers), self.hass.loop.time())
         if what == "late":
+            won = self.referee.would_have_won(h)
             LOGGER.info("wake race %r: %s heard it late, would have %s: %s", h.phrase, h.name,
-                        "won" if self.referee.would_have_won(h) else "lost", race.describe(h))
+                        "won" if won else "lost", race.describe(h))
+            if self.raced.get("phrase") == h.phrase:
+                self.raced = {**self.raced, "late": [*self.raced.get("late", []),
+                                                     {"show": h.name, "would_have_won": won}]}
+                async_dispatcher_send(self.hass, RACED)
             self._verdict(h, False)
         elif what == "open":
             self._closing[h.phrase] = self.hass.loop.call_later(race.WINDOW, self._close, h.phrase)
@@ -545,8 +551,19 @@ class GenbuHouse:
         for h in v.losers:
             self._verdict(h, False)
         last = self.referee.races[phrase].last
-        LOGGER.info("wake race %r: %s answers, after %.0f ms. %s", phrase, v.winner.name, v.waited * 1000,
-                    "; ".join(race.describe(h, last) for h in [v.winner, *v.losers]))
+        LOGGER.info("wake race %r: %s answers%s, after %.0f ms. %s", phrase, v.winner.name,
+                    f" (unsure: {v.unsure})" if v.unsure else "", v.waited * 1000,
+                    "; ".join(f"{race.describe(h, last)} {v.shares.get(h.wake, 0):.0%}"
+                              for h in [v.winner, *v.losers]))
+        self.raced = {
+            "winner": v.winner.name, "phrase": phrase, "at": dt_util.utcnow().isoformat(),
+            "waited_ms": round(v.waited * 1000), "unsure": v.unsure, "still_talking": show.name if (show := self.show(last)) else "",
+            "shows": {h.name: {"share": round(v.shares.get(h.wake, 0) * 100), "points": round(race.points(
+                h, h.show == last), 1), "level_db": round(h.level_db, 1), "over_noise_db": round(h.over_noise, 1),
+                "sure": round(h.certainty, 2), "clipped": h.clipped, "odd": h.odd} for h in [v.winner, *v.losers]},
+            "late": [],
+        }
+        async_dispatcher_send(self.hass, RACED)
         for h in [v.winner, *v.losers]:
             if h.odd:
                 LOGGER.warning("wake race: %s said levels no microphone gives, taken as the lowest", h.name)

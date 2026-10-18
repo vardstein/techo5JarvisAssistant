@@ -27,6 +27,9 @@ SHOW_RECIPE = "recipe_show"  # the Show's ESPHome action that puts the recipe pa
 WAKE_EVENT = "esphome.genbu_wake"
 WAKE_RACE = "wake_race"
 WAKE_VERDICT = "wake_verdict"
+# The last race and how it went (GENBU-233): HA's log drops the INFO lines, this is where they are seen.
+RACE_ENTITY = "sensor.genbu_wake_race"
+RACED = f"{DOMAIN}_raced"  # dispatcher signal: a race closed, or a Show was heard late
 OLD_RECIPES = "jarvis_recipe"  # Genbu Rezepte, whose recipe search moved here in 1.4.0
 # The per-Show switches the assistant's tools ask before they are offered, by key in House.switches.
 RECIPES = "recipes"

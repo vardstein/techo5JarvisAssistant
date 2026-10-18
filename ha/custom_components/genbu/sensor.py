@@ -14,7 +14,12 @@ offline. On the Show's genbu device, next to its "Music plays on" select.
 
 sensor.genbu_recipe, while a recipe search is set up: the recipe the assistant last found. Its state is the
 dish, its attributes the recipe, which jarvis-recipe-card.js draws. It comes back after a restart, and the
-recipe stays out of the recorder's history (it is big, and the last one is all anyone needs)."""
+recipe stays out of the recorder's history (it is big, and the last one is all anyone needs).
+
+sensor.genbu_wake_race: the last wake race (GENBU-233). Its state is the Show that answered, its
+attributes how sure the pick was, each Show's share of the voice, and the Shows heard too late. Home
+Assistant's log drops the race's INFO lines unless someone changes its logger; here they stay in the
+history, so a race test can be read back afterwards."""
 
 from __future__ import annotations
 
@@ -24,14 +29,14 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import CHANGED, CONF_SEARXNG, HOUSE_ENTITY, NEW_RECIPE, RECIPE_ENTITY
+from .const import CHANGED, CONF_SEARXNG, HOUSE_ENTITY, NEW_RECIPE, RACE_ENTITY, RACED, RECIPE_ENTITY
 from .coordinator import show_device
 from .house import Show
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add) -> None:
     hub = entry.runtime_data
-    add([HouseVersion(entry)])
+    add([HouseVersion(entry), WakeRace(entry)])
     if entry.options.get(CONF_SEARXNG):
         add([RecipeSensor(entry)])
     made: set[str] = set()
@@ -138,4 +143,26 @@ class RecipeSensor(SensorEntity, RestoreEntity):
     def _new(self, recipe: dict) -> None:
         self._attr_native_value = recipe["title"][:255]
         self._attr_extra_state_attributes = {k: recipe.get(k) for k in RECIPE_FIELDS}
+        self.async_write_ha_state()
+
+
+class WakeRace(SensorEntity):
+    _attr_icon = "mdi:trophy-outline"
+    _attr_name = "Genbu wake race"
+    _attr_should_poll = False
+
+    def __init__(self, entry: ConfigEntry) -> None:
+        self.entity_id = RACE_ENTITY
+        self._attr_unique_id = f"{entry.entry_id}_wake_race"
+        self.hub = entry.runtime_data
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(async_dispatcher_connect(self.hass, RACED, self._raced))
+        self._raced()
+
+    @callback
+    def _raced(self) -> None:
+        raced = self.hub.raced
+        self._attr_native_value = raced.get("winner")
+        self._attr_extra_state_attributes = {k: v for k, v in raced.items() if k != "winner"}
         self.async_write_ha_state()

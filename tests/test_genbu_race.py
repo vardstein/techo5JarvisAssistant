@@ -179,6 +179,46 @@ class RefereeTests(unittest.TestCase):
         self.assertEqual(ref.still_talking(race.WINDOW + race.STILL_TALKING + 1), "")
 
 
+class UnsureTests(unittest.TestCase):
+    """GENBU-233: an unsure pick hands nothing on to the next race."""
+
+    def test_shares_add_up_and_3_db_is_two_thirds(self):
+        _, v = run(said("alpha", level=-30.0, floor=-30.0), said("bravo", level=-33.0, floor=-33.0))
+        self.assertAlmostEqual(sum(v.shares.values()), 1.0)
+        self.assertAlmostEqual(v.shares["w-alpha"], 2 / 3, places=2)
+
+    def test_the_hallway_tie_gives_no_bonus(self):
+        # The race test's 17:28:20 and :26 (wiki 737, step 5): a tie, then the other Show 2.1 dB louder.
+        ref, v = run(said("living", level=-52.7), said("bedroom", level=-52.7), at=0.0)
+        self.assertEqual(v.unsure, "only 0.0 dB ahead")
+        self.assertEqual(ref.still_talking(6.0), "")
+        for h in (said("living", level=-54.2), said("bedroom", level=-52.1)):
+            ref.hear(h, {"living", "bedroom"}, 6.0)
+        self.assertEqual(ref.close(PHRASE, 6.0 + race.WINDOW).winner.show, "bedroom")
+
+    def test_a_clear_win_still_gives_the_bonus(self):
+        ref, v = run(said("alpha", level=-20.0), said("bravo", level=-30.0))
+        self.assertEqual(v.unsure, "")
+        self.assertEqual(ref.still_talking(race.WINDOW + 1), "alpha")
+
+    def test_the_only_one_that_heard_it_is_unsure_when_others_listen(self):
+        ref, v = run(said("alpha"), racers={"alpha", "bravo"})
+        self.assertEqual(v.unsure, "the only Show that heard it")
+        self.assertEqual(ref.still_talking(race.WINDOW + 1), "")
+        self.assertEqual(run(said("alpha"))[1].unsure, "")  # a house with one Show
+
+    def test_a_late_show_that_would_have_won_ends_the_bonus(self):
+        ref, _ = run(said("alpha", level=-30.0), said("bravo", level=-45.0), racers={"alpha", "bravo", "charlie"})
+        self.assertEqual(ref.still_talking(race.WINDOW + 1), "alpha")
+        ref.hear(said("charlie", level=-10.0), {"alpha", "bravo", "charlie"}, 0.3)
+        self.assertEqual(ref.still_talking(race.WINDOW + 1), "")
+
+    def test_a_late_show_that_would_have_lost_changes_nothing(self):
+        ref, _ = run(said("alpha", level=-30.0), said("bravo", level=-45.0), racers={"alpha", "bravo", "charlie"})
+        ref.hear(said("charlie", level=-50.0), {"alpha", "bravo", "charlie"}, 0.3)
+        self.assertEqual(ref.still_talking(race.WINDOW + 1), "alpha")
+
+
 class ShowSideTests(unittest.TestCase):
     """The names the Show's echod uses, so the two cannot drift apart."""
 
