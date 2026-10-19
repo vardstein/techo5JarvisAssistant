@@ -19,6 +19,9 @@ import termios
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from jarvis_crown.catalogue import load_or_exit  # noqa: E402
+
+load_or_exit()  # GENBU-173: a broken catalogue stops here, in plain words
 from jarvis_crown.amonet_upgrade import AdbUpgradeClient, UpgradeError, upgrade_amonet  # noqa: E402
 from jarvis_crown.assets import amonet_bundle_dir, asset_path, assets_for, default_cache_dir  # noqa: E402
 from jarvis_crown.boot_logo import BootLogoError, SshClient, put_logo  # noqa: E402

@@ -218,8 +218,11 @@ Every change that reads a new field adds its row here in the same change.
 | `validate-jarvis-show.sh` | runs `catalogue.py check` |
 | `tests/test_board_catalogue.py` | everything (parity against the d448873e baseline) |
 
-The catalogue loads once per process, on first use. A broken catalogue stops the installer at import
-with a `CatalogueError`, before any device is touched.
+The catalogue loads once per process, on first use. A broken catalogue stops the installer before any
+device is touched. `jarvis-show.py`, `jarvis-crown.py` and `fetch-show-assets.py` load it first thing
+(`catalogue.load_or_exit()`), so every command, read-only ones too, stops with one line naming the file
+and what is wrong, not a traceback (GENBU-173). All or nothing on purpose: one rule, no half-loaded
+board list.
 
 ## board.json on the Show
 

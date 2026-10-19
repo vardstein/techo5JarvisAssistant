@@ -299,6 +299,17 @@ def default() -> Catalogue:
     return _default
 
 
+def load_or_exit() -> Catalogue:
+    """default(), for a command line tool to call before it imports the rest of jarvis_crown, several of
+    whose modules read the catalogue at import. A broken catalogue still stops every command, read-only
+    ones too, but with one plain message instead of a traceback (GENBU-173). Nothing has run yet."""
+    try:
+        return default()
+    except (CatalogueError, OSError, UnicodeDecodeError) as exc:
+        sys.exit(f"The board catalogue is broken, so nothing ran and no Show was touched:\n  {exc}\n"
+                 "Fix that file and run this again. docs/board-catalogue.md says what belongs in it.")
+
+
 def supported_boards() -> tuple[str, ...]:
     """The product's boards, in the order the product lists them."""
     return tuple(default().product()["boards"])

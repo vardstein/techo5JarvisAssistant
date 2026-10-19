@@ -17,6 +17,7 @@ import io
 import json
 import pathlib
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -331,6 +332,31 @@ class CatalogueValidatorTest(unittest.TestCase):
         (root / "products" / "genbu-show-v2.json").write_text(json.dumps(data))
         with self.assertRaisesRegex(CatalogueError, "exactly one product"):
             Catalogue(root).product()
+
+
+class BrokenCatalogueStopsPlainlyTest(unittest.TestCase):
+    """GENBU-173: one bad board file stops every command, --help and preflight too, with one plain message
+    naming the file, never a traceback. Run on a copy of tools/ and catalogue/, with no device."""
+
+    def test_every_tool_names_the_file(self):
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp)
+        for part in ("tools", "catalogue"):
+            shutil.copytree(ROOT / part, tmp / part, ignore=shutil.ignore_patterns("__pycache__"))
+        board = tmp / "catalogue" / "boards" / "cronos.json"
+        data = json.loads(board.read_text())
+        data["camera"] = True
+        board.write_text(json.dumps(data))
+        for tool, args in (("jarvis-show.py", ["--help"]), ("jarvis-show.py", ["preflight", "--board", "crown"]),
+                           ("jarvis-crown.py", ["--help"]), ("fetch-show-assets.py", ["--help"])):
+            with self.subTest(tool=tool, args=args):
+                run = subprocess.run([sys.executable, str(tmp / "tools" / tool), *args], cwd=tmp,
+                                     capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+                self.assertEqual(run.returncode, 1)
+                self.assertNotIn("Traceback", run.stderr)
+                self.assertIn("no Show was touched", run.stderr)
+                self.assertIn("cronos.json: unknown ['camera']", run.stderr)
+                self.assertEqual(run.stdout, "")
 
 
 if __name__ == "__main__":

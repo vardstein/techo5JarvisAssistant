@@ -11,6 +11,9 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from jarvis_crown.catalogue import load_or_exit  # noqa: E402
+
+load_or_exit()  # GENBU-173: a broken catalogue stops here, in plain words
 from jarvis_crown.device_gate import DeviceGateError, identify_crown  # noqa: E402
 from jarvis_crown.preflight import preflight_ok, print_checks, run_preflight  # noqa: E402
 from jarvis_crown.catalogue import profile_for_board  # noqa: E402
