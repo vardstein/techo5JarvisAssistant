@@ -93,7 +93,7 @@ echo /sbin/mdev > /proc/sys/kernel/hotplug
 mdev -s
 mkdir -p /dev/graphics
 [ -e /dev/fb0 ] && ln -sf /dev/fb0 /dev/graphics/fb0
-hostname -F /etc/hostname
+hostname "$(t5_hostname)"  # the Show's own name; /etc/hostname's techo5 only before it has one
 log "slot $(cat /run/techo5/slot 2>/dev/null || echo '?'): $(cat /etc/techo5-release 2>/dev/null)"
 
 # --- Vendor tree: the Wi-Fi and Bluetooth drivers, firmware and audio tuning from the unit's own
@@ -181,7 +181,7 @@ t5_bt_up "$BT_MODULE" /var/log
 			if ! ip route show default 2>/dev/null | grep -q default; then
 				log "network: address but no default route; renewing the lease"
 				killall udhcpc 2>/dev/null
-				udhcpc -i wlan0 -b -R -O ntpsrv -t 10 -p /run/udhcpc.pid -s "${UDHCPC_SCRIPT:-/usr/share/udhcpc/default.script}" > /tmp/udhcpc.log 2>&1
+				udhcpc -i wlan0 -b -R -O ntpsrv -x "hostname:$(t5_hostname)" -t 10 -p /run/udhcpc.pid -s "${UDHCPC_SCRIPT:-/usr/share/udhcpc/default.script}" > /tmp/udhcpc.log 2>&1
 			fi
 			# The clock is set once there is an address: udhcpc.sh starts it when the lease is
 			# bound. This catches an ntpd that stopped since: without it the clock drifts, and the

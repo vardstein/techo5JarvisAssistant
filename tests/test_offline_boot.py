@@ -3,6 +3,7 @@ clock start, run for real in a shell with the commands that touch the system stu
 from pathlib import Path
 import shutil
 import subprocess
+import re
 import tempfile
 import unittest
 
@@ -111,6 +112,37 @@ class ClockStartTests(unittest.TestCase):
         out = run(self.tmp, "t5_clock_start", uptime=100)
         self.assertIn("ntpd-started", out)
         self.assertFalse(self.lock.exists())
+
+
+class HostnameTests(unittest.TestCase):
+    """GENBU-260: the name sent with DHCP is echod's node name (layout.Slug)."""
+
+    def name(self, written: str | None) -> str:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "name"
+            if written is not None:
+                path.write_text(written)
+            out = subprocess.run(SH + ["-c", f'T5_NAME="{path}"; . "{LIB}"; t5_hostname'],
+                                 capture_output=True, text=True, timeout=30)
+            return out.stdout.strip()
+
+    def test_the_slug_of_the_name(self):
+        self.assertEqual(self.name("bathroomShow5\n"), "bathroomshow5")
+        self.assertEqual(self.name("  Living Room \n"), "living-room")
+        self.assertEqual(self.name("Küche / Wohnzimmer 2"), "k-che-wohnzimmer-2")
+
+    def test_techo5_without_a_name(self):
+        self.assertEqual(self.name(None), "techo5")
+        self.assertEqual(self.name("\n"), "techo5")
+        self.assertEqual(self.name("!!!"), "techo5")
+
+    def test_every_lease_client_sends_it(self):
+        for rel in ("tools/linux/techo5-lib.sh", "tools/linux/rootfs/etc/techo5/boot.sh"):
+            text = (ROOT / rel).read_text(encoding="utf-8")
+            starts = re.findall(r"udhcpc -i wlan0[^\n]*", text)
+            self.assertTrue(starts, rel)
+            for line in starts:
+                self.assertIn('-x "hostname:$(t5_hostname)"', line, rel)
 
 
 class BootPathContractTests(unittest.TestCase):

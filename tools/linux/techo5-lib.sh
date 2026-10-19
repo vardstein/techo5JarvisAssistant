@@ -20,6 +20,16 @@ t5_board() {
 	return 1
 }
 
+# t5_hostname: the name the Show goes by on the network, sent with every DHCP request so the router's
+# lease list says which Show is which instead of "*" (GENBU-260). It is the node name echod announces
+# over mDNS (layout.Slug): "Living Room" becomes living-room. Read at each lease client start, so one
+# restarted after a rename sends the new name; techo5 until the Show has a name.
+T5_NAME=${T5_NAME:-/data/misc/techo5/name}
+t5_hostname() {
+	_h=$(head -n 1 "$T5_NAME" 2>/dev/null | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '-' | tr -s '-' | sed 's/^-*//; s/-*$//')
+	echo "${_h:-techo5}"
+}
+
 # t5_usb_acm: one CDC ACM serial function on the USB gadget (a COM port on the
 # host). Idempotent. The 4.9.77 (TWRP) kernel has the legacy android_usb
 # gadget, the 4.9.337 (LineageOS) kernel has configfs; both are handled.
@@ -354,7 +364,7 @@ t5_wifi_up() {
 	# The lease client is started too, in the background: a network joined from the screen asks it for
 	# an address (lib/wifi renews it), and it keeps trying until there is one.
 	if ! grep -q '^network={' "$conf"; then
-		pidof udhcpc >/dev/null || udhcpc -i wlan0 -b -R -O ntpsrv -p /run/udhcpc.pid -s "${UDHCPC_SCRIPT:-/usr/share/udhcpc/default.script}" > /tmp/udhcpc.log 2>&1
+		pidof udhcpc >/dev/null || udhcpc -i wlan0 -b -R -O ntpsrv -x "hostname:$(t5_hostname)" -p /run/udhcpc.pid -s "${UDHCPC_SCRIPT:-/usr/share/udhcpc/default.script}" > /tmp/udhcpc.log 2>&1
 		log "wifi: no network saved yet"
 		return 1
 	fi
@@ -368,11 +378,11 @@ t5_wifi_up() {
 		# supplicant goes on trying, and a network it finds later, or one joined from the screen
 		# (lib/wifi only pokes a running udhcpc), has to get an address when it does, not at the
 		# keeper's next restart. -A 5 asks again five seconds after a round goes unanswered.
-		pidof udhcpc >/dev/null || udhcpc -i wlan0 -b -R -O ntpsrv -A 5 -p /run/udhcpc.pid -s "${UDHCPC_SCRIPT:-/usr/share/udhcpc/default.script}" > /tmp/udhcpc.log 2>&1 &
+		pidof udhcpc >/dev/null || udhcpc -i wlan0 -b -R -O ntpsrv -x "hostname:$(t5_hostname)" -A 5 -p /run/udhcpc.pid -s "${UDHCPC_SCRIPT:-/usr/share/udhcpc/default.script}" > /tmp/udhcpc.log 2>&1 &
 		return 1
 	fi
 	if ! pidof udhcpc >/dev/null; then
-		udhcpc -i wlan0 -b -R -O ntpsrv -t 10 -p /run/udhcpc.pid -s "${UDHCPC_SCRIPT:-/usr/share/udhcpc/default.script}" > /tmp/udhcpc.log 2>&1
+		udhcpc -i wlan0 -b -R -O ntpsrv -x "hostname:$(t5_hostname)" -t 10 -p /run/udhcpc.pid -s "${UDHCPC_SCRIPT:-/usr/share/udhcpc/default.script}" > /tmp/udhcpc.log 2>&1
 	fi
 	n=0; while [ $n -lt 30 ]; do
 		IP=$(ip -4 addr show wlan0 2>/dev/null | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | head -1)
