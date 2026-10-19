@@ -81,6 +81,28 @@ async def test_a_show_behind_the_house_catches_up(hass: HomeAssistant):
     assert {s["name"]: s.get("update_to") for s in data["shows"]}["Hall"] == "v1.4.1-stable.61"
 
 
+
+async def test_status_names_the_shows_not_on_the_house_version(hass: HomeAssistant):
+    """GENBU-259: the model said every Show was on the house version while one was not. The status now
+    says so itself."""
+    add_show(hass, "kitchen", "v1.4.1-dev.159")
+    add_show(hass, "bath", "v1.4.1-dev.165")  # the newest: the house starts there
+    entry = await setup(hass)
+    bath = next(s for s in entry.runtime_data.shows if s.node == "bath")
+    tool = genbu_llm.FirmwareTool(bath)
+    data = (await tool.async_call(hass, *ask(bath.device, "status"))).data
+    assert data["house_version"] == "v1.4.1-dev.165"
+    assert data["all_on_house_version"] is False
+    assert data["not_on_house_version"] == ["Kitchen v1.4.1-dev.159"]
+
+    set_show(hass, "update.kitchen_firmware", "sensor.kitchen_committed_version", "v1.4.1-dev.165", online=False)
+    data = (await tool.async_call(hass, *ask(bath.device, "status"))).data
+    assert data["not_on_house_version"] == ["Kitchen v1.4.1-dev.165 (offline)"]
+
+    set_show(hass, "update.kitchen_firmware", "sensor.kitchen_committed_version", "v1.4.1-dev.165")
+    data = (await tool.async_call(hass, *ask(bath.device, "status"))).data
+    assert (data["all_on_house_version"], data["not_on_house_version"]) == (True, [])
+
 async def test_install_asks_first_then_moves_the_house(hass: HomeAssistant):
     kitchen_up = add_show(hass, "kitchen", "v1.4.0-stable.60")
     add_show(hass, "hall", "v1.4.0-stable.60")

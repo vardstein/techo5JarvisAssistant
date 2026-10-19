@@ -52,9 +52,11 @@ PROMPT = {
            "when someone wants to hear them."),
 }
 FIRMWARE_PROMPT = {
-    "de": ("Fragen zur Software oder Version der Genbu Shows beantwortet genbu__firmware. Bevor ein Update "
+    "de": ("Fragen zur Software oder Version der Genbu Shows beantwortet genbu__firmware. Nenne nur Versionen "
+           "aus dem Ergebnis und sag nur, dass alle gleich sind, wenn all_on_house_version das sagt. Bevor ein Update "
            "installiert, zurückgegangen oder der Kanal gewechselt wird, frag immer erst nach."),
-    "en": ("genbu__firmware answers questions about the Genbu Shows' software or version. Always ask before an "
+    "en": ("genbu__firmware answers questions about the Genbu Shows' software or version. Name only versions "
+           "from its result, and say they all match only when all_on_house_version says so. Always ask before an "
            "update is installed, a version is gone back to or the channel changes."),
 }
 
@@ -219,8 +221,9 @@ class FirmwareTool(llm.Tool):
     name = f"{DOMAIN}__firmware"
     title = "Genbu Show software"
     description = (
-        "The software (firmware) of the Genbu Shows: you are one of them. All Shows run one version, the house "
-        "version. Use it when someone asks about your or the Shows' version, whether there is an update, what is "
+        "The software (firmware) of the Genbu Shows: you are one of them. The Shows follow one version, the house "
+        "version, but a Show can still be behind, ahead or offline: all_on_house_version says whether they match, "
+        "and not_on_house_version names the ones that don't. Use it when someone asks about your or the Shows' version, whether there is an update, what is "
         "new in it, or wants it installed, skipped, or to go back to the version before; also for the release "
         "channel and whether updates install at night. Not for other devices, their settings or readings, and "
         "not for news, weather or lists. "
@@ -305,8 +308,9 @@ class FirmwareTool(llm.Tool):
         return llm.ToolResult(data={"channel": hub.house.channel, "update_waiting": hub.waiting or None})
 
     def _status(self, hass: HomeAssistant, hub) -> dict:
-        """The house version and channel, the update waiting with its summary, and each Show's version. A
-        Show still behind the house can have an update of its own waiting too."""
+        """The house version and channel, the update waiting with its summary, each Show's version, and the
+        Shows not on the house version. A Show still behind the house can have an update of its own waiting
+        too."""
         house = hub.house
         out: dict = {"house_version": house.version or None, "channel": house.channel,
                      "update_waiting": hub.waiting or None, "whats_new": None,
@@ -327,4 +331,8 @@ class FirmwareTool(llm.Tool):
                     out["update_waiting"] = latest  # catching up with the house
                     out["whats_new"] = out["whats_new"] or rec._line(str(attrs.get("release_summary") or "")) or None
             out["shows"].append(item)
+        # Worked out here, not left to the model: it read "one version" as every Show's (GENBU-259).
+        odd = [f"{s['name']} {s['version'] or 'unknown'}{'' if s['online'] else ' (offline)'}"
+               for s in out["shows"] if not s["online"] or s["version"] != house.version]
+        out["all_on_house_version"], out["not_on_house_version"] = not odd, odd
         return out
