@@ -6,6 +6,11 @@
 // Nothing decides anything by it yet (GENBU-163 stage c, step 1): echod reads it beside its own guess
 // (layout.Board) and logs whether the two agree. Only once that has been seen on units in use do the
 // guess and the constants go.
+//
+// A unit installed before board.json existed gets one from Migrate (GENBU-191), but only when the
+// kernel command line names exactly one board by a key proven on running units. Anything less is
+// logged and left alone, so the worst a unit can come to is "no board.json", which today changes
+// nothing.
 package board
 
 import (
@@ -19,6 +24,7 @@ import (
 	"log/slog"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -92,6 +98,11 @@ func Load(p string) (Board, error) {
 	return b, nil
 }
 
+// file is the board.json this build carries for board id, byte for byte as the installer writes it.
+func file(id string) ([]byte, error) {
+	return files.ReadFile("boards/" + id + ".json")
+}
+
 // Known is every board this build carries, by id.
 func Known() (map[string]Board, error) {
 	names, err := fs.Glob(files, "boards/*.json")
@@ -142,4 +153,103 @@ func Note(p, guess, hardware string) string {
 	}
 	slog.Info("board.json", "state", Match, "board", b.ID)
 	return Match
+}
+
+// Product is androidboot.product on the kernel command line cmdline, or "" when it is missing, empty,
+// or given twice with two values.
+func Product(cmdline string) string {
+	product := ""
+	for _, f := range strings.Fields(cmdline) {
+		v, ok := strings.CutPrefix(f, "androidboot.product=")
+		switch {
+		case !ok:
+		case v == "" || product != "" && v != product:
+			return ""
+		default:
+			product = v
+		}
+	}
+	return product
+}
+
+// ByProduct is the one board of known whose android_product is exactly product. Not one, or more than
+// one, is no answer.
+func ByProduct(known map[string]Board, product string) (Board, bool) {
+	var found []Board
+	for _, b := range known {
+		if product != "" && b.Identity.AndroidProduct == product {
+			found = append(found, b)
+		}
+	}
+	if len(found) != 1 {
+		return Board{}, false
+	}
+	return found[0], true
+}
+
+// What Migrate did.
+const (
+	Kept         = "kept"
+	Written      = "written"
+	Unidentified = "unidentified"
+	Failed       = "failed"
+)
+
+// Migrate gives a unit with no board.json at p the one its kernel command line names, and returns
+// what it did. A file already there, readable or not, is kept as it is: that is the installer's, or a
+// person's. A unit that names no board, or one this build doesn't know, gets nothing and is logged
+// for a person to identify. It never guesses and never stops echod.
+func Migrate(p, cmdline string) string {
+	if _, err := os.Lstat(p); !errors.Is(err, fs.ErrNotExist) {
+		return Kept
+	}
+	product := Product(cmdline)
+	known, err := Known()
+	if err != nil {
+		slog.Error("board.json migration", "state", Failed, "err", err)
+		return Failed
+	}
+	b, ok := ByProduct(known, product)
+	if !ok {
+		slog.Warn("board.json migration", "state", Unidentified, "android_product", product)
+		return Unidentified
+	}
+	data, err := file(b.ID)
+	if err == nil {
+		err = replace(p, data)
+	}
+	if err != nil {
+		slog.Error("board.json migration", "state", Failed, "board", b.ID, "err", err)
+		return Failed
+	}
+	slog.Info("board.json migration", "state", Written, "board", b.ID)
+	return Written
+}
+
+// replace puts data at p whole or not at all, as the installer does: beside it first, then renamed over.
+func replace(p string, data []byte) error {
+	tmp := p + ".new"
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(data)
+	if err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(tmp, p)
+	}
+	if err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if d, err := os.Open(filepath.Dir(p)); err == nil {
+		d.Sync()
+		d.Close()
+	}
+	return nil
 }

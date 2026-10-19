@@ -46,6 +46,8 @@ func newRunCmd() *cobra.Command {
 			signal.Ignore(syscall.SIGHUP)
 
 			if layout.BoardFile != "" {
+				cmdline, _ := os.ReadFile("/proc/cmdline")
+				board.Migrate(layout.BoardFile, string(cmdline))
 				board.Note(layout.BoardFile, layout.Board, layout.Hardware)
 			}
 			safe.Go("profile", func() { profile.Watch(ctx) })

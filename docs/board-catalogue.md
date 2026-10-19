@@ -287,18 +287,24 @@ Stage c goes in two steps:
    without one, or with a wrong one, runs as it did. This is what shows, on units in use, that the file
    and the guess agree before anything depends on it.
 2. **Go by it (not started).** The guess and echod's per-board constants go, and echod takes the board
-   from board.json. That makes board.json required, so it waits until units in use have one (below), and
-   whether to ship that at all is still open (GENBU-191).
+   from board.json. That makes board.json required, so it waits until units in use have one (below:
+   the migration is in, the OTA gate isn't), and whether to ship that at all is still open (GENBU-193).
 
 ### Units already in the field
 
 They have no board.json. Shipping an echod that refuses without one would take them down, so:
 
 1. The OTA step checks for board.json before it installs an echod that needs it. No file, no update.
+   **Not built**: how an older echod, which ignores manifest fields it doesn't know, is kept off such a
+   release is a release decision, and it only matters if the guess goes (GENBU-191, GENBU-193).
 2. A one-time migration writes board.json only when the unit matches exactly one board through a key that
-   is already proven exact on real units.
+   is already proven exact on real units. **Done** (`board.Migrate`, GENBU-191): at start, an echod that
+   finds no board.json reads `androidboot.product` off the kernel command line and, when exactly one board
+   it carries has that `android_product`, writes that board's file, byte for byte what the installer
+   writes, the same way (`.new`, then renamed). A file already there is never touched, even a broken one.
 3. Any unit that would need a guess to identify stays on its current echod and goes on a list for a
-   person to identify.
+   person to identify. Today that list is echod's log: `board.json migration state=unidentified` with the
+   product it saw (none, an unknown one, or two different ones). Such a unit keeps running as it did.
 
 Failing closed here means "this unit doesn't update", never "this unit stops working".
 
@@ -392,7 +398,8 @@ b. **Installer reads the catalogue.** Done. `boards.py`, `profiles/` and the pin
 c. board.json written at flash time. echod reads it next to its constants with a test that they match,
    then the constants go, the guess with them. The first half is done: the key is `android_product`
    (the DT compatibles don't tell checkers from cronos), and echod reads and logs board.json. The second
-   half waits on units in use having board.json (GENBU-191).
+   half waits on the OTA gate (GENBU-191) and on whether the guess goes at all (GENBU-193). Units in use
+   write their own board.json once they run an echod with the migration.
 d. Product mains (`cmd/echod-show`, `-dot`, `-spot`) replace the build tags. Shell scripts get resolved
    values as arguments.
 e. CI grep for board names and build tags outside the catalogue and the mains, with a baseline count that
