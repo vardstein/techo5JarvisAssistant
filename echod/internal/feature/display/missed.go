@@ -39,15 +39,43 @@ func keyNote(short bool) string {
 
 // updateNote is the line that says an update is ready to install, or nothing. It shares the place a
 // missed ring is said in, and gives way to one. short is the round face's, where only a few words fit.
+// A following Show whose move waits for something says what, so a room that wonders why the update
+// has not happened can read it off the Show (GENBU-247).
 func updateNote(short bool) string {
 	v := firmware.Get().Offered()
 	switch {
 	case v == "":
 		return ""
 	case short:
+		if firmware.Get().Waiting().Holding() {
+			return "Update waits"
+		}
 		return "Update ready"
 	}
+	if w := waitNote(firmware.Get().Waiting()); w != "" {
+		return w
+	}
 	return i18n.F("Update ready: {version} · Settings › Updates", "version", v)
+}
+
+// waitNote says what a following Show's update waits for, or nothing.
+func waitNote(h firmware.Hold) string {
+	switch h.Kind {
+	case firmware.HoldMusic:
+		return i18n.T("Update waits for the music to stop")
+	case firmware.HoldRinging:
+		return i18n.T("Update waits for the ringing to stop")
+	case firmware.HoldCall:
+		return i18n.T("Update waits for the call to end")
+	case firmware.HoldTimer:
+		if h.Name == "" {
+			return i18n.F("Update waits for the timer at {time}", "time", clockText(h.At.Local()))
+		}
+		return i18n.F("Update waits for timer {name} at {time}", "name", h.Name, "time", clockText(h.At.Local()))
+	case firmware.HoldAlarm:
+		return i18n.F("Update waits for the alarm at {time}", "time", clockText(h.At.Local()))
+	}
+	return ""
 }
 
 // installNote says how far an install has got, or ok is false when none is running. at is the

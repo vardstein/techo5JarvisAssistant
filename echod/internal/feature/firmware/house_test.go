@@ -10,6 +10,7 @@ import (
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/question"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/timer"
 	"github.com/HuskerMinion/techo5/echod/internal/layout"
 	"github.com/HuskerMinion/techo5/echod/internal/update"
 )
@@ -54,12 +55,12 @@ func TestFollowingShowDecides(t *testing.T) {
 		{"fresh install, house older: moves back", func(f *following) { f.seen, f.house = "", "v1.0.1-stable.40" }, align},
 		{"house moved while running: moves", func(f *following) { f.movedWhileUp = true }, align},
 		{"a move whose fetch failed tries again without asking", func(f *following) { f.retrying = true }, align},
-		{"moves only when nobody uses it", func(f *following) { f.movedWhileUp, f.busy = true, true }, stay},
+		{"moves only when nobody uses it", func(f *following) { f.movedWhileUp, f.busy = true, Hold{Kind: HoldMusic} }, stay},
 		{"a version that failed here is not tried again", func(f *following) { f.seen, f.failed = "", f.house }, stay},
 		{"not while its own update is on trial", func(f *following) { f.seen, f.committed = "", false }, stay},
 		{"not while an install runs or a fetch just failed", func(f *following) { f.seen, f.held = "", true }, stay},
 		{"never asks in quiet hours", func(f *following) { f.quiet = true }, stay},
-		{"never asks while in use", func(f *following) { f.busy = true }, stay},
+		{"never asks while in use", func(f *following) { f.busy = Hold{Kind: HoldCall} }, stay},
 		{"asked this boot: waits", func(f *following) {
 			f.askedThisBoot, f.asked, f.askedAt = true, f.house, now.Add(-time.Hour)
 		}, stay},
@@ -126,7 +127,7 @@ func followingShow(t *testing.T, v string, mains string) *Firmware {
 	}
 	nodeName = func() string { return "kitchen_show" }
 	committed = func() bool { return true }
-	inUse = func(time.Time) bool { return false }
+	inUse = func(time.Time) Hold { return Hold{} }
 	fetchTag = func(context.Context, string) (update.Manifest, error) {
 		t.Fatal("fetched a release")
 		return update.Manifest{}, nil
@@ -319,15 +320,54 @@ func TestMusicHoldsTheMove(t *testing.T) {
 // A busy Show stays where it is and says why.
 func TestBusyShowWaits(t *testing.T) {
 	f := following{running: "v1.0.2", house: "v1.0.3", seen: "v1.0.3", movedWhileUp: true, committed: true,
-		busy: true, now: time.Now()}
+		busy: Hold{Kind: HoldMusic}, now: time.Now()}
 	if got := decide(f); got != stay {
 		t.Errorf("busy Show: %v, want stay", got)
 	}
-	if got := houseLine(f, "the house", "", f.now); got != "Moving to v1.0.3 once nobody is using this Show" {
+	if got := houseLine(f, "the house", "", f.now); got != "Moving to v1.0.3 once the music stops" {
 		t.Errorf("busy Show says %q", got)
 	}
-	f.busy = false
+	if got := waitShown(f); got.Kind != HoldMusic {
+		t.Errorf("the screen is not told the music holds: %+v", got)
+	}
+	f.busy = Hold{}
 	if got := decide(f); got != align {
 		t.Errorf("idle Show: %v, want align", got)
+	}
+}
+
+// Only a timer that ends before the Show would be back holds the update, and the line names it
+// (GENBU-247: a 17 hour timer held a Show for the afternoon and nothing said why).
+func TestOnlyASoonTimerHolds(t *testing.T) {
+	now := time.Date(2026, 10, 19, 18, 0, 0, 0, time.Local)
+	long := timer.Countdown{Name: "Gegenwart", Left: 17 * time.Hour, Active: true}
+	if h := timerHolds([]timer.Countdown{long}, now); h.Holding() {
+		t.Errorf("a 17 hour timer holds: %+v", h)
+	}
+	paused := timer.Countdown{Name: "Tee", Left: time.Minute}
+	if h := timerHolds([]timer.Countdown{paused}, now); h.Holding() {
+		t.Errorf("a paused timer holds: %+v", h)
+	}
+	soon := timer.Countdown{Name: "Pasta", Left: 12 * time.Minute, Active: true}
+	h := timerHolds([]timer.Countdown{soon, long}, now)
+	if h.Kind != HoldTimer || h.Name != "Pasta" || !h.At.Equal(now.Add(12*time.Minute)) {
+		t.Fatalf("a timer due in 12 minutes: %+v", h)
+	}
+	f := following{running: "v1.0.2", house: "v1.0.3", committed: true, busy: h, now: now}
+	if got := houseLine(f, "the house", "", now); got != "Moving to v1.0.3 once timer Pasta ends at 18:12" {
+		t.Errorf("timer hold says %q", got)
+	}
+	f.busy.Name = ""
+	if got := houseLine(f, "the house", "", now); got != "Moving to v1.0.3 once the timer ends at 18:12" {
+		t.Errorf("unnamed timer hold says %q", got)
+	}
+	f.busy = Hold{Kind: HoldAlarm, At: now.Add(20 * time.Minute)}
+	if got := houseLine(f, "the house", "", now); got != "Moving to v1.0.3 once the alarm at 18:20 has rung" {
+		t.Errorf("alarm hold says %q", got)
+	}
+	// Waiting to settle comes first, and the screen is not told about a hold that is not the reason.
+	f.committed = false
+	if got := waitShown(f); got.Holding() {
+		t.Errorf("a Show settling shows a hold: %+v", got)
 	}
 }

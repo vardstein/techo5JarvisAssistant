@@ -118,10 +118,12 @@ type following struct {
 	// failed is a house version that would not install here.
 	failed string
 	// askedThisBoot, asked and askedAt are the last "should I move?" question.
-	askedThisBoot   bool
-	asked           string
-	askedAt         time.Time
-	busy, quiet     bool
+	askedThisBoot bool
+	asked         string
+	askedAt       time.Time
+	// busy is what keeps somebody's use of the Show from being cut by a restart, if anything does.
+	busy            Hold
+	quiet           bool
 	committed, held bool // held: an install is running, or a fetch failed a moment ago
 	now             time.Time
 }
@@ -133,7 +135,7 @@ func decide(f following) move {
 	switch {
 	case f.house == "" || f.house == f.running:
 		return stay
-	case f.house == f.failed, !f.committed, f.held, f.busy:
+	case f.house == f.failed, !f.committed, f.held, f.busy.Holding():
 		return stay
 	case f.seen == "" || f.movedWhileUp || f.retrying:
 		return align
@@ -157,24 +159,94 @@ type house struct {
 	retryAt       time.Time
 	fetchMisses   int
 	status        string
+	// wait is what the move waits for, while that is all it waits for: the screen says it.
+	wait Hold
 }
 
-// inUse is somebody using the Show: music playing or paused a short while ago, a call, a timer
-// counting or ringing, or an alarm about to go off.
-var inUse = func(now time.Time) bool {
+// HoldKind is what a following Show waits for before it moves to the house version.
+type HoldKind int
+
+const (
+	HoldNone HoldKind = iota
+	HoldMusic
+	HoldRinging
+	HoldCall
+	HoldInstall
+	HoldTimer
+	HoldAlarm
+)
+
+// Hold is what keeps a following Show where it is for now: the update waits for it, and update_status
+// and the screen say so (GENBU-247).
+type Hold struct {
+	Kind HoldKind
+	// Name is the timer's, empty for everything else and for a timer nobody named.
+	Name string
+	// At is when the timer ends or the alarm goes off.
+	At time.Time
+}
+
+func (h Hold) Holding() bool { return h.Kind != HoldNone }
+
+// line finishes update_status's "Moving to v once ...".
+func (h Hold) line() string {
+	at := h.At.Local().Format("15:04")
+	switch h.Kind {
+	case HoldMusic:
+		return "the music stops"
+	case HoldRinging:
+		return "the ringing stops"
+	case HoldCall:
+		return "the call ends"
+	case HoldInstall:
+		return "its own install ends"
+	case HoldTimer:
+		if h.Name == "" {
+			return "the timer ends at " + at
+		}
+		return "timer " + h.Name + " ends at " + at
+	case HoldAlarm:
+		return "the alarm at " + at + " has rung"
+	}
+	return "nobody is using this Show"
+}
+
+// inUse is somebody using the Show in a way a restart would cut: music playing or paused a short while
+// ago, a call, something ringing, or a timer or an alarm going off before the Show would be back.
+var inUse = func(now time.Time) Hold {
 	if playing, paused := media.Get().ScreenState(); musicHolds(playing, paused, now) {
-		return true
+		return Hold{Kind: HoldMusic}
 	}
-	if ring.IsSounding() || update.Installing() || phone.Get().Busy() {
-		return true
+	switch {
+	case ring.IsSounding():
+		return Hold{Kind: HoldRinging}
+	case phone.Get().Busy():
+		return Hold{Kind: HoldCall}
+	case update.Installing():
+		return Hold{Kind: HoldInstall}
 	}
-	for _, c := range timer.Get().List(now) {
-		if c.Active {
-			return true
+	if h := timerHolds(timer.Get().List(now), now); h.Holding() {
+		return h
+	}
+	if next := alarm.Get().View(now).Next; next != nil && next.At.Sub(now) < dueSoon {
+		return Hold{Kind: HoldAlarm, At: next.At}
+	}
+	return Hold{}
+}
+
+// timerHolds is the soonest timer that ends before the Show would be back from a restart. Every running
+// timer used to hold, so a timer set for the evening kept the Show off the house version all afternoon.
+// A longer one outlives the restart: the Show's own are saved as their finish time and come back, and
+// Home Assistant keeps the ones set by voice and sends the finish to the Show once it is connected again,
+// which rings it even though the countdown itself is gone. That last part is read in Home Assistant's
+// code (intent/timers.py), not yet tried on a Show.
+func timerHolds(list []timer.Countdown, now time.Time) Hold {
+	for _, c := range list {
+		if c.Active && c.Left < dueSoon {
+			return Hold{Kind: HoldTimer, Name: c.Name, At: now.Add(c.Left)}
 		}
 	}
-	next := alarm.Get().View(now).Next
-	return next != nil && next.At.Sub(now) < dueSoon
+	return Hold{}
 }
 
 // pausedHolds is how long paused music keeps a following Show from moving: as long as the Show keeps a
@@ -336,7 +408,9 @@ func (u *Firmware) houseStep(ctx context.Context, now time.Time) {
 		quiet: quiet(), committed: committed(), held: update.Installing() || now.Before(h.retryAt), now: now,
 	}
 	h.mu.Unlock()
-	f.busy = f.house != f.running && inUse(now)
+	if f.house != f.running {
+		f.busy = inUse(now)
+	}
 
 	switch decide(f) {
 	case align:
@@ -352,6 +426,27 @@ func (u *Firmware) houseStep(ctx context.Context, now time.Time) {
 		}
 	}
 	u.houseStatus(houseLine(f, u.mainName(), u.mainMissing(), now))
+	h.mu.Lock()
+	h.wait = waitShown(f)
+	h.mu.Unlock()
+}
+
+// waitShown is the hold the move waits for, when houseLine says the Show waits for it.
+func waitShown(f following) Hold {
+	if f.house == f.running || f.house == f.failed || !f.committed {
+		return Hold{}
+	}
+	return f.busy
+}
+
+// Waiting is what this Show's move to the house version waits for, for the screen.
+func (u *Firmware) Waiting() Hold {
+	if u.role(time.Now()) != roleFollower {
+		return Hold{}
+	}
+	u.house.mu.Lock()
+	defer u.house.mu.Unlock()
+	return u.house.wait
 }
 
 // asksAboutWaiting is this Show being the one to ask about the house update: it is on the house version
@@ -377,8 +472,8 @@ func houseLine(f following, main, missing string, now time.Time) string {
 		return "Version " + f.house + " did not install here; staying on " + f.running
 	case !f.committed:
 		return "Waiting for this version to settle before moving to " + f.house
-	case f.busy:
-		return "Moving to " + f.house + " once nobody is using this Show"
+	case f.busy.Holding():
+		return "Moving to " + f.house + " once " + f.busy.line()
 	}
 	if update.Newer(f.running, f.house) {
 		// its own card offers nothing older, so it has no Install to point at
