@@ -122,6 +122,59 @@ class Show:
     key: str = ""  # its "Home Assistant key" sensor, how its key stands (GENBU-196)
     encrypted: bool = False  # whether its ESPHome connection has an encryption key
     model: str = ""  # its board, as its device says (the wake race's board offset)
+    status: str = ""  # its update_status line: what its move to the house version waits for (GENBU-249)
+    updating: bool = False  # its firmware update is running
+    at: int | None = None  # how far that update's download is, in percent
+
+
+# GENBU-249: the list of Shows under the house's update card, in Home Assistant's language. Why a Show
+# waits is its own update_status line, which the Show writes in English.
+STAGES = {
+    "de": {"head": "{done} von {online} Shows auf {house}", "current": "aktuell", "downloading": "lädt {at} %",
+           "installing": "installiert", "waiting": "wartet", "offline": "offline"},
+    "en": {"head": "{done} of {online} Shows on {house}", "current": "up to date", "downloading": "downloading {at}%",
+           "installing": "installing", "waiting": "waiting", "offline": "offline"},
+}
+
+
+def stage(show: Show, house: str, lang: str = "en") -> str:
+    """Where one Show is on its way to the house version, as one line of the update card's list."""
+    words = STAGES.get(lang, STAGES["en"])
+    if not show.online:
+        return words["offline"]
+    if show.updating:
+        if show.at is not None and show.at < 100:
+            return words["downloading"].format(at=show.at)
+        return words["installing"]
+    if show.installed == house:
+        return words["current"]
+    # The Show's line names the house version once it has seen it; before that it still says what it
+    # followed, which is no reason.
+    if house and house in show.status:
+        return f"{words['waiting']}: {show.status}"
+    return words["waiting"]
+
+
+def overview(shows: list[Show], house: str, lang: str = "en") -> str:
+    """Every Show with its version and stage, as Markdown for the update card's dialog."""
+    if not shows:
+        return ""
+    online = [s for s in shows if s.online]
+    done = sum(1 for s in online if s.installed == house)
+    lines = [f"**{STAGES.get(lang, STAGES['en'])['head'].format(done=done, online=len(online), house=house)}**", ""]
+    for s in sorted(shows, key=lambda s: s.name.lower()):
+        version = f" · {s.installed}" if s.online and s.installed else ""
+        lines.append(f"- **{s.name}**{version} · {stage(s, house, lang)}")
+    return "\n".join(lines)
+
+
+def oldest_behind(shows: list[Show], house: str) -> str:
+    """The oldest version an online Show still runs below the house version; "" when none is behind."""
+    oldest = ""
+    for s in shows:
+        if s.online and valid(s.installed) and newer(house, s.installed) and (not oldest or newer(oldest, s.installed)):
+            oldest = s.installed
+    return oldest
 
 
 def channel_of(version: str) -> str:

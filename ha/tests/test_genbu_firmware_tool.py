@@ -94,6 +94,8 @@ async def test_status_names_the_shows_not_on_the_house_version(hass: HomeAssista
     assert data["house_version"] == "v1.4.1-dev.165"
     assert data["all_on_house_version"] is False
     assert data["not_on_house_version"] == ["Kitchen v1.4.1-dev.159"]
+    # Where each one is, as the update card's list says it (GENBU-249).
+    assert {s["name"]: s.get("update_stage") for s in data["shows"]} == {"Kitchen": "waiting", "Bath": None}
 
     set_show(hass, "update.kitchen_firmware", "sensor.kitchen_committed_version", "v1.4.1-dev.165", online=False)
     data = (await tool.async_call(hass, *ask(bath.device, "status"))).data

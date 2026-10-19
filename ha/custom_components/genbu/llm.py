@@ -37,7 +37,7 @@ except ImportError:
 
 from . import recipe as rec
 from .const import DOMAIN, NEW_RECIPE, RECIPES, SHOW_RECIPE, UPDATE_ENTITY, VOICE_UPDATES
-from .house import CHANNELS, Show, channel_of, newer, valid
+from .house import CHANNELS, Show, channel_of, newer, stage, valid
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -325,6 +325,8 @@ class FirmwareTool(llm.Tool):
                     "online": state is not None and state.state in ("on", "off")}
             if self.show is not None and show.device == self.show.device:
                 item["this_is_you"] = True
+            if show.updating or installed != house.version:
+                item["update_stage"] = stage(show, house.version)  # downloading 40%, waiting: why (GENBU-249)
             if state is not None and state.state == "on":
                 item["update_to"] = latest = str(attrs.get("latest_version") or "")
                 if not out["update_waiting"] and (not house.version or not newer(latest, house.version)):

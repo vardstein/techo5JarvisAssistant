@@ -58,7 +58,7 @@ def find_shows(hass: HomeAssistant) -> list[Show]:
             if device.manufacturer not in MANUFACTURERS or device.via_device_id:
                 continue
             node = entry.data.get("device_name") or _slug(device.name or "")
-            firmware = committed = satellite = key = None
+            firmware = committed = status = satellite = key = None
             for e in er.async_entries_for_device(entities, device.id):
                 if e.domain == "assist_satellite" and not e.disabled_by:
                     satellite = e.entity_id
@@ -69,17 +69,22 @@ def find_shows(hass: HomeAssistant) -> list[Show]:
                 elif e.domain == "sensor" and (e.unique_id.endswith("-committed_version")
                                                or e.entity_id.endswith("_committed_version")):
                     committed = e.entity_id
+                elif e.domain == "sensor" and (e.unique_id.endswith("-update_status")
+                                               or e.entity_id.endswith("_update_status")):
+                    status = e.entity_id
             if not node or not firmware:
                 continue
             up = hass.states.get(firmware)
             done = hass.states.get(committed) if committed else None
+            line = hass.states.get(status) if status else None
+            at = up.attributes.get("update_percentage") if up else None
             shows[node] = Show(
                 node=node,
                 name=device.name_by_user or device.name or node,
                 installed=(up.attributes.get("installed_version") or "") if up else "",
                 committed=done.state if done else "",
                 online=bool(up) and up.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN),
-                watch=(firmware, committed),
+                watch=(firmware, committed, status),
                 device=device.id,
                 area=device.area_id or "",
                 satellite=satellite or "",
@@ -87,6 +92,9 @@ def find_shows(hass: HomeAssistant) -> list[Show]:
                 key=key or "",
                 encrypted=bool(entry.data.get("noise_psk")),
                 model=device.model or "",
+                status=line.state if line and line.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN) else "",
+                updating=bool(up and up.attributes.get("in_progress")),
+                at=round(at) if isinstance(at, (int, float)) else None,
             )
     return sorted(shows.values(), key=lambda s: s.node)
 

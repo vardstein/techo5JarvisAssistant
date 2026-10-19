@@ -145,6 +145,52 @@ class ChannelTests(unittest.TestCase):
         self.assertIn('"channel-dev"', channel)
 
 
+class OverviewTests(unittest.TestCase):
+    """GENBU-249: the update card lists every Show and where it is on its way to the house version."""
+
+    def moving(self):
+        return [
+            show("hall", "v1.5.0"),
+            house.Show(node="kitchen", name="Kitchen", installed="v1.4.0", online=True, updating=True, at=40),
+            house.Show(node="bath", name="Bath", installed="v1.4.0", online=True, updating=True, at=100),
+            house.Show(node="desk", name="Desk", installed="v1.4.0", online=True,
+                       status="Moving to v1.5.0 once the music stops"),
+            house.Show(node="attic", name="Attic", installed="v1.3.0", online=True,
+                       status="Following the house · version v1.3.0"),
+            show("cellar", "v1.2.0", online=False, installed=""),
+        ]
+
+    def test_each_stage(self):
+        lines = dict(line.removeprefix("- **").split("**", 1)
+                     for line in house.overview(self.moving(), "v1.5.0").splitlines() if line.startswith("- "))
+        self.assertEqual(lines, {
+            "Hall": " · v1.5.0 · up to date",
+            "Kitchen": " · v1.4.0 · downloading 40%",
+            "Bath": " · v1.4.0 · installing",
+            "Desk": " · v1.4.0 · waiting: Moving to v1.5.0 once the music stops",
+            # Its line is from before the house moved: no reason yet.
+            "Attic": " · v1.3.0 · waiting",
+            "Cellar": " · offline",
+        })
+
+    def test_the_head_counts_the_shows_online(self):
+        self.assertTrue(house.overview(self.moving(), "v1.5.0").startswith("**1 of 5 Shows on v1.5.0**\n"))
+        self.assertTrue(house.overview(self.moving(), "v1.5.0", "de").startswith("**1 von 5 Shows auf v1.5.0**\n"))
+        self.assertIn("Kitchen** · v1.4.0 · lädt 40 %", house.overview(self.moving(), "v1.5.0", "de"))
+
+    def test_no_shows_no_list(self):
+        self.assertEqual(house.overview([], "v1.5.0"), "")
+
+    def test_oldest_behind(self):
+        self.assertEqual(house.oldest_behind(self.moving(), "v1.5.0"), "v1.3.0")  # the cellar is offline
+        self.assertEqual(house.oldest_behind([show("hall", "v1.5.0")], "v1.5.0"), "")
+        # Going back: a Show still on the newer one is not behind.
+        self.assertEqual(house.oldest_behind([show("hall", "v1.5.0")], "v1.4.0"), "")
+
+    def test_every_language_has_every_word(self):
+        self.assertEqual(set(house.STAGES["de"]), set(house.STAGES["en"]))
+
+
 class ForgetTests(unittest.TestCase):
     """genbu.forget_show, which the installer's --remove-show calls once the Show is out of ESPHome."""
 

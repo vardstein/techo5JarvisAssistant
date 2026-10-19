@@ -36,8 +36,15 @@ def add_show(hass: HomeAssistant, node: str, version: str, manufacturer: str = "
     done = entities.async_get_or_create("sensor", "esphome", f"aa:{node}-sensor-committed_version",
                                         config_entry=entry, device_id=device.id,
                                         suggested_object_id=f"{node}_committed_version")
+    entities.async_get_or_create("sensor", "esphome", f"aa:{node}-sensor-update_status", config_entry=entry,
+                                 device_id=device.id, suggested_object_id=f"{node}_update_status")
     set_show(hass, up.entity_id, done.entity_id, version)
     return up.entity_id
+
+
+def status_of(up: str) -> str:
+    """The Show's update_status sensor, by its firmware update entity."""
+    return up.replace("update.", "sensor.").replace("_firmware", "_update_status")
 
 
 def set_show(hass, up, done, version, online=True):
@@ -122,7 +129,10 @@ async def test_the_card_offers_the_channel_release(hass: HomeAssistant, hass_ws_
     assert (state.attributes["update_waiting"], state.attributes["update_asks"]) == ("v1.0.4", "hall")
     client = await hass_ws_client(hass)
     await client.send_json({"id": 1, "type": "update/release_notes", "entity_id": UPDATE})
-    assert (await client.receive_json())["result"] == "What v1.0.4 brings"
+    # What the release brings, then every Show (GENBU-249).
+    notes = (await client.receive_json())["result"]
+    assert notes.startswith("What v1.0.4 brings\n\n---\n\n**1 of 2 Shows on v1.0.3**")
+    assert "- **Attic** · v1.0.2 · waiting" in notes and "- **Hall** · v1.0.3 · up to date" in notes
 
     # An older one on the channel is no update.
     release("v1.0.2")
@@ -149,7 +159,7 @@ async def test_a_new_release_shows_within_the_hour_or_on_check(hass: HomeAssista
 
 async def test_install_moves_the_house_and_the_shows_follow(hass: HomeAssistant):
     up = add_show(hass, "hall", "v1.0.3")
-    add_show(hass, "kitchen", "v1.0.3")
+    kitchen = add_show(hass, "kitchen", "v1.0.3")
     entry = await setup(hass)
     release("v1.0.4")
     await read(hass, entry)
@@ -158,14 +168,52 @@ async def test_install_moves_the_house_and_the_shows_follow(hass: HomeAssistant)
     state = hass.states.get("sensor.genbu_house_version")
     assert (state.state, state.attributes["update_waiting"]) == ("v1.0.4", "")
     card = hass.states.get(UPDATE)
-    assert (card.state, card.attributes["installed_version"]) == ("off", "v1.0.4")
-    # Half the Shows are there: the card shows how far.
+    # On, from the oldest Show still on its way, with how far they are (GENBU-249).
+    assert (card.state, card.attributes["installed_version"], card.attributes["latest_version"]) == (
+        "on", "v1.0.3", "v1.0.4")
     assert card.attributes["in_progress"] is True and card.attributes["update_percentage"] == 0
     set_show(hass, up, up.replace("update.", "sensor.").replace("_firmware", "_committed_version"), "v1.0.4")
     await entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
     assert hass.states.get(UPDATE).attributes["update_percentage"] == 50
     assert entry.runtime_data.house.before == "v1.0.3"
+    set_show(hass, kitchen, kitchen.replace("update.", "sensor.").replace("_firmware", "_committed_version"),
+             "v1.0.4")
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    card = hass.states.get(UPDATE)
+    assert (card.state, card.attributes["installed_version"], card.attributes["in_progress"]) == (
+        "off", "v1.0.4", False)
+
+
+async def test_the_list_says_where_each_show_is(hass: HomeAssistant, hass_ws_client):
+    """GENBU-249: downloading with how far, installing, waiting and why, offline."""
+    hall = add_show(hass, "hall", "v1.0.3")
+    kitchen = add_show(hass, "kitchen", "v1.0.3")
+    desk = add_show(hass, "desk", "v1.0.3")
+    attic = add_show(hass, "attic", "v1.0.3")
+    entry = await setup(hass)
+    release("v1.0.4")
+    await read(hass, entry)
+    await hass.services.async_call("update", "install", {"entity_id": UPDATE}, blocking=True)
+    await hass.async_block_till_done()
+    hass.states.async_set(hall, "on", {"installed_version": "v1.0.3", "latest_version": "v1.0.4",
+                                       "in_progress": True, "update_percentage": 41.6})
+    hass.states.async_set(kitchen, "on", {"installed_version": "v1.0.3", "latest_version": "v1.0.4",
+                                          "in_progress": True, "update_percentage": 100})
+    hass.states.async_set(status_of(desk), "Moving to v1.0.4 once the music stops")
+    set_show(hass, attic, attic.replace("update.", "sensor.").replace("_firmware", "_committed_version"),
+             "v1.0.3", online=False)
+    await hass.async_block_till_done()
+    await entry.runtime_data.async_refresh()
+    client = await hass_ws_client(hass)
+    await client.send_json({"id": 1, "type": "update/release_notes", "entity_id": UPDATE})
+    assert (await client.receive_json())["result"] == "\n".join([
+        "**0 of 3 Shows on v1.0.4**", "",
+        "- **Attic** · offline",
+        "- **Desk** · v1.0.3 · waiting: Moving to v1.0.4 once the music stops",
+        "- **Hall** · v1.0.3 · downloading 42%",
+        "- **Kitchen** · v1.0.3 · installing"])
 
 
 async def test_install_with_a_backup(hass: HomeAssistant):

@@ -74,6 +74,15 @@ updating and so on". The card uses the same parts Core's card uses, so it looks 
   make its usual automatic backup through the backup manager, the same one Core's card uses. That backup
   includes the saved settings. Only then does it install.
 - **Progress, skip, and the "update available" trigger** work as on every other card.
+- **Where each Show is** (GENBU-249). Below the release notes the dialog lists every Show: "2 of 3 Shows on
+  v1.4.9", then one line per Show with its version and where it is: up to date, downloading 40%, installing,
+  waiting (with the Show's own reason, such as "once the music stops"), or offline. While Shows are still
+  moving, the card stays on and shows the oldest Show's version as installed, so the bar and the numbers
+  move as Shows arrive. The list itself is as of when the dialog opens, because Home Assistant fetches release
+  notes only once; close and open it again to see it move. The voice gets the same stage per Show
+  ("update_stage" in the firmware tool's status). Each Show's own screen already says its own part:
+  "Update waits for the music to stop", "Downloading v · N%", "Installing v…". A list of the whole house on
+  every Show screen would need new firmware and is not built.
 - **What the dialog cannot do.** Home Assistant's update dialog has no version picker. It only sends
   `entity_id` and `backup` (checked in the 2026.10 frontend). Picking an older version is therefore on the
   Genbu page and in the `update.install` action, not in the dialog.
