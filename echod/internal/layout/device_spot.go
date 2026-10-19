@@ -30,6 +30,9 @@ const (
 	Model        = "Echo Spot (rook)"
 	Board        = "rook"
 
+	// BoardFile is empty: the Spot is in no board catalogue, so it has no board.json.
+	BoardFile = ""
+
 	// DefaultName is the fallback display name when a device has none recorded.
 	DefaultName = "Echo Spot"
 

@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/HuskerMinion/techo5/echod/internal/android/logd"
+	"github.com/HuskerMinion/techo5/echod/internal/board"
 	"github.com/HuskerMinion/techo5/echod/internal/boot"
 	"github.com/HuskerMinion/techo5/echod/internal/layout"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/profile"
@@ -44,6 +45,9 @@ func newRunCmd() *cobra.Command {
 
 			signal.Ignore(syscall.SIGHUP)
 
+			if layout.BoardFile != "" {
+				board.Note(layout.BoardFile, layout.Board, layout.Hardware)
+			}
 			safe.Go("profile", func() { profile.Watch(ctx) })
 			return boot.Run(ctx)
 		},

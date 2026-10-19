@@ -37,6 +37,9 @@ const (
 	Model        = "Echo Dot 2 (biscuit)"
 	Board        = "biscuit"
 
+	// BoardFile is empty: the Dot is in no board catalogue, so it has no board.json.
+	BoardFile = ""
+
 	// DefaultName is the fallback display name when a device has none recorded.
 	DefaultName = "Echo Dot"
 

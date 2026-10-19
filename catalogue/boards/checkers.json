@@ -4,7 +4,8 @@
   "profile_id": "genbu-checkers-v1",
   "identity": {
     "fastboot_product": "CHECKERS",
-    "twrp_device": "checkers"
+    "twrp_device": "checkers",
+    "android_product": "checkers"
   },
   "display": {
     "width": 960,

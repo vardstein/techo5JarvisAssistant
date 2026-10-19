@@ -4,7 +4,8 @@
   "profile_id": "genbu-crown-v1",
   "identity": {
     "fastboot_product": "CROWN",
-    "twrp_device": "crown"
+    "twrp_device": "crown",
+    "android_product": "crown"
   },
   "display": {
     "width": 1280,
