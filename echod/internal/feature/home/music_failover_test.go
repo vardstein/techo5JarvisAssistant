@@ -34,6 +34,7 @@ type musicHAFake struct {
 	queue  map[string]any // what get_queue answers for the player, when a test sets it
 	render string         // what every template renders to over the websocket
 	fail   map[string]int // "domain.service" answered with this status in place of {}
+	images map[string][]byte // a player's picture, by the path its entity_picture names
 }
 
 func newMusicHAFake() *musicHAFake {
@@ -68,6 +69,13 @@ func (f *musicHAFake) serviceCalls() []musicServiceCall {
 func (f *musicHAFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/api/websocket" {
 		f.renderOverWebsocket(w, r)
+		return
+	}
+	f.mu.Lock()
+	image, ok := f.images[r.URL.Path]
+	f.mu.Unlock()
+	if ok {
+		_, _ = w.Write(image)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

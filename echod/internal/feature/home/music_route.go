@@ -48,6 +48,17 @@ const musicSettle = 15 * time.Second
 // Assistant's state of the Show's player can be stale for an hour (GENBU-167), Sendspin cannot.
 var localCarried = func() bool { return media.Get().Carried() }
 
+// sendspinArt is whether the picture on the page is Sendspin's: the track it carries, or one paused from
+// here and still held. The route's player has a picture too, and a song changing there went in over the
+// held track's own (GENBU-169: a paused "Sawbone's Stew" under another album's cover).
+var sendspinArt = func() bool {
+	if media.Get().Carried() {
+		return true
+	}
+	_, _, _, held := media.Get().Held()
+	return held
+}
+
 // forgetPrimary takes the screen off the preferred speaker once it has stopped, so the page and its
 // buttons go back to whatever plays here. Caller holds musicRoute.
 func (r *musicRouteState) forgetPrimary(primary string, now time.Time) {
@@ -122,6 +133,9 @@ type musicPlaybackState struct {
 	queueAt  time.Time
 	queueFor string
 	picture  string
+	// pictured is whether the picture on the page is the route's own picture. Sendspin's goes in
+	// over it, and then the route's is fetched again once the page is the route's.
+	pictured bool
 
 	// expectPlaying is what a tap on play or pause asked for, held on the screen until Home Assistant
 	// says the same or expectUntil has passed: a poll that lands before Music Assistant caught up
@@ -453,13 +467,13 @@ func (f *Feature) musicPlaybackTick() {
 	}
 	if active == "" {
 		musicPlayback.Lock()
-		hadPicture := musicPlayback.picture != ""
+		hadPicture := musicPlayback.pictured && musicPlayback.picture != ""
 		musicPlayback.view = MusicPlaybackView{}
 		musicPlayback.queueAt, musicPlayback.queueFor = time.Time{}, ""
-		musicPlayback.picture = ""
+		musicPlayback.picture, musicPlayback.pictured = "", false
 		musicPlayback.Unlock()
-		if hadPicture && !media.Get().Carried() {
-			RemoteArt(nil, nil)
+		if hadPicture && !sendspinArt() {
+			RemoteArt(nil, func() bool { return !sendspinArt() })
 		}
 		refreshLyrics(queueSong{})
 		return
@@ -488,21 +502,27 @@ func (f *Feature) musicPlaybackTick() {
 		if fetch == "" {
 			fetch = picture
 		}
-		if !media.Get().Carried() {
+		if sendspinArt() {
 			musicPlayback.Lock()
-			changed := picture != musicPlayback.picture
+			musicPlayback.pictured = false
+			musicPlayback.Unlock()
+		} else {
+			musicPlayback.Lock()
+			changed := !musicPlayback.pictured || picture != musicPlayback.picture
 			if changed {
-				musicPlayback.picture = picture
+				musicPlayback.picture, musicPlayback.pictured = picture, true
 			}
 			musicPlayback.Unlock()
+			// A fetch that ends after Sendspin took the page leaves Sendspin's picture standing.
+			ours := func() bool { return !sendspinArt() }
 			if changed {
 				if picture == "" {
-					RemoteArt(nil, nil)
+					RemoteArt(nil, ours)
 				} else if b, err := hass.Get().FetchURL(fetch); err == nil {
-					RemoteArt(b, nil)
+					RemoteArt(b, ours)
 				} else {
 					// The last song's cover beside this song's title would be wrong; the drawn notes are not.
-					RemoteArt(nil, nil)
+					RemoteArt(nil, ours)
 					slog.Info("music route: cover art unavailable", "err", err)
 				}
 			}
