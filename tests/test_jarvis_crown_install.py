@@ -1,6 +1,7 @@
 import hashlib
 import io
 import json
+import os
 import pathlib
 import tarfile
 import tempfile
@@ -24,6 +25,14 @@ from jarvis_crown.install import (  # noqa: E402
 from jarvis_crown.recovery import BOOT_AREAS, SMALL_PARTITIONS  # noqa: E402
 
 PINNED_BOOT = ROOT / "build" / "release-techo5-v1.0.1" / "techo5-boot-crown-v1.0.1.img"
+UPSTREAM_ROOTFS = ROOT / "build" / "release-techo5-v0.9.21" / "rootfs-v0.9.21.tar.gz"
+
+
+def needs(fixture):
+    """build/ is gitignored, so a fresh checkout has no fixtures: skip and say how to get them. CI fetches
+    them first, so there a missing one still fails."""
+    return unittest.skipUnless(fixture.exists() or os.environ.get("CI"),
+                               f"no {fixture.relative_to(ROOT)}; run python3 tools/fetch-test-fixtures.py")
 
 
 def sha256(path):
@@ -84,6 +93,7 @@ def make_backup(folder, serial="CROWN123"):
 
 
 class JarvisCrownInstallTests(unittest.TestCase):
+    @needs(PINNED_BOOT)
     def test_pinned_boot_is_exact_known_good_image(self):
         verify_crown_boot(PINNED_BOOT)
         self.assertEqual(sha256(PINNED_BOOT), CROWN_BOOT_SHA256)
@@ -105,10 +115,10 @@ class JarvisCrownInstallTests(unittest.TestCase):
             with self.assertRaisesRegex(InstallError, "SHA-256 mismatch"):
                 verify_jarvis_rootfs(rootfs, "0" * 64)
 
+    @needs(UPSTREAM_ROOTFS)
     def test_actual_archived_techo5_rootfs_is_rejected_as_not_jarvis(self):
-        upstream = ROOT / "build" / "release-techo5-v0.9.21" / "rootfs-v0.9.21.tar.gz"
         with self.assertRaisesRegex(InstallError, "does not contain a regular"):
-            verify_jarvis_rootfs(upstream, sha256(upstream))
+            verify_jarvis_rootfs(UPSTREAM_ROOTFS, sha256(UPSTREAM_ROOTFS))
 
     def test_upstream_or_wrong_board_rootfs_is_rejected(self):
         with tempfile.TemporaryDirectory() as td:
@@ -137,6 +147,7 @@ class JarvisCrownInstallTests(unittest.TestCase):
                     confirmation="yes",
                 )
 
+    @needs(PINNED_BOOT)
     def test_backup_must_match_current_recovery_serial(self):
         with tempfile.TemporaryDirectory() as td:
             rootfs = make_rootfs(td)
@@ -154,6 +165,7 @@ class JarvisCrownInstallTests(unittest.TestCase):
                     confirmation=FINAL_CONFIRM_PHRASE,
                 )
 
+    @needs(PINNED_BOOT)
     def test_plan_forces_safe_prestaged_path_and_keeps_expdb_logo_untouched(self):
         with tempfile.TemporaryDirectory() as td:
             rootfs = make_rootfs(td)
@@ -189,6 +201,7 @@ class JarvisCrownInstallTests(unittest.TestCase):
         with self.assertRaisesRegex(InstallError, "exit code 9"):
             execute_install(plan, run=run)
 
+    @needs(PINNED_BOOT)
     def test_plan_passes_show_settings_as_switches_and_files(self):
         with tempfile.TemporaryDirectory() as td:
             rootfs = make_rootfs(td)

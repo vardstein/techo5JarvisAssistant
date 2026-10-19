@@ -65,7 +65,7 @@ When something on stable is broken and cannot wait for the next release:
 
 | Step | What has to pass first |
 |---|---|
-| Commit on a task or fix branch | The checks for what it touches, run by hand: `python3 -m unittest discover -s tests -p 'test_*.py'`, `(cd echod && go test ./...)`, and for `ha/` the Home Assistant harness ([update-leader.md](update-leader.md#tests)). |
+| Commit on a task or fix branch | The checks for what it touches, run by hand: `python3 -m unittest discover -s tests -p 'test_*.py'`, `(cd echod && go test ./...)`, and for `ha/` the Home Assistant harness ([update-leader.md](update-leader.md#tests)). A few installer tests need real images in the gitignored `build/`; they skip until `python3 tools/fetch-test-fixtures.py` has fetched them (in CI, where that runs first, they fail instead). |
 | Push of any branch | `python3 tools/secret_scan.py --here`: no secrets, and nothing only this machine knows (its addresses, home directory, our SSH keys). The repo is public. CI runs the same scan without `--here`. |
 | Task or fix → feature | The above, plus CI (`build.yml` runs on every push to `feature/**`, `task/**` and `fix/**`). |
 | Feature → `dev` | Everything in the feature's Plane item done; its human test steps written in the item; CI green. |
