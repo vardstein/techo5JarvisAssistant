@@ -787,6 +787,13 @@ class SentenceTests(unittest.TestCase):
         self.assertEqual(self.heard("Weg mich um Viertel nach Sieben"),
                          [("wecker:", "{'when': 'Viertel nach Sieben'}")])
 
+    def test_a_wecker_set_with_setzen_or_ein_is_heard(self):
+        # GENBU-156: this one went to the model and took 8.8 s instead of 0.02 s.
+        self.assertEqual(self.heard("Setze ein Wecker für zwei Minuten"), [("wecker:", "{'when': 'zwei Minuten'}")])
+        for text in ["Setz einen Wecker auf 7 Uhr", "Setze mir einen Wecker um 7 Uhr", "Stell ein Wecker auf 7 Uhr",
+                     "Stelle einen Wecker auf 7 Uhr"]:
+            self.assertEqual(self.heard(text), [("wecker:", "{'when': '7 Uhr'}")], text)
+
     def test_the_other_sentences_are_heard_as_before(self):
         self.assertEqual(self.heard("Spiel was Flottes"), [("music:", "{'mood': 'Flottes'}")])
         self.assertEqual(self.heard("Spiel Musik von Queen"), [("music:", "{'mood': 'Queen'}")])

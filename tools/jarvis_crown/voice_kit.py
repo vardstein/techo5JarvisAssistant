@@ -457,7 +457,8 @@ def wecker() -> dict:
                        'Wecker auf 7 Uhr", "weck mich in 20 Minuten". Das Modell würde sonst nur sagen, der '
                        'Wecker sei gestellt.',
         "triggers": [{"trigger": "conversation", "command": [
-            "(stell|stelle) [mir] [einen|den|meinen] wecker (auf|für|um|in) {when}",
+            # "Setze ein Wecker" is how it was said once and went to the model (GENBU-156).
+            "(stell|stelle|setz|setze) [mir] [ein|einen|den|meinen] wecker (auf|für|um|in) {when}",
             # "Weg mich" is how Whisper often writes "Weck mich".
             "(weck|wecke|weg) mich [bitte] (um|in) {when}",
             "wecker (auf|für|um|in) {when}"]}],
