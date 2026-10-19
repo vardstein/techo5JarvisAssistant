@@ -84,6 +84,44 @@ data:
   confirm: leave
 ```
 
+## Erase the device back to setup
+
+In YAML, refer to this action as `esphome.<node>_reset_to_setup`.
+
+The same as **Factory reset** on the device's screen, asked from Home Assistant. The device answers,
+restarts, and erases what it was given while starting up: its name, alarms, radio stations, the
+Home Assistant URL and token, the encryption key (it gets a new random one), the SSH keys and its
+logs. The Wi-Fi goes too, unless `keep_wifi` is set. Then it starts in setup, as it was new.
+
+If the device's system is too old to be reset this way, or to keep the Wi-Fi through a reset, it
+says so and changes nothing.
+
+Afterward, delete the device from **Settings → Devices & services → ESPHome**. To add it again, open
+its setup page and choose **Let a Home Assistant add this device**, the same as after leaving.
+
+### confirm (Required)
+
+*string*
+
+Must be `reset`. Anything else changes nothing.
+
+### keep_wifi (Optional)
+
+*boolean*
+
+Keep the Wi-Fi the device knows, so it comes back in setup on the same network. Off by default.
+
+The answer says what the device will do, `{"reset": true, "keep_wifi": true}`, once it has left
+itself the note to erase. Ask for it with `response_variable`.
+
+```yaml
+action: esphome.office_reset_to_setup
+data:
+  confirm: reset
+  keep_wifi: true
+response_variable: reset
+```
+
 ## Set an alarm
 
 In YAML, refer to this action as `esphome.<node>_alarm_set`.

@@ -50,7 +50,7 @@ func (a *API) Actions() []*esphome.Action {
 			})
 			return nil, nil
 		},
-	}}
+	}, resetAction()}
 }
 
 // leave forgets the access first and changes the key second: stopped between the two, the device
