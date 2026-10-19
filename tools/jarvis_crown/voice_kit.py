@@ -233,6 +233,26 @@ def where_are_we(house: House) -> dict:
     }
 
 
+# GENBU-248: Whisper heard "Wie viel Uhr ist es?" as "Wie viel Uhr ist das?". Home Assistant's own
+# sentences take "ist es", "haben wir" and "hat es" only, so the question went to the model, which
+# started a 17 hour timer instead of telling the time. This answers the shapes Whisper makes of it.
+CLOCK = r"""{%- set t = now() -%}Es ist {{ t.hour }} Uhr{% if t.minute %} {{ t.minute }}{% endif %}."""
+
+
+def clock() -> dict:
+    return {
+        "alias": "Genbu - Time",
+        "description": 'Answers "Wie spät ist es?" and how Whisper mishears it locally, so the model never '
+                       "gets a time question.",
+        "triggers": [{"trigger": "conversation", "command": [
+            "(wie viel|wieviel|wie viele) uhr [ist|hat|haben] [es|das|wir] [gerade|jetzt]",
+            "wie spät [ist|hat|haben] [es|das|wir] [gerade|jetzt]",
+            "(was|wie) ist die uhrzeit [gerade|jetzt]"]}],
+        "actions": [{"set_conversation_response": CLOCK}],
+        "mode": "parallel",
+    }
+
+
 def greeting(house: House) -> dict:
     # Home Assistant's own sentences answer "Hallo" and the like before the model is asked, even with the
     # model as the pipeline's agent ("Hallo vom Home Assistant."). A sentence trigger comes before them,
@@ -1592,6 +1612,7 @@ def _set_up(run: _Run, show: str, entities: list[str], genres: dict[str, str]) -
         run.blueprint(VOLUME)
         run.put("automation", "jarvis_local_volume", volume(house))
         run.put("automation", "jarvis_local_where_are_we", where_are_we(house))
+        run.put("automation", "jarvis_local_time", clock())
         if house.agent:
             run.put("automation", "jarvis_local_greeting", greeting(house))
         run.put("automation", "jarvis_local_room_temperature", room_temperature(house))

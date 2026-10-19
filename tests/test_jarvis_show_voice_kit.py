@@ -213,7 +213,8 @@ class SetUpTests(unittest.TestCase):
             ("automation", "jarvis_local_greeting"),
             ("automation", "jarvis_local_music_stop"),
             ("automation", "jarvis_local_random_music"), ("automation", "jarvis_local_room_humidity"),
-            ("automation", "jarvis_local_room_temperature"), ("automation", "jarvis_local_volume"),
+            ("automation", "jarvis_local_room_temperature"), ("automation", "jarvis_local_time"),
+            ("automation", "jarvis_local_volume"),
             ("automation", "jarvis_local_wecker"), ("automation", "jarvis_local_where_are_we"), ("automation", "techo5_turn_room_down_jarvis_show_5"),
             ("script", "jarvis_music_start"), ("script", "jarvis_play_mood"), ("script", "jarvis_play_radio"),
             ("script", "jarvis_room_climate"), ("script", "play_random_music")])
@@ -351,7 +352,7 @@ class SetUpTests(unittest.TestCase):
         fake.posts.clear()
         log = run(fake)
         self.assertEqual(fake.posts, [])
-        self.assertEqual(sum("is already there" in line for line in log), 16)
+        self.assertEqual(sum("is already there" in line for line in log), 17)
         # The music scripts are exposed on every run (decided); room climate only by the run that made it.
         self.assertEqual(fake.exposed, ["script.jarvis_room_climate", *MUSIC, *MUSIC])
 
@@ -523,7 +524,7 @@ class SetUpTests(unittest.TestCase):
         for item in ("jarvis_local_wecker", "jarvis_local_alarm_en", "jarvis_local_random_music",
                      "jarvis_local_random_music_en", "jarvis_local_forecast", "jarvis_local_forecast_en"):
             self.assertIn(item, made)
-        self.assertEqual(len(fake.configs), 26)
+        self.assertEqual(len(fake.configs), 27)
         self.assertEqual(fake.exposed, ["script.jarvis_room_climate", *MUSIC])
         greeting = fake.configs[("automation", "jarvis_local_greeting_en")]["triggers"][0]["command"][0]
         self.assertNotIn("hi", greeting.split("|"))
@@ -633,7 +634,7 @@ class LabelTests(unittest.TestCase):
             return real(msg)
         fake.ws = ws
         log = run(fake, node="jarvis-show-5")
-        self.assertEqual(len(fake.configs), 16)
+        self.assertEqual(len(fake.configs), 17)
         self.assertTrue(any(line.startswith("WARN: Home Assistant did not take the labels") for line in log))
 
     def test_a_hand_made_turn_down_gets_no_label(self):
@@ -865,6 +866,36 @@ class GenbuUpdateTests(unittest.TestCase):
                                (["Küche", "Flur"], "Die Updates starten auf Küche und Flur."),
                                (["Küche", "Flur", "Bad"], "Die Updates starten auf Küche, Flur und Bad.")):
             self.assertEqual(said.render(started={"updating": updating, "current": []}), want)
+
+
+class ClockTests(unittest.TestCase):
+    """GENBU-248: a time question is answered locally, also as Whisper mishears it."""
+
+    def test_wie_viel_uhr_ist_das_is_caught(self):
+        commands = kit.clock()["triggers"][0]["command"]
+        for heard in ("wie viel uhr ist das", "wie viel uhr ist es", "wieviel uhr haben wir", "wie spät ist es jetzt",
+                      "wie spät ist das", "was ist die uhrzeit"):
+            self.assertTrue(any(_hassil_match(c, heard) for c in commands), heard)
+        for heard in ("timer auf zehn minuten", "wie viel uhr ist es in tokio"):
+            self.assertFalse(any(_hassil_match(c, heard) for c in commands), heard)
+
+    def test_says_the_time_in_the_prompts_shape(self):
+        try:
+            import jinja2
+        except ImportError:
+            self.skipTest("no jinja2 here")
+        import datetime
+        said = jinja2.Environment().from_string(kit.CLOCK)
+        for at, want in (((17, 6), "Es ist 17 Uhr 6."), ((7, 30), "Es ist 7 Uhr 30."), ((0, 0), "Es ist 0 Uhr.")):
+            t = datetime.datetime(2026, 10, 18, *at)
+            self.assertEqual(said.render(now=lambda t=t: t), want)
+
+
+def _hassil_match(template: str, said: str) -> bool:
+    """Enough of hassil's (a|b) and [optional] syntax to check these sentences."""
+    pattern = re.sub(r"\[([^\]]*)\]", lambda m: "(?:" + m.group(1) + ")?", template)
+    pattern = re.sub(r"\((?!\?:)", "(?:", pattern).replace(" ", r"\s*")
+    return re.fullmatch(pattern, said) is not None
 
 
 def _ha_env():

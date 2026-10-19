@@ -111,13 +111,18 @@ So klingt es. Jede Antwort steht für sich, ohne Frage am Ende:
 - "Mach das Licht aus." -> erst das Licht ausschalten, dann "Licht ist aus."
 - "Spiel Musik." -> erst Play Random Music ausführen, dann "Läuft."
 - Fragen nach Temperatur oder Luftfeuchtigkeit in Räumen, auch "Wo ist es am wärmsten?" -> erst Raumklima ausführen, dann nur die Werte daraus nennen. Die eingestellte Temperatur der Heizung ist nicht die Raumtemperatur.
-- Fragen nach Wetter, Uhrzeit oder ob etwas an ist -> erst mit GetLiveContext oder dem passenden Werkzeug nachschauen, dann genau den Wert aus dem Ergebnis nennen. Nie schätzen, nie einen Wert aus diesen Anweisungen nehmen.
+- "Wie spät ist es?", "Wie viel Uhr ist es?" oder "Welcher Tag ist heute?" -> erst llm__GetDateTime ausführen, dann die Uhrzeit
+  oder das Datum daraus nennen. Eine Frage nach der Uhrzeit startet nie einen Timer.
+- Fragen nach Wetter oder ob etwas an ist -> erst mit GetLiveContext nachschauen, dann genau den Wert aus dem Ergebnis nennen.
+  Nie schätzen, nie einen Wert aus diesen Anweisungen nehmen.
 - "Was hast du gerade gemacht?", wenn in diesem Gespräch kein Werkzeug lief -> "In diesem Gespräch habe ich noch nichts geschaltet."
 - Das Werkzeug meldet einen Fehler -> kurz sagen, was nicht ging und warum, etwa "Das ging nicht. Der Lautsprecher reagiert nicht."
 
 Handeln:
 - Geräte, Zustände und Aktionen laufen über die Home-Assistant-Werkzeuge. Du schaltest nichts selbst.
 - Klare und sinnvoll gemeinte Bitten führst du direkt aus, ohne Rückfrage.
+- Einen Timer startest du nur, wenn jemand ausdrücklich einen Timer oder eine Dauer will, etwa "Timer auf 10 Minuten".
+  Eine Frage ist nie ein Timer.
 - Nennt niemand einen Raum, gilt der Raum des Geräts, von dem die Anfrage kommt.
 - Nutze vorhandene Bereiche, Aliase und Gerätenamen.
 - "Musik aus", "Musik stopp" oder "Musik im Schlafzimmer aus" meint die Mediaplayer in diesem Raum,
@@ -212,6 +217,11 @@ Why some of it is there:
   isn't there. So the model may only name devices that appear in the tool's result, and "what did
   you just do?" is answered from this conversation only. The grammar line is there because it
   produced "Ich habe die Lichter im Schlafzimmer ausgeht".
+- **Time and timers.** Home Assistant gives the model a `llm__GetDateTime` tool, and a Show also
+  gets the timer tools. Told only "look it up with the right tool", the model once answered a time
+  question by starting a timer for the current hour. So the instructions name the time tool and say
+  a question never starts a timer. Most time questions don't reach the model anyway (see "Time"
+  below).
 - **Music off in a room.** "Musik im Schlafzimmer aus" went to the light before. The line points it
   at the media players in that area.
 - **Care.** Locks, alarms and the garage get one short warning and a question, then the answer
@@ -251,6 +261,27 @@ The map is there for the grammar (im, in der, auf dem) and because our areas hav
 with German aliases. Put your own area ids in it. Note that calling the agent directly, for
 example with `conversation.process` and the Ollama agent's id, skips this step; only the pipeline
 tries local sentences first.
+
+### Time
+
+Home Assistant answers "Wie spät ist es?" and "Wie viel Uhr ist es?" by itself, but its sentences
+only take "ist es", "haben wir" and "hat es". Whisper once heard "Wie viel Uhr ist das?", so the
+question went to the model, and the model started a 17 hour timer named "Gegenwart" (GENBU-248).
+This one takes the shapes Whisper makes of it and answers the way the instructions ask for times:
+
+```yaml
+alias: Genbu - Time
+mode: parallel
+triggers:
+  - trigger: conversation
+    command:
+      - "(wie viel|wieviel|wie viele) uhr [ist|hat|haben] [es|das|wir] [gerade|jetzt]"
+      - "wie spät [ist|hat|haben] [es|das|wir] [gerade|jetzt]"
+      - "(was|wie) ist die uhrzeit [gerade|jetzt]"
+actions:
+  - set_conversation_response: >-
+      {%- set t = now() -%}Es ist {{ t.hour }} Uhr{% if t.minute %} {{ t.minute }}{% endif %}.
+```
 
 ### Greetings
 
