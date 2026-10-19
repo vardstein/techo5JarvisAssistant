@@ -15,7 +15,7 @@
   (GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -o bin/echod-arm ./cmd/echod, run inside echod/).
 
 .EXAMPLE
-  .\tools\install-cronos.ps1 -Serial G000000000000000 -Name "Bench Show"
+  .\tools\install-cronos.ps1 -Serial G000AB0000000000 -Name "Bench Show"
 #>
 param(
     [Parameter(Mandatory)][string]$Serial,

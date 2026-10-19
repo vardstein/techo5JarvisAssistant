@@ -6,6 +6,22 @@
 
 sec() { echo; echo "===== $1"; }
 
+# The dump goes into the repo, which is public, so whatever names this one unit is taken out here and
+# not by hand afterwards (GENBU-188): its serial number (kernel command line, idme), the eMMC's CID
+# (which carries the card's serial), its Wi-Fi and Bluetooth MAC addresses, and the adb Wi-Fi guid
+# (which has the serial in it). The key stays, so the
+# dump still shows the value exists. `sh hwdump.sh --redact < old.txt` cleans a dump made before this.
+redact() {
+  sed -E \
+    -e 's/(serialno)=[^ ]*/\1=<redacted>/g' \
+    -e 's/^(serial|mac_addr|bt_mac_addr|cid)=.*/\1=<redacted>/' \
+    -e 's/^(\[[^]]*(serial|mac|bdaddr|guid)[^]]*\]: \[)[^]/]*\]/\1<redacted>]/' \
+    -e 's/[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}/<redacted-mac>/g'
+}
+if [ "$1" = "--redact" ]; then redact; exit; fi
+
+{
+
 sec "identity"
 getprop ro.product.device; getprop ro.build.display.id; getprop ro.build.version.release; getprop ro.build.version.sdk
 getprop ro.hardware; getprop ro.board.platform; getprop ro.boot.hardware; getprop ro.bootloader
@@ -25,7 +41,8 @@ sec "storage / partitions"
 cat /proc/partitions
 ls -l /dev/block/platform/*/by-name 2>/dev/null || ls -l /dev/block/by-name 2>/dev/null
 df -h 2>/dev/null | grep -vE 'tmpfs|overlay'
-cat /sys/block/mmcblk0/device/name /sys/block/mmcblk0/device/cid /sys/block/mmcblk0/size 2>/dev/null
+for f in name cid; do echo "$f=$(cat /sys/block/mmcblk0/device/$f 2>/dev/null)"; done
+cat /sys/block/mmcblk0/size 2>/dev/null
 
 sec "kernel cmdline"
 cat /proc/cmdline
@@ -112,3 +129,4 @@ getprop | grep -E '^\[init\.svc\.' | sed 's/\[init\.svc\.//' | head -100
 
 sec "selinux"
 getenforce
+} | redact
