@@ -186,7 +186,7 @@ func TestFreshFollowingShowMovesWithoutAsking(t *testing.T) {
 		t.Errorf("the third try is %v away, want a minute: each miss waits twice as long", wait)
 	}
 	u.house.fetchMisses = 10
-	u.alignTo(context.Background(), "v1.0.3-stable.52")
+	u.alignTo(context.Background(), "v1.0.3-stable.52", false)
 	if wait := time.Until(u.house.retryAt); wait < 9*time.Minute || wait > fetchRetryMost {
 		t.Errorf("a Show with no way out tries again in %v, want at most every %v", wait, fetchRetryMost)
 	}
@@ -195,6 +195,14 @@ func TestFreshFollowingShowMovesWithoutAsking(t *testing.T) {
 	}
 	if got := config.Get().Update.HouseFailed; got != "" {
 		t.Errorf("a fetch that failed marked the version as not installing here: %q", got)
+	}
+	// The house's own tries keep the screen out of it; a press that could not even fetch says so there.
+	if _, _, at := u.Failure(); !at.IsZero() {
+		t.Error("the house's own try put a failure on the screen")
+	}
+	u.alignTo(context.Background(), "v1.0.3-stable.52", true)
+	if v, _, at := u.Failure(); at.IsZero() || v != "v1.0.3-stable.52" {
+		t.Errorf("an asked-for install that could not fetch left no failure: %q %v", v, at)
 	}
 }
 

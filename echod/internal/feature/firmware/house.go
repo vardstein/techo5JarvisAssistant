@@ -416,7 +416,7 @@ func (u *Firmware) houseStep(ctx context.Context, now time.Time) {
 	case align:
 		slog.Info("moving to the house version", "house", v, "running", layout.Version)
 		u.houseStatus("Moving to " + v)
-		u.alignTo(ctx, v)
+		u.alignTo(ctx, v, false)
 		return
 	case askFirst:
 		u.askToAlign(v, now)
@@ -520,7 +520,7 @@ func (u *Firmware) askToAlign(v string, now time.Time) {
 	question.Ask("house", answerWithin, func() {
 		slog.Info("moving to the house version, as asked", "house", v)
 		say(i18n.T("Okay, installing it now."))
-		safe.Go("house version install", func() { u.alignTo(context.Background(), v) })
+		safe.Go("house version install", func() { u.alignTo(context.Background(), v, true) })
 	}, func() {
 		say(i18n.T("Okay, I'll remind you later."))
 	}, func() {
@@ -532,8 +532,10 @@ func (u *Firmware) askToAlign(v string, now time.Time) {
 	}
 }
 
-// alignTo installs the house version's own release, going back if it has to.
-func (u *Firmware) alignTo(ctx context.Context, v string) {
+// alignTo installs the house version's own release, going back if it has to. asked is somebody
+// wanting it now, whose failure to even fetch it the screen says; the house's own tries only say so in
+// the update status.
+func (u *Firmware) alignTo(ctx context.Context, v string, asked bool) {
 	u.busy.Add(1)
 	defer u.busy.Add(-1)
 	m, err := fetchTag(ctx, v)
@@ -550,6 +552,9 @@ func (u *Firmware) alignTo(ctx context.Context, v string) {
 		u.house.retryAt = time.Now().Add(wait)
 		u.house.mu.Unlock()
 		u.houseStatus("Version " + v + " could not be fetched: " + err.Error())
+		if asked {
+			u.fail(v, err)
+		}
 		return
 	}
 	u.house.mu.Lock()

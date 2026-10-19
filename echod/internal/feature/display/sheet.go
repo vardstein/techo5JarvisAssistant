@@ -234,6 +234,8 @@ func generalRows(sv sheetView) []settingRow {
 	// says the first press did nothing.
 	if line, _, ok := installNote(); ok {
 		updates.sub, updates.button = line, ""
+	} else if line := failNote(st.now); line != "" {
+		updates.sub = line // the button stays: trying again is the obvious next thing
 	}
 	restart := settingRow{id: "restart", label: "Restart", sub: "Back in about a minute", kind: ctlDanger, button: "Restart"}
 	if !st.restartArm.IsZero() && st.now.Sub(st.restartArm) < restartWindow {

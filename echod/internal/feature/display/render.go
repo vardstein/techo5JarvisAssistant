@@ -188,8 +188,11 @@ type scene struct {
 	update string
 	// install is an update being installed, said in a pill at the top of every page, and installAt
 	// how far its download has got: -1 once that is done and the other slot is being written.
-	install   string
-	installAt float32
+	// installFailed is install saying the last one failed, which stands still and is drawn as a
+	// warning rather than as something still going.
+	install       string
+	installAt     float32
+	installFailed bool
 
 	// strip is the music in a strip at the foot of the clock page, rather than on its own page; faved
 	// is the star having been pressed for what is playing.

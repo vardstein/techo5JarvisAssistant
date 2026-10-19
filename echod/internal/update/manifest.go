@@ -192,7 +192,7 @@ func get(ctx context.Context, url string, max int64) ([]byte, error) {
 // who produced a manifest; these fields prove that what they produced was intended for this appliance.
 func (m Manifest) ValidFor(product, board string) error {
 	if m.Product != product {
-		return fmt.Errorf("update: manifest product %q is not %q", m.Product, product)
+		return mark(ErrNotForThisShow, fmt.Errorf("update: manifest product %q is not %q", m.Product, product))
 	}
 	if board == "" {
 		return errors.New("update: device board is unknown; refusing OTA")
@@ -215,7 +215,7 @@ func (m Manifest) ValidFor(product, board string) error {
 		}
 	}
 	if !found {
-		return fmt.Errorf("update: manifest for %s does not support this %s board", m.Version, board)
+		return mark(ErrNotForThisShow, fmt.Errorf("update: manifest for %s does not support this %s board", m.Version, board))
 	}
 	return nil
 }

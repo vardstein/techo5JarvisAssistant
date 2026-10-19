@@ -84,9 +84,10 @@ func installRootfs(ctx context.Context, m Manifest, progress func(float32)) erro
 	}
 	if err := verifyRootfsIdentity(to, m); err != nil {
 		os.Remove(to)
-		return err
+		return mark(ErrDamaged, err)
 	}
 	slog.Info("update: installing the rootfs into the other slot", "version", m.Version, "file", to)
+	setStep(StepWriting)
 	cmd := exec.CommandContext(ctx, slotctl, "install", to)
 	out, err := cmd.CombinedOutput()
 	os.Remove(to)
@@ -98,6 +99,7 @@ func installRootfs(ctx context.Context, m Manifest, progress func(float32)) erro
 	// as soon as this returns, and a goroutine waiting to reboot dies with the process (seen on
 	// the first over-the-air install, 2026-09-16 — the slot was ready, the device sat on the old
 	// one until someone rebooted it).
+	setStep(StepRestarting)
 	syscall.Sync()
 	if err := syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART); err != nil {
 		return fmt.Errorf("update: rootfs installed but the reboot failed: %w", err)

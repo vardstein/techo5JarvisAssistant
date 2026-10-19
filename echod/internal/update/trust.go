@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -43,10 +42,10 @@ func verify(manifest, sig []byte, key string) error {
 	}
 	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(sig)))
 	if err != nil || len(raw) != ed25519.SignatureSize {
-		return fmt.Errorf("update: the manifest signature is malformed")
+		return mark(ErrUnsigned, errors.New("update: the manifest signature is malformed"))
 	}
 	if !ed25519.Verify(ed25519.PublicKey(pub), manifest, raw) {
-		return errors.New("update: the manifest is not signed by the release key")
+		return mark(ErrUnsigned, errors.New("update: the manifest is not signed by the release key"))
 	}
 	return nil
 }

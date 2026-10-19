@@ -64,6 +64,9 @@ type Firmware struct {
 	// did not install: for the setup page, which has no update card to watch.
 	at     float32
 	failed string
+	// fell is the last failed install for the screen: the version ("" when not even the release could
+	// be fetched), why in plain words, and when.
+	fell failure
 	// busy counts the Install calls running, which re-read the channel before the download starts.
 	busy atomic.Int32
 }
@@ -71,7 +74,7 @@ type Firmware struct {
 // Installing says whether an install is running, and how far its download has got (0 to 1); Failed
 // why the last one did not install, empty when it did or none was tried.
 func (u *Firmware) Installing() (bool, float32) {
-	if u.busy.Load() == 0 && !update.Installing() {
+	if u.busy.Load() == 0 && !update.Installing() && update.CurrentStep() != update.StepRestarting {
 		return false, 0
 	}
 	u.mu.Lock()
@@ -83,6 +86,34 @@ func (u *Firmware) Failed() string {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	return u.failed
+}
+
+type failure struct {
+	version, why string
+	at           time.Time
+}
+
+// Failure is the last install that did not go in, for the screen: which version ("" when the release
+// itself could not be fetched), why in plain words ("" when update.Reason has none) and when. at is
+// zero when the last one went in or none failed.
+func (u *Firmware) Failure() (version, why string, at time.Time) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.fell.version, u.fell.why, u.fell.at
+}
+
+// fail keeps err as the reason version did not install. Only for an install somebody asked for or the
+// device started itself, never for the house's retries, which would keep the screen saying it every
+// few minutes on a Show with no way out.
+func (u *Firmware) fail(version string, err error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.fell = failure{version: version, why: update.Reason(err), at: time.Now()}
+	if version != "" {
+		u.failed = version + ": " + err.Error()
+	} else {
+		u.failed = err.Error()
+	}
 }
 
 var (
@@ -391,7 +422,7 @@ func (u *Firmware) Install(ctx context.Context) {
 			slog.Warn("an install was asked for on a Show already on the house version", "house", v)
 			return
 		}
-		u.alignTo(ctx, v)
+		u.alignTo(ctx, v, true)
 		return
 	}
 	u.busy.Add(1)
@@ -410,6 +441,8 @@ func (u *Firmware) Install(ctx context.Context) {
 		if !ok {
 			slog.Warn("re-reading the selected update channel failed and no same-channel cache exists",
 				"channel", channel.Label(), "err", err)
+			// Before this, nothing said so but the log: the press in Home Assistant just went nowhere.
+			u.fail("", err)
 			return
 		}
 		slog.Warn("re-reading the selected update channel failed, using its last same-channel check",
@@ -458,9 +491,7 @@ func (u *Firmware) put(ctx context.Context, found update.Manifest, how func(cont
 	}
 	if err != nil {
 		slog.Error("installing an update failed", "version", found.Version, "err", err)
-		u.mu.Lock()
-		u.failed = found.Version + ": " + err.Error()
-		u.mu.Unlock()
+		u.fail(found.Version, err)
 		u.publish(found)
 		u.Settled(EventFailed, "installing "+found.Version+" failed: "+err.Error())
 		feedback.Failure()
@@ -474,7 +505,7 @@ func (u *Firmware) put(ctx context.Context, found update.Manifest, how func(cont
 // because Home Assistant reads the whole state each time.
 func (u *Firmware) progress(found update.Manifest, at float32) {
 	u.mu.Lock()
-	u.at, u.failed = at, ""
+	u.at, u.failed, u.fell = at, "", failure{}
 	u.mu.Unlock()
 	state := u.state(found)
 	state.InProgress, state.Progress = true, at*100

@@ -2137,6 +2137,10 @@ func (d *Display) frame() time.Duration {
 		}
 	}
 	s.install, s.installAt, _ = installNote()
+	if s.install == "" {
+		s.install = failNote(now)
+		s.installFailed = s.install != ""
+	}
 
 	if boring {
 		s.slideshow = home.Get().SlideshowBackground()
@@ -2176,7 +2180,7 @@ func (d *Display) frame() time.Duration {
 	if s.redClock && s.redStyle == nightStyleFlip && d.r.flipBusy(time.Now()) {
 		return flipFrame // a card is flipping
 	}
-	if s.install != "" {
+	if s.install != "" && !s.installFailed {
 		return installFrame // the spinner turns until the restart takes the screen
 	}
 	if s.showCamera {

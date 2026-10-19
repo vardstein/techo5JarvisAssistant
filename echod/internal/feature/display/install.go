@@ -32,11 +32,21 @@ func (r *renderer) installPill(s scene) {
 	}
 	b := image.Rect(x-pad, top, x+w+pad, top+r.s(50))
 	r.roundButton(b, float64(r.s(14)), walnut)
+	bar := image.Rect(b.Min.X+r.s(14), b.Max.Y-r.s(12), b.Max.X-r.s(14), b.Max.Y-r.s(7))
+	if s.installFailed {
+		// Nothing turns, so it can't be read as still trying: a mark where the spinner was, the line,
+		// and the whole bar in the color of something gone wrong.
+		r.disc(x+spin, top+r.s(21), spin, danger)
+		r.band(image.Rect(x+spin-r.s(2), top+r.s(14), x+spin+r.s(2), top+r.s(23)), walnut)
+		r.band(image.Rect(x+spin-r.s(2), top+r.s(25), x+spin+r.s(2), top+r.s(28)), walnut)
+		r.text(r.tiny, s.install, x+2*spin+gap, top+r.s(29), cream)
+		r.band(bar, danger)
+		return
+	}
 	r.spinner(x+spin, top+r.s(21), spin, s.now)
 	r.text(r.tiny, s.install, x+2*spin+gap, top+r.s(29), cream)
 
 	// The bar runs along the pill's lower edge, inside its rounding.
-	bar := image.Rect(b.Min.X+r.s(14), b.Max.Y-r.s(12), b.Max.X-r.s(14), b.Max.Y-r.s(7))
 	r.band(bar, ember)
 	if s.installAt >= 0 {
 		r.band(image.Rect(bar.Min.X, bar.Min.Y, bar.Min.X+int(float32(bar.Dx())*min(s.installAt, 1)), bar.Max.Y), amber)
