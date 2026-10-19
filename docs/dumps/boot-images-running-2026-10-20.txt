@@ -1,0 +1,35 @@
+# GENBU-182: which boot image the running Shows boot, 2026-10-20.
+# One unit per board, read-only over ssh as root. The boot partition is the one whose uevent says
+# PARTNAME=boot (mmcblk0p9 on both units, 16777216 bytes). Each pin's size was hashed off the partition;
+# the partition is larger than any image, so only the first <size> bytes can match.
+#
+# Commands, per unit:
+#   cat /proc/version
+#   for n in 13156352 13172736 13553664; do head -c $n /dev/mmcblk0p9 | sha256sum; done
+#   head -c 1024 /dev/mmcblk0p9            (Android boot header: kernel size, ramdisk size, page size)
+#   head -c $((2048+kernel_size)) /dev/mmcblk0p9 | tail -c kernel_size | zcat | grep -a 'Linux version'
+#
+# `uname -r` is 4.9.337-g8d928c5176cc on every image below, so it can't tell them apart. The build date in
+# /proc/version can.
+
+== crown
+/proc/version:        Linux version 4.9.337-g8d928c5176cc (techo5@techo5) (gcc version 8.3.0 (GNU Toolchain for the A-profile Architecture 8.3-2019.03 (arm-rel-8.36)) ) #1 SMP PREEMPT Tue Sep 22 12:16:37 UTC 2026
+kernel in partition:  same string, byte for byte
+header:               kernel 7186374, ramdisk 5964548, page 2048 -> image 13154304 bytes
+first 13156352 bytes: 3252f38de9c4fcae51c4b1a3d429df37cc37dd0aa079886352424946000275ff  (pin techo5-boot-crown-v1.0.1: e00bed96... no match)
+first 13172736 bytes: 92041cc3ab40a772be0a7a3561b898a65880c7a516f2a03fcb17dfdd34017ddd  (pin techo5-boot-checkers-v1.0.1: no match)
+first 13553664 bytes: 32a3e3269af5645b9b10980ab7e2d107d11d9ababb76c0f682481a7f646f374b  (pin techo5-boot-v0.7.16: no match)
+first 13154304 bytes: cf5a492f7ee7ec16305905c58bf7f0b2e3f3e75521668ca905b9ae1ffb6d0baa
+  = sha256 of upstream techo5-boot-crown-v0.8.0.img (local copy, 13154304 bytes), not in the catalogue.
+  The v1.0.1 pin's kernel says "#1 SMP PREEMPT Mon Oct 5 11:47:04 UTC 2026" (kernel 7186627 bytes, same ramdisk).
+
+== cronos
+/proc/version:        Linux version 4.9.337-g8d928c5176cc (techo5@techo5) (gcc version 8.3.0 (GNU Toolchain for the A-profile Architecture 8.3-2019.03 (arm-rel-8.36)) ) #1 SMP PREEMPT Wed Sep 16 18:39:56 UTC 2026
+kernel in partition:  same string, byte for byte (kernel 7587425 bytes)
+first 13156352 bytes: 2b6263619a46a1a251b511dbcf0d765916e4a04c6416209ae220c5a0651b1a6d  (crown v1.0.1 pin: no match)
+first 13172736 bytes: d9d27b6da4418124f10285a4d16a25253902d1f1c195931528f26e0325bb8a58  (checkers v1.0.1 pin: no match)
+first 13553664 bytes: 7e9ce93a54fc613cbfab5d15929aa06bfd6f63c2c432d6f8261b3599fc3cd791
+  = pin techo5-boot-v0.7.16, match.
+
+== checkers
+not read: the unit didn't answer ssh on 2026-10-20 (no route to host). Open.
