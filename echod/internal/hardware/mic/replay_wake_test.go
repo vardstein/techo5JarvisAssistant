@@ -1,4 +1,4 @@
-//go:build dot
+//go:build !spot
 
 package mic
 
@@ -19,14 +19,15 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/lib/wake"
 )
 
-// Wake word scores on recorded Dot captures, through the path the daemon runs: mix, cancel while the
+// Wake word scores on recorded captures, through the path the daemon runs: mix, cancel while the
 // loopback plays, level, detect. Both front ends hear the same audio, which is the only fair comparison:
 // detection varies too much between utterances for one-at-a-time tests to mean anything.
 //
 // TECHO5_MICBENCH is a capture directory (tools/micbench in techo5-dot) and TECHO5_MODELS a directory of
 // microWakeWord models; TECHO5_WAKE picks one (default okay_nabu). When the directory's session.log has
 // prompts for a take, each prompt is scored on its own: the window from the prompt to promptWindow after
-// it holds one utterance, and a crossing anywhere else is a false accept. Reports only.
+// it holds one utterance, and a crossing anywhere else is a false accept. Reports only. On a Show build,
+// TECHO5_BOARD=crown reads the takes as a Show 8's (replayBoard); a Show 5's is the default.
 func TestReplayWakeScores(t *testing.T) {
 	dir, models := os.Getenv("TECHO5_MICBENCH"), os.Getenv("TECHO5_MODELS")
 	if dir == "" || models == "" {
@@ -62,6 +63,8 @@ func TestReplayWakeScores(t *testing.T) {
 	t.Logf("%s, published cutoff %.2f; also scored at the daemon default %.2f and the Show's %.2f",
 		m.Phrase, cutoffs[0], cutoffs[1], cutoffs[2])
 
+	t.Logf("takes read as a %s's: %d channels, %d microphones", replayBoard(t), Channels, Mics)
+
 	prompts := sessionPrompts(t, filepath.Join(dir, "session.log"))
 
 	takes, _ := filepath.Glob(filepath.Join(dir, "*.s24"))
@@ -77,7 +80,7 @@ func TestReplayWakeScores(t *testing.T) {
 		for _, fe := range []struct {
 			name  string
 			mixer Mixer
-		}{{"center (old)", Center{}}, {"average of 7", Average{}}} {
+		}{{"center (old)", Center{}}, {fmt.Sprintf("average of %d", Mics), Average{}}} {
 			trace := scoreWake(t, raw, fe.mixer, m)
 			line := fmt.Sprintf("  %-13s", fe.name)
 			for _, cut := range cutoffs {
