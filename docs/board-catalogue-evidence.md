@@ -60,10 +60,10 @@ board they were about. A comment moved into `notes` is still only a claim.
 |---|---|---|---|
 | C1 | fastboot reports product `CROWN` | claimed | `tools/jarvis_crown/boards.py:29`, `docs/jarvis-show-platform.md:7` |
 | C2 | TWRP reports `ro.product.device=crown` | claimed | `docs/jarvis-crown-installer.md:177`; `docs/JOBS-CHECKPOINT.md:179` mentions fixing a real crown TWRP handoff, no log |
-| C3 | model "Echo Show 8 1st gen / C7H6N3" | claimed | `boards.py:30` |
-| C4 | screen 1280x800 | claimed | `boards.py:32`, `docs/jarvis-show-platform.md:22`; the physical display check (J38) is still open, `docs/anti-brick-audit.md:105` |
-| C5 | device-tree compatible | unknown | not captured anywhere |
-| C6 | panel `lcm=1-jd936x_wxga_dsi_vdo_crown_st_kd_hsd` (not in the catalogue) | claimed | comment `echod/internal/layout/device_cronos.go:86`, "read off a unit 2026-09-22" |
+| C3 | model "Echo Show 8 1st gen / C7H6N3" | claimed | `boards.py:30`. The running unit says only `crown` and `MT8163` (C5), nothing about the retail name |
+| C4 | screen 1280x800 | proven (framebuffer) | `docs/dumps/board-identity-running-2026-10-19.txt:20` (800 wide, 3 buffers of 1280, so 800x1280 portrait drawn as 1280x800). That is what the OS draws, not the panel check by eye (J38, `docs/anti-brick-audit.md:105`), which is still open |
+| C5 | device-tree compatible `amzn,crown-pvt` | proven | `docs/dumps/board-identity-running-2026-10-19.txt:14`. The kernel command line also has `androidboot.product=crown` (`:18`) |
+| C6 | panel `lcm=1-jd936x_wxga_dsi_vdo_crown_st_kd_hsd` (not in the catalogue) | proven | `docs/dumps/board-identity-running-2026-10-19.txt:19` |
 | C7 | Lineage zip pin is the sha256 and size of the local copy | proven | `check-files`, section 5 |
 | C8 | boot v1.0.1 pin is the sha256 and size of the local copy | proven | `check-files` against the main checkout's `build/release-techo5-v1.0.1/`, section 5 |
 | C9 | boot v1.0.1 boots on a crown | claimed | `install.py` comment; a crown ran v1.0.3-dev.133 per a note outside the repo, which doesn't name the boot image |
@@ -79,10 +79,10 @@ board they were about. A comment moved into `notes` is still only a claim.
 |---|---|---|---|
 | K1 | fastboot reports product `CHECKERS` | claimed | `boards.py:41`, `docs/jarvis-show-platform.md:8` |
 | K2 | TWRP reports `ro.product.device=checkers` | claimed | `recovery.py:122` expects it (and lowercases what TWRP says first) |
-| K3 | model "Echo Show 5 1st gen / H23K37" | claimed | `boards.py:42` |
-| K4 | screen 960x480 | claimed | `boards.py:44`, `docs/jarvis-show-platform.md:23`, J38 open. The screenshots in `docs/screenshots/` are 960x480 but don't say which board took them |
-| K5 | device-tree compatible | unknown | |
-| K6 | panel `lcm=1-st7701s_wsvga_dsi_vdo_checkers_st_kd_hsd` (not in the catalogue) | claimed | comment `device_cronos.go:85` |
+| K3 | model "Echo Show 5 1st gen / H23K37" | claimed | `boards.py:42`. The running unit says only `checkers` and `MT8163` |
+| K4 | screen 960x480 | proven (framebuffer) | `docs/dumps/board-identity-running-2026-10-19.txt:29` (480 wide, 3 buffers of 960). J38 still open |
+| K5 | device-tree compatible `mediatek,mt8163` | proven | `docs/dumps/board-identity-running-2026-10-19.txt:23`. **Same as cronos (R5)**, so it can't tell the two apart. `androidboot.product=checkers` does (`:27`) |
+| K6 | panel `lcm=1-st7701s_wsvga_dsi_vdo_checkers_st_kd_hsd` (not in the catalogue) | proven | `docs/dumps/board-identity-running-2026-10-19.txt:28` |
 | K7 | Lineage zip pin is the local copy | proven | `check-files` |
 | K8 | boot v1.0.1 pin is the local copy | proven | `check-files` |
 | K9 | boot v1.0.1 boots on a checkers | claimed | `install.py` comment |
@@ -101,10 +101,10 @@ board they were about. A comment moved into `notes` is still only a claim.
 | R2 | TWRP reports `ro.product.device=cronos` | claimed | not captured; R3 is the same property under LineageOS, not TWRP |
 | R3 | under LineageOS 18.1, `ro.product.device` is `cronos` | proven | `docs/dumps/cronos-lineage-18.1-bench.txt:3` (printed by `getprop ro.product.device`, `tools/hwdump.sh:10`) |
 | R4 | screen 960x480 at 59.64 fps | proven | `docs/dumps/cronos-lineage-18.1-bench.txt:828`, `:830` |
-| R5 | device-tree compatible | unknown | the dump has none |
+| R5 | device-tree compatible `mediatek,mt8163` | proven | `docs/dumps/board-identity-running-2026-10-19.txt:32`. Same as checkers (K5) |
 | R6 | panel `lcm=1-st7701s_wsvga_dsi_vdo_cronos_st_truly` (not in the catalogue) | proven | `docs/dumps/cronos-lineage-18.1-bench.txt:90` |
 | R7 | kernel command line has `androidboot.product=cronos` | proven | same line |
-| R8 | model "Echo Show 5 2nd gen" | claimed | `boards.py:57` |
+| R8 | model "Echo Show 5 2nd gen" | claimed | `boards.py:57`. The running unit says only `cronos` and `MT8163` |
 | R9 | Lineage zip pin | claimed | no local copy to hash |
 | R10 | boot v0.7.16 pin, and that it boots on a cronos | claimed | no local copy; `install.py` comment |
 | R11 | Amonet zip pin | unknown | not reviewed; the catalogue leaves the pin out |
@@ -120,17 +120,20 @@ board they were about. A comment moved into `notes` is still only a claim.
 
 ## 3. Counts
 
-Board and asset facts (section 2): **15 proven, 22 claimed, 7 unknown.**
+Board and asset facts (section 2): **22 proven, 18 claimed, 4 unknown** (GENBU-180/181 added C4, C5, C6,
+K4, K5, K6, R5 on 2026-10-19).
 
-- proven: C7, C8, C10, C11, C12, K7, K8, K10, K11, K12, K13, R3, R4, R6, R7
-- claimed: C1, C2, C3, C4, C6, C9, C13, C14, K1, K2, K3, K4, K6, K9, K15, R1, R2, R8, R9, R10, R12, A1
-- unknown: C5, K5, K14, R5, R11, R13, A2
+- proven: C4, C5, C6, C7, C8, C10, C11, C12, K4, K5, K6, K7, K8, K10, K11, K12, K13, R3, R4, R5, R6, R7
+- claimed: C1, C2, C3, C9, C13, C14, K1, K2, K3, K9, K15, R1, R2, R8, R9, R10, R12, A1
+- unknown: K14, R11, R13, A2
 
 Installer-unchanged facts (section 1): 12 proven.
 
 The short version: every identity key the installer uses today (C1, C2, K1, K2, R1, R2) is only claimed.
-No board has a captured device-tree compatible. Crown's and checkers' screen sizes are claimed; only
-cronos has a capture.
+Every board's device-tree compatible is captured now, and checkers and cronos share one
+(`mediatek,mt8163`), so it can't be the key stage c matches on. `androidboot.product` on the kernel
+command line differs on all three. All three screen sizes have a capture; the panel check by eye (J38)
+is still open.
 
 ## 4. Hardware tests that would promote the claims
 
@@ -142,9 +145,9 @@ the unit.
 |---|---|---|---|
 | H1 | in fastboot: `fastboot getvar product` | C1, K1, R1 | no |
 | H2 | in TWRP: `adb shell getprop ro.product.device` | C2, C14, K2, R2 | no (but getting into TWRP on crown/checkers goes through the existing recovery step) |
-| H3 | on a running Show: `dumpsys display \| grep -m1 DisplayDeviceInfo` | C4, K4 | no |
-| H4 | on a running Show: `tr '\0' '\n' < /proc/device-tree/compatible` | C5, K5, R5 (and unblocks step c) | no |
-| H5 | on a running Show: `tr ' ' '\n' < /proc/cmdline \| grep '^lcm='` | C6, K6 | no |
+| H3 | on a running Show: `cat /sys/class/graphics/fb0/virtual_size` (techo5 has no `dumpsys`) | C4, K4 | no, **done 2026-10-19** |
+| H4 | on a running Show: `tr '\0' '\n' < /proc/device-tree/compatible` | C5, K5, R5 | no, **done 2026-10-19**; step c needs another key, see the short version above |
+| H5 | on a running Show: `tr ' ' '\n' < /proc/cmdline \| grep '^lcm='` | C6, K6 | no, **done 2026-10-19** |
 | H6 | on a running Show: `uname -r` plus the sha256 of the first *size* bytes of the boot partition, compared with the pin | C9, K9, R10 | no |
 | H7 | the first `amonet-kaeru` unlock of a stock unit, step by step, log saved | C13, K14 | **yes**, Jade's call per board |
 | H8 | a full `tools/hwdump.sh` probe on crown and checkers, after hwdump learns to strip identifiers | fixtures for both | no |

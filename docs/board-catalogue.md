@@ -95,7 +95,7 @@ unit in, and a key that nobody captured from a real unit is left out. It's never
 |---|---|---|---|
 | `fastboot_product` | fastboot, before unlock | `device_gate.identify_show` | yes, all three |
 | `twrp_device` | TWRP (`ro.product.device`) | `recovery.verify_twrp_board` | yes, all three |
-| `dt_compatible` | running Show (echod) | nobody yet | **no**: never captured, see the evidence ledger. Stage c stays blocked until it is |
+| `dt_compatible` | running Show (echod) | nobody yet | **no**: captured 2026-10-19, but checkers and cronos both say `mediatek,mt8163`, and the checker refuses a shared value. Stage c needs another key; `androidboot.product` on the kernel command line differs on all three (evidence ledger C5, K5, R5) |
 | `lcm_panel` | running Show (kernel `lcm=`) | echod, by substring | **no**: the panel is a component and two boards may share one. It becomes a board key only once a test shows each captured value maps to exactly one board |
 
 The checker refuses an identity value that two boards share.
