@@ -21,7 +21,7 @@ from jarvis_crown.amonet_upgrade import AdbUpgradeClient, UpgradeError, upgrade_
 from jarvis_crown.assets import amonet_bundle_dir, asset_path, assets_for, default_cache_dir  # noqa: E402
 from jarvis_crown.boot_logo import BootLogoError, SshClient, put_logo  # noqa: E402
 from jarvis_crown.boards import profile_for_board, profile_for_product  # noqa: E402
-from jarvis_crown.device_gate import DeviceGateError, identify_show  # noqa: E402
+from jarvis_crown.device_gate import DeviceGateError, identify_show, in_plain_words  # noqa: E402
 from jarvis_crown.flow import FlowDeps, FlowError, InstallInputs, run_install_flow  # noqa: E402
 from jarvis_crown import genbu  # noqa: E402
 from jarvis_crown import home_assistant as ha_api  # noqa: E402
@@ -980,8 +980,15 @@ def main() -> int:
             RUN.end_all(ui.out.progress)
 
 
-def _main() -> int:
-    args = parse_args()
+def _gate_failed(exc: DeviceGateError) -> int:
+    ui.out.fail(f"device identity gate: {exc}")
+    if (plain := in_plain_words(exc)) != str(exc):
+        ui.out.note(plain, indent=4)
+    return 2
+
+
+def _main(args=None) -> int:
+    args = args or parse_args()
     root = Path(__file__).resolve().parents[1]
     project = root.parent
     work = (args.work_dir or (project / "work")).resolve()
@@ -1016,8 +1023,7 @@ def _main() -> int:
         try:
             _detect_profile(args.board)
         except DeviceGateError as exc:
-            ui.out.fail(f"device identity gate: {exc}")
-            return 2
+            return _gate_failed(exc)
         return 0
 
     # install and unlock start from fastboot; a Show that is on Android, TWRP or Jarvis is rebooted there
@@ -1044,8 +1050,7 @@ def _main() -> int:
                 args.board, allow_recovery=args.command == "install"
             )
         except DeviceGateError as exc:
-            ui.out.fail(f"device identity gate: {exc}")
-            return 2
+            return _gate_failed(exc)
 
     # A bundle checked out next to the repo wins; otherwise the one fetch-show-assets unpacked from the pinned zip.
     bundled = project / "third_party" / profile.amonet_dir_name
@@ -1186,13 +1191,25 @@ def _main() -> int:
     )
     print_checks(checks)
     if not preflight_ok(checks):
-        ui.out.fail("host/input preflight failed; no write was attempted")
+        failed = sum(check.failed for check in checks)
+        ui.out.fail(f"{failed} check{'s' if failed > 1 else ''} failed, what to do is under each; nothing on "
+                    "the Show was touched")
         return 1
     if args.command == "preflight":
         if identity is None:
             ui.out.done(f"offline {profile.model} host/input preflight complete; no device was queried or modified")
         else:
             ui.out.done(f"auto-detected {profile.model} host/input preflight complete; no device was modified")
+        # Everything is ready, so whoever is at the keyboard is asked whether to go on rather than told to
+        # type the next command (GENBU-216). Asked nothing, the run ends here as it always did.
+        go_on = _asker(args).yes("Go on with the install?", help=(
+            "Yes starts the install. It asks the Show's name and settings first, and asks again before "
+            "anything on the Show is touched."))
+        if go_on:
+            args.command = "install"
+            return _main(args)
+        if go_on is False:
+            ui.out.note("Start it later with: python3 tools/jarvis-show.py install", indent=2)
         return 0
 
     # unlock reaches here only after the live target was auto-detected above.

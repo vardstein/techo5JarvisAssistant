@@ -683,7 +683,7 @@ has the default given here.
 
 | Command | What it does | Needs |
 | --- | --- | --- |
-| `preflight` (the default) | Checks this computer and the input files. Touches no Show. With a Show on fastboot it also says which board it is. | nothing |
+| `preflight` (the default) | Checks this computer and the input files. Touches no Show. With a Show on fastboot it also says which board it is. When everything passes it asks whether to go on with the install; a yes carries on as `install` would. A failed check says what to do under it, and so does a Show that can't be found or isn't supported. With `--no-questions` it asks nothing and ends there. | nothing |
 | `identify` | Reads the Show on fastboot, read-only: board, serial, whether it is unlocked. | a Show on fastboot |
 | `unlock` | Runs Amonet on the Show on fastboot, after you type the confirmation. Does nothing on a unit that is already unlocked. Sends the Show to fastboot first, like `install`. | a Show on fastboot, adb or SSH |
 | `install` | The whole install: sends the Show to fastboot (from Android or TWRP with adb, from a running Jarvis over SSH), fetches what it needs, unlocks if needed, recovery backup, LineageOS's drivers, Jarvis, and then Home Assistant (below). Asks everything before it writes. | `--name` |
