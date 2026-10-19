@@ -122,11 +122,22 @@ def boot_layout(shell: Callable[[str], str]) -> str:
     return shell(BOOT_LAYOUT_PROBE).strip()
 
 
+def twrp_device(board: str) -> str:
+    """The ro.product.device the board's TWRP reports, from the catalogue. A board without one is refused:
+    nothing else says which TWRP belongs to it."""
+    name = catalogue.default().resolve(board)["identity"].get("twrp_device")
+    if not name:
+        raise RecoveryError(f"the catalogue names no TWRP device for {board}; refusing to use TWRP on it")
+    return name.lower()
+
+
 def verify_twrp_board(serial: str, board: str, *, run: Callable = subprocess.run) -> None:
+    expected = twrp_device(board)
     product = _adb_shell(serial, "getprop ro.product.device", run=run).strip().lower()
-    if product != board:
+    if product != expected:
         raise RecoveryError(
-            f"TWRP device reports ro.product.device={product or 'unknown'}, not {board}"
+            f"TWRP device reports ro.product.device={product or 'unknown'}, not {expected}"
+            + ("" if expected == board else f" (the catalogue's TWRP device for {board})")
         )
     ident = _adb_shell(serial, "id", run=run)
     if "uid=0" not in ident:

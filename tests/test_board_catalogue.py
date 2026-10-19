@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -183,11 +184,6 @@ class CatalogueFactsTest(unittest.TestCase):
         self.assertEqual(product["id"], "genbu-show-v1")
         self.assertEqual(product["boards"], list(catalogue.supported_boards()))
         self.assertEqual(sorted(product["boards"]), self.cat.boards())
-
-    def test_twrp_device_is_the_board_name_recovery_checks(self):
-        # recovery.verify_twrp_board compares ro.product.device with the board name.
-        for name in self.cat.boards():
-            self.assertEqual(self.cat.board_for("twrp_device", name), name)
 
     def test_unlock_pins_only_complete_on_crown(self):
         # unlock.py refuses every board but crown in code; the catalogue agrees that only crown's
@@ -445,6 +441,73 @@ class BoardListsReadTheCatalogueTest(unittest.TestCase):
         self.assertEqual(repo, "R0rt1z2/amonet")
         self.assertEqual(set(branches), {"mt8163-echo-show", "mt8163-checkers", "mt8163-crown", "mt8163-cronos"})
         self.assertEqual(branches[0], "mt8163-echo-show")
+
+
+class RenamedTwrp:
+    """The real catalogue, except that one board's TWRP calls itself something else, or nothing."""
+
+    def __init__(self, board, name):
+        self.real, self.board, self.name = catalogue.Catalogue(), board, name
+
+    def resolve(self, board):
+        out = self.real.resolve(board)
+        if board == self.board:
+            if self.name is None:
+                out["identity"].pop("twrp_device", None)
+            else:
+                out["identity"]["twrp_device"] = self.name
+        return out
+
+    def __getattr__(self, name):
+        return getattr(self.real, name)
+
+
+def twrp_shell(device):
+    """_adb_shell for a root TWRP with a plain boot that reports device as ro.product.device."""
+    answers = {"getprop ro.product.device": device, "id": "uid=0(root)",
+               "test -b /dev/block/mmcblk0p9 && echo OK": "OK", recovery.BOOT_LAYOUT_PROBE: "PLAIN"}
+    return lambda serial, command, run: answers[command]
+
+
+class TwrpDeviceComesFromTheCatalogueTest(unittest.TestCase):
+    """GENBU-178: the TWRP checks compare ro.product.device with the board's identity.twrp_device, not with
+    the board id. The two are equal for every board today, so these tests give one board a different
+    name to tell the two apart."""
+
+    def test_today_each_twrp_device_is_its_board(self):
+        for board in catalogue.supported_boards():
+            self.assertEqual(recovery.twrp_device(board), board)
+
+    def test_recovery_checks_the_catalogue_name(self):
+        with mock.patch.object(catalogue, "default", lambda: RenamedTwrp("crown", "crown_twrp")):
+            with mock.patch.object(recovery, "_adb_shell", twrp_shell("crown_twrp")):
+                recovery.verify_twrp_board("ADB", "crown", run=None)
+            with mock.patch.object(recovery, "_adb_shell", twrp_shell("crown")):
+                with self.assertRaisesRegex(recovery.RecoveryError,
+                                            r"ro.product.device=crown, not crown_twrp \(the catalogue's TWRP "
+                                            r"device for crown\)"):
+                    recovery.verify_twrp_board("ADB", "crown", run=None)
+
+    def test_a_board_without_a_twrp_device_is_refused_before_adb(self):
+        shell = mock.Mock(side_effect=AssertionError("adb must not run"))
+        with mock.patch.object(catalogue, "default", lambda: RenamedTwrp("crown", None)), \
+                mock.patch.object(recovery, "_adb_shell", shell):
+            with self.assertRaisesRegex(recovery.RecoveryError, "names no TWRP device for crown"):
+                recovery.verify_twrp_board("ADB", "crown", run=None)
+        shell.assert_not_called()
+
+    def test_install_show_maps_the_twrp_name_to_its_board(self):
+        def load():
+            spec = importlib.util.spec_from_file_location("install_show", ROOT / "tools" / "install-show.py")
+            show = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(show)
+            return show
+        self.assertEqual(load().TWRP_BOARDS, {b: b for b in catalogue.supported_boards()})
+        with mock.patch.object(catalogue, "default", lambda: RenamedTwrp("crown", "Crown_TWRP")):
+            self.assertEqual(load().TWRP_BOARDS, {"crown_twrp": "crown", "checkers": "checkers",
+                                                  "cronos": "cronos"})
+        with mock.patch.object(catalogue, "default", lambda: RenamedTwrp("crown", None)):
+            self.assertNotIn("crown", load().TWRP_BOARDS.values())
 
 
 class ProductIdSpelledOnceTest(unittest.TestCase):

@@ -39,6 +39,7 @@ from jarvis_crown.recovery import (
     adb_recovery_serials,
     backup_recovery_state,
     boot_layout,
+    twrp_device,
 )
 from jarvis_crown.timing import POLL_SECONDS, TWRP_REENUM_TIMEOUT_SECONDS
 
@@ -239,9 +240,13 @@ def upgrade_amonet(
     binaries = check_amonet_zip(board, amonet_zip)
     boot = lineage_boot_image(board, lineage_zip)
 
+    try:
+        expected = twrp_device(board)
+    except RecoveryError as exc:
+        raise UpgradeError(str(exc)) from None
     product = client.shell("getprop ro.product.device").strip().lower()
-    if product != board:
-        raise UpgradeError(f"TWRP reports ro.product.device={product or 'unknown'}, not {board}")
+    if product != expected:
+        raise UpgradeError(f"TWRP reports ro.product.device={product or 'unknown'}, not {expected}")
     if "uid=0" not in client.shell("id"):
         raise UpgradeError("TWRP adb shell is not root")
     layout = boot_layout(client.shell)

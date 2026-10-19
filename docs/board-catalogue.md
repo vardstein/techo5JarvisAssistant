@@ -102,7 +102,7 @@ unit in, and a key that nobody captured from a real unit is left out. It's never
 | Identity key | Stage | Read today by | In the catalogue |
 |---|---|---|---|
 | `fastboot_product` | fastboot, before unlock | `device_gate.identify_show` | yes, all three |
-| `twrp_device` | TWRP (`ro.product.device`) | `recovery.verify_twrp_board` | yes, all three |
+| `twrp_device` | TWRP (`ro.product.device`) | `recovery.verify_twrp_board`, `amonet_upgrade.py`, `install-show.py` | yes, all three, each the board's own name |
 | `dt_compatible` | running Show (echod) | nobody yet | **no**: captured 2026-10-19, but checkers and cronos both say `mediatek,mt8163`, and the checker refuses a shared value. Stage c needs another key; `androidboot.product` on the kernel command line differs on all three (evidence ledger C5, K5, R5) |
 | `lcm_panel` | running Show (kernel `lcm=`) | echod, by substring | **no**: the panel is a component and two boards may share one. It becomes a board key only once a test shows each captured value maps to exactly one board |
 
@@ -235,12 +235,13 @@ Every change that reads a new field adds its row here in the same change.
 | `catalogue.py` `profile_for_board`, `profile_for_product`, `supported_boards` | product `boards`; board `id`, `model`, `profile_id`, `identity.fastboot_product`, `display`; `assets.amonet` `file` and `kaeru` (for the folder and kaeru names) |
 | `device_gate.py` | the profiles above: `SUPPORTED_PRODUCTS`, `SUPPORTED_SUMMARY`, the unsupported-product message |
 | `install.py` | product `id` (`PROFILE_ID`), product `boards`, `assets.boot.sha256` |
-| `recovery.py` | `assets.amonet.members["amonet/bin/twrp.img"]`; `identity.twrp_device` is checked equal to the board name by the test, the code still compares with the name |
+| `recovery.py` | `assets.amonet.members["amonet/bin/twrp.img"]`; `identity.twrp_device` (`twrp_device()`, also used by `amonet_upgrade.py`), so a TWRP that calls itself something other than the board needs no code change; a board without one is refused before adb runs |
 | `unlock.py` | crown's `assets.amonet.members` for the six unlock files; refuses to import if crown loses one |
 | `assets.py` | every board's `assets.*`: `file`, `url`, `source`, `manual`, `sha256`, `size`; `assets.amonet.upstream` (`AMONET_SOURCE`, for the fetcher's file-by-file compare) |
 | `boot_logo.py` (`KAERU`) | `assets.amonet.wordmark`: `offset`, `length`, `stock`, `logos.openjade`, `openjade_large` |
 | `install-show.py` (`LOGO_KAERU`) | `assets.amonet.wordmark`: `offset`, `length`, `stock`, `logos.techo5` |
 | `install-show.py` (`BOARDS`, `--jarvis-show-board`) | product `boards`; board `model` up to " / " |
+| `install-show.py` (`TWRP_BOARDS`) | `identity.twrp_device`, to turn what TWRP reports back into the board |
 | `release-jarvis-show.sh`, `release_channels.py` | product `id`, `first_boards` and the boards after them |
 | `preflight.py`, `amonet_upgrade.py`, `flow.py`, `jarvis-show.py`, `fetch-show-assets.py` | profiles and `supported_boards()` through `catalogue.py` |
 | `validate-jarvis-show.sh` | runs `catalogue.py check` |

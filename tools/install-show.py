@@ -71,12 +71,17 @@ KERNEL_RELEASE = '4.9.337-g8d928c5176cc'
 WIFI_MODULE = 'vendor/lib/modules/mt76x8_wlan.ko'
 BT_MODULE = 'vendor/lib/modules/mt76x8_bt.ko'
 
-# The boards this installs on, as `getprop ro.product.device` reports them, with their model from the
-# board catalogue ('Echo Show 8 1st gen / C7H6N3' shows as 'Echo Show 8 1st gen'). They share the SoC,
-# the kernel commit, the partition numbers this script writes (MISC p8, boot p9, system p12) and the
-# daemon binary; they differ in the panel, the microphone array, the speaker codec and the mute
-# driver, which the daemon settles at run time from the board name in the kernel command line.
+# The boards this installs on, as LineageOS's `getprop ro.product.device` reports them, with their
+# model from the board catalogue ('Echo Show 8 1st gen / C7H6N3' shows as 'Echo Show 8 1st gen').
+# They share the SoC, the kernel commit, the partition numbers this script writes (MISC p8, boot p9,
+# system p12) and the daemon binary; they differ in the panel, the microphone array, the speaker
+# codec and the mute driver, which the daemon settles at run time from the board name in the kernel
+# command line.
 BOARDS = {b: catalogue.default().resolve(b)['model'].split(' / ')[0] for b in catalogue.supported_boards()}
+# TWRP reports the catalogue's twrp_device instead, which need not be the board name (GENBU-178).
+TWRP_BOARDS = dict((catalogue.default().resolve(b)['identity']['twrp_device'].lower(), b)
+                   for b in catalogue.supported_boards()
+                   if catalogue.default().resolve(b)['identity'].get('twrp_device'))
 
 
 def root_password_hash(path):
@@ -605,6 +610,8 @@ def main():
         fail("adb does not see %s running LineageOS (state '%s'): turn on USB debugging and accept this computer, "
              "or install from TWRP with --lineage-zip%s" % (a.serial, state, console_hint((CONSOLE_TECHO5,))))
     dev = adb.sh('getprop ro.product.device')
+    if twrp:
+        dev = TWRP_BOARDS.get(dev.lower(), dev)
     if dev not in BOARDS:
         fail("%s reports '%s', which is none of: %s"
              % (a.serial, dev, ', '.join('%s (%s)' % (b, n) for b, n in BOARDS.items())))
