@@ -36,6 +36,11 @@ const (
 	// already took over, or one the device has since been renamed away from, is not taken again.
 	NameInHAPath = StateDir + "/name_in_ha"
 
+	// SetupPath marks a device no Home Assistant holds the key for: after a factory reset, after it
+	// left the one it had, and while a window for adding it is open. The boot script's reset writes it
+	// too, so it is a file rather than anything echod keeps.
+	SetupPath = StateDir + "/setup-mode"
+
 	// UpdatingPath holds the version being tried, so a rollback can say which one it took out. It is
 	// under /data because the boot hook reads it after a restore has already remounted /system back to
 	// read-only.

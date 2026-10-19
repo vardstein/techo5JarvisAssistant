@@ -6,6 +6,8 @@ import (
 	"net"
 	"testing"
 	"time"
+
+	esphome "github.com/ygelfand/go-esphome-device"
 )
 
 // serveOnce accepts one connection through refusePlaintext and returns what the server side read.
@@ -70,5 +72,21 @@ func TestPlaintextDeviceTakesPlaintext(t *testing.T) {
 	_, got := serveOnce(t, false, hello)
 	if !bytes.Equal(got, hello) {
 		t.Errorf("server read %x, want %x", got, hello)
+	}
+}
+
+// The zero key takes plaintext (the library answers it only what adding the device takes); a real key
+// refuses it, and no key at all is a plaintext device.
+func TestOnlyARealKeyRefusesPlaintext(t *testing.T) {
+	var k esphome.PSK
+	k[3] = 1
+	for _, c := range []struct {
+		name string
+		psk  *esphome.PSK
+		want bool
+	}{{"none", nil, false}, {"zero", esphome.Unprovisioned(), false}, {"real", &k, true}} {
+		if got := keyed(c.psk); got != c.want {
+			t.Errorf("%s key: keyed %v, want %v", c.name, got, c.want)
+		}
 	}
 }

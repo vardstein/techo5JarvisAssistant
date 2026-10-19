@@ -32,11 +32,31 @@ const adoptWindow = 15 * time.Minute
 var (
 	keyFile   = layout.KeyPath
 	adoptPath = filepath.Join(filepath.Dir(layout.KeyPath), "adopt-until")
+	setupPath = layout.SetupPath
 )
+
+// InSetup reports whether no Home Assistant holds this device's key: a factory reset, a device that
+// left its Home Assistant, or one with a window open. The screen offers to open one, and the device
+// keeps off mDNS until it is open (mdns.go).
+func (a *API) InSetup() bool {
+	_, err := os.Stat(setupPath)
+	return err == nil
+}
+
+func markSetup() error { return os.WriteFile(setupPath, nil, 0o600) }
+
+func clearSetup() {
+	if err := os.Remove(setupPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		slog.Warn("api: clearing the setup mark", "err", err)
+	}
+}
 
 // OpenAdoption opens the window, and says when it shuts.
 func (a *API) OpenAdoption() (time.Time, error) {
 	until := time.Now().Add(adoptWindow).Truncate(time.Second)
+	if err := markSetup(); err != nil {
+		return time.Time{}, err
+	}
 	if err := os.WriteFile(adoptPath, []byte(until.UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
 		return time.Time{}, err
 	}
@@ -122,6 +142,7 @@ func (a *API) keySet(k esphome.PSK) error {
 		return err
 	}
 	_ = os.Remove(adoptPath)
+	clearSetup()
 	a.mu.Lock()
 	unkeyed := a.unkeyed
 	a.mu.Unlock()

@@ -4,6 +4,8 @@ import (
 	"io"
 	"net"
 	"sync"
+
+	esphome "github.com/ygelfand/go-esphome-device"
 )
 
 // Home Assistant first tries every new ESPHome device without encryption. A real ESPHome device that
@@ -17,6 +19,10 @@ const plaintextIndicator = 0x00
 // plaintextReject is a Noise frame (0x01, length 19) whose body is a handshake error (0x01) and the
 // message ESPHome sends.
 var plaintextReject = append([]byte{0x01, 0x00, 0x13, 0x01}, "Bad indicator byte"...)
+
+// keyed is whether a server with this key refuses plaintext. Without a key it is plaintext, and with
+// the zero key it takes plaintext so Home Assistant can add it (the library answers it only that).
+func keyed(k *esphome.PSK) bool { return k != nil && !k.IsZero() }
 
 type refusePlaintext struct {
 	net.Listener

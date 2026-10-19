@@ -860,7 +860,9 @@ def main():
         if line.startswith('slot a'):
             note(line)
     prov = ("mkdir -p -m 700 /data/misc/techo5 && chmod 700 /data/misc/techo5 && printf '%%s\\n' %s > /data/misc/techo5/name && "
-            "(umask 077; printf '%%s\\n' %s > /data/misc/techo5/psk)" % (quote(a.name), quote(psk)))
+            "(umask 077; printf '%%s\\n' %s > /data/misc/techo5/psk) && rm -f /data/misc/techo5/setup-mode" % (quote(a.name), quote(psk)))
+    # The key is one the person installing has (key_file) and gives Home Assistant when it finds the
+    # Show, so it has to be found: a Show left in setup mode keeps off mDNS (layout.SetupPath).
     if a.jarvis_show_prestaged:
         prov += " && printf 'genbu-%s-v1\\n' > /data/misc/techo5/profile" % a.jarvis_show_board
     # A running Show keeps its USB port shut unless USB debugging is on. This flag keeps it open for

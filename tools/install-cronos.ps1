@@ -109,7 +109,7 @@ $pskTmp = Join-Path ([IO.Path]::GetTempPath()) 'techo5-psk'; [IO.File]::WriteAll
 Push $nameTmp /data/misc/techo5/name
 Push $pskTmp /data/misc/techo5/psk
 Get-ChildItem $tmp | ForEach-Object { Push $_.FullName "/data/misc/techo5/models/$($_.Name)" }
-Sh 'chmod 600 /data/misc/techo5/psk /data/misc/techo5/name; chmod 644 /data/misc/techo5/models/*' | Out-Null
+Sh 'chmod 600 /data/misc/techo5/psk /data/misc/techo5/name; chmod 644 /data/misc/techo5/models/*; rm -f /data/misc/techo5/setup-mode' | Out-Null
 Remove-Item $nameTmp, $pskTmp -Force
 
 Write-Host "== /system: daemon, init service, null audio HAL"

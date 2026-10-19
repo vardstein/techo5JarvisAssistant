@@ -150,7 +150,12 @@ func (a *API) Start(ctx context.Context) error {
 		// Persist a key Home Assistant pushes, or the next connection reverts to the old one.
 		OnSetEncryptionKey: a.keySet,
 
-		OnSubscribed: func() { component.Subscribed.Emit(struct{}{}) },
+		// Only a client holding the key gets as far as subscribing (the library answers a device
+		// without one only what adding it takes), so whoever set the device up has it now.
+		OnSubscribed: func() {
+			clearSetup()
+			component.Subscribed.Emit(struct{}{})
+		},
 
 		// The handlers components answer for themselves rather than through an entity: the voice
 		// satellite's pipeline traffic, and the Bluetooth proxy's subscribe and set-mode messages.
@@ -215,7 +220,7 @@ func (a *API) Run(ctx context.Context) error {
 			stop()
 		}()
 
-		err = a.srv.Serve(serving, refusePlaintext{Listener: ln, encrypted: func() bool { return a.srv.PSK != nil }})
+		err = a.srv.Serve(serving, refusePlaintext{Listener: ln, encrypted: func() bool { return keyed(a.srv.PSK) }})
 		stop()
 
 		if err != nil || ctx.Err() != nil {

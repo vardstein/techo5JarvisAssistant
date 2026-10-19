@@ -62,7 +62,7 @@ class FactoryResetTests(unittest.TestCase):
         r = reset(self.root)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("factory reset: done", r.stdout)
-        self.assertEqual(sorted(p.name for p in self.state.iterdir()), ["profile", "psk"])
+        self.assertEqual(sorted(p.name for p in self.state.iterdir()), ["profile", "psk", "setup-mode"])
         self.assertEqual((self.state / "profile").read_text(), "genbu-checkers-v1\n")
         # A new random key nobody holds, not none: a missing key would leave the device open.
         key = base64.b64decode((self.state / "psk").read_text())
@@ -79,7 +79,7 @@ class FactoryResetTests(unittest.TestCase):
         r = reset(self.root)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("factory reset: keeping the Wi-Fi", r.stdout)
-        self.assertEqual(sorted(p.name for p in self.state.iterdir()), ["profile", "psk"])
+        self.assertEqual(sorted(p.name for p in self.state.iterdir()), ["profile", "psk", "setup-mode"])
         self.assertNotEqual((self.state / "psk").read_text(), "b2xkIGtleQ==\n")
         self.assertEqual(sorted(p.name for p in self.logs.iterdir()),
                          ["rescue.log", "wpa_supplicant.conf", "wpa_supplicant.conf.prev"])
