@@ -133,7 +133,7 @@ func newSession(conn *websocket.Conn, o *out, bg *speaker.Arbiter, name string, 
 		PlayerV1Support: protocol.PlayerV1Support{
 			SupportedFormats:  offered,
 			BufferCapacity:    bufferCapacity,
-			SupportedCommands: []string{"volume", "mute"},
+			SupportedCommands: commands,
 		},
 	}, conn)
 
@@ -600,14 +600,48 @@ func (s *session) told(cmd protocol.PlayerCommand) {
 	s.reported()
 }
 
+// commands are what the server may tell the player, said in the hello and again in every state.
+var commands = []string{"volume", "mute"}
+
+// The timing the player asks for is the server's own default: chunks are played on arrival, so there
+// is no output delay of ours to report, and the defaults are what every room has run on so far.
+const (
+	outputDelayMs      = 0
+	requiredLeadTimeMs = 250
+	minBufferMs        = 1000
+)
+
+// clientState is client/state as the spec has it now. The library's own PlayerState is the draft one:
+// availability inside the player as `state`, the timing and the commands missing, and a false mute
+// dropped by omitempty, which Music Assistant logs as a non-compliant client.
+type clientState struct {
+	Available bool        `json:"available"`
+	Player    playerState `json:"player"`
+}
+
+type playerState struct {
+	Volume             int      `json:"volume"`
+	Muted              bool     `json:"muted"`
+	OutputDelayMs      int      `json:"output_delay_ms"`
+	RequiredLeadTimeMs int      `json:"required_lead_time_ms"`
+	MinBufferMs        int      `json:"min_buffer_ms"`
+	SupportedCommands  []string `json:"supported_commands"`
+}
+
+func stateOf(volume int, muted bool) clientState {
+	return clientState{Available: true, Player: playerState{
+		Volume: volume, Muted: muted,
+		OutputDelayMs: outputDelayMs, RequiredLeadTimeMs: requiredLeadTimeMs, MinBufferMs: minBufferMs,
+		SupportedCommands: commands,
+	}}
+}
+
 // reported echoes what took effect. The server has no other way to learn a command landed, and the
-// protocol carries no position, so this is the whole of what we say back.
+// protocol carries no position, so this is the whole of what we say back. Every field goes every time:
+// the spec reads an omitted one as unchanged only for now. The library still sends its draft state once
+// in the handshake, which this one right after replaces.
 func (s *session) reported() {
-	if err := s.client.SendState(protocol.PlayerState{
-		State:  "synchronized",
-		Volume: config.Get().Speaker.Volume * 100 / speaker.VolumeSteps,
-		Muted:  s.muted,
-	}); err != nil {
+	if err := s.client.Send("client/state", stateOf(config.Get().Speaker.Volume*100/speaker.VolumeSteps, s.muted)); err != nil {
 		slog.Debug("sendspin client state", "err", err)
 	}
 }

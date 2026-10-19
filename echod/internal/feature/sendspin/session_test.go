@@ -1,6 +1,7 @@
 package sendspin
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -105,3 +106,39 @@ type fakeDecoder struct{}
 
 func (fakeDecoder) decode([]byte) ([]int16, error) { return nil, nil }
 func (fakeDecoder) close() error                   { return nil }
+
+// GENBU-136: Music Assistant's aiosendspin flags a client/state that lacks the top-level `available`,
+// carries the draft `player.state`, leaves out a timing field or the commands, or leaves out `muted`
+// while declaring mute. Every one of those is checked on the wire form, a false mute included.
+func TestTheStateIsTheSpecOne(t *testing.T) {
+	raw, err := json.Marshal(stateOf(40, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["available"] != true {
+		t.Errorf("available = %v, want true", got["available"])
+	}
+	player, _ := got["player"].(map[string]any)
+	if player == nil {
+		t.Fatalf("no player object in %s", raw)
+	}
+	if _, ok := player["state"]; ok {
+		t.Errorf("player carries the draft state: %s", raw)
+	}
+	for _, k := range []string{"volume", "muted", "output_delay_ms", "required_lead_time_ms", "min_buffer_ms", "supported_commands"} {
+		if _, ok := player[k]; !ok {
+			t.Errorf("player has no %s: %s", k, raw)
+		}
+	}
+	if player["volume"] != 40.0 || player["muted"] != false {
+		t.Errorf("volume/muted = %v/%v, want 40/false", player["volume"], player["muted"])
+	}
+	cmds, _ := player["supported_commands"].([]any)
+	if len(cmds) != 2 || cmds[0] != "volume" || cmds[1] != "mute" {
+		t.Errorf("supported_commands = %v, want the hello's [volume mute]", player["supported_commands"])
+	}
+}
