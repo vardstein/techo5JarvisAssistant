@@ -95,7 +95,7 @@ board they were about. A comment moved into `notes` is still only a claim.
 | K6 | panel `lcm=1-st7701s_wsvga_dsi_vdo_checkers_st_kd_hsd` (not in the catalogue) | proven | `docs/dumps/board-identity-running-2026-10-19.txt:28` |
 | K7 | Lineage zip pin is the local copy | proven | `check-files` |
 | K8 | boot v1.0.1 pin is the local copy | proven | `check-files` |
-| K9 | boot v1.0.1 boots on a checkers | claimed | `install.py` comment. Not read on 2026-10-20: the checkers didn't answer ssh |
+| K9 | boot v1.0.1 boots on a checkers | proven | `docs/dumps/boot-images-running-2026-10-20.txt:41`, `:37`: the first 13172736 bytes of a running checkers's boot partition hash to the pin, and the running kernel is the one in it |
 | K10 | Amonet zip pin is the local copy | proven | `check-files` |
 | K11 | `bin/twrp.img` member pin is the bytes in that zip | proven | `check-files` |
 | K12 | the zip contains `amonet/bin/checkers-kaeru.bin` | proven | `check-files` |
@@ -130,11 +130,11 @@ board they were about. A comment moved into `notes` is still only a claim.
 
 ## 3. Counts
 
-Board and asset facts (section 2): **25 proven, 16 claimed, 4 unknown** (GENBU-180/181 added C4, C5, C6,
-K4, K5, K6, R5 and GENBU-187 added A1 on 2026-10-19; GENBU-182 added C15 and proved R10 on 2026-10-20).
+Board and asset facts (section 2): **26 proven, 15 claimed, 4 unknown** (GENBU-180/181 added C4, C5, C6,
+K4, K5, K6, R5 and GENBU-187 added A1 on 2026-10-19; GENBU-182 added C15 and proved R10 and K9 on 2026-10-20).
 
-- proven: C4, C5, C6, C7, C8, C10, C11, C12, C15, K4, K5, K6, K7, K8, K10, K11, K12, K13, R3, R4, R5, R6, R7, R10, A1
-- claimed: C1, C2, C3, C9, C13, C14, K1, K2, K3, K9, K15, R1, R2, R8, R9, R12
+- proven: C4, C5, C6, C7, C8, C10, C11, C12, C15, K4, K5, K6, K7, K8, K9, K10, K11, K12, K13, R3, R4, R5, R6, R7, R10, A1
+- claimed: C1, C2, C3, C9, C13, C14, K1, K2, K3, K15, R1, R2, R8, R9, R12
 - unknown: K14, R11, R13, A2
 
 Installer-unchanged facts (section 1): 12 proven.
@@ -159,7 +159,7 @@ the unit.
 | H3 | on a running Show: `cat /sys/class/graphics/fb0/virtual_size` (techo5 has no `dumpsys`) | C4, K4 | no, **done 2026-10-19** |
 | H4 | on a running Show: `tr '\0' '\n' < /proc/device-tree/compatible` | C5, K5, R5 | no, **done 2026-10-19**; step c needs another key, see the short version above |
 | H5 | on a running Show: `tr ' ' '\n' < /proc/cmdline \| grep '^lcm='` | C6, K6 | no, **done 2026-10-19** |
-| H6 | on a running Show: `/proc/version` (`uname -r` is the same on every image) plus the sha256 of the first *size* bytes of the boot partition, compared with the pin | C9, K9, R10 | no, **done 2026-10-20** on cronos (R10 proven) and crown (runs v0.8.0, C15); checkers open. C9 needs a crown installed from the v1.0.1 pin |
+| H6 | on a running Show: `/proc/version` (`uname -r` is the same on every image) plus the sha256 of the first *size* bytes of the boot partition, compared with the pin | C9, K9, R10 | no, **done 2026-10-20** on cronos (R10 proven) and crown (runs v0.8.0, C15); checkers (K9 proven). C9 needs a crown installed from the v1.0.1 pin |
 | H7 | the first `amonet-kaeru` unlock of a stock unit, step by step, log saved | C13, K14 | **yes**, Jade's call per board |
 | H8 | a full `tools/hwdump.sh` probe on crown and checkers, after hwdump learns to strip identifiers | fixtures for both | no |
 
