@@ -703,6 +703,7 @@ has the default given here.
 | `wifi` | Puts an installed Show on a Wi-Fi network over its USB cable, for when it is offline. | `--wifi` |
 | `home-assistant` | Adds an installed Show to Home Assistant and sets it up: the steps above. Safe to run again. | `--name` |
 | `boot-logo` | Puts the OpenJade logo in place of Amazon's at boot, over SSH ([boot logos](../tools/boot-logo/README.md)). | `--name` |
+| `shows` | Lists every Show it finds, on the network, on USB and in `backups/`, and says where each one stands. Offers to put away what Shows gone from the house left on this computer ([Finding Shows](#finding-shows)). Never adds a Show; that is Home Assistant's. | nothing; an admin to say which are in Home Assistant |
 | `--remove-show` | Not a command but a run of its own: takes a Show out of Home Assistant and Music Assistant, so it can be added again as a new device or given away ([Taking a Show out](#taking-a-show-out)). Lists first, asks whether to reset the Show over SSH first, then asks you to type the Show's name. | `--name`, an admin |
 
 ### The Show and its files
@@ -730,7 +731,7 @@ has the default given here.
 | `--ssh-key FILE` | install | An SSH public key root accepts from the first boot, instead of the key the installer makes for this Show (`~/.ssh/genbu_<name>`). Refused when it is another Show's key. |
 | `--no-ssh` | install | No key at all: SSH stays off, the USB console is the way in. |
 | `--amazon-logo` | boot-logo | Puts Amazon's logo back instead. |
-| `--yes-remove` | --remove-show | Removes without typing the Show's name first. Without it, `--no-questions` only lists what would go. |
+| `--yes-remove` | --remove-show, shows | Removes without typing the Show's name first; for `shows`, puts leftovers away without asking. Without it, `--no-questions` only lists. |
 | `--reset-show yes\|no` | --remove-show | Reset the Show over SSH before it is removed (`no`: Home Assistant's side only, say for a Show that is dead or gone). Asked when left out. Also `true`/`false`, `1`/`0`. |
 | `--keep-wifi yes\|no` | --remove-show | With a reset: the Show keeps the Wi-Fi it knew and comes back in setup mode on the same network. Needs a Show image that can do this; an older one refuses before anything changes. Asked when left out. |
 
@@ -788,7 +789,7 @@ What stays: everything with only the "Genbu Show installed" label (the house-wid
 automations and the music scripts), the blueprints, the room and its dashboard, the calendars, and
 `backups/<serial>/`, so the unit can be installed again. On this computer the Show's SSH key and its
 pinned host key stay (`~/.ssh/genbu_<name>*`), and so do any router rules made for its address; the
-run lists them. Other automations, scripts
+run lists them, and `shows` puts the keys away later ([Finding Shows](#finding-shows)). Other automations, scripts
 and dashboards that use the Show are listed, not changed: they show up as unavailable entities until
 you change them.
 
@@ -802,6 +803,33 @@ pieces are found by name, as before.
 Run it again any time. It finds what is left by the names the Show went by and the MAC address it kept
 in `backups/<serial>/show.json` on the first run, and says so when nothing is left. To use the Show
 again after "removed only", reset it ([Factory reset](install.md#factory-reset)); then add it the usual way.
+
+### Finding Shows
+
+`shows` lists every Show this computer can find and where each one stands:
+
+- **On the network.** Shows answer as ESPHome devices. One waiting to be added says so for the 15
+  minutes after somebody taps "Let Home Assistant add it" on its screen; add it in Home Assistant under
+  **Settings → Devices & services**, Discovered. The list never adds a Show itself, and a Show that
+  isn't in this Home Assistant (a neighbour's, say) is only listed.
+- **On USB.** In fastboot, in TWRP, on Android, or running. A running one is asked over its serial
+  console whether it is in setup; one whose console wants root's password is listed as locked and left
+  alone.
+- **In `backups/`.** Every Show installed from here, matched to the network by name or MAC address and
+  to USB by serial.
+
+With an admin (`--ha-url` and the usual login questions) it also says which Shows are in this Home
+Assistant. Without one, nothing counts as gone.
+
+A Show installed from here that is gone from this Home Assistant, because it was reset (from here or by
+its Delete in Home Assistant) or isn't on the network any more, leaves things behind on this computer:
+its SSH key pair, the host key pinned for it and its install record. The run offers, one Show at a
+time, to put them away in `backups/<serial>/retired-<date>/`. Nothing is deleted, and the unlock backups
+stay where they are. If a Show turns out to be only switched off, move the files back. `--no-questions`
+only lists; `--no-questions --yes-remove` puts away without asking.
+
+The router keeps the rules made for a Show's address until you take them out; the installer never
+changes the router. On OpenWrt the install guide's `genbu_unrules <name>` helper does it.
 
 ### What the Show is ready with
 

@@ -29,6 +29,7 @@ from jarvis_crown import genbu  # noqa: E402
 from jarvis_crown import home_assistant as ha_api  # noqa: E402
 from jarvis_crown import ui  # noqa: E402
 from jarvis_crown import music_assistant as ma_api  # noqa: E402
+from jarvis_crown import finder  # noqa: E402
 from jarvis_crown import remove as gone  # noqa: E402
 from jarvis_crown import reach  # noqa: E402
 from jarvis_crown import show_reset  # noqa: E402
@@ -69,7 +70,7 @@ def _yes_no(value: str) -> bool:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="jarvis-show")
-    parser.add_argument("command", help="what to do (default preflight); docs/jarvis-crown-installer.md, \"Commands and switches\"", choices=["preflight", "identify", "unlock", "install", "amonet-upgrade", "wifi", "home-assistant", "boot-logo"], nargs="?")
+    parser.add_argument("command", help="what to do (default preflight); docs/jarvis-crown-installer.md, \"Commands and switches\"", choices=["preflight", "identify", "unlock", "install", "amonet-upgrade", "wifi", "home-assistant", "boot-logo", "shows"], nargs="?")
     parser.add_argument("--board", choices=("crown", "checkers", "cronos"), help="optional board cross-check; install/identify auto-detect by default")
     parser.add_argument("--amonet-dir", type=Path, help="the unpacked Amonet 2.x package; default ../third_party/<board> or the asset cache")
     parser.add_argument("--amonet-zip", type=Path, help="amonet-upgrade: the pinned Amonet 2.x zip; default from the asset cache")
@@ -172,7 +173,8 @@ def parse_args() -> argparse.Namespace:
     gone.add_argument("--keep-wifi", type=_yes_no, metavar="yes|no",
                       help="with a reset: the Show keeps its Wi-Fi; asked when left out")
     gone.add_argument("--yes-remove", action="store_true",
-                      help="remove without typing the Show's name first; without it, --no-questions only lists")
+                      help="remove without typing the Show's name first (shows: put away what gone Shows left "
+                           "here without asking); without it, --no-questions only lists")
     logo = parser.add_argument_group("boot-logo: the OpenJade logo at boot on an installed Show (--name, --host)")
     logo.add_argument("--amazon-logo", action="store_true", help="put Amazon's logo back instead")
     args = parser.parse_args()
@@ -944,6 +946,82 @@ def remove_show_command(args, backups: Path) -> int:
                 "undo a copy of its storage made before")
     return 0
 
+def _in_this_house(args, asker: Asker):
+    """Whether this Home Assistant has a Show by its name; a lookup that answers None when there is no
+    admin to ask, or Home Assistant didn't answer."""
+    def unknown(name: str) -> bool | None:
+        return None
+    try:
+        settings = gather(args, asker, want_wifi=False, want_show=False, want_music=False)
+    except SettingsError as exc:
+        ui.out.warn(f"{exc}; the list leaves Home Assistant out")
+        return unknown
+    if not settings.ha_admin:
+        ui.out.note("no Home Assistant admin, so the list can't say which Shows are in it" if settings.ha_url else
+                    "Home Assistant wasn't asked (--ha-url), so the list can't say which Shows are in it")
+        return unknown
+    hc = settings.ha_sign_in or ha_api.HomeAssistant(settings.ha_url, settings.ha_admin_token)
+    try:
+        entries = hc.request("GET", "/api/config/config_entries/entry?domain=esphome") or []
+    except ha_api.HomeAssistantError as exc:
+        ui.out.warn(f"Home Assistant: {exc}; the list leaves it out")
+        return unknown
+    there = {ha_api.node_slug(str(e.get("title") or "")) for e in entries if e.get("domain") == "esphome"}
+    return lambda name: ha_api.node_slug(name) in there
+
+
+def _on_usb() -> list:
+    from techo5lib import CONSOLE_TECHO5, console_exchange, list_consoles
+    return finder.usb(consoles=lambda: list_consoles(CONSOLE_TECHO5),
+                      ask=lambda port: console_exchange(port, finder.CONSOLE_ASK, 6))
+
+
+def shows_command(args, backups: Path) -> int:
+    """Every Show this computer finds, on the network, on USB and in its records, with where each one
+    stands; then what Shows gone from the house left here, put away when asked. It never adds a Show:
+    that is Home Assistant's. See jarvis_crown/finder.py."""
+    asker = _asker(args)
+    in_ha = _in_this_house(args, asker)
+    ui.out.heading("Looking for Shows")
+    seen = finder.browse()
+    if seen is None:
+        ui.out.warn("avahi-browse isn't installed, so the network isn't looked at (Debian and Ubuntu: avahi-utils)")
+    rows = finder.merge(known_shows(backups), seen or [], _on_usb(), in_ha)
+    if not rows:
+        ui.out.note("none answers on the network or on USB, and none was installed from here. A Show in setup "
+                    "is quiet on the network until somebody taps Let Home Assistant add it on its screen")
+        return 0
+    ui.out.heading("Shows")
+    for row in rows:
+        ui.out.step(f"{row.name}" + (f" ({row.board})" if row.board else "") + f": {row.state}")
+    gone_rows = [r for r in rows if r.leftover and finder.leftovers(r)]
+    if not gone_rows:
+        return 0
+    ui.out.heading("Left here by Shows gone from the house")
+    for row in gone_rows:
+        ui.out.step(f"{row.name}: its SSH key, pinned host key and install record")
+        ui.out.note("it was reset, so the key opens nothing now and the pin is out of date" if row.reset_seen else
+                    "it isn't on the network: if it was reset or is gone for good, they're of no use any more; "
+                    "if it's only switched off, keep them")
+    ui.out.note("A new Show with the same name would pick them up. Putting them away moves them into the Show's "
+                "backup folder, nothing is deleted, and its unlock backups stay where they are.")
+    if args.no_questions and not args.yes_remove:
+        ui.out.note("--no-questions only lists; --yes-remove puts them away")
+        return 0
+    for row in gone_rows:
+        if not args.yes_remove and not asker.yes(f"Put away what {row.name} left here?",
+                                                 help="Yes: moved, so a later install of that name starts fresh."):
+            continue
+        try:
+            to = finder.retire(row)
+        except OSError as exc:
+            ui.out.fail(f"{row.name}: {exc}")
+            return 1
+        ui.out.done(f"{row.name}: put away in {_home(to)}")
+        ui.out.note(finder.router_note(row))
+    return 0
+
+
 def amonet_upgrade(args, backups: Path) -> int:
     """Amonet 1.x -> 2.x for a unit already in TWRP; see jarvis_crown/amonet_upgrade.py."""
     if not args.board:
@@ -1080,6 +1158,8 @@ def _main(args=None) -> int:
         return home_assistant_command(args, backups)
     if args.command == "remove-show":
         return remove_show_command(args, backups)
+    if args.command == "shows":
+        return shows_command(args, backups)
 
     # identify/unlock require fastboot. install can resume from a verified TWRP
     # session only when an explicit board cross-check is supplied.

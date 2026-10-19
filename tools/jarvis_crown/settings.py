@@ -420,7 +420,7 @@ def _checked(value: str | None, check: Callable[[str], str]) -> str | None:
 def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
            lookup: Callable[..., str | None] = keyring_lookup,
            resolve: Callable[[str], str] = _resolve, want_wifi: bool = True,
-           want_root_password: bool = False, want_show: bool = True,
+           want_root_password: bool = False, want_show: bool = True, want_music: bool = True,
            nearby: Callable[[], list[str]] = nearby_networks,
            ha_login: Callable[..., "ha_api.SignedIn"] = ha_api.sign_in,
            ma_login: Callable[..., tuple[str, str]] = ma_api.sign_in,
@@ -428,7 +428,8 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
            ma_tunein_there: Callable[[str, str], bool] = ma_api.tunein_there,
            run: SignIns | None = None) -> Settings:
     """Everything the Show is set up with: switches first, then the keyring, then the terminal. Without
-    want_show, only the admin sides of Home Assistant and Music Assistant (for taking a Show out)."""
+    want_show, only the admin sides of Home Assistant and Music Assistant (for taking a Show out); without
+    want_music, Music Assistant is left out (for the list of Shows)."""
     d = defaults if defaults is not None else load_defaults()
     run = run if run is not None else RUN
 
@@ -533,9 +534,10 @@ def gather(args, asker: Asker, *, defaults: dict[str, str] | None = None,
             dashcast = None
     s = replace(s, dashcast=dashcast, dashcast_key=key)
 
-    asker.heading("Music Assistant", "The Show plays through it as a Sendspin player.")
-    music = _checked(getattr(args, "music_assistant", None), ma) or \
-        asker.text("server IP or name", d.get("music_assistant"), ma)
+    if want_music:
+        asker.heading("Music Assistant", "The Show plays through it as a Sendspin player.")
+    music = (_checked(getattr(args, "music_assistant", None), ma) or
+             asker.text("server IP or name", d.get("music_assistant"), ma)) if want_music else None
     ma_token = ma_user = None
     if music:
         local = getattr(args, "music_assistant_local_metadata", False)
