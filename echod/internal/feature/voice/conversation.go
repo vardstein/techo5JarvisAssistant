@@ -110,6 +110,9 @@ type event struct {
 	msg   string
 	at    time.Time
 	wake  Wake
+
+	// length is how long a reply fetched whole is, on evPlaying.
+	length time.Duration
 }
 
 // conversation runs one turn at a time: microphone audio up, pipeline events back, spoken reply out.
@@ -151,6 +154,10 @@ type conversation struct {
 	// listeningAgain is whether that phase is a follow-up listening for a reply, published the same
 	// way for the stop word.
 	listeningAgain atomic.Bool
+
+	// speaking is the reply being heard, lower case, nil when none is (cut.go). Published for detect,
+	// which judges a wake word over the device's own voice by it.
+	speaking atomic.Pointer[string]
 
 	// Below here belongs to the run goroutine alone.
 	phase phase
@@ -237,6 +244,12 @@ type nextTurn struct {
 type reply struct {
 	url    string
 	stream *stream
+
+	// audibleAt is about when the reply began to be heard, audio how long it is so far and whole
+	// whether that is all of it: where a wake word cut it is worked out from them (cut.go).
+	audibleAt time.Time
+	audio     time.Duration
+	whole     bool
 }
 
 func newConversation(vs *esphome.VoiceSatellite) *conversation {
@@ -534,12 +547,14 @@ func (c *conversation) handle(e event) {
 			c.speak("")
 		}
 		c.reply.stream.send(e.audio)
+		c.reply.audio += time.Duration(len(e.audio)/2) * time.Second / speaker.VoiceRate
 
 	case evStreamEnd:
 		// Everything Home Assistant is going to send has been sent. What the errand is still holding
 		// back for the cushion plays, and it finishes once that has been heard.
 		if c.phase == phaseReplying && c.reply.stream != nil {
 			c.reply.stream.done()
+			c.reply.whole = true
 		}
 
 	case evPlayed:
@@ -579,6 +594,7 @@ func (c *conversation) handle(e event) {
 
 	case evPlaying:
 		c.disarm()
+		c.audible(e.length)
 
 	case evError:
 		// Two devices in earshot both hear the wake word and both start a turn. Home Assistant keeps the
@@ -672,6 +688,7 @@ func (c *conversation) start(n nextTurn) {
 
 	if c.phase != phaseIdle {
 		slog.Info("conversation interrupted", "was", c.phase, "from", c.slot+1, "slot", slot+1)
+		c.cutOff()
 		c.sound.Silence()
 
 		// Held back before the turn ends, so that ending it does not hand the speaker back to a track
@@ -900,6 +917,9 @@ func (c *conversation) enter(p phase) {
 	c.adapt(p)
 	c.visible.Store(int32(p))
 	c.listeningAgain.Store(p == phaseListening && c.followUp)
+	if p != phaseReplying {
+		c.speaking.Store(nil)
+	}
 	c.shown.Phase = p.String()
 	Changed.Emit(c.shown)
 }

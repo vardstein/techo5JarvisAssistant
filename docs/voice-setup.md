@@ -485,6 +485,24 @@ music is enough. It gets that because four hours of songs with vocals never push
 Other wake words keep their sensitivity over music. For them, **Lower music for a second try**
 turns the music down for a few seconds after a near miss, so the next try gets through.
 
+The same 0.5 holds while the Show is giving an answer, however quiet. Before, it only held while the
+sound was loud, and an Okay Nabu said over a quiet answer scored 0.55 and was not heard. In 170
+answers the Show's own voice never reached 0.5. An answer that has "Nabu" in it gets no help, so the
+Show can't wake itself.
+
+### Cutting an answer off
+
+Say the wake word while the Show is answering and it stops and listens. The conversation keeps the
+whole answer the model wrote, so on its own the model would take it that you heard all of it. With
+Genbu Assistant 1.4.10 and a Show on an encrypted connection, the next turn is told how far the answer
+got before you cut in. The model can then tell "no, the other one" from a new question.
+
+The place is worked out from time: how long the answer had played against how long it is. While it is
+still streaming in, the length isn't known yet, so it's a guess from an average speaking rate and the
+model is told "roughly". Either way it can be a word or two off, like OpenAI's, LiveKit's and Pipecat's
+versions of this. The words go from the Show to Genbu over the encrypted link and are held in memory
+for that one turn. They never go into a sensor, so they don't end up in Home Assistant's history.
+
 ## Music in the same room
 
 The Show turns down what it plays itself while you talk. A separate speaker in the room playing

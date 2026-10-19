@@ -33,7 +33,7 @@ from homeassistant.helpers.event import async_track_time_change, async_track_tim
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from . import picture, race
+from . import picture, race, reply_cut
 from .const import (CHANGED, CONF_SEARXNG, DOMAIN, MANUFACTURERS, NAME, NIGHT_AT, PANEL, RECIPES, SHOW_RECIPE,
                     RACED, WAKE_EVENT, WAKE_RACE, WAKE_VERDICT,
                     STORE_KEY, STORE_VERSION, UPDATE_ENTITY, VOICE_UPDATES)
@@ -58,12 +58,14 @@ def find_shows(hass: HomeAssistant) -> list[Show]:
             if device.manufacturer not in MANUFACTURERS or device.via_device_id:
                 continue
             node = entry.data.get("device_name") or _slug(device.name or "")
-            firmware = committed = status = satellite = key = None
+            firmware = committed = status = satellite = key = cut = None
             for e in er.async_entries_for_device(entities, device.id):
                 if e.domain == "assist_satellite" and not e.disabled_by:
                     satellite = e.entity_id
                 elif e.domain == "sensor" and e.unique_id.endswith("-home_assistant_key") and not e.disabled_by:
                     key = e.entity_id
+                elif e.domain == "event" and e.unique_id.endswith("-reply_cut") and not e.disabled_by:
+                    cut = e.entity_id
                 elif e.domain == "update" and (e.unique_id.endswith("-firmware") or e.entity_id.endswith("_firmware")):
                     firmware = e.entity_id
                 elif e.domain == "sensor" and (e.unique_id.endswith("-committed_version")
@@ -95,6 +97,7 @@ def find_shows(hass: HomeAssistant) -> list[Show]:
                 status=line.state if line and line.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN) else "",
                 updating=bool(up and up.attributes.get("in_progress")),
                 at=round(at) if isinstance(at, (int, float)) else None,
+                cut=cut or "",
             )
     return sorted(shows.values(), key=lambda s: s.node)
 
@@ -200,6 +203,8 @@ class GenbuHouse:
         self.racers: dict[str, str] = {}  # the Shows that race their wake words: device id → wake_verdict
         self._closing: dict[str, asyncio.TimerHandle] = {}  # the races waiting out their window, by phrase
         self.raced: dict = {}  # the last race, as sensor.genbu_wake_race shows it
+        self.cuts = reply_cut.Cuts()  # the replies a wake word cut off, for the turn after (GENBU-250)
+        self._cut_by: dict[str, str] = {}  # the Shows' reply_cut events: entity id → device id
         self._watched: set[str] = set()
         self._player_ids: set[str] = set()
         self._stops: list = []
@@ -233,6 +238,8 @@ class GenbuHouse:
         for event in (EVENT_USER_ADDED, EVENT_USER_UPDATED, EVENT_USER_REMOVED):
             self._stops.append(self.hass.bus.async_listen(event, self._user_changed))
         self._stops.append(self.hass.bus.async_listen(WAKE_EVENT, self._wake))
+        self._stops.append(self.hass.bus.async_listen(EVENT_STATE_CHANGED, self._reply_cut,
+                                                      event_filter=self._a_cut))
         await self.async_refresh()
         # Not waited for: a slow GitHub must not hold Home Assistant's start up.
         self.entry.async_create_background_task(self.hass, self.async_read_release(), f"{DOMAIN} release")
@@ -482,6 +489,8 @@ class GenbuHouse:
         self._watched = ({e for s in self.shows for e in s.watch if e} | {s.key for s in self.shows if s.key}
                          | {UPDATE_ENTITY})
         self._player_ids = {p.entity for p in self.players}
+        # Asked over the encrypted link only, which the Show checks too.
+        self._cut_by = {s.cut: s.device for s in self.shows if s.cut and s.encrypted and s.device}
         changed = self._tidy()
         changed = self.house.see(self.shows, dt_util.utcnow()) or changed
         if changed:
@@ -492,6 +501,47 @@ class GenbuHouse:
         self.entry.async_create_background_task(self.hass, self.keycare.async_look(list(self.shows)),
                                                 f"{DOMAIN} keys")
         self._race_again()
+
+    # A reply cut off by a wake word (GENBU-250, reply_cut.py).
+
+    @callback
+    def _a_cut(self, data) -> bool:
+        """A Show's reply_cut event fired. Not the state it comes back with when the Show or Home Assistant
+        starts: that is an old cut."""
+        old, new = data["old_state"], data["new_state"]
+        return (data["entity_id"] in self._cut_by and old is not None and new is not None
+                and old.state != STATE_UNAVAILABLE and new.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN)
+                and new.state != old.state and new.attributes.get("event_type") == reply_cut.EVENT_TYPE)
+
+    @callback
+    def _reply_cut(self, event: Event) -> None:
+        device = self._cut_by.get(event.data["entity_id"])
+        if device:
+            self.entry.async_create_background_task(self.hass, self._fetch_cut(device), f"{DOMAIN} reply cut")
+
+    async def _fetch_cut(self, device: str) -> None:
+        """Asks the Show for the words heard and keeps them for its next turn."""
+        show = self.show(device)
+        if show is None or not show.encrypted:
+            return
+        action = show_action(list(self.hass.services.async_services_for_domain("esphome")), [show.name, show.node],
+                             True, reply_cut.ACTION)
+        if action is None:
+            return
+        try:
+            async with asyncio.timeout(5):
+                answer = await self.hass.services.async_call("esphome", action, {}, blocking=True,
+                                                             return_response=True)
+        except (HomeAssistantError, TimeoutError) as exc:
+            LOGGER.debug("%s did not answer: %s", action, exc)
+            return
+        if (cut := reply_cut.from_answer(answer, dt_util.utcnow())) is not None:
+            self.cuts.put(device, cut)
+            LOGGER.debug("%s: reply cut off after %d characters", show.name, len(cut.heard))
+
+    def take_cut(self, device: str | None) -> reply_cut.Cut | None:
+        """The cut waiting for this device's turn, once."""
+        return self.cuts.take(device, dt_util.utcnow())
 
     # The wake race (GENBU-224, race.py).
 

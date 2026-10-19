@@ -3,6 +3,7 @@ package voice
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	esphome "github.com/ygelfand/go-esphome-device"
 
@@ -79,7 +80,7 @@ func (t *conversation) play(ctx context.Context, url string) error {
 	}
 	slog.Info("playing announcement", "samples", len(samples))
 
-	t.post(event{kind: evPlaying})
+	t.post(event{kind: evPlaying, length: time.Duration(len(samples)) * time.Second / speaker.VoiceRate})
 	t.speaker.PlayVoice(samples)
 	t.speaker.PlayVoice(make([]int16, speaker.VoiceRate*media.Tail/1000))
 	return nil

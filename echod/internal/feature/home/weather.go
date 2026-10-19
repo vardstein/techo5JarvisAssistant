@@ -37,15 +37,15 @@ func (f *Feature) buildWeatherSelect() {
 	}
 }
 
-// Entities is the weather source select, what the radio is playing and how the Home Assistant key
-// and the Music Assistant token stand, plus the radar source's and the slideshow's own on a device with a screen to show them on.
+// Entities is the weather source select, what the radio is playing, how the Home Assistant key and the
+// Music Assistant token stand and the reply cut off event, plus the radar source's and the slideshow's own on a device with a screen to show them on.
 func (f *Feature) Entities() []esphome.Entity {
 	if hasScreen {
 		return []esphome.Entity{f.weatherSel, f.radarSel, f.alertsSw, f.cameraSoundSw, f.slideshowSel, f.slideshowOverlaySel, f.slideshowIdleNum,
 			f.slideshowEveryNum, f.slideshowShuffleSw, f.slideshowSubfoldersSw, f.slideshowFolderTxt,
-			f.radioStationTxt, f.radioArtistTxt, f.radioTitleTxt, f.keyTxt, f.maKeyTxt}
+			f.radioStationTxt, f.radioArtistTxt, f.radioTitleTxt, f.keyTxt, f.maKeyTxt, f.replyCutEv}
 	}
-	return []esphome.Entity{f.weatherSel, f.radioStationTxt, f.radioArtistTxt, f.radioTitleTxt, f.keyTxt, f.maKeyTxt}
+	return []esphome.Entity{f.weatherSel, f.radioStationTxt, f.radioArtistTxt, f.radioTitleTxt, f.keyTxt, f.maKeyTxt, f.replyCutEv}
 }
 
 // weatherOptions is what the select offers: none, Home Assistant's forecast (unless Home Assistant

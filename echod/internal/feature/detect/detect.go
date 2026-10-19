@@ -3,6 +3,7 @@ package detect
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -98,9 +99,34 @@ func thresholdFor(slot int, base func(int) float64, stop float64, masking bool) 
 var playbackWords = map[string]bool{"okay_nabu": true}
 
 // heardThrough is whether the word in a slot is judged against NearMiss: a wake word measured safe over
-// music, while the device's own playback masks it. The stop word has its own allowance (thresholdFor).
-func heardThrough(slot int, id string, masking bool) bool {
-	return masking && slot != StopSlot && playbackWords[id]
+// music, while the device's own playback masks it or its own reply is being heard. The stop word has
+// its own allowance (thresholdFor).
+func heardThrough(slot int, id string, masking, replying bool) bool {
+	return (masking || replying) && slot != StopSlot && playbackWords[id]
+}
+
+// overOwnReply is whether the device is saying a reply that does not have the word in it.
+//
+// The reply gets the same allowance as music (GENBU-250). Its loopback is often too quiet to count as
+// masking, so a wake word said over it was judged against the full cutoff while the device's own voice
+// pulled its score down, and the reply only stopped once it was done. On genbuShow5: Okay Nabu over a
+// reply peaked at 0.55 against 0.80, and the same word straight after it scored 0.94. In 170 replies on
+// three Shows the device's own voice never scored 0.5 on any word.
+//
+// A reply that says the word itself gets nothing: that is the one way the device could wake itself
+// (Alexa versus Alexa, AsiaCCS 2022, was an Echo obeying its own speaker). The distinctive part of the
+// id is enough: "nabu" for okay_nabu.
+func overOwnReply(id string, text string, replying bool) bool {
+	if !replying {
+		return false
+	}
+	word := id[strings.LastIndex(id, "_")+1:]
+	return word != "" && !strings.Contains(text, word)
+}
+
+func ownReply(id string) bool {
+	text, replying := voice.Get().OwnReply()
+	return overOwnReply(id, text, replying)
 }
 
 func newDetect() *Detect {
@@ -114,7 +140,9 @@ func newDetect() *Detect {
 	// The wake words only, and not over the device's own playback, for the same reason they get no
 	// slack there: the residual of its own songs comes close often enough to be heard twice.
 	e.SecondTry = func(slot int) bool { return slot != StopSlot && !mic.Get().Masking() }
-	e.Playback = func(slot int, id string) bool { return heardThrough(slot, id, mic.Get().Masking()) }
+	e.Playback = func(slot int, id string) bool {
+		return heardThrough(slot, id, mic.Get().Masking(), ownReply(id))
+	}
 
 	e.OnDetect = func(slot int) {
 		// A call has the microphones and the speaker. The far end talking through the speaker is not

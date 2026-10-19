@@ -188,6 +188,10 @@ type Feature struct {
 	keyTxt *esphome.TextSensor
 	// maKeyTxt says how its Music Assistant token stands (key.go).
 	maKeyTxt *esphome.TextSensor
+
+	// replyCutEv says a reply was cut off by a wake word, and replyCut holds where (reply_cut.go).
+	replyCutEv *esphome.Event
+	replyCut   replyCut
 }
 
 // forecastEvery is how often the forecast is refreshed while there is a weather entity.
@@ -257,6 +261,7 @@ func Get() *Feature {
 		shared.buildSlideshowSelect()
 		shared.buildRadioSensors()
 		shared.buildKeySensor()
+		shared.buildReplyCut()
 		hastate.Get().Changed.Listen(shared.stateChanged)
 		media.Get().OnPlay.Listen(shared.played)
 		media.Get().OnEnd.Listen(shared.ended)
@@ -452,6 +457,7 @@ func (f *Feature) locationAction() *esphome.Action {
 func (f *Feature) Actions() []*esphome.Action {
 	actions := append(f.cameraActions(), f.accessAction(), musicAssistantAction())
 	actions = append(actions, keyActions()...)
+	actions = append(actions, f.replyCutAction())
 	if hasScreen {
 		actions = append(actions, f.slideshowAction(), f.calendarAction(), f.locationAction())
 	}

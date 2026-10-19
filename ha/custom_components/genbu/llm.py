@@ -9,7 +9,10 @@ never see it.
 genbu__firmware answers questions about the Shows' software and does what the house's update card does:
 installs a waiting update or goes back to the version before, after asking, skips an update, picks the
 release channel and turns Install at night on or off. A Show with Updates by voice on gets it, and so does
-an admin typing in the app; another voice device never does. See docs/genbu-assistant.md §1 and §4."""
+an admin typing in the app; another voice device never does. See docs/genbu-assistant.md §1 and §4.
+
+And when a wake word cut the Show's last reply off, the turn after it is told how much of the reply was
+heard (reply_cut.py, GENBU-250); that comes with no tool."""
 
 from __future__ import annotations
 
@@ -36,6 +39,7 @@ except ImportError:
     import voluptuous as vol
 
 from . import recipe as rec
+from . import reply_cut
 from .const import DOMAIN, NEW_RECIPE, RECIPES, SHOW_RECIPE, UPDATE_ENTITY, VOICE_UPDATES
 from .house import CHANNELS, Show, channel_of, newer, stage, valid
 
@@ -85,7 +89,9 @@ def async_get_tools(hass: HomeAssistant, llm_context: llm.LLMContext, api_id: st
     if hub.shows and (hub.switched_on(show, VOICE_UPDATES) if show else llm_context.device_id is None):
         tools.append(FirmwareTool(show))
         prompt.append(FIRMWARE_PROMPT[_lang(llm_context)])
-    if not tools:
+    if show is not None and (cut := hub.take_cut(show.device)) is not None:
+        prompt.append(reply_cut.prompt(cut, _lang(llm_context)))
+    if not prompt:
         return None
     return LLMTools(tools=tools, prompt=" ".join(prompt))
 

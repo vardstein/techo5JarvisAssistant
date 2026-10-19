@@ -105,6 +105,7 @@ var registered = []string{
 	"radio_temperature",
 	"radio_title",
 	"reply_buffer_1",
+	"reply_cut",
 	"reply_delivery_1",
 	"replying_effect_1",
 	"restart",
