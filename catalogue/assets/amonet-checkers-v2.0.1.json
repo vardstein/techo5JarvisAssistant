@@ -7,6 +7,10 @@
   "size": 63836775,
   "source": "XDA thread 4762900 (R0rt1z2), browser download (XDA's CDN refuses scripts)",
   "manual": true,
+  "upstream": {
+    "repo": "R0rt1z2/amonet",
+    "branches": ["mt8163-echo-show", "mt8163-checkers"]
+  },
   "kaeru": "amonet/bin/checkers-kaeru.bin",
   "wordmark": {
     "offset": 335308,

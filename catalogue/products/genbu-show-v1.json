@@ -6,6 +6,10 @@
     "checkers",
     "cronos"
   ],
+  "first_boards": [
+    "crown",
+    "checkers"
+  ],
   "assistant": {
     "wake_word": "okay_nabu",
     "wake_fallbacks": [

@@ -53,6 +53,7 @@ there. Code never reads it. The review comments that used to sit next to the pin
   "id": "genbu-show-v1",
   "version": 1,
   "boards": ["crown", "checkers", "cronos"],
+  "first_boards": ["crown", "checkers"],
   "assistant": { "...": "..." },
   "display": { "...": "..." },
   "security": { "...": "..." },
@@ -61,7 +62,11 @@ there. Code never reads it. The review comments that used to sit next to the pin
 ```
 
 The product lists the boards it ships on, and boards never point back at it. A board no product lists is
-an error. `boards` order is the order the installer offers them in. The four blocks are the product
+an error. `boards` order is the order the installer offers them in. `first_boards` are the boards the
+first release named. Shows from then refuse a manifest or rootfs marker naming any other board, so every
+later board reads a signed `manifest-<board>.json` of its own and sits in the marker's `more_boards`
+(`catalogue.first_boards()`, `later_boards()`, GENBU-176). Moving a board into `first_boards` would hand
+older Shows a manifest they refuse, so it never happens for a board that shipped after them. The four blocks are the product
 settings that `profiles/genbu-show-v1.json` held; the checker only makes sure each is a non-empty object.
 The id is also what the rootfs marker calls "product" (`install.PROFILE_ID`). `release-jarvis-show.sh`
 reads it from the catalogue, and `install-show.py` uses `techo5lib.JARVIS_SHOW_PRODUCT`. Three places
@@ -115,6 +120,7 @@ The checker refuses an identity value that two boards share.
   "size": 44233517,
   "source": "XDA thread 4762900 (R0rt1z2), needs an XDA login",
   "manual": true,
+  "upstream": { "repo": "R0rt1z2/amonet", "branches": ["mt8163-echo-show", "mt8163-crown"] },
   "kaeru": "amonet/bin/crown-kaeru.bin",
   "wordmark": {
     "offset": 288716, "length": 481792, "stock": "6a717f0f...",
@@ -132,6 +138,9 @@ The checker refuses an identity value that two boards share.
 - `members` (amonet zips only) pins files inside the zip by their path in the zip. A member only gets its
   own entity if something uses it outside that zip. Member pins need the zip itself pinned.
 - `kaeru` names the kaeru file in the zip. It's a path, not a pin.
+- `upstream` (amonet zips, required) is where the zip's open-source parts live. The fetcher compares a
+  new zip file by file against every board's branches before anyone pins it. All amonet assets name the
+  same repo; the checker refuses two.
 - `wordmark` (amonet zips only) is kaeru's boot logo slot: where it is (`offset`), how much of kaeru is
   checked (`length`), and kaeru's sha256 as the zip ships it (`stock`) and with each logo written in
   (`logos`, `openjade` or `techo5`). `openjade_large` is crown's bigger OpenJade picture: its slot file
@@ -228,15 +237,17 @@ Every change that reads a new field adds its row here in the same change.
 | `install.py` | product `id` (`PROFILE_ID`), product `boards`, `assets.boot.sha256` |
 | `recovery.py` | `assets.amonet.members["amonet/bin/twrp.img"]`; `identity.twrp_device` is checked equal to the board name by the test, the code still compares with the name |
 | `unlock.py` | crown's `assets.amonet.members` for the six unlock files; refuses to import if crown loses one |
-| `assets.py` | every board's `assets.*`: `file`, `url`, `source`, `manual`, `sha256`, `size` |
+| `assets.py` | every board's `assets.*`: `file`, `url`, `source`, `manual`, `sha256`, `size`; `assets.amonet.upstream` (`AMONET_SOURCE`, for the fetcher's file-by-file compare) |
 | `boot_logo.py` (`KAERU`) | `assets.amonet.wordmark`: `offset`, `length`, `stock`, `logos.openjade`, `openjade_large` |
 | `install-show.py` (`LOGO_KAERU`) | `assets.amonet.wordmark`: `offset`, `length`, `stock`, `logos.techo5` |
+| `install-show.py` (`BOARDS`, `--jarvis-show-board`) | product `boards`; board `model` up to " / " |
+| `release-jarvis-show.sh`, `release_channels.py` | product `id`, `first_boards` and the boards after them |
 | `preflight.py`, `amonet_upgrade.py`, `flow.py`, `jarvis-show.py`, `fetch-show-assets.py` | profiles and `supported_boards()` through `catalogue.py` |
 | `validate-jarvis-show.sh` | runs `catalogue.py check` |
 | `tests/test_board_catalogue.py` | everything (parity against the d448873e baseline) |
 
 The catalogue loads once per process, on first use. A broken catalogue stops the installer before any
-device is touched. `jarvis-show.py`, `jarvis-crown.py`, `fetch-show-assets.py` and `install-show.py` load it first thing
+device is touched. `jarvis-show.py`, `jarvis-crown.py`, `fetch-show-assets.py`, `install-show.py` and `release_channels.py` load it first thing
 (`catalogue.load_or_exit()`), so every command, read-only ones too, stops with one line naming the file
 and what is wrong, not a traceback (GENBU-173). All or nothing on purpose: one rule, no half-loaded
 board list.
@@ -326,13 +337,15 @@ board fact of their own:
 
 - `amonet_upgrade.py` `TARGETS`: the partition map, checkers only ("Only Checkers has been mapped on a
   real unit"). Partition layout is a board fact.
-- `dashcast/serve.go` geometry, `manifest.go` board list, `install-show.py` `BOARDS`.
-- `techo5lib.py` `JARVIS_SHOW_PRODUCT`, `JARVIS_SHOW_BOARDS`, `OWN_MANIFEST_BOARDS`.
-- `tools/linux/mkrootfs.sh:130-132`, the rootfs marker: product, `boards` crown and checkers,
-  `more_boards` cronos. The split is on purpose (older Shows refuse a marker naming a board they don't
-  know), so it can't simply be generated from the product's list.
-- `release-jarvis-show.sh:128` and `live-acceptance.py:133`, `:174`: crown and checkers only.
-- `assets.py` `AMONET_SOURCE`: the upstream repo and branch names per board.
+- `live-acceptance.py` J38: the display gate asks for crown and checkers only (GENBU-176, open).
+
+These can't read the catalogue, so they keep their own copy and a test fails when it disagrees
+(GENBU-176, GENBU-177): `dashcast/serve.go` geometry and echod's `manifest.go` board lists
+(`supportedBoards`, `ownManifestBoards`) in `test_show_board_lists.py`; `techo5lib.py`
+`JARVIS_SHOW_BOARDS` and `OWN_MANIFEST_BOARDS` there too; `mkrootfs.sh`'s rootfs marker (`boards` =
+`first_boards`, `more_boards` = the rest) in `test_release_contract.py`. `release-jarvis-show.sh` reads
+`first_boards`, but making the manifest of a later board (its `--<board>-boot` option and file names) is
+still written out per board; the same test fails if a later board has no such section.
 
 ## Migration, in order
 

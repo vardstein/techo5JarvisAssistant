@@ -7,6 +7,10 @@
   "size": 44233517,
   "source": "XDA thread 4762900 (R0rt1z2), needs an XDA login",
   "manual": true,
+  "upstream": {
+    "repo": "R0rt1z2/amonet",
+    "branches": ["mt8163-echo-show", "mt8163-crown"]
+  },
   "kaeru": "amonet/bin/crown-kaeru.bin",
   "wordmark": {
     "offset": 288716,

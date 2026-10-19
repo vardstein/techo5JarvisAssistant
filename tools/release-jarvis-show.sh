@@ -119,16 +119,19 @@ fi
 
 # The product id comes from the board catalogue (catalogue/products/), like the installer's (GENBU-174).
 PRODUCT=$(PYTHONPATH="$ROOT/tools" python3 -c 'from jarvis_crown.catalogue import load_or_exit; print(load_or_exit().product()["id"])')
+# So do the boards the first release named, which share manifest.json (GENBU-176).
+FIRST=$(PYTHONPATH="$ROOT/tools" python3 -c 'from jarvis_crown.catalogue import first_boards; print(*first_boards())')
 
-# Rootfs has one shared product marker and must explicitly support both first-generation boards; cronos
+# Rootfs has one shared product marker and must explicitly support every first-release board; cronos
 # is optional and comes from "more_boards". The last line printed says whether it is there.
 rootfs_sha=$(sha256sum "$ROOTFS" | awk '{print $1}')
 cronos=$(PYTHONPATH="$ROOT/tools" python3 - "$ROOTFS" "$rootfs_sha" "$VERSION" <<'PY'
 import pathlib, sys
+from jarvis_crown.catalogue import first_boards
 from jarvis_crown.install import PROFILE_ID, verify_jarvis_rootfs
 path = pathlib.Path(sys.argv[1])
 sha = sys.argv[2]
-for board in ("crown", "checkers"):
+for board in first_boards():
     ident = verify_jarvis_rootfs(path, sha, board=board)
     if ident.product != PROFILE_ID:
         raise SystemExit(f"rootfs is not a shared {PROFILE_ID} image")
@@ -146,8 +149,6 @@ from="https://github.com/$REPO/releases/download/$VERSION"
 mk=(run ./cmd/mkmanifest
   -version "$VERSION"
   -product "$PRODUCT"
-  -board crown
-  -board checkers
   -title "Jarvis Show $VERSION"
   -notes "$NOTES"
   -release-url "https://github.com/$REPO/releases/tag/$VERSION"
@@ -156,6 +157,7 @@ mk=(run ./cmd/mkmanifest
   -rootfs-arm "$OUT/jarvis-show-rootfs-$VERSION.tar.gz"
   -out "$OUT/manifest.json"
   -sign-key "$SIGN_KEY")
+for board in $FIRST; do mk+=(-board "$board"); done
 for asset in "${assets[@]}"; do mk+=(-asset "$asset"); done
 (cd "$ROOT/echod" && go "${mk[@]}")
 if [ "$cronos" = cronos ]; then

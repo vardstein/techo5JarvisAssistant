@@ -88,7 +88,8 @@ var arch = runtime.GOARCH + archSuffix
 var supportedBoards = map[string]bool{"crown": true, "checkers": true, "cronos": true}
 
 // ownManifestBoards came after the first release: each has its own signed manifest-<board>.json, so the
-// manifest.json older crown and checkers Shows read never names a board they don't know.
+// manifest.json older crown and checkers Shows read never names a board they don't know. It must be the
+// product's boards minus its first_boards in catalogue/products/ (tests/test_show_board_lists.py).
 var ownManifestBoards = map[string]bool{"cronos": true}
 
 // ManifestName is the signed manifest this board reads in a release: manifest.json, or

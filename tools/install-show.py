@@ -55,7 +55,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from jarvis_crown.catalogue import load_or_exit  # noqa: E402
 
 load_or_exit()  # GENBU-173: a broken catalogue stops here, in plain words
-from techo5lib import (CONSOLE_TECHO5, JARVIS_SHOW_BOARDS, JARVIS_SHOW_PRODUCT, Adb, Console, Fastboot, Release, ask_name, ask_wifi,  # noqa: E402
+from techo5lib import (CONSOLE_TECHO5, JARVIS_SHOW_PRODUCT, Adb, Console, Fastboot, Release, ask_name, ask_wifi,  # noqa: E402
                        check_serial_access, confirm, console_hint, default_dir, fail, fetch_json, md5, need,
                        new_api_key, note, pick_unit, run_main, sha512_crypt, step, valid_api_key, wait_for,
                        wifi_conf, write_private)
@@ -71,15 +71,12 @@ KERNEL_RELEASE = '4.9.337-g8d928c5176cc'
 WIFI_MODULE = 'vendor/lib/modules/mt76x8_wlan.ko'
 BT_MODULE = 'vendor/lib/modules/mt76x8_bt.ko'
 
-# The boards this installs on, as `getprop ro.product.device` reports them. They share the SoC, the
-# kernel commit, the partition numbers this script writes (MISC p8, boot p9, system p12) and the
+# The boards this installs on, as `getprop ro.product.device` reports them, with their model from the
+# board catalogue ('Echo Show 8 1st gen / C7H6N3' shows as 'Echo Show 8 1st gen'). They share the SoC,
+# the kernel commit, the partition numbers this script writes (MISC p8, boot p9, system p12) and the
 # daemon binary; they differ in the panel, the microphone array, the speaker codec and the mute
 # driver, which the daemon settles at run time from the board name in the kernel command line.
-BOARDS = {
-    'cronos': 'Echo Show 5 2nd gen',
-    'checkers': 'Echo Show 5 1st gen',
-    'crown': 'Echo Show 8 1st gen',
-}
+BOARDS = {b: catalogue.default().resolve(b)['model'].split(' / ')[0] for b in catalogue.supported_boards()}
 
 
 def root_password_hash(path):
@@ -530,7 +527,7 @@ def main():
     ap.add_argument('--lineage-zip', help='install from TWRP: the LineageOS 18.1 zip for this board, installed only for its drivers')
     ap.add_argument('--jarvis-show-prestaged', action='store_true', help=argparse.SUPPRESS)
     ap.add_argument('--jarvis-show-stage-lineage-only', action='store_true', help=argparse.SUPPRESS)
-    ap.add_argument('--jarvis-show-board', choices=JARVIS_SHOW_BOARDS, help=argparse.SUPPRESS)
+    ap.add_argument('--jarvis-show-board', choices=catalogue.supported_boards(), help=argparse.SUPPRESS)
     ap.add_argument('--jarvis-show-version', help=argparse.SUPPRESS)
     # Legacy private flags retained only so an older Crown wrapper fails safely into the same path.
     ap.add_argument('--jarvis-crown-prestaged', action='store_true', help=argparse.SUPPRESS)
@@ -621,8 +618,8 @@ def main():
     elif a.jarvis_show_prestaged:
         if dev != a.jarvis_show_board:
             fail('--jarvis-show-prestaged was pinned for %s, but TWRP reports %s' % (a.jarvis_show_board, dev))
-        if dev not in JARVIS_SHOW_BOARDS:
-            fail('--jarvis-show-prestaged supports %s only, got %s' % ('/'.join(JARVIS_SHOW_BOARDS), dev))
+        if dev not in catalogue.supported_boards():
+            fail('--jarvis-show-prestaged supports %s only, got %s' % ('/'.join(catalogue.supported_boards()), dev))
         note('%s in TWRP; verified LineageOS vendor tree will be consumed without formatting/installing again' % dev)
     else:
         kr = adb.sh('uname -r')

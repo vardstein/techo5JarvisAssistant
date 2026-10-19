@@ -7,6 +7,10 @@
   "size": 44403627,
   "source": "XDA thread 4772596 (R0rt1z2), browser download (XDA's CDN refuses scripts)",
   "manual": true,
+  "upstream": {
+    "repo": "R0rt1z2/amonet",
+    "branches": ["mt8163-echo-show", "mt8163-cronos"]
+  },
   "kaeru": "amonet/bin/cronos-kaeru.bin",
   "wordmark": {
     "offset": 335736,

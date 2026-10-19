@@ -33,9 +33,16 @@ class Asset:
     manual: bool = False  # behind a login; downloaded by hand from url, then picked up locally
 
 
+def _amonet_source() -> tuple[str, tuple[str, ...]]:
+    ups = [catalogue.default().resolve(b)["assets"]["amonet"]["upstream"] for b in catalogue.supported_boards()]
+    branches = dict.fromkeys(branch for up in ups for branch in up["branches"])
+    return ups[0]["repo"], tuple(branches)
+
+
 # Where the open-source parts of each Amonet package live, so a downloaded zip can be compared file by
-# file before anyone pins it. The XDA threads link mt8163-echo-show; the per-board branches came first.
-AMONET_SOURCE = ("R0rt1z2/amonet", ("mt8163-echo-show", "mt8163-checkers", "mt8163-crown", "mt8163-cronos"))
+# file before anyone pins it: every board's amonet asset's upstream, from the board catalogue (GENBU-176).
+# The XDA threads link mt8163-echo-show; the per-board branches came first.
+AMONET_SOURCE = _amonet_source()
 
 KIND_ORDER = ("lineage", "boot", "amonet")  # the order the fetcher works through them
 

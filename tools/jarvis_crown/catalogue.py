@@ -44,6 +44,7 @@ _ID = re.compile(r"^[a-z0-9][a-z0-9._-]*$", re.IGNORECASE)
 _BOARD_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _HEX = re.compile(r"^(?:[0-9a-f]{2})+$")
+_REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _MEMBER = re.compile(r"^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$")
 # Product blocks the catalogue carries but does not own the inside of. Nothing in the installer reads
 # them; they are kept here so the product has one file, and checked only for being non-empty objects.
@@ -110,7 +111,7 @@ def _check_wordmark(where: str, w: Any) -> None:
 
 def _check_asset(where: str, a: Any) -> None:
     _keys(where, a, {"id", "kind", "file", "url", "source", "manual"},
-          {"sha256", "size", "kaeru", "wordmark", "members", "notes"})
+          {"sha256", "size", "kaeru", "wordmark", "members", "upstream", "notes"})
     _str(f"{where}#/id", a["id"], _ID)
     if a["kind"] not in ASSET_KINDS:
         raise CatalogueError(f"{where}#/kind: {a['kind']!r} not in {sorted(ASSET_KINDS)}")
@@ -130,6 +131,14 @@ def _check_asset(where: str, a: Any) -> None:
         _int(f"{where}#/size", a["size"])
     if a["kind"] == "amonet":
         _str(f"{where}#/kaeru", a.get("kaeru"), _MEMBER)
+        # Where its open-source parts live, so the fetcher can compare a new zip file by file.
+        up = a.get("upstream")
+        _keys(f"{where}#/upstream", up, {"repo", "branches"})
+        _str(f"{where}#/upstream/repo", up["repo"], _REPO)
+        if not isinstance(up["branches"], list) or not up["branches"]:
+            raise CatalogueError(f"{where}#/upstream/branches: expected a non-empty list of branch names")
+        for i, branch in enumerate(up["branches"]):
+            _str(f"{where}#/upstream/branches/{i}", branch, _ID)
         if "members" in a:
             if "sha256" not in a:
                 raise CatalogueError(f"{where}#/members: member pins need the zip itself pinned")
@@ -140,8 +149,8 @@ def _check_asset(where: str, a: Any) -> None:
                 _str(f"{where}#/members/{path}", digest, _SHA256)
         if "wordmark" in a:
             _check_wordmark(f"{where}#/wordmark", a["wordmark"])
-    elif "kaeru" in a or "wordmark" in a or "members" in a:
-        raise CatalogueError(f"{where}: kaeru, wordmark and members belong to amonet zips only")
+    elif {"kaeru", "wordmark", "members", "upstream"} & set(a):
+        raise CatalogueError(f"{where}: kaeru, wordmark, members and upstream belong to amonet zips only")
     if not a["file"].startswith(a["id"]) or a["file"][len(a["id"]):] not in (".zip", ".img"):
         raise CatalogueError(f"{where}: file must be <id>.zip or <id>.img")
 
@@ -175,7 +184,7 @@ def _check_board(where: str, b: Any, assets: dict[str, dict]) -> None:
 
 
 def _check_product(where: str, p: Any, boards: dict[str, dict]) -> None:
-    _keys(where, p, {"id", "version", "boards"} | PRODUCT_BLOCKS)
+    _keys(where, p, {"id", "version", "boards", "first_boards"} | PRODUCT_BLOCKS)
     _str(f"{where}#/id", p["id"], _BOARD_ID)
     _int(f"{where}#/version", p["version"])
     if not isinstance(p["boards"], list) or not p["boards"]:
@@ -188,6 +197,16 @@ def _check_product(where: str, p: Any, boards: dict[str, dict]) -> None:
         # The installer finds a unit in fastboot first, so a board it installs needs that key.
         if "fastboot_product" not in boards[ref]["identity"]:
             raise CatalogueError(f"{where}#/boards/{i}: {ref} has no identity.fastboot_product")
+    # The boards the first release named. Shows from then refuse a manifest or rootfs marker naming any
+    # other, so a later board reads a signed manifest of its own and sits in the marker's more_boards.
+    first = p["first_boards"]
+    if not isinstance(first, list) or not first:
+        raise CatalogueError(f"{where}#/first_boards: expected a non-empty list of board ids")
+    if len(set(map(str, first))) != len(first):
+        raise CatalogueError(f"{where}#/first_boards: a board is listed twice")
+    for i, ref in enumerate(first):
+        if ref not in p["boards"]:
+            raise CatalogueError(f"{where}#/first_boards/{i}: {ref!r} is not one of the product's boards")
     for block in PRODUCT_BLOCKS:
         if not isinstance(p[block], dict) or not p[block]:
             raise CatalogueError(f"{where}#/{block}: expected a non-empty object")
@@ -223,6 +242,9 @@ class Catalogue:
         unused = sorted(set(assets) - used)
         if unused:
             raise CatalogueError(f"assets no board uses: {unused}")
+        repos = {a["upstream"]["repo"] for a in assets.values() if a["kind"] == "amonet"}
+        if len(repos) > 1:
+            raise CatalogueError(f"amonet assets name different upstream repos: {sorted(repos)}")
         boards = {k: v for k, (_, v) in self._boards.items()}
         for name, (file, data) in self._products.items():
             _check_product(self._rel(file), data, boards)
@@ -348,6 +370,17 @@ def load_or_exit() -> Catalogue:
 def supported_boards() -> tuple[str, ...]:
     """The product's boards, in the order the product lists them."""
     return tuple(default().product()["boards"])
+
+
+def first_boards() -> tuple[str, ...]:
+    """The boards the first release named, which every Show already knows."""
+    return tuple(default().product()["first_boards"])
+
+
+def later_boards() -> tuple[str, ...]:
+    """The product's other boards, in its order: each reads manifest-<board>.json (GENBU-176)."""
+    first = first_boards()
+    return tuple(b for b in supported_boards() if b not in first)
 
 
 def _or_list(items: tuple[str, ...]) -> str:

@@ -14,7 +14,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
-from jarvis_crown.catalogue import profile_for_board, supported_boards  # noqa: E402
+from jarvis_crown.catalogue import later_boards, profile_for_board, supported_boards  # noqa: E402
 import techo5lib  # noqa: E402
 
 
@@ -43,6 +43,11 @@ def echod_update_boards() -> set[str]:
     return set(re.findall(r'"([a-z0-9-]+)":\s*true', block))
 
 
+def echod_own_manifest_boards() -> set[str]:
+    block = go_block(ROOT / "echod" / "internal" / "update" / "manifest.go", "var ownManifestBoards = map[string]bool{")
+    return set(re.findall(r'"([a-z0-9-]+)":\s*true', block))
+
+
 class ShowBoardListsTest(unittest.TestCase):
     def setUp(self):
         self.boards = set(supported_boards())
@@ -60,6 +65,13 @@ class ShowBoardListsTest(unittest.TestCase):
 
     def test_install_show_lists_the_same_boards(self):
         self.assertEqual(set(techo5lib.JARVIS_SHOW_BOARDS), self.boards)
+
+    def test_later_boards_read_their_own_manifest(self):
+        # GENBU-176: the catalogue's first_boards share manifest.json; echod and techo5lib can't read it.
+        later = set(later_boards())
+        self.assertIn("cronos", later)
+        self.assertEqual(echod_own_manifest_boards(), later)
+        self.assertEqual(set(techo5lib.OWN_MANIFEST_BOARDS), later)
 
     def test_dashcast_start_check_uses_the_size_table(self):
         main = (ROOT / "dashcast" / "main.go").read_text(encoding="utf-8")

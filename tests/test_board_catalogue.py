@@ -339,6 +339,24 @@ class CatalogueValidatorTest(unittest.TestCase):
     def test_product_bad_version(self):
         self.broken("products/genbu-show-v1.json", lambda d: d.update(version=0))
 
+    def test_first_boards(self):
+        product = "products/genbu-show-v1.json"
+        self.assertIn("missing", self.broken(product, lambda d: d.pop("first_boards")))
+        self.assertIn("non-empty", self.broken(product, lambda d: d.update(first_boards=[])))
+        self.assertIn("twice", self.broken(product, lambda d: d["first_boards"].append("crown")))
+        self.assertIn("not one of the product's boards",
+                      self.broken(product, lambda d: d["first_boards"].append("laguna")))
+
+    def test_upstream(self):
+        crown = "assets/amonet-crown-v2.0.1.json"
+        self.assertIn("upstream: expected an object", self.broken(crown, lambda d: d.pop("upstream")))
+        self.assertIn("wrong form", self.broken(crown, lambda d: d["upstream"].update(repo="amonet")))
+        self.assertIn("non-empty", self.broken(crown, lambda d: d["upstream"].update(branches=[])))
+        self.assertIn("different upstream repos",
+                      self.broken(crown, lambda d: d["upstream"].update(repo="someone/amonet")))
+        self.assertIn("amonet zips only", self.broken("assets/techo5-boot-v0.7.16.json",
+                                                       lambda d: d.update(upstream={})))
+
     def test_two_products_refuse_to_pick(self):
         root = self.copy()
         shutil.copy(root / "products" / "genbu-show-v1.json", root / "products" / "genbu-show-v2.json")
@@ -364,7 +382,7 @@ class BrokenCatalogueStopsPlainlyTest(unittest.TestCase):
         board.write_text(json.dumps(data))
         for tool, args in (("jarvis-show.py", ["--help"]), ("jarvis-show.py", ["preflight", "--board", "crown"]),
                            ("jarvis-crown.py", ["--help"]), ("fetch-show-assets.py", ["--help"]),
-                           ("install-show.py", ["--help"])):
+                           ("install-show.py", ["--help"]), ("release_channels.py", ["--help"])):
             with self.subTest(tool=tool, args=args):
                 run = subprocess.run([sys.executable, str(tmp / "tools" / tool), *args], cwd=tmp,
                                      capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
@@ -399,6 +417,34 @@ class OneWordmarkSlotTest(unittest.TestCase):
         self.assertEqual(sorted(show.LOGO_KAERU), ["cronos", "crown"])
         self.assertEqual(boot_logo.KAERU["crown"].large.code_at, 63488)
         self.assertIsNone(boot_logo.KAERU["checkers"].large)
+
+
+class BoardListsReadTheCatalogueTest(unittest.TestCase):
+    """GENBU-176: the board lists that used to be typed out in the tools come from the catalogue now, and
+    give what the typed ones did at 8148528f. Places that can't read it are checked against it in
+    test_show_board_lists.py and test_release_contract.py."""
+
+    def test_first_and_later_boards(self):
+        self.assertEqual(catalogue.first_boards(), ("crown", "checkers"))
+        self.assertEqual(catalogue.later_boards(), ("cronos",))
+
+    def test_install_show_boards(self):
+        spec = importlib.util.spec_from_file_location("install_show", ROOT / "tools" / "install-show.py")
+        show = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(show)
+        self.assertEqual(show.BOARDS, {"cronos": "Echo Show 5 2nd gen", "checkers": "Echo Show 5 1st gen",
+                                       "crown": "Echo Show 8 1st gen"})
+        self.assertEqual(list(show.BOARDS), list(catalogue.supported_boards()))
+
+    def test_release_channels_carry_each_later_board(self):
+        import release_channels
+        self.assertEqual(release_channels.EXTRA, ("manifest-cronos.json", "manifest-cronos.json.sig"))
+
+    def test_amonet_source(self):
+        repo, branches = assets.AMONET_SOURCE
+        self.assertEqual(repo, "R0rt1z2/amonet")
+        self.assertEqual(set(branches), {"mt8163-echo-show", "mt8163-checkers", "mt8163-crown", "mt8163-cronos"})
+        self.assertEqual(branches[0], "mt8163-echo-show")
 
 
 class ProductIdSpelledOnceTest(unittest.TestCase):
