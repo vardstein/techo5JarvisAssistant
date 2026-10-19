@@ -198,6 +198,21 @@
           "name_taken": "Beide Anmeldenamen für den Benutzer des Shows gehören schon jemand anderem."
         }
       }
+    },
+    "leaving": {
+      "title": "{name} ist gelöscht, aber noch nicht zurückgesetzt",
+      "description": "{name} wurde in Home Assistant gelöscht. Seine Benutzer und Automationen sind schon weg, aber die Show selbst hat ihre Einstellungen noch: Sie ist in ESPHome ausgeschaltet, offline oder hat nicht geantwortet. Genbu setzt sie zurück und entfernt den Rest von selbst, sobald sie wieder da und eingeschaltet ist.\n\nWenn {name} für immer weg ist oder du sie schon an ihrem eigenen Bildschirm zurückgesetzt hast, kannst du sie hier vergessen.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "{name} ohne Zurücksetzen vergessen",
+            "description": "Genbu entfernt den ESPHome-Eintrag von {name} und alles, was sonst noch übrig ist, ohne die Show zurückzusetzen. Taucht sie wieder auf, hat sie ihre Einstellungen noch: Setz sie dann an ihrem eigenen Bildschirm zurück."
+          }
+        },
+        "abort": {
+          "no_show": "Diese Show wartet nicht mehr darauf, entfernt zu werden."
+        }
+      }
     }
   }
 }

@@ -740,6 +740,12 @@ has the default given here.
 python3 tools/jarvis-show.py --remove-show --name "Kitchen Show"
 ```
 
+With Genbu 1.4.16 or later, **Delete** on the Show's Genbu device in Home Assistant does the same
+without this computer, and resets the Show over its ESPHome link instead of SSH
+([Deleting a Show in Home Assistant](update-leader.md#deleting-a-show-in-home-assistant)). The run here
+is for a house without Genbu or a Show Home Assistant can't reach, and it also lists the SSH key on this
+computer and the router rules for the Show, which Home Assistant doesn't see.
+
 It needs a Home Assistant admin, and a Music Assistant admin for the Show's user and player there
 (without one it says so and leaves Music Assistant alone). First it lists what goes and what stays.
 Then it asks whether to reset the Show first, and if so, whether it keeps its Wi-Fi (`--reset-show` and

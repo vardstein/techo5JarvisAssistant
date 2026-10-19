@@ -443,7 +443,10 @@ userdata (downloads and the like) isn't touched.
 `python3 tools/jarvis-show.py --remove-show --name NAME --reset-show yes` does the same over SSH, and
 with `--keep-wifi yes` the Show keeps its Wi-Fi networks (a Show image from GENBU-223 on).
 
-Your Home Assistant can't reach it any more: take it out with
+From Genbu 1.4.16, **Delete** on the Show's Genbu device in Home Assistant does the reset and the
+house side together ([Deleting a Show in Home Assistant](update-leader.md#deleting-a-show-in-home-assistant)).
+
+After a reset on its screen your Home Assistant can't reach it any more: take it out with
 `python3 tools/jarvis-show.py --remove-show --name NAME`, which removes its device, user, automation,
 Music Assistant player and Genbu entry together ([Taking a Show out](jarvis-crown-installer.md#taking-a-show-out)),
 or delete it by hand from **Settings → Devices & services → ESPHome**. To add it again, open its setup page, go to **General** and choose **Let a Home Assistant

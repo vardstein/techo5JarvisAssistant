@@ -41,6 +41,7 @@ from .house import House, Show, manifest_url, newer, tag_url, valid
 from .keycare import ISSUE, KeyCare
 from .music import Player, falls_back_to, own_player, plays_on, room_player, route
 from .recipe import show_action
+from .removal import LEAVING, Removal
 
 LOGGER = logging.getLogger(__name__)
 LOOK_EVERY = timedelta(minutes=1)
@@ -204,6 +205,7 @@ class GenbuHouse:
         self.release: dict = {}  # the channel's newest manifest, {} until it was read
         self.installed_at: datetime | None = None  # the last install, for how far the Shows are
         self.keycare = KeyCare(hass, self.house, self._save)
+        self.removal = Removal(self, lambda: find_shows(hass))  # the Shows deleted in Home Assistant (GENBU-223)
         self.referee = race.Referee()
         self.racers: dict[str, str] = {}  # the Shows that race their wake words: device id → wake_verdict
         self._closing: dict[str, asyncio.TimerHandle] = {}  # the races waiting out their window, by phrase
@@ -225,7 +227,7 @@ class GenbuHouse:
             # Left by 1.2.0, whose copies are gone (GENBU-114): the Shows' own entities come back.
             unhide(self.hass, hidden)
         for domain, issue in list(ir.async_get(self.hass).issues):
-            if domain == DOMAIN and not issue.startswith(ISSUE):  # the main update Show's of before 1.4.0
+            if domain == DOMAIN and not issue.startswith((ISSUE, LEAVING)):  # the main update Show's of before 1.4.0
                 ir.async_delete_issue(self.hass, DOMAIN, issue)
         entities = er.async_get(self.hass)
         if old := entities.async_get_entity_id("select", DOMAIN, f"{self.entry.entry_id}_main_update_show"):
@@ -505,7 +507,9 @@ class GenbuHouse:
         return facts
 
     async def async_refresh(self) -> None:
-        self.shows = find_shows(self.hass)
+        found = find_shows(self.hass)
+        # A Show on its way out is no Show of the house any more: no music, no key care, no races.
+        self.shows = [s for s in found if s.node not in self.house.data["leaving"]]
         self.players = find_players(self.hass)
         # A speaker that is back is mentioned again the next time it is off.
         up = {p.entity for p in self.players if p.available}
@@ -517,6 +521,8 @@ class GenbuHouse:
         # The house's card too: skipping its update there tells the Shows to stop asking.
         self._watched = ({e for s in self.shows for e in s.watch if e} | {s.key for s in self.shows if s.key}
                          | {UPDATE_ENTITY})
+        # A Show waiting to be reset is asked the moment it is back, not on the next tick.
+        self._watched |= {s.watch[0] for s in found if s.node in self.house.data["leaving"] and s.watch[0]}
         self._player_ids = {p.entity for p in self.players}
         # Asked over the encrypted link only, which the Show checks too.
         self._cut_by = {s.cut: s.device for s in self.shows if s.cut and s.encrypted and s.device}
@@ -531,6 +537,8 @@ class GenbuHouse:
         self.entry.async_create_background_task(self.hass, self.keycare.async_look(list(self.shows)),
                                                 f"{DOMAIN} keys")
         self._race_again()
+        self.removal.tidy_issues()
+        self.removal.look(found)
 
     # A reply cut off by a wake word (GENBU-250, reply_cut.py).
 

@@ -98,6 +98,8 @@ says so and changes nothing.
 
 Afterward, delete the device from **Settings → Devices & services → ESPHome**. To add it again, open
 its setup page and choose **Let a Home Assistant add this device**, the same as after leaving.
+With Genbu 1.4.16 or later, **Delete** on the Show's Genbu device calls this action for you and takes
+the rest of the Show out of the house too ([Deleting a Show in Home Assistant](update-leader.md#deleting-a-show-in-home-assistant)).
 
 ### confirm (Required)
 

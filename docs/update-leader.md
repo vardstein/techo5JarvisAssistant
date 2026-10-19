@@ -59,7 +59,8 @@ On the Genbu Assistant device, next to two controls:
 | `select.genbu_release_channel` | stable, staging or dev. Until one is picked, the channel of the house version. |
 | `switch.genbu_install_at_night` | Off by default. When on, a waiting update installs by itself at 03:00. |
 
-**A Show taken out for good.** The action `genbu.forget_show` (from 1.1.0) drops one Show by its node name:
+**A Show taken out for good.** Delete on its device does all of it ([below](#deleting-a-show-in-home-assistant)).
+The action `genbu.forget_show` (from 1.1.0) drops one Show by its node name:
 its last version, its music choice and its switches. The installer's `--remove-show` calls it after
 removing the Show's ESPHome entry, so Genbu does not find it again first. A Genbu before 1.4.0 also picked
 a new main update Show and named it in the answer (`new_main`).
@@ -99,6 +100,41 @@ dialog. The page is in English, like the entity names the Shows report.
 1.2.0 put copies of these controls on each Show's Genbu device and hid the ESPHome originals. 1.3.0
 removes the copies and shows the originals again on its first start, except ones someone hid by hand
 since. Dashboards that used a copy (`genbu_<node>_...`) need the original instead.
+
+### Deleting a Show in Home Assistant
+
+From 1.4.16, **Delete** on a Show's Genbu device (**Settings → Devices & services → Genbu**, the Show's
+device, the three dots) takes the Show out of the house and resets it back to setup, the same as the
+installer's [`--remove-show`](jarvis-crown-installer.md#taking-a-show-out) with a reset. Home Assistant's
+own "Are you sure?" is the only question. The house device ("Genbu Assistant") can't be deleted.
+
+First Genbu keeps a copy of everything that is about to go in `.storage/genbu.removed.<node>` (the
+automations and scripts as they were, and which users and players went), and makes a backup when the
+house makes backups. Then, in this order:
+
+1. the Show's Home Assistant users (`show_<name>`, `show_<name>-2`), which ends its token; admins and the
+   owner are never removed. Our turn-the-room-down automation for it and every automation and script
+   with the Show's label ("Genbu Show: <node>") go too, as long as they are in `automations.yaml` and
+   `scripts.yaml`; ones in a package are named, not removed;
+2. the Show's own settings: it is asked over its encrypted link to [reset to setup](actions.md#erase-the-device-back-to-setup),
+   keeping its Wi-Fi. A Show whose system can reset but can't keep the Wi-Fi is reset without it; one that
+   can't be reset from Home Assistant at all is removed anyway, and you reset it on its own screen;
+3. its user and player in Music Assistant, after the reset, so the Show doesn't make its player again;
+4. its ESPHome entry with its devices and entities, what Genbu kept about it, and its label once nothing
+   else carries it.
+
+A notification then says what went, what stayed and where the copy is. Other automations, scripts and
+dashboards that use the Show are named there and left as they are. What stays is the same as with
+`--remove-show`: what has only the "Genbu Show installed" label, the blueprints, the room and its
+dashboard, the calendars, the backups, and any router rules for its address.
+
+**A Show that is offline or switched off.** Nothing is reset behind anybody's back. Step 1 happens at once;
+the reset and the rest wait, with a Repairs issue ("<name> is deleted but not reset yet"), and go on by
+themselves as soon as the Show is online and its ESPHome entry is switched on. For a Show that is gone for
+good, or one you already reset on its screen, the issue's button forgets it without the reset. The copy and
+the waiting survive a Home Assistant restart.
+
+**Switching a Show off** (disabling its ESPHome entry) never removes or resets anything. Only Delete does.
 
 ### Tests
 

@@ -239,6 +239,7 @@ class House:
     music          the player picked in each Show's "Music plays on", by device id
     switches       each Show's Recipes and Updates by voice, by device id, when somebody switched them
     keys           the Home Assistant user each Show's key was seen to belong to, by device id (GENBU-196)
+    leaving        the Shows deleted in Home Assistant and not yet gone, by node (GENBU-223, removal.py)
     house, since   the house version, the one every Show moves to, and when it last changed
     channel        the release channel the house reads; empty for the house version's own
     night          whether a waiting update installs by itself at night
@@ -249,7 +250,7 @@ class House:
         self.data = data if data is not None else {}
         for k in OLD_KEYS:
             self.data.pop(k, None)
-        for k in ("committed", "devices", "music", "switches", "keys"):
+        for k in ("committed", "devices", "music", "switches", "keys", "leaving"):
             self.data.setdefault(k, {})
         for k in ("house", "since", "channel", "before"):
             self.data.setdefault(k, "")
@@ -324,6 +325,7 @@ class House:
         """A Show taken out of the house for good (the installer's --remove-show): nothing about it is
         kept."""
         self.data["committed"].pop(node, None)
+        self.data["leaving"].pop(node, None)
         for device in [d for d, n in self.data["devices"].items() if n == node]:
             del self.data["devices"][device]
             self.data["music"].pop(device, None)

@@ -198,6 +198,21 @@
           "name_taken": "Both sign-in names for the Show's user belong to someone else."
         }
       }
+    },
+    "leaving": {
+      "title": "{name} is deleted but not reset yet",
+      "description": "{name} was deleted in Home Assistant. Its users and automations are gone already, but the Show itself still has its settings: it's switched off in ESPHome, offline, or didn't answer. Genbu resets it and removes the rest by itself as soon as it's back and switched on.\n\nIf {name} is gone for good, or you already reset it on its own screen, forget it here.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Forget {name} without resetting it",
+            "description": "Genbu removes {name}'s ESPHome entry and everything else that's left, without resetting the Show. If it turns up again, it still has its settings: reset it on its own screen."
+          }
+        },
+        "abort": {
+          "no_show": "This Show isn't waiting to be removed any more."
+        }
+      }
     }
   }
 }

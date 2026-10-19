@@ -39,8 +39,8 @@ What follows from that:
 
 - **A factory reset doesn't help against someone who already copied the flash.** It wipes the Show, not
   the copy. Removing the Show from the house is what makes the copy worthless, so everything it held
-  has to be dead on the house side: `--remove-show` deletes its Home Assistant user, which ends its
-  token.
+  has to be dead on the house side: `--remove-show`, or Delete on the Show's Genbu device, deletes its
+  Home Assistant user, which ends its token.
 - **The house word is the same on every Show** (typed on each one's setup page). Whoever has a copy can
   sign announcements and reminders, and call into every Show with intercom, until the word is changed on
   all the others. `--remove-show` says so at the end; nothing can change it remotely yet.

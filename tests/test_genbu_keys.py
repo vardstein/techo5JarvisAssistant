@@ -183,6 +183,12 @@ class TextTests(unittest.TestCase):
         kinds = {keys.KEY_GONE, keys.NO_USER, keys.USER_OFF, keys.NOT_A_SHOW_USER, keys.NOT_ENCRYPTED,
                  keys.HOME_ONLY}
         for lang in (en, self.load("translations/de.json")):
+            # A Show deleted in Home Assistant and waiting to be reset (GENBU-223, removal.py).
+            leaving = lang["issues"].pop("leaving")
+            ph = set(re.findall(r"{(\w+)}", "".join(leaving["fix_flow"]["step"]["confirm"].values())
+                                + leaving["title"] + leaving["description"]))
+            self.assertEqual(ph, {"name"})
+            self.assertIn("no_show", leaving["fix_flow"]["abort"])
             self.assertEqual(set(lang["issues"]), kinds)
             for kind, text in lang["issues"].items():
                 self.assertEqual(kind in keys.FIXABLE, "fix_flow" in text, kind)

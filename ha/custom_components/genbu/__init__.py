@@ -16,7 +16,7 @@ from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse, callback
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers import config_validation as cv, device_registry as dr, entity_registry as er
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.storage import Store
 from homeassistant.loader import async_get_integration
@@ -280,6 +280,16 @@ async def _options_changed(hass: HomeAssistant, entry: ConfigEntry) -> None:
         await hass.config_entries.async_reload(entry.entry_id)
         return
     await entry.runtime_data.async_refresh()
+
+
+async def async_remove_config_entry_device(hass: HomeAssistant, config_entry: ConfigEntry,
+                                          device_entry: dr.DeviceEntry) -> bool:
+    """Delete on a Show's Genbu device: the Show leaves the house and is reset to setup (GENBU-223,
+    removal.py). The Genbu Assistant device itself can't be deleted; removing the integration does that."""
+    show = next((i for d, i in device_entry.identifiers if d == DOMAIN), None)
+    if show is None or show == config_entry.entry_id or config_entry.state is not ConfigEntryState.LOADED:
+        return False
+    return await config_entry.runtime_data.removal.async_start(show)
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
