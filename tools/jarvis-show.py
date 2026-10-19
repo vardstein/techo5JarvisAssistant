@@ -36,7 +36,7 @@ from jarvis_crown.preflight import SERIAL_GROUPS, _group_names, preflight_ok, pr
 from jarvis_crown.recovery import RecoveryError, adb_recovery_serials, identify_recovery_show  # noqa: E402
 from jarvis_crown.to_fastboot import ToFastbootError, bring_to_fastboot  # noqa: E402
 from jarvis_crown.releases import CHANNELS, DEFAULT_CHANNEL, ReleaseError, fetch_rootfs  # noqa: E402
-from jarvis_crown.unlock import UnlockError, unlock_show, unlock_warnings  # noqa: E402
+from jarvis_crown.unlock import UnlockError, check_unlock_manifest, unlock_show, unlock_warnings  # noqa: E402
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -70,7 +70,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--board", choices=("crown", "checkers", "cronos"), help="optional board cross-check; install/identify auto-detect by default")
     parser.add_argument("--amonet-dir", type=Path, help="the unpacked Amonet 2.x package; default ../third_party/<board> or the asset cache")
     parser.add_argument("--amonet-zip", type=Path, help="amonet-upgrade: the pinned Amonet 2.x zip; default from the asset cache")
-    parser.add_argument("--amonet-hashes", type=Path, help="trusted JSON SHA-256 map for a board whose Amonet bytes are not built-in")
+    parser.add_argument("--amonet-hashes", type=Path, help="trusted JSON SHA-256 map of the six unlock files, for a board whose Amonet bytes are not built-in (not crown)")
     parser.add_argument("--twrp-sha256", help="trusted board-specific TWRP SHA-256 when not built-in")
     parser.add_argument("--lineage-zip", type=Path, help="install, amonet-upgrade: the LineageOS 18.1 zip for this board; default: fetched and checked into the asset cache")
     parser.add_argument("--work-dir", type=Path, help="scratch space for the install; default ../work next to the repo")
@@ -206,9 +206,11 @@ def _home(path: Path) -> str:
     return "~" + str(path)[len(home):] if str(path).startswith(home + "/") else str(path)
 
 
-def load_hash_manifest(path: Path | None) -> dict[str, str] | None:
+def load_hash_manifest(path: Path | None, board: str) -> dict[str, str] | None:
     if path is None:
         return None
+    if board == "crown":
+        raise ValueError("crown's Amonet unlock hashes are built in; leave out --amonet-hashes")
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -220,6 +222,10 @@ def load_hash_manifest(path: Path | None) -> dict[str, str] | None:
         if not isinstance(name, str) or not name or not isinstance(digest, str) or not SHA256_RE.fullmatch(digest.lower()):
             raise ValueError(f"invalid Amonet hash manifest entry for {name!r}")
         result[name] = digest.lower()
+    try:
+        check_unlock_manifest(result)
+    except UnlockError as exc:
+        raise ValueError(str(exc)) from exc
     return result
 
 
@@ -1042,7 +1048,7 @@ def _main() -> int:
                                   else amonet_bundle_dir(default_cache_dir(), profile.board))).resolve()
 
     try:
-        amonet_hashes = load_hash_manifest(args.amonet_hashes)
+        amonet_hashes = load_hash_manifest(args.amonet_hashes, profile.board)
         twrp_sha256 = _validate_optional_sha("TWRP SHA-256", args.twrp_sha256)
         boot_sha256 = _validate_optional_sha("boot SHA-256", args.boot_sha256)
     except ValueError as exc:

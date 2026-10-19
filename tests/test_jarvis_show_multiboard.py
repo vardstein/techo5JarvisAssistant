@@ -42,7 +42,8 @@ def make_amonet(root: pathlib.Path, board: str):
         hashes[rel] = hashlib.sha256(body).hexdigest()
     (base / "device.prop").write_text(f"DEVICE={board}\n", encoding="utf-8")
     hashes["device.prop"] = digest(base / "device.prop")
-    return base.parent, hashes
+    # A manifest names exactly the files fastbrick runs (GENBU-172).
+    return base.parent, {rel: hashes[rel] for rel in unlock.UNLOCK_FILES}
 
 
 def make_lineage(root: pathlib.Path, board: str):

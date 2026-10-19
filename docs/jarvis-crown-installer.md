@@ -62,6 +62,9 @@ list. The crown and checkers 2.0.1 zips went through this on 2026-10-09 and are 
 cronos (Echo Show 5 2nd gen) zip on 2026-10-14, together with its TWRP. The unlock payload hashes are
 only built in for crown, the board they were proven on. A checkers or cronos `unlock` refuses until
 you pass the hashes of the unpacked files with `--amonet-hashes`, and that first run is the proof.
+The JSON names exactly the six files fastbrick runs: `fastbrick.sh`, `profile.sh`, `device.prop`,
+`bin/fastbrick.img`, `bin/fastboot` and `bin/fastboot32`. A file left out or one more is refused, and so is
+the switch on crown, whose hashes are built in (GENBU-172).
 The cronos boot image is pinned: upstream TECHO5 stopped making
 cronos boot images after v0.7.16, and that is the one used. A cronos install also needs a Genbu release
 whose root filesystem lists cronos; releases up to v1.2.2 don't. The OpenJade boot logo isn't there for
@@ -698,7 +701,7 @@ has the default given here.
 | `--rootfs-sha256 HASH` | install | Its SHA-256. |
 | `--amonet-dir DIR` | install, unlock, preflight | The unpacked Amonet 2.x package. Default `../third_party/<board>`, else the asset cache, which `install` fills (through the browser) when it is empty. |
 | `--amonet-zip ZIP` | amonet-upgrade | The Amonet 2.x zip. Default the cached one. |
-| `--amonet-hashes JSON` | install, unlock | SHA-256s for an Amonet package with no pin built in. |
+| `--amonet-hashes JSON` | install, unlock | SHA-256s of the six unlock files, for an Amonet package with no pin built in (checkers, cronos; refused on crown). |
 | `--twrp-sha256 HASH` | install | The same for TWRP. |
 | `--work-dir DIR` | install, preflight | Scratch space. Default `../work` next to the repo. |
 | `--backup-dir DIR` | all | Each unit's backups, key, name and address. Default `../backups`. Keep it: `boot-logo` needs the saved expdb from here. |

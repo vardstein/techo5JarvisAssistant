@@ -42,10 +42,26 @@ AMONET_UNLOCK_SHA256: dict[str, str] = {
     "bin/fastboot": "cb3d13b850143da85eb4b2099462514894459213da93d03d6ff4782d927d6e20",
     "bin/fastboot32": "8912e9926cfc45503ad960866501305a684462b1dd1a44c5d82b1f075d6dd8c1",
 }
+# What fastbrick runs. A board's hash manifest names exactly these, so a short one can't leave
+# one of them unchecked (GENBU-172).
+UNLOCK_FILES: tuple[str, ...] = tuple(AMONET_UNLOCK_SHA256)
 
 
 class UnlockError(RuntimeError):
     """Raised when unlock cannot be proven safe/successful."""
+
+
+def check_unlock_manifest(names) -> None:
+    """Refuse a hash manifest that leaves out one of UNLOCK_FILES or names anything else."""
+    names = set(names)
+    missing = [name for name in UNLOCK_FILES if name not in names]
+    extra = sorted(names - set(UNLOCK_FILES))
+    if missing or extra:
+        problems = ([f"missing {', '.join(missing)}"] if missing else []) + (
+            [f"unknown {', '.join(extra)}"] if extra else [])
+        raise UnlockError(
+            f"Amonet hash manifest must name exactly {', '.join(UNLOCK_FILES)}; {'; '.join(problems)}"
+        )
 
 
 @dataclass(frozen=True)
@@ -67,6 +83,7 @@ def verify_amonet_unlock_assets(
     *,
     expected_hashes: Mapping[str, str] = AMONET_UNLOCK_SHA256,
 ) -> None:
+    check_unlock_manifest(expected_hashes)
     root = amonet_dir / "amonet"
     for relative, expected in expected_hashes.items():
         path = root / relative
@@ -325,14 +342,16 @@ def unlock_show(
             "without a recorded bootloader build"
         )
 
-    if expected_hashes is None:
-        if profile.board == "crown":
-            expected_hashes = AMONET_UNLOCK_SHA256
-        else:
-            raise UnlockError(
-                f"{profile.board} Amonet bundle has not been cryptographically pinned in this checkout; "
-                "supply a trusted board-specific hash manifest before unlock"
-            )
+    if profile.board == "crown":
+        # Its pins are built in; a manifest may not swap them for others (GENBU-172).
+        if expected_hashes is not None and {k: v.lower() for k, v in expected_hashes.items()} != AMONET_UNLOCK_SHA256:
+            raise UnlockError("crown's Amonet unlock hashes are built in; --amonet-hashes can't replace them")
+        expected_hashes = AMONET_UNLOCK_SHA256
+    elif expected_hashes is None:
+        raise UnlockError(
+            f"{profile.board} Amonet bundle has not been cryptographically pinned in this checkout; "
+            "supply a trusted board-specific hash manifest before unlock"
+        )
     verify_amonet_unlock_assets(amonet_dir, expected_hashes=expected_hashes)
 
     if confirmation != profile.unlock_confirmation:

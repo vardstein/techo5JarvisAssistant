@@ -57,7 +57,8 @@ class UnlockTests(unittest.TestCase):
     def identity(self, unlocked=False, serial="ABC123", product="CROWN"):
         return DeviceIdentity(serial=serial, product=product, unlocked=unlocked, lk_build_desc="lk")
 
-    def bundle(self, td):
+    def bundle(self, td, pin=True):
+        """A fixture bundle; with pin, its hashes stand in for crown's built-in pins for this test."""
         root = pathlib.Path(td) / "amonet-crown-v2.0.1" / "amonet"
         hashes = {}
         for rel in (
@@ -73,6 +74,8 @@ class UnlockTests(unittest.TestCase):
             body = f"fixture:{rel}\n".encode()
             path.write_bytes(body)
             hashes[rel] = hashlib.sha256(body).hexdigest()
+        if pin:
+            self.enterContext(mock.patch.dict(unlock.AMONET_UNLOCK_SHA256, hashes))
         return root.parent, hashes
 
     def unlock(self, amonet, hashes, *, run=None, adb_run=None, identify=None, said=None):
@@ -131,6 +134,32 @@ class UnlockTests(unittest.TestCase):
                     self.identity(), amonet,
                     confirmation=unlock.CONFIRM_PHRASE, run=run, expected_hashes=hashes,
                 )
+            run.assert_not_called()
+
+    def test_a_manifest_must_name_exactly_the_unlock_files(self):
+        # GENBU-172: a one-entry manifest left the other five files unchecked.
+        identity = DeviceIdentity(serial="CHK123", product="CHECKERS", unlocked=False, lk_build_desc="lk")
+        with tempfile.TemporaryDirectory() as td:
+            amonet, hashes = self.bundle(td, pin=False)
+            run = mock.Mock()
+            for manifest, why in (({"fastbrick.sh": hashes["fastbrick.sh"]}, "missing profile.sh"),
+                                  ({**hashes, "bin/twrp.img": "0" * 64}, "unknown bin/twrp.img")):
+                with self.assertRaisesRegex(unlock.UnlockError, f"must name exactly .*{why}"):
+                    unlock.unlock_show(identity, amonet, confirmation="UNLOCK", run=run, expected_hashes=manifest)
+            with self.assertRaisesRegex(unlock.UnlockError, "must name exactly"):
+                unlock.verify_amonet_unlock_assets(amonet, expected_hashes={"fastbrick.sh": hashes["fastbrick.sh"]})
+            run.assert_not_called()
+
+    def test_crown_keeps_its_built_in_pins(self):
+        with tempfile.TemporaryDirectory() as td:
+            amonet, hashes = self.bundle(td, pin=False)
+            run = mock.Mock()
+            with self.assertRaisesRegex(unlock.UnlockError, "built in"):
+                unlock.unlock_crown(self.identity(), amonet, confirmation=unlock.CONFIRM_PHRASE, run=run,
+                                    expected_hashes=hashes)
+            # Without a manifest the built-in pins apply, and the fixture's files don't match them.
+            with self.assertRaisesRegex(unlock.UnlockError, "hash mismatch"):
+                unlock.unlock_crown(self.identity(), amonet, confirmation=unlock.CONFIRM_PHRASE, run=run)
             run.assert_not_called()
 
     def test_locked_crown_requires_exact_confirmation(self):
@@ -290,6 +319,30 @@ class FastbrickScriptTests(unittest.TestCase):
 
             with self.assertRaisesRegex(unlock.UnlockError, "interrupted.*already landed.*do not unplug"):
                 unlock.run_fastbrick_script(root, interrupt, timeout=20)
+
+
+
+class HashManifestTests(unittest.TestCase):
+    """jarvis-show.py --amonet-hashes is checked the same way before anything runs (GENBU-172)."""
+
+    def load(self, payload, board="checkers"):
+        import importlib.util
+        import json
+        spec = importlib.util.spec_from_file_location("jarvis_show_cli", TOOLS / "jarvis-show.py")
+        cli = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cli)
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "hashes.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            return cli.load_hash_manifest(path, board)
+
+    def test_only_the_six_unlock_files_for_a_board_without_pins(self):
+        six = {name: "a" * 64 for name in unlock.UNLOCK_FILES}
+        self.assertEqual(self.load(six), six)
+        with self.assertRaisesRegex(ValueError, "must name exactly"):
+            self.load({"fastbrick.sh": "a" * 64})
+        with self.assertRaisesRegex(ValueError, "built in"):
+            self.load(six, board="crown")
 
 
 if __name__ == "__main__":
