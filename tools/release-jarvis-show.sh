@@ -117,18 +117,21 @@ if [ -n "$CRONOS_BOOT" ]; then
   cronos_assets+=("$OUT/techo5-boot-$VERSION.img")
 fi
 
+# The product id comes from the board catalogue (catalogue/products/), like the installer's (GENBU-174).
+PRODUCT=$(PYTHONPATH="$ROOT/tools" python3 -c 'from jarvis_crown.catalogue import load_or_exit; print(load_or_exit().product()["id"])')
+
 # Rootfs has one shared product marker and must explicitly support both first-generation boards; cronos
 # is optional and comes from "more_boards". The last line printed says whether it is there.
 rootfs_sha=$(sha256sum "$ROOTFS" | awk '{print $1}')
 cronos=$(PYTHONPATH="$ROOT/tools" python3 - "$ROOTFS" "$rootfs_sha" "$VERSION" <<'PY'
 import pathlib, sys
-from jarvis_crown.install import verify_jarvis_rootfs
+from jarvis_crown.install import PROFILE_ID, verify_jarvis_rootfs
 path = pathlib.Path(sys.argv[1])
 sha = sys.argv[2]
 for board in ("crown", "checkers"):
     ident = verify_jarvis_rootfs(path, sha, board=board)
-    if ident.product != "genbu-show-v1":
-        raise SystemExit("rootfs is not a shared genbu-show-v1 image")
+    if ident.product != PROFILE_ID:
+        raise SystemExit(f"rootfs is not a shared {PROFILE_ID} image")
     if ident.version != sys.argv[3]:
         raise SystemExit(f"rootfs marker version {ident.version!r} does not match release filename")
 print("PASS: shared Jarvis Show rootfs marker/version", file=sys.stderr)
@@ -142,7 +145,7 @@ fi
 from="https://github.com/$REPO/releases/download/$VERSION"
 mk=(run ./cmd/mkmanifest
   -version "$VERSION"
-  -product "genbu-show-v1"
+  -product "$PRODUCT"
   -board crown
   -board checkers
   -title "Jarvis Show $VERSION"
@@ -158,7 +161,7 @@ for asset in "${assets[@]}"; do mk+=(-asset "$asset"); done
 if [ "$cronos" = cronos ]; then
   mkc=(run ./cmd/mkmanifest
     -version "$VERSION"
-    -product "genbu-show-v1"
+    -product "$PRODUCT"
     -board cronos
     -title "Jarvis Show $VERSION"
     -notes "$NOTES"

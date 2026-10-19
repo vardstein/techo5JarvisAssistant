@@ -63,9 +63,12 @@ there. Code never reads it. The review comments that used to sit next to the pin
 The product lists the boards it ships on, and boards never point back at it. A board no product lists is
 an error. `boards` order is the order the installer offers them in. The four blocks are the product
 settings that `profiles/genbu-show-v1.json` held; the checker only makes sure each is a non-empty object.
-The id is also what the rootfs marker calls "product" (`install.PROFILE_ID`), and `mkrootfs.sh`,
-`techo5lib.py`, `release-jarvis-show.sh` and echod's `manifest.go` each spell `genbu-show-v1` themselves,
-so it can't be renamed in the catalogue alone.
+The id is also what the rootfs marker calls "product" (`install.PROFILE_ID`). `release-jarvis-show.sh`
+reads it from the catalogue, and `install-show.py` uses `techo5lib.JARVIS_SHOW_PRODUCT`. Three places
+can't read the catalogue and spell `genbu-show-v1` themselves: `mkrootfs.sh` (it runs on the device too),
+echod's `manifest.go` (compiled in) and `techo5lib.py` (copied to the other TECHO5 repos). So it still can't
+be renamed in the catalogue alone, but `ProductIdSpelledOnceTest` fails if any of the three disagrees with
+the catalogue or the id turns up anywhere else (GENBU-174).
 
 Exactly one product exists today. `Catalogue.product()` refuses if there are none or several, so a second
 product needs a decision about how the installer picks, not a silent first-one-wins.

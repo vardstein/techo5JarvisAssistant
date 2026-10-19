@@ -52,7 +52,7 @@ import sys
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from techo5lib import (CONSOLE_TECHO5, JARVIS_SHOW_BOARDS, Adb, Console, Fastboot, Release, ask_name, ask_wifi,  # noqa: E402
+from techo5lib import (CONSOLE_TECHO5, JARVIS_SHOW_BOARDS, JARVIS_SHOW_PRODUCT, Adb, Console, Fastboot, Release, ask_name, ask_wifi,  # noqa: E402
                        check_serial_access, confirm, console_hint, default_dir, fail, fetch_json, md5, need,
                        new_api_key, note, pick_unit, run_main, sha512_crypt, step, valid_api_key, wait_for,
                        wifi_conf, write_private)
@@ -502,7 +502,7 @@ def boot_image(rel, work, dev):
         # image also served the list. Releases made before the manifest covered boot images are passed
         # over here rather than trusted, which is why the search keeps going.
         earlier = Release(REPO, r['tag_name'], work,
-                          expected_product='genbu-show-v1', expected_board=dev)
+                          expected_product=JARVIS_SHOW_PRODUCT, expected_board=dev)
         if not earlier.signed(name):
             note('release %s has %s but does not name it in its signed manifest; looking further back'
                  % (r['tag_name'], name))
@@ -710,7 +710,7 @@ def main():
         note('%s boot image: wrapper-verified pinned local input %s' % (dev, boot))
     else:
         rel = Release(REPO, a.release, a.work,
-                      expected_product='genbu-show-v1', expected_board=dev)
+                      expected_product=JARVIS_SHOW_PRODUCT, expected_board=dev)
         version = rel.version
         if a.rootfs:
             rootfs = os.path.abspath(a.rootfs)

@@ -92,7 +92,8 @@ if __name__ == "__main__":
 class SupplyChainReleaseContractTests(unittest.TestCase):
     def test_release_manifest_is_bound_to_product_and_both_first_gen_boards(self):
         source = (ROOT / "tools/release-jarvis-show.sh").read_text(encoding="utf-8")
-        self.assertIn('-product "genbu-show-v1"', source)
+        self.assertIn('-product "$PRODUCT"', source)
+        self.assertIn('print(load_or_exit().product()["id"])', source)
         self.assertIn('-board crown', source)
         self.assertIn('-board checkers', source)
         self.assertIn('ident.version != sys.argv[3]', source)
@@ -135,7 +136,7 @@ class SupplyChainReleaseContractTests(unittest.TestCase):
         self.assertIn("expected_product=None, expected_board=None", lib)
         self.assertIn("signed but belongs to product", lib)
         self.assertIn("signed but does not support board", lib)
-        self.assertIn("expected_product='genbu-show-v1', expected_board=dev", installer)
+        self.assertEqual(installer.count("expected_product=JARVIS_SHOW_PRODUCT, expected_board=dev"), 2)
 
     def test_release_script_rejects_world_readable_signing_seed(self):
         with tempfile.TemporaryDirectory() as tmp:

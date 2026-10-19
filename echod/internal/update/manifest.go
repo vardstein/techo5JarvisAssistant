@@ -104,7 +104,8 @@ func ManifestName(board string) string {
 var deviceBoard = layout.Board
 
 // JarvisShowProduct is the signed product identity every Jarvis Show release carries. Exported so
-// release tooling can reject a typo before it signs and publishes a manifest devices would refuse.
+// release tooling can reject a typo before it signs and publishes a manifest devices would refuse. It
+// must match catalogue/products/ (tests/test_board_catalogue.py checks, GENBU-174).
 const JarvisShowProduct = "genbu-show-v1"
 
 // manifestTimeout bounds the fetch. Home Assistant asks for this on connect and after every selection

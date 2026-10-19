@@ -359,5 +359,41 @@ class BrokenCatalogueStopsPlainlyTest(unittest.TestCase):
                 self.assertEqual(run.stdout, "")
 
 
+class ProductIdSpelledOnceTest(unittest.TestCase):
+    """GENBU-174: the product id lives in catalogue/products/. Only the places that can't read the catalogue
+    spell it out, each once, and each must agree with it. Renaming the product means changing these too,
+    which this test then says."""
+
+    # A rootfs is built on the device in plain sh, echod has it compiled in, and techo5lib.py is copied
+    # to the other TECHO5 repos. This list may only get shorter.
+    SPELLED = {"tools/linux/mkrootfs.sh": 1, "echod/internal/update/manifest.go": 1, "tools/techo5lib.py": 1}
+
+    def test_spelled_only_where_the_catalogue_cant_be_read(self):
+        product = catalogue.default().product()["id"]
+        found = {}
+        for part in ("tools", "echod", "dashcast", "ha", ".github"):
+            for path in sorted((ROOT / part).rglob("*")):
+                if not path.is_file() or path.name.endswith("_test.go") or "__pycache__" in path.parts:
+                    continue
+                try:
+                    n = path.read_text(encoding="utf-8").count(product)
+                except UnicodeDecodeError:
+                    continue
+                if n:
+                    found[path.relative_to(ROOT).as_posix()] = n
+        self.assertEqual(found, self.SPELLED)
+
+    def test_those_places_agree_with_the_catalogue(self):
+        import re
+        product = catalogue.default().product()["id"]
+        sys.path.insert(0, str(ROOT / "tools"))
+        import techo5lib
+        self.assertEqual(techo5lib.JARVIS_SHOW_PRODUCT, product)
+        go = (ROOT / "echod/internal/update/manifest.go").read_text(encoding="utf-8")
+        self.assertEqual(re.search(r'const JarvisShowProduct = "([^"]+)"', go).group(1), product)
+        sh = (ROOT / "tools/linux/mkrootfs.sh").read_text(encoding="utf-8")
+        self.assertEqual(re.search(r'"product": "([^"]+)"', sh).group(1), product)
+
+
 if __name__ == "__main__":
     unittest.main()
