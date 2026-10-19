@@ -1,11 +1,14 @@
 """GENBU-163: the installer reads its boards from catalogue/ and still gives exactly what it gave before.
 
-tests/fixtures/board-catalogue-baseline.json froze what boards.py and the pin constants in install.py,
-recovery.py, unlock.py and assets.py gave at d448873e, dev's last commit where they owned those facts
-(first frozen at 7d601d0; redone when dev was merged in, for dev's cronos review and model name).
-The parity tests below feed the catalogue-backed code the same inputs and expect the same answers,
-error messages included. The two confirmation phrases left the board profile on the way (oddc
-answer 7), so they are compared with the step constants that own them now.
+tests/fixtures/board-catalogue-baseline.json first froze what boards.py and the pin constants in
+install.py, recovery.py, unlock.py and assets.py gave at d448873e, dev's last commit where they owned
+those facts (first at 7d601d0). The parity tests below feed the catalogue-backed code the same inputs
+and expect the same answers, error messages included, which proved the move changed nothing. The two
+confirmation phrases left the board profile on the way (oddc answer 7), so they are compared with the
+step constants that own them now.
+
+Since GENBU-190 the generator reads today's code, so a change made on purpose regenerates the file in
+the same commit (its docstring says how). It can't be edited by hand: test_generator_writes_the_fixture.
 
 The validator tests copy the real catalogue, break one thing, and expect a refusal.
 """
@@ -168,6 +171,16 @@ class BaselineParityTest(unittest.TestCase):
         for rel, expected in BASELINE["board_choices"].items():
             with self.subTest(script=rel):
                 self.assertEqual(board_choices(ROOT / rel), expected)
+
+    def test_generator_writes_the_fixture(self):
+        # GENBU-190: the fixture is exactly what the generator writes from today's code, nothing edited.
+        spec = importlib.util.spec_from_file_location(
+            "make_board_catalogue_baseline", ROOT / "tests" / "fixtures" / "make_board_catalogue_baseline.py")
+        gen = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = gen  # its dataclass looks its module up
+        self.addCleanup(sys.modules.pop, spec.name)
+        spec.loader.exec_module(gen)
+        self.assertEqual(gen.render(), (ROOT / "tests" / "fixtures" / "board-catalogue-baseline.json").read_text())
 
 
 class CatalogueFactsTest(unittest.TestCase):

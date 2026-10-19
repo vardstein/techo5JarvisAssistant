@@ -245,7 +245,12 @@ Every change that reads a new field adds its row here in the same change.
 | `release-jarvis-show.sh`, `release_channels.py` | product `id`, `first_boards` and the boards after them |
 | `preflight.py`, `amonet_upgrade.py`, `flow.py`, `jarvis-show.py`, `fetch-show-assets.py` | profiles and `supported_boards()` through `catalogue.py` |
 | `validate-jarvis-show.sh` | runs `catalogue.py check` |
-| `tests/test_board_catalogue.py` | everything (parity against the d448873e baseline) |
+| `tests/test_board_catalogue.py` | everything (parity against `tests/fixtures/board-catalogue-baseline.json`) |
+
+The parity baseline is written by `tests/fixtures/make_board_catalogue_baseline.py` from today's code
+(GENBU-190). A change to the catalogue that changes an answer makes the parity tests fail. If the change is
+meant, run the generator, read the diff of `board-catalogue-baseline.json` and commit it with the reason.
+Don't edit the JSON by hand: a test checks that it is exactly what the generator writes.
 
 The catalogue loads once per process, on first use. A broken catalogue stops the installer before any
 device is touched. `jarvis-show.py`, `jarvis-crown.py`, `fetch-show-assets.py`, `install-show.py` and `release_channels.py` load it first thing

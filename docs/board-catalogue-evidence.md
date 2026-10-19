@@ -43,6 +43,15 @@ same answers, run below (section 5).
 
 The baseline is what the old code said, not what the hardware is. Section 2 is about the hardware.
 
+Since GENBU-190 (2026-10-19) the generator no longer needs the deleted modules. It reads today's code, so
+the baseline can follow a deliberate change: run it, review the diff, commit it with the reason.
+`test_generator_writes_the_fixture` fails if the JSON differs from what the generator writes, so it can't
+be edited by hand. The first regeneration changed only the `_note` line, which shows the new generator
+gives what the old code gave. The proof against 7d601d0 is the fixture as committed in 55cdf4a.
+
+P11 is out of date: since GENBU-178 `twrp_device` is read from the catalogue wherever TWRP is checked, and
+`TwrpDeviceComesFromTheCatalogueTest` replaced the test that it equals the board name.
+
 Still not read from the catalogue, so not covered: echod's board list and detection, dashcast's geometry,
 `install-show.py` `BOARDS` and `LOGO_KAERU`, `boot_logo.py` `KAERU`, `amonet_upgrade.py` `TARGETS`,
 `techo5lib.py` board lists, `live-acceptance.py`, `release-jarvis-show.sh`, `mkrootfs.sh`'s marker.

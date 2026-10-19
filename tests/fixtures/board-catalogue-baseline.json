@@ -1,5 +1,5 @@
 {
-  "_note": "Frozen at d448873e (first at 7d601d0) by tests/fixtures/make_board_catalogue_baseline.py. Do not edit by hand.",
+  "_note": "Written by tests/fixtures/make_board_catalogue_baseline.py (GENBU-190). Do not edit by hand.",
   "profiles": {
     "crown": {
       "board": "crown",

@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""Freeze what the installer's board owners gave before GENBU-163 stage b moved them onto the catalogue.
+"""Write tests/fixtures/board-catalogue-baseline.json: what the installer's board lookups and pin tables give.
 
-This was run at commit 7d601d0, and again at d448873e when dev was merged into the catalogue branch,
-while tools/jarvis_crown/boards.py and the pin constants in install.py, recovery.py, unlock.py and
-assets.py were still the owners there:
+The first versions of this file read tools/jarvis_crown/boards.py and the pin constants in install.py,
+recovery.py, unlock.py and assets.py, which owned those facts until GENBU-163 stage b moved them onto
+the catalogue. They were run at 7d601d0, and again at d448873e when dev was merged in, and the parity
+tests in tests/test_board_catalogue.py proved the catalogue-backed code gives the same answers, error
+messages included. That proof is in the history (f57e414f and before).
+
+Since GENBU-190 this reads today's owners, so the file can follow a change made on purpose (Q8, a new
+pin, a new board). Nothing that changes the catalogue may change this file by accident: the parity
+tests fail first. When the change is meant, run
 
     python3 tests/fixtures/make_board_catalogue_baseline.py > tests/fixtures/board-catalogue-baseline.json
 
-It cannot run on later commits, because boards.py is gone there. To redo it, check out d448873e in a
-spare worktree and run it there with that worktree as the current folder. tests/test_board_catalogue.py
-compares the catalogue-backed code with this file, so the move is proven to change nothing.
+read the diff, and commit it in the same commit as the change, saying why each changed value changed.
+test_generator_writes_the_fixture checks the file is exactly what this writes, so it can't be edited by
+hand. The two confirmation phrases left the board profile in stage b; they are written into each
+profile from the step constants that own them now, so the file keeps its shape.
 """
 from __future__ import annotations
 
@@ -22,10 +29,10 @@ import json
 from pathlib import Path
 import sys
 
-ROOT = Path.cwd()
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 
-from jarvis_crown import assets, boards, device_gate, install, recovery, unlock  # noqa: E402
+from jarvis_crown import assets, catalogue, device_gate, install, recovery, unlock  # noqa: E402
 
 # Inputs the lookups were fed. Case and space variants are here on purpose: today's code folds them.
 BOARD_INPUTS = ["crown", "checkers", "cronos", "Crown", " CHECKERS ", "CRONOS", "", "laguna", "echo-show-8-gen2"]
@@ -68,16 +75,32 @@ def choices(path: Path, option: str) -> list[str]:
     return seen
 
 
-def main() -> None:
-    out = {
-        "_note": "Frozen at d448873e (first at 7d601d0) by tests/fixtures/make_board_catalogue_baseline.py. Do not edit by hand.",
-        "profiles": {name: dataclasses.asdict(p) for name, p in boards.PROFILES.items()},
-        "product_to_board": boards.PRODUCT_TO_BOARD,
-        "known_unsupported_products": boards.KNOWN_UNSUPPORTED_PRODUCTS,
-        "supported_summary": boards.SUPPORTED_SUMMARY,
-        "unsupported_product_message": {p: boards.unsupported_product_message(p) for p in PRODUCT_INPUTS},
-        "profile_for_board": {b: outcome(boards.profile_for_board, b) for b in BOARD_INPUTS},
-        "profile_for_product": {p: outcome(boards.profile_for_product, p) for p in PRODUCT_INPUTS},
+def profile(board: str) -> dict:
+    """A board's profile in the file's shape: the BoardProfile fields, then the two phrases."""
+    return {**dataclasses.asdict(catalogue.profile_for_board(board)),
+            "unlock_confirmation": unlock.CONFIRM_PHRASE,
+            "install_confirmation": install.FINAL_CONFIRM_PHRASE}
+
+
+def lookup(fn, value):
+    """outcome() for a profile lookup, with the phrases added the way profile() adds them."""
+    out = outcome(fn, value)
+    if "ok" in out:
+        out["ok"] = profile(out["ok"]["board"])
+    return out
+
+
+def baseline() -> dict:
+    boards = catalogue.supported_boards()
+    return {
+        "_note": "Written by tests/fixtures/make_board_catalogue_baseline.py (GENBU-190). Do not edit by hand.",
+        "profiles": {name: profile(name) for name in boards},
+        "product_to_board": {catalogue.profile_for_board(name).fastboot_product: name for name in boards},
+        "known_unsupported_products": device_gate.KNOWN_UNSUPPORTED_PRODUCTS,
+        "supported_summary": device_gate.SUPPORTED_SUMMARY,
+        "unsupported_product_message": {p: device_gate.unsupported_product_message(p) for p in PRODUCT_INPUTS},
+        "profile_for_board": {b: lookup(catalogue.profile_for_board, b) for b in BOARD_INPUTS},
+        "profile_for_product": {p: lookup(catalogue.profile_for_product, p) for p in PRODUCT_INPUTS},
         "device_gate_supported_products": sorted(device_gate.SUPPORTED_PRODUCTS),
         "install": {
             "BOOT_SHA256_BY_BOARD": install.BOOT_SHA256_BY_BOARD,
@@ -100,15 +123,21 @@ def main() -> None:
             "ASSETS": {b: [dataclasses.asdict(a) for a in t] for b, t in assets.ASSETS.items()},
             "assets_for": {b: outcome(lambda x: _Wrap(assets.assets_for(x)), b)
                            for b in BOARD_INPUTS},
-            "amonet_bundle_dir": {b: str(assets.amonet_bundle_dir(Path("CACHE"), b)) for b in boards.PROFILES},
+            "amonet_bundle_dir": {b: str(assets.amonet_bundle_dir(Path("CACHE"), b)) for b in boards},
         },
         "board_choices": {
             "tools/jarvis-show.py": choices(ROOT / "tools" / "jarvis-show.py", "--board"),
             "tools/fetch-show-assets.py": choices(ROOT / "tools" / "fetch-show-assets.py", "--board"),
         },
     }
-    json.dump(out, sys.stdout, indent=2, sort_keys=False)
-    sys.stdout.write("\n")
+
+
+def render() -> str:
+    return json.dumps(baseline(), indent=2, sort_keys=False) + "\n"
+
+
+def main() -> None:
+    sys.stdout.write(render())
 
 
 @dataclasses.dataclass
