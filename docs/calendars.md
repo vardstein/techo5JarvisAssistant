@@ -21,8 +21,9 @@ it. The installer checks the card first: when it is older, the card gets only th
 calendar, and the installer says so.
 
 The installer can do steps 1, 3 and 4 for a CalDAV account. It asks for the account and which
-calendars the Show shows, checks that each of them answers (without reading what's on them), and
-points the card at them ([step 9 of its Home Assistant part](jarvis-crown-installer.md)). To run only that part again
+calendars the Show shows. The account is for the whole house, so it is only asked for while Home
+Assistant has none; to swap it later, run the installer with `--caldav-url`. It checks that each
+chosen calendar answers (without reading what's on it), and points the card at them ([step 9 of its Home Assistant part](jarvis-crown-installer.md)). To run only that part again
 for a Show that's already installed:
 
 ```sh

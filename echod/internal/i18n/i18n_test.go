@@ -47,6 +47,27 @@ func TestPickingALanguageChangesTheNextFrame(t *testing.T) {
 	}
 }
 
+// bathroomShow5 asked out loud in English through a German pipeline: English before anyone said a
+// language is a fallback, not an answer.
+func TestTheLanguageIsKnownOnlyOnceSaid(t *testing.T) {
+	speak(t, "")
+	old := assistant.Load()
+	assistant.Store(nil)
+	t.Cleanup(func() { assistant.Store(old) })
+	if Known() {
+		t.Fatal("known with no screen language and nothing from Home Assistant")
+	}
+	SetAssistant("de-DE")
+	if !Known() || Lang() != "de" {
+		t.Errorf("after Home Assistant said de-DE: known %v, lang %q", Known(), Lang())
+	}
+	speak(t, "en")
+	assistant.Store(nil)
+	if !Known() {
+		t.Error("a screen set to English is an answer")
+	}
+}
+
 func TestUntranslatedStaysEnglish(t *testing.T) {
 	speak(t, "de")
 	if got := T("Something nobody translated"); got != "Something nobody translated" {
@@ -55,6 +76,27 @@ func TestUntranslatedStaysEnglish(t *testing.T) {
 	speak(t, "xx")
 	if got := T("Settings"); got != "Settings" {
 		t.Errorf("an unknown language gave %q", got)
+	}
+}
+
+// GENBU-201: a name that happens to be a UI word is drawn as it is. A Wi-Fi network called "Office"
+// stayed "Büro" on a German screen.
+func TestVerbatimTextIsNotTranslated(t *testing.T) {
+	speak(t, "de")
+	if got := T("Office"); got != "Büro" {
+		t.Fatalf("T(Office) = %q, the test needs a key that is translated", got)
+	}
+	for _, s := range []string{"Office", "Connected", "Office Party"} {
+		if got := T(Verbatim(s)); got != s {
+			t.Errorf("T(Verbatim(%q)) = %q", s, got)
+		}
+	}
+	// Text made from a marked name by joining it to others keeps it untranslated and loses every mark.
+	if got := T("Home" + " · " + Verbatim("Office")); got != "Home · Office" {
+		t.Errorf("joined = %q", got)
+	}
+	if Verbatim("") != "" || Verbatim(Verbatim("x")) != Verbatim("x") {
+		t.Error("an empty name stays empty and a marked one isn't marked twice")
 	}
 }
 
@@ -122,5 +164,45 @@ func TestTranslationsKeepPlaceholders(t *testing.T) {
 		if n := len(l.names); n < 7+7+12+11 {
 			t.Errorf("%s: %d day and month names", code, n)
 		}
+	}
+}
+
+// TestTheClockFollowsTheLanguageUntilChosen: an Echo Show set up in German said 7:43 PM, as nobody had
+// picked a clock format. Unset, the language decides; a choice on the Show wins either way.
+func TestTheClockFollowsTheLanguageUntilChosen(t *testing.T) {
+	defer func(was *string) { assistant.Store(was) }(assistant.Load())
+	for _, english := range []string{"", "en"} {
+		speak(t, english)
+		if Clock24() {
+			t.Errorf("English (%q) without a choice is 24-hour", english)
+		}
+	}
+	if err := config.Set().Screen().Language("de"); err != nil {
+		t.Fatal(err)
+	}
+	Changed()
+	if !Clock24() {
+		t.Error("German without a choice is 12-hour")
+	}
+	if err := config.Set().Screen().Clock24(false); err != nil {
+		t.Fatal(err)
+	}
+	Changed()
+	if Clock24() {
+		t.Error("12-hour chosen on a German screen did not hold")
+	}
+
+	// A screen that matches the assistant follows the pipeline's language too.
+	speak(t, "")
+	SetAssistant("de-CH")
+	if !Clock24() {
+		t.Error("a screen following a German assistant is 12-hour")
+	}
+	if err := config.Set().Screen().Clock24(true); err != nil {
+		t.Fatal(err)
+	}
+	SetAssistant("en-US")
+	if !Clock24() {
+		t.Error("24-hour chosen did not hold in English")
 	}
 }

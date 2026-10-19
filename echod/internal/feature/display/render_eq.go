@@ -8,6 +8,8 @@ import (
 	"image/draw"
 
 	"golang.org/x/image/font"
+
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 )
 
 // eqLine is one line of words under the bars.
@@ -35,7 +37,7 @@ func (r *renderer) eqWords(s scene, room int) []eqLine {
 		out = append(out, eqLine{tf.label, "Thinking…", accent, r.s(48)})
 	}
 	if s.heard != "" && s.phase != "listening" {
-		for _, l := range r.wrap(tf.small, sentenceCase(s.heard), maxW) {
+		for _, l := range r.wrap(tf.small, i18n.Verbatim(sentenceCase(s.heard)), maxW) {
 			out = append(out, eqLine{tf.small, l, heardCol, r.s(40)})
 		}
 		out[len(out)-1].lineH += r.s(10) // a breath between the question and the answer
@@ -50,7 +52,7 @@ func (r *renderer) eqWords(s scene, room int) []eqLine {
 	var lines []string
 	var st turnStep
 	for _, st = range []turnStep{{tf.mid, r.s(49)}, {tf.body, r.s(46)}, {tf.small, r.s(40)}} {
-		lines = r.wrap(st.face, s.reply, maxW)
+		lines = r.wrap(st.face, i18n.Verbatim(s.reply), maxW)
 		if used+len(lines)*st.lineH <= room {
 			break
 		}

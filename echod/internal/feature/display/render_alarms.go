@@ -37,7 +37,7 @@ func (r *renderer) ringingPage(s scene) {
 		}
 		title += " is done"
 	case st.alarm != nil && st.alarm.Label != "":
-		title = st.alarm.Label
+		title = i18n.Verbatim(st.alarm.Label)
 	}
 	r.text(r.title, title, (r.w-r.width(r.title, title))/2, r.s(80), amber)
 

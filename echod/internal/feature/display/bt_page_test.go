@@ -166,6 +166,10 @@ func TestBluetoothPagePreview(t *testing.T) {
 		"wifi-page-more":   {now: at, phase: "idle", showWifi: true, wifi: wifiState{status: home, nets: append(append([]wifi.Network{}, nets...), nets...)}},
 		"wifi-keyboard":    {now: at, phase: "idle", showWifi: true, wifi: wifiState{status: home, nets: nets, pick: &nets[1], text: "hunter2"}},
 		"wifi-keyboard-up": {now: at, phase: "idle", showWifi: true, wifi: wifiState{status: home, nets: nets, pick: &nets[1], shift: true, err: "wrong password"}},
+		"wifi-saved": {now: at, phase: "idle", showWifi: true, wifi: wifiState{status: home, nets: nets, scroll: 1 << 20,
+			saved: []string{"HomeWiFi", "Grandma's", "Office"}, forget: "Office", forgetAt: at}},
+		"wifi-saved-in-use": {now: at, phase: "idle", showWifi: true, wifi: wifiState{status: home, nets: nets, scroll: 1 << 20,
+			saved: []string{"HomeWiFi", "Grandma's", "Office"}, forget: "HomeWiFi", forgetAt: at}},
 	}
 	for _, lang := range []string{"", "de"} {
 		if err := config.Set().Screen().Language(lang); err != nil {

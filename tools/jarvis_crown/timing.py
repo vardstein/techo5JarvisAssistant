@@ -8,8 +8,9 @@ slow hosts and USB controllers without hiding a genuinely stuck device forever.
 POLL_SECONDS = 3.0
 COMMAND_TIMEOUT_SECONDS = 20
 
-# Amonet can reset/re-enumerate the device before hacked fastboot is visible again.
-POST_AMONET_FASTBOOT_TIMEOUT_SECONDS = 300
+# After "Exploit most likely successful!" the payload writes preloader, LK, TEE and TWRP for up to
+# five minutes and then boots TWRP. Wait well past that, without sending the device anything.
+POST_AMONET_TWRP_TIMEOUT_SECONDS = 900
 
 # Recovery flash/reboot and TWRP's post-format reboot both involve complete USB disconnects.
 TWRP_REENUM_TIMEOUT_SECONDS = 300

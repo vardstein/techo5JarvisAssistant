@@ -1,12 +1,14 @@
 package timezone
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/HuskerMinion/techo5/echod/internal/update"
+	"github.com/ygelfand/go-esphome-device/api"
 )
 
 func TestValid(t *testing.T) {
@@ -36,7 +38,7 @@ func TestApply(t *testing.T) {
 	drainRestarts()
 
 	z := &Zone{}
-	if err := z.apply("Europe/Berlin"); err != nil {
+	if err := z.apply("Europe/Berlin", 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := z.Current(); got != "Europe/Berlin" {
@@ -54,13 +56,13 @@ func TestApply(t *testing.T) {
 		t.Errorf("time.Local was changed to %s", time.Local)
 	}
 
-	if err := z.apply("Nowhere/Atlantis!"); err == nil {
+	if err := z.apply("Nowhere/Atlantis!", 0); err == nil {
 		t.Error("an unknown zone was applied")
 	}
 	if got := z.Current(); got != "Europe/Berlin" {
 		t.Errorf("an unknown zone replaced the saved one: %q", got)
 	}
-	if err := z.apply(""); err != nil || z.Current() != "Europe/Berlin" {
+	if err := z.apply("", 0); err != nil || z.Current() != "Europe/Berlin" {
 		t.Errorf("an empty zone changed something: %v %q", err, z.Current())
 	}
 }
@@ -74,7 +76,7 @@ func TestApplyPOSIXRule(t *testing.T) {
 
 	z := &Zone{}
 	rule := "MST7MDT,M3.2.0,M11.1.0"
-	if err := z.apply(rule); err != nil {
+	if err := z.apply(rule, 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := z.Current(); got != rule {
@@ -109,15 +111,46 @@ func TestApplyPOSIXRule(t *testing.T) {
 	}
 
 	for _, bad := range []string{"garbage", "MST7MDT;rm -rf /", "M3.2.0"} {
-		if err := z.apply(bad); err == nil {
+		if err := z.apply(bad, 0); err == nil {
 			t.Errorf("applied %q", bad)
 		}
 	}
 	if got := z.Current(); got != rule {
 		t.Errorf("a bad rule replaced the saved one: %q", got)
 	}
-	if err := z.apply("UTC0"); err != nil {
+	if err := z.apply("UTC0", 0); err != nil {
 		t.Errorf("UTC0: %v", err)
+	}
+}
+
+// Home Assistant's zone arrives while it is still setting a fresh device up, so the zone is saved at
+// once and the restart that puts it in force waits for that to finish (GENBU-221).
+func TestHomeAssistantsZoneRestartsAfterItSettles(t *testing.T) {
+	dir := t.TempDir()
+	nameFile, linkFile, zoneinfo = filepath.Join(dir, "timezone"), filepath.Join(dir, "localtime"), filepath.Join(dir, "no-zoneinfo")
+	hereFile = filepath.Join(dir, "timezone-set-here")
+	old := settle
+	t.Cleanup(func() { settle = old })
+	settle = 200 * time.Millisecond
+	drainRestarts()
+
+	rule := "CET-1CEST,M3.5.0,M10.5.0/3"
+	if err := Get().Handle(context.Background(), nil, &api.GetTimeResponse{Timezone: rule}); err != nil {
+		t.Fatal(err)
+	}
+	if got := Get().Current(); got != rule {
+		t.Errorf("saved zone = %q", got)
+	}
+	if why := restartAsked(); why != "" {
+		t.Fatalf("restarted at once (%q), in the middle of Home Assistant's first session", why)
+	}
+	select {
+	case why := <-update.Wanted():
+		if why != "time zone "+rule {
+			t.Errorf("restart asked for %q", why)
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("no restart after the zone settled")
 	}
 }
 

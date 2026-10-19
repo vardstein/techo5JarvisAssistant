@@ -21,9 +21,12 @@ import (
 type Registry struct {
 	mu      sync.Mutex
 	entries []*entry
+	wires   []func()
 }
 
 type entry struct {
+	get   func() Component
+	once  sync.Once
 	c     Component
 	phase Phase
 	order int
@@ -47,15 +50,35 @@ func New() *Registry { return &Registry{} }
 
 var shared = New()
 
-// Register adds to the process-wide registry, from a component package's init.
-func Register(p Phase, c Component, opts ...Option) { shared.Add(p, c, opts...) }
+// Register adds to the process-wide registry, from a component package's init. It takes the package's
+// Get rather than what Get returns: a component is made the first time the registry is read, which
+// only run does, so `techo5 help` or a tool doesn't make the whole device on the way (GENBU-203).
+func Register[C Component](p Phase, get func() C, opts ...Option) {
+	shared.add(p, func() Component { return get() }, opts)
+}
+
+// Wire is for what a package hooks up between components, like a button that starts pairing or a
+// ring that shows a recording: it runs once, after every component is made, instead of in init, where
+// it would make the components it hooks up for a process that never runs them (GENBU-203).
+func Wire(f func()) { shared.Wire(f) }
 
 // Default is the process-wide registry.
 func Default() *Registry { return shared }
 
 // Add registers a component.
 func (r *Registry) Add(p Phase, c Component, opts ...Option) {
-	e := &entry{c: c, phase: p}
+	r.add(p, func() Component { return c }, opts)
+}
+
+// Wire adds f to what runs once the components are made.
+func (r *Registry) Wire(f func()) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.wires = append(r.wires, f)
+}
+
+func (r *Registry) add(p Phase, get func() Component, opts []Option) {
+	e := &entry{get: get, phase: p}
 	for _, o := range opts {
 		o(e)
 	}
@@ -182,11 +205,23 @@ func (o oneshot) Close() error {
 	return nil
 }
 
-// sorted is the entries in the order everything walks them.
+// Build makes every component now. Run calls it first, so the whole device exists before any of it
+// starts, the way it did when the components were made in init.
+func (r *Registry) Build() { r.sorted() }
+
+// sorted is the entries in the order everything walks them, every one of them made and wired.
 func (r *Registry) sorted() []*entry {
 	r.mu.Lock()
 	out := slices.Clone(r.entries)
+	wires := r.wires
+	r.wires = nil
 	r.mu.Unlock()
+	for _, e := range out {
+		e.once.Do(func() { e.c = e.get() })
+	}
+	for _, f := range wires {
+		f()
+	}
 
 	slices.SortStableFunc(out, func(a, b *entry) int {
 		if v := cmp.Compare(a.phase, b.phase); v != 0 {

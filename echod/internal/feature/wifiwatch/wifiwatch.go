@@ -23,7 +23,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Network, New(), component.Order(95))
+	component.Register(component.Network, New, component.Order(95))
 }
 
 const (

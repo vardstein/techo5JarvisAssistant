@@ -42,8 +42,16 @@ With it, the installer:
 3. hands that token to the Show through the `esphome.<show>_music_assistant` action.
 
 The admin token is used for that and then dropped; the installer writes it nowhere. Running
-`python3 tools/jarvis-show.py home-assistant --name NAME` again renews the Show's token. To take lyrics
-away, delete the user in Music Assistant, or call the action with an empty token.
+`python3 tools/jarvis-show.py home-assistant --name NAME` again keeps the Show's token as long as it
+still works, so the player doesn't drop. It only makes a new one when the Show has none, when Music
+Assistant turned it away, or when it ends within a month (Music Assistant's tokens last a year). To
+tell which token it holds, the Show names it only by a hash of the token's id, and only over the
+encrypted API; the token itself never leaves the Show. Any other "Jarvis Show" token of that user is
+revoked. To take lyrics away, delete the user in Music Assistant, or call the action with an empty
+token.
+
+The Show's diagnostic sensor "Music Assistant key" says how its token stands: `ok`, `none` (no token
+yet), or `gone` (Music Assistant answered 401; the Show stops sending it until the installer runs).
 
 On the Show the token sits in `music-assistant.json` next to the API key, readable by root only.
 
@@ -61,5 +69,6 @@ minutes later.
 
 Play a song with words in its tags. Within a few seconds of the song starting, the button appears;
 echod logs `lyrics song=… lines=… synced=true`. A failed fetch logs the reason once and rests ten
-minutes. HTTP 401 means the token is gone (renew it with the installer); a timeout usually means the
+minutes. HTTP 401 means the token is gone: the "Music Assistant key" sensor reads `gone`, and the Show
+waits for the installer to give it a new one; a timeout usually means the
 network rule above is missing.

@@ -21,7 +21,7 @@ import (
 
 // After the light, whose color it inherits.
 func init() {
-	component.Register(component.Device, Get(), component.Order(20))
+	component.Register(component.Device, Get, component.Order(20))
 }
 
 type Reaction struct {

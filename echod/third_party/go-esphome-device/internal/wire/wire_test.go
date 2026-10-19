@@ -351,3 +351,57 @@ func (c *testInitiator) writePacket(body []byte) error {
 	_, err := c.rw.Write(out)
 	return err
 }
+
+// A device waiting for its key takes whichever the client opens with: plaintext to be read, or
+// Noise with the all-zeros key to be given one. Nothing else gets through the zero-key handshake.
+func TestProvisioningTakesPlaintextOrZeroKeyNoise(t *testing.T) {
+	c1, c2 := pipePair(t)
+	device := NewProvisioning(c1, "echolocal-kitchen")
+	if _, err := device.Read(); !errors.Is(err, ErrNotReady) {
+		t.Errorf("read before the handshake: %v, want ErrNotReady", err)
+	}
+
+	sent := Frame{Type: 1, Data: []byte("plain hello")}
+	go func() { _ = NewPlaintext(c2).Write(sent) }()
+	if err := device.Handshake(); err != nil {
+		t.Fatalf("plaintext handshake: %v", err)
+	}
+	if device.Encrypted() {
+		t.Error("a plaintext client is reported as encrypted")
+	}
+	got, err := device.Read()
+	if err != nil || got.Type != sent.Type || !bytes.Equal(got.Data, sent.Data) {
+		t.Fatalf("plaintext read: %+v %v, want %+v", got, err, sent)
+	}
+
+	c3, c4 := pipePair(t)
+	device = NewProvisioning(c3, "echolocal-kitchen")
+	errc := make(chan error, 1)
+	go func() { errc <- device.Handshake() }()
+	client := newTestInitiator(c4)
+	if err := client.handshake(make([]byte, 32)); err != nil {
+		t.Fatalf("zero-key client handshake: %v", err)
+	}
+	if err := <-errc; err != nil {
+		t.Fatalf("zero-key device handshake: %v", err)
+	}
+	if !device.Encrypted() {
+		t.Error("a zero-key Noise client is reported as plaintext")
+	}
+	sent = Frame{Type: 124, Data: []byte("a key")}
+	go func() { _ = client.write(sent) }()
+	got, err = device.Read()
+	if err != nil || got.Type != sent.Type || !bytes.Equal(got.Data, sent.Data) {
+		t.Fatalf("noise read: %+v %v, want %+v", got, err, sent)
+	}
+
+	c5, c6 := pipePair(t)
+	device = NewProvisioning(c5, "echolocal-kitchen")
+	go func() { errc <- device.Handshake() }()
+	if err := newTestInitiator(c6).handshake(testPSK()); err == nil {
+		t.Error("a client with some other key got through")
+	}
+	if err := <-errc; err == nil {
+		t.Error("the device accepted a handshake with some other key")
+	}
+}

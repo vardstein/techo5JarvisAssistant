@@ -20,9 +20,11 @@ A Jarvis Show manifest carries signed identity fields:
 }
 ```
 
-The updater and host installer both require the expected product and the physically detected board. `crown` and `checkers` are the only boards accepted by Jarvis Show v1. Unknown, duplicate or missing board identities fail closed.
+The updater and host installer both require the expected product and the physically detected board. `crown`, `checkers` and `cronos` are the boards Jarvis Show v1 accepts. Unknown, duplicate or missing board identities fail closed.
 
-This is deliberately separate from CPU architecture. Crown and Checkers both run ARMv7; architecture alone cannot prevent a cross-product/cross-board release mistake.
+`cronos` came after the first release, so it reads a signed manifest of its own, `manifest-cronos.json`, with `"boards": ["cronos"]`. The `manifest.json` that older Crown and Checkers Shows read never names it: those Shows were built before `cronos` was a board and would refuse the whole manifest (`supportedBoards` and `ownManifestBoards` in `echod/internal/update/manifest.go`).
+
+This is deliberately separate from CPU architecture. All three boards are MT8163; architecture alone cannot prevent a cross-product/cross-board release mistake.
 
 ## Download integrity and rootfs identity
 

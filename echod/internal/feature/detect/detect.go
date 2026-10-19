@@ -3,6 +3,7 @@ package detect
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,7 +26,7 @@ import (
 func init() {
 	// Before the API, so Home Assistant cannot read the wake words while they are still loading and be
 	// told about one that then fails.
-	component.Register(component.Device, Get(), component.Order(40),
+	component.Register(component.Device, Get, component.Order(40),
 		component.Supervise(service.Restart(time.Second, 30*time.Second)))
 }
 
@@ -70,10 +71,10 @@ const slackFloor = 0.5
 // little slack for that: it is the one word said while the speaker is certainly playing, because
 // playing is what it is asked to stop, and a false stop costs a pause.
 //
-// The wake words get none. With it, the residual of the device's own songs and announcements woke it,
-// every such wake crossing between 0.85 and 0.91 against a lowered cutoff, and a false wake costs the
-// music and a turn nobody asked for. Said over the music on purpose, the word still clears its usual
-// threshold.
+// The wake words get none here. With it, the residual of the device's own songs and announcements woke
+// Hey Jarvis, every such wake crossing between 0.85 and 0.91 against a lowered cutoff, and a false wake
+// costs the music and a turn nobody asked for. The few that music leaves alone go further instead; see
+// playbackWords.
 func thresholdFor(slot int, base func(int) float64, stop float64, masking bool) float64 {
 	if slot != StopSlot {
 		return base(slot)
@@ -82,6 +83,50 @@ func thresholdFor(slot int, base func(int) float64, stop float64, masking bool) 
 		return max(stop-playingSlack, slackFloor)
 	}
 	return stop
+}
+
+// playbackWords are the wake words that are judged against NearMiss while the device's own playback is
+// loud enough to bury them (mic.Source.Masking), so somebody who says one over the music is heard the
+// first time instead of having the music turned down and being asked, in effect, to say it again.
+//
+// A word gets in here by being measured, not by seeming likely. Okay Nabu: 64 songs from 64 artists,
+// four hours of music with sung words, never scored above 0.08 (TestWakeScore). On the two Shows, of
+// the ten near misses it had over their own playback, eight were followed by the same word firing two to
+// seven seconds later, and they peaked anywhere from 0.55 to 0.87, so any smaller allowance misses most
+// of them. Hey Jarvis is the counterexample: the residual of the same music crossed 0.85 on its own.
+//
+// A word not listed keeps its threshold over the music, and the near miss ducks it instead (nearmiss.go).
+var playbackWords = map[string]bool{"okay_nabu": true}
+
+// heardThrough is whether the word in a slot is judged against NearMiss: a wake word measured safe over
+// music, while the device's own playback masks it or its own reply is being heard. The stop word has
+// its own allowance (thresholdFor).
+func heardThrough(slot int, id string, masking, replying bool) bool {
+	return (masking || replying) && slot != StopSlot && playbackWords[id]
+}
+
+// overOwnReply is whether the device is saying a reply that does not have the word in it.
+//
+// The reply gets the same allowance as music (GENBU-250). Its loopback is often too quiet to count as
+// masking, so a wake word said over it was judged against the full cutoff while the device's own voice
+// pulled its score down, and the reply only stopped once it was done. On genbuShow5: Okay Nabu over a
+// reply peaked at 0.55 against 0.80, and the same word straight after it scored 0.94. In 170 replies on
+// three Shows the device's own voice never scored 0.5 on any word.
+//
+// A reply that says the word itself gets nothing: that is the one way the device could wake itself
+// (Alexa versus Alexa, AsiaCCS 2022, was an Echo obeying its own speaker). The distinctive part of the
+// id is enough: "nabu" for okay_nabu.
+func overOwnReply(id string, text string, replying bool) bool {
+	if !replying {
+		return false
+	}
+	word := id[strings.LastIndex(id, "_")+1:]
+	return word != "" && !strings.Contains(text, word)
+}
+
+func ownReply(id string) bool {
+	text, replying := voice.Get().OwnReply()
+	return overOwnReply(id, text, replying)
 }
 
 func newDetect() *Detect {
@@ -95,6 +140,9 @@ func newDetect() *Detect {
 	// The wake words only, and not over the device's own playback, for the same reason they get no
 	// slack there: the residual of its own songs comes close often enough to be heard twice.
 	e.SecondTry = func(slot int) bool { return slot != StopSlot && !mic.Get().Masking() }
+	e.Playback = func(slot int, id string) bool {
+		return heardThrough(slot, id, mic.Get().Masking(), ownReply(id))
+	}
 
 	e.OnDetect = func(slot int) {
 		// A call has the microphones and the speaker. The far end talking through the speaker is not
@@ -119,7 +167,10 @@ func newDetect() *Detect {
 			voice.Get().Interrupt()
 			return
 		}
-		voice.Get().Start(slot)
+		// Heard by the microphones, so it may have been heard by another Show too: the voice feature
+		// asks Home Assistant which of them answers, with what this one heard (GENBU-224).
+		score, cutoff := e.Crossing(slot)
+		voice.Get().Woke(slot, voice.Wake{Heard: mic.Get().Voice(), Score: score, Cutoff: cutoff})
 	}
 
 	d := &Detect{engine: e, busy: newWakeBusy(led.Get().Busy(), e.Ready)}

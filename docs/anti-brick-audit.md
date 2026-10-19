@@ -25,8 +25,9 @@ Jarvis Show supports exactly:
 
 - `CROWN` — Echo Show 8 1st gen / C7H6N3
 - `CHECKERS` — Echo Show 5 1st gen / H23K37
+- `CRONOS` — Echo Show 5 2nd gen / C76N8S (since GENBU-185)
 
-`CRONOS` is explicitly refused as a newer Show 5 generation, and every unknown product is refused before writes. Automatic board detection is the source of truth; an optional `--board` argument can only narrow/reject the detected board, never override it. The initially detected fastboot serial is pinned across the destructive flow.
+When this audit ran, `CRONOS` was refused. Since GENBU-185 it is identified and installed with its own pins; its unlock refuses until `--amonet-hashes` is given on the first run, and it has no BROM, so the unlock warns that a brick there is permanent. Every unknown product is still refused before writes. Automatic board detection is the source of truth; an optional `--board` argument can only narrow/reject the detected board, never override it. The initially detected fastboot serial is pinned across the destructive flow.
 
 ## PASS — checkers flashes only pinned boot and TWRP images, never guessed assets
 
@@ -38,7 +39,7 @@ The known-good Crown Amonet v2.0.1 bundle, TWRP and boot image are SHA-256 pinne
 
 ## WARN — the Amonet unlock itself is inherently destructive
 
-This is the one unavoidable high-risk stage for a locked device. Amonet 2.x writes bootloader-class storage including preloader/LK/TEE/expdb as part of its exploit. Jarvis Show does not reimplement those writes; it executes only the pinned board-specific Amonet package after exact product checks and explicit confirmation, then requires the same device to return with `unlock_status=true`. Do not interrupt power during this stage.
+This is the one unavoidable high-risk stage for a locked device. Amonet 2.x writes bootloader-class storage including preloader/LK/TEE/expdb as part of its exploit. Jarvis Show does not reimplement those writes; it executes only the pinned board-specific Amonet package after exact product checks and explicit confirmation, then waits up to 15 minutes for the same serial to come up in TWRP, sending the Show nothing while it writes. Amonet runs in its own process group, so a timeout or Ctrl-C can't leave a `fastboot flash brick` attempt running behind the installer's back. A worn-out eMMC (`eMMC-RO`) and a refused payload (`Device mismatch`) get their own messages. Do not interrupt power during this stage: on cronos there is no BROM to recover from, so a brick here is permanent.
 
 For an already-unlocked device the Amonet exploit is skipped entirely.
 

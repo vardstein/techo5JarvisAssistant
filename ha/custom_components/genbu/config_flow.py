@@ -1,6 +1,7 @@
 """Sets Genbu up. The form asks nothing: the house starts where its newest Show is (GENBU-119). The
 installer sends the same empty form over REST. The options set the recipe search, a SearXNG address the
-voice assistant's genbu__recipe looks recipes up with."""
+voice assistant's genbu__recipe looks recipes up with, and the agent Genbu's own conversation agent hands on
+to (conversation.py, GENBU-253)."""
 
 from __future__ import annotations
 
@@ -9,13 +10,15 @@ from urllib.parse import urlsplit
 
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
 from homeassistant.core import callback
+from homeassistant.helpers import selector
 
 try:  # Home Assistant 2026.10 and later
     import probatio as vol
 except ImportError:
     import voluptuous as vol
 
-from .const import CONF_SEARXNG, DOMAIN, NAME
+from .const import CONF_AGENT, CONF_SEARXNG, DOMAIN, NAME
+from .conversation import is_genbu
 from .coordinator import find_shows
 
 
@@ -51,9 +54,20 @@ class GenbuOptions(OptionsFlow):
         errors = {}
         if user_input is not None:
             search = _search(user_input)
-            if search is not None:
-                return self.async_create_entry(data={**self.config_entry.options, CONF_SEARXNG: search})
-            errors[CONF_SEARXNG] = "searxng"
-        schema = vol.Schema({vol.Optional(CONF_SEARXNG, description={
-            "suggested_value": self.config_entry.options.get(CONF_SEARXNG, "")}): str})
+            agent = str(user_input.get(CONF_AGENT) or "")
+            if search is None:
+                errors[CONF_SEARXNG] = "searxng"
+            if agent and is_genbu(self.hass, agent):
+                errors[CONF_AGENT] = "own_agent"
+            if not errors:
+                options = {**self.config_entry.options, CONF_SEARXNG: search}
+                options.pop(CONF_AGENT, None)
+                return self.async_create_entry(data={**options, CONF_AGENT: agent} if agent else options)
+        options = self.config_entry.options
+        schema = vol.Schema({
+            vol.Optional(CONF_SEARXNG, description={"suggested_value": options.get(CONF_SEARXNG, "")}): str,
+            # Left empty, Genbu has no conversation agent of its own.
+            vol.Optional(CONF_AGENT, description={"suggested_value": options.get(CONF_AGENT)}):
+                selector.EntitySelector(selector.EntitySelectorConfig(domain="conversation")),
+        })
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

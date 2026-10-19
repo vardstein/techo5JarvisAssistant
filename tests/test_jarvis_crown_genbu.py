@@ -1,6 +1,9 @@
+import importlib.util
+import os
 import pathlib
 import sys
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -58,7 +61,7 @@ class Clock:
         self.now += s
 
 
-def run(fake, *, answers=None, wait=900.0):
+def run(fake, *, answers=None, wait=900.0, enter=None):
     lines, asked, clock = [], [], Clock()
 
     def choose(label, current, options, names):
@@ -66,8 +69,22 @@ def run(fake, *, answers=None, wait=900.0):
         return (answers or {}).get(label)
 
     result = genbu.set_up(fake, "E1", NODE, choose=choose if answers is not None else None,
-                          progress=lines.append, sleep=clock.sleep, clock=clock, wait=wait)
+                          progress=lines.append, sleep=clock.sleep, clock=clock, wait=wait,
+                          enter=enter and enter(clock))
     return result, lines, asked
+
+
+def enter_after(looks):
+    """A user who presses Enter during the given look at the status, or never with None."""
+    def make(clock):
+        seen = []
+
+        def enter(seconds):
+            seen.append(seconds)
+            clock.sleep(seconds)
+            return looks is not None and len(seen) >= looks
+        return enter
+    return make
 
 
 class NoIntegrationTest(unittest.TestCase):
@@ -116,7 +133,8 @@ class HouseTest(unittest.TestCase):
         result, lines, asked = run(fake, answers={})
         self.assertEqual((result, asked), (genbu.FOLLOW, []))
         self.assertTrue(lines[0].startswith(f"the house is on version v1.0.3; {NODE} follows it"), lines)
-        self.assertIn("restarting", lines)
+        self.assertIn(genbu.NO_STATUS, lines)
+        self.assertNotIn("restarting", lines)  # an unavailable status is not proof of a restart
         self.assertEqual(lines[-1], "Following the house · version v1.0.3")
         self.assertEqual(fake.posted("/api/config/config_entries/flow"), [])
 
@@ -125,10 +143,49 @@ class HouseTest(unittest.TestCase):
         _, lines, _ = run(fake)
         self.assertEqual(lines[-1], "WARN: Version v1.0.3 did not install here; staying on v1.0.2")
 
+    def test_a_failed_install_is_said_with_its_reason(self):
+        line = "Update to v1.0.3 failed: not enough space on the Show (update: 3 bytes free on /data, need 9)"
+        fake = FakeHouse(entry=True, statuses=["Downloading v1.0.3", line])
+        _, lines, _ = run(fake)
+        self.assertEqual(lines[-1], "WARN: " + line)
+
+    def test_a_show_that_said_no_is_not_waited_for(self):
+        fake = FakeHouse(entry=True, statuses=["Your other Shows are on v1.0.3; install it from the update card"])
+        _, lines, _ = run(fake)
+        self.assertEqual(lines[-1], "Your other Shows are on v1.0.3; install it from the update card")
+
+    def test_a_show_ahead_of_the_house_is_not_waited_for(self):
+        line = ("Your other Shows are on the older v1.0.3; this one steps back when you say yes to its question, "
+                "or they all move up with an update on the Genbu Show card")
+        _, lines, _ = run(FakeHouse(entry=True, statuses=[line]))
+        self.assertEqual(lines[-1], line)
+
     def test_waiting_ends_and_leaves_it_to_the_show(self):
         fake = FakeHouse(entry=True, statuses=["Moving to v1.0.3 once nobody is using this Show"])
         _, lines, _ = run(fake, wait=60)
         self.assertIn("carries on by itself", lines[-1])
+
+    def test_enter_ends_the_wait_and_leaves_it_to_the_show(self):
+        fake = FakeHouse(entry=True, statuses=["Waiting for this version to settle before moving to v1.0.3"])
+        _, lines, _ = run(fake, enter=enter_after(2))
+        self.assertIn("Press Enter once the update is done, or to go on without waiting", lines[1])
+        self.assertEqual(lines[-1], "going on; it carries on by itself (Waiting for this version to settle before "
+                         "moving to v1.0.3); its update card in Home Assistant shows how far it is")
+        self.assertEqual(sum(1 for c in fake.calls if c[1].endswith("_update_status")), 2)
+
+    def test_following_goes_on_without_enter(self):
+        fake = FakeHouse(entry=True, statuses=["Downloading v1.0.3", "Following the house · version v1.0.3"])
+        _, lines, _ = run(fake, enter=enter_after(None))
+        self.assertEqual(lines[-1], "Following the house · version v1.0.3")
+
+    def test_never_pressed_it_still_ends_at_the_time(self):
+        fake = FakeHouse(entry=True, statuses=["Moving to v1.0.3 once nobody is using this Show"])
+        _, lines, _ = run(fake, wait=60, enter=enter_after(None))
+        self.assertTrue(lines[-1].startswith("it carries on by itself"), lines[-1])
+
+    def test_nobody_at_the_terminal_is_not_told_to_press_enter(self):
+        _, lines, _ = run(FakeHouse(entry=True, statuses=["Following the house · version v1.0.3"]))
+        self.assertFalse(any("Enter" in line for line in lines), lines)
 
     def test_the_house_reads_only_its_version(self):
         self.assertEqual(genbu.house(FakeHouse(entry=True)), genbu.House("v1.0.3"))
@@ -201,6 +258,96 @@ class FeaturesTest(unittest.TestCase):
         self.assertEqual((asked, fake.switched()), ([], []))
         self.assertTrue(any("Genbu Control Center" in line for line in lines), lines)
 
+
+class LlmHouse(Features):
+    """Genbu's house switch for whether the assistant is a language model, as it is now."""
+
+    def __init__(self, *, state="off", switch=True):
+        super().__init__()
+        self.state, self.switch = state, switch
+
+    def ws(self, msg):
+        found = super().ws(msg)
+        if msg["type"] == "config/entity_registry/list" and self.switch:
+            found.append({"platform": "genbu", "unique_id": "G1_llm_assistant",
+                          "entity_id": "switch.genbu_llm_assistant"})
+        return found
+
+    def request(self, method, path, body=None):
+        if path == "/api/states/switch.genbu_llm_assistant":
+            self.calls.append((method, path, body))
+            return {"state": self.state}
+        return super().request(method, path, body)
+
+
+def llm(fake, on=None, answer="unasked"):
+    lines, asked = [], []
+
+    def choose(label, current, options, names):
+        asked.append((label, current))
+        return answer
+    genbu.llm_assistant(fake, on, choose=choose if answer != "unasked" else None, progress=lines.append)
+    return lines, asked
+
+
+class LlmAssistantTest(unittest.TestCase):
+    """GENBU-240: one question for the whole house, shown as it is now, and Enter keeps it."""
+
+    def test_asked_with_the_switch_as_it_is_and_set(self):
+        fake = LlmHouse(state="off")
+        lines, asked = llm(fake, answer="yes")
+        self.assertEqual(asked, [("llm assistant", "no")])
+        self.assertEqual(fake.switched(), [("turn_on", "switch.genbu_llm_assistant")])
+        self.assertIn("Assistant uses an LLM: yes, for the whole house", lines)
+
+    def test_enter_keeps_it(self):
+        fake = LlmHouse(state="on")
+        lines, asked = llm(fake, answer=None)
+        self.assertEqual(asked, [("llm assistant", "yes")])
+        self.assertEqual((fake.switched(), lines), ([], []))
+
+    def test_the_switch_answers_without_asking(self):
+        fake = LlmHouse(state="on")
+        _, asked = llm(fake, on=False, answer="yes")
+        self.assertEqual(asked, [])
+        self.assertEqual(fake.switched(), [("turn_off", "switch.genbu_llm_assistant")])
+
+    def test_nobody_at_the_terminal_and_no_switch_leave_it(self):
+        fake = LlmHouse()
+        self.assertEqual(llm(fake), ([], []))
+        self.assertEqual(fake.switched(), [])
+
+    def test_an_older_genbu_without_the_switch_is_left_alone(self):
+        fake = LlmHouse(switch=False)
+        self.assertEqual(llm(fake, on=True, answer="yes"), ([], []))
+        self.assertEqual(fake.switched(), [])
+
+
+class EnterAtTheTerminalTest(unittest.TestCase):
+    """The installer's side of GENBU-222: what ends the wait at a real terminal."""
+
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("jarvis_show_cli_enter", ROOT / "tools" / "jarvis-show.py")
+        self.cli = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.cli)
+
+    def enter(self, interactive):
+        asker = mock.Mock(interactive=interactive)
+        with mock.patch.object(self.cli, "_asker", return_value=asker):
+            return self.cli._enter(mock.Mock())
+
+    def test_nobody_at_the_terminal_gets_none(self):
+        self.assertIsNone(self.enter(False))
+
+    def test_a_line_ends_the_wait_and_is_read(self):
+        r, w = os.pipe()
+        with os.fdopen(r) as stdin, os.fdopen(w, "w") as out, mock.patch.object(self.cli.sys, "stdin", stdin):
+            pressed = self.enter(True)
+            self.assertFalse(pressed(0.01))
+            out.write("\n")
+            out.flush()
+            self.assertTrue(pressed(5))
+            self.assertFalse(pressed(0.01))  # the line was used up
 
 if __name__ == "__main__":
     unittest.main()

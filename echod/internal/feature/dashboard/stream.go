@@ -30,6 +30,7 @@ const (
 	kindPicture = 1
 	kindProblem = 2
 	kindHalf    = 3 // a picture at half size, drawn doubled: sent while most of the page is moving
+	kindWhose   = 4 // whose Home Assistant user the page is signed in as, before the first picture
 )
 
 // View is what the page knows about the stream: whether there is a picture to draw (DrawStream
@@ -220,7 +221,19 @@ func (s *stream) once() error {
 		s.conn, s.enc = nil, nil
 		s.mu.Unlock()
 	}()
-	slog.Info("dashboard stream connected", "server", d.Server, "path", hello["path"], "page", s.page, "own_user", hello["token"] != nil)
+	sent := hello["token"] != nil
+	slog.Info("dashboard stream connected", "server", d.Server, "path", hello["path"], "page", s.page, "own_user", sent)
+	told := false // whether dashcast has said whose page it is
+	tell := func(whose string) {
+		if !told {
+			told = true
+			if note, warn := whoseNote(sent, whose); warn {
+				slog.Warn(note)
+			} else if note != "" {
+				slog.Info(note)
+			}
+		}
+	}
 
 	r := bufio.NewReaderSize(c, 256<<10)
 	var hdr [4]byte
@@ -237,7 +250,10 @@ func (s *stream) once() error {
 			return err
 		}
 		switch msg[0] {
+		case kindWhose:
+			tell(string(msg[1:]))
 		case kindHalf:
+			tell("")
 			if len(msg) < 5 {
 				continue
 			}
@@ -250,6 +266,7 @@ func (s *stream) once() error {
 		case kindProblem:
 			s.problem(string(msg[1:]))
 		case kindPicture:
+			tell("")
 			if len(msg) < 5 {
 				continue
 			}
@@ -260,6 +277,25 @@ func (s *stream) once() error {
 			}
 			s.paint(at, img)
 		}
+	}
+}
+
+// whoseNote is the log line for whose Home Assistant user dashcast signed the page in as, and whether
+// it is a warning. whose is what dashcast said; "" is nothing before the first picture, which is what a
+// dashcast from before own users says. That one takes no token, so a Show set to its own user shows
+// what dashcast's user sees, every Show's timers among it (GENBU-251), and its log said own_user=true.
+func whoseNote(sent bool, whose string) (string, bool) {
+	switch {
+	case whose == "own":
+		return "dashboard: signed in as this device's own Home Assistant user", false
+	case !sent && whose == "":
+		return "", false
+	case !sent:
+		return "dashboard: signed in as dashcast's user", false
+	case whose == "":
+		return "dashboard: dashcast did not say whose page it is, so it is older than own users and the page is dashcast's user's: update dashcast", true
+	default:
+		return "dashboard: dashcast would not use this device's own user (its log says why), so the page is dashcast's user's", true
 	}
 }
 

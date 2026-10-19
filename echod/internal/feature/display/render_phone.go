@@ -11,6 +11,7 @@ import (
 	"golang.org/x/image/font"
 
 	"github.com/HuskerMinion/techo5/echod/internal/feature/phone"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 )
 
 // The call page: over everything while a call rings, is placed or is up. A title, who it is with, how
@@ -51,7 +52,7 @@ func (r *renderer) callPage(s scene) {
 		r.text(r.small, note, (r.w-r.width(r.small, note))/2, r.s(130), dim)
 	}
 
-	who := st.Peer
+	who := i18n.Verbatim(st.Peer)
 	if who == "" {
 		who = "Unknown"
 	}

@@ -58,7 +58,7 @@ func TestShowUsersGuards(t *testing.T) {
 		case "kitchen", "bedroom":
 			return "Show " + cfg.token, false, nil
 		}
-		return "", false, errors.New("home assistant refused the token")
+		return "", false, errTokenRefused
 	}}
 	ctx := context.Background()
 	cfg := config{ha: "http://10.0.0.5:8123", token: "dashcast"}
@@ -76,6 +76,13 @@ func TestShowUsersGuards(t *testing.T) {
 		if g, _, err := u.guardFor(ctx, cfg, token); g != nil || err == nil {
 			t.Errorf("%s: got a guard", token)
 		}
+	}
+	// Only a refused one is told apart: that Show gets no page at all, an administrator's gets dashcast's.
+	if _, _, err := u.guardFor(ctx, cfg, "made-up"); !errors.Is(err, errTokenRefused) {
+		t.Errorf("a refused token: %v", err)
+	}
+	if _, _, err := u.guardFor(ctx, cfg, "admin"); errors.Is(err, errTokenRefused) {
+		t.Error("an administrator's token counted as refused")
 	}
 	if cfg.token != "dashcast" {
 		t.Error("dashcast's own config was changed")

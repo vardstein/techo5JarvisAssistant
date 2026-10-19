@@ -78,9 +78,13 @@ class AddressTests(unittest.TestCase):
         self.assertEqual(ha.normalize_ha_url("10.0.0.2"), "http://10.0.0.2:8123")
         self.assertEqual(ha.normalize_ha_url("10.0.0.2:8124"), "http://10.0.0.2:8124")
         self.assertEqual(ha.normalize_ha_url("homeassistant.local"), "http://homeassistant.local:8123")
-        for bad in ("ftp://ha", "http://u:p@ha", "http://ha/lovelace", "haos.example.org/lovelace"):
+        for bad in ("ftp://ha", "http://u:p@ha", "http://ha/lovelace", "haos.example.org/lovelace",
+                    "https://abc123.ui.nabu.casa", "abc123.UI.nabu.casa", "https://ui.nabu.casa"):
             with self.assertRaises(ValueError, msg=bad):
                 ha.normalize_ha_url(bad)
+        # Only the cloud's own name (GENBU-196: the Show's user is home only).
+        for fine in ("https://ui.nabu.casa.example.org", "https://notui.nabu.casa"):
+            self.assertEqual(ha.normalize_ha_url(fine), fine)
 
     def test_names(self):
         self.assertEqual(ha.node_slug("Jarvis Show 5"), "jarvis-show-5")
@@ -97,6 +101,10 @@ class FakeHA:
         self.unconfigured = unconfigured  # times the wake word select still reads unavailable
         self.flow_errors = list(flow_errors)
         self.allowed = allowed
+        self.show_answers = True  # the Show's home_assistant action says it stored the token
+        self.show_fails = ""      # what the Show's home_assistant action fails with
+        self.show_says = {"stored": True}  # its answer
+        self.ma_key = None  # what its music_assistant_key action answers; None: a Show from before it
         self.entries = [{"entry_id": "E1", "domain": "esphome", "title": "Jarvis Show 5"}] if entry else []
         self.areas = {"living_room": "Wohnzimmer", "kitchen": "Küche"}
         self.area = ""
@@ -177,6 +185,8 @@ class FakeHA:
             prefix = ha.service_prefix(self.node or "Jarvis Show 5")
             names = [f"{prefix}_{action}" for action in
                      ("dashboard_server", "home_assistant", "sendspin_server", "music_assistant")]
+            if self.ma_key is not None:
+                names.append(f"{prefix}_music_assistant_key")
             return [{"domain": "light", "services": {}}, {"domain": "esphome", "services": {n: {} for n in names}}]
         if path == "/api/states" and method == "GET":
             return [{"entity_id": e["entity_id"], "state": "on",
@@ -195,7 +205,17 @@ class FakeHA:
             self.states[body["entity_id"]]["state"] = "on"
             return []
         if path.startswith("/api/services/esphome/"):
-            return []
+            if not path.endswith("?return_response"):
+                return []
+            if self.ma_key is not None and path.endswith("_music_assistant_key?return_response"):
+                return {"changed_states": [], "service_response": self.ma_key}
+            # Before GENBU-158 no action of the Show's answered; since then home_assistant does.
+            if not (self.show_answers and path.endswith("_home_assistant?return_response")):
+                raise ha.HomeAssistantError(f"POST {path}: HTTP 400 {{\"message\": \"Service does not support "
+                                            "responses. Remove return_response from request.\"}")
+            if self.show_fails:
+                raise ha.HomeAssistantError(f"POST {path}: HTTP 500 {{\"message\": \"{self.show_fails}\"}}")
+            return {"changed_states": [], "service_response": self.show_says}
         raise AssertionError(f"unexpected {method} {path}")
 
     def ws(self, message):
@@ -230,7 +250,8 @@ class FakeHA:
         return {}
 
     def posted(self, prefix):
-        return [(p, b) for m, p, b in self.calls if m == "POST" and p.startswith(prefix)]
+        """What was posted under prefix, by path without its query."""
+        return [(p.split("?")[0], b) for m, p, b in self.calls if m == "POST" and p.startswith(prefix)]
 
 
 def run_deploy(fake, choose=None, login=None, **kw):
@@ -294,7 +315,7 @@ class DeployTests(unittest.TestCase):
     def test_a_renamed_show_is_reached_by_the_name_home_assistant_has(self):
         fake, names = FakeHA(), []
         fake.node = "genbushow5"
-        _, log = run_deploy(fake, host="10.0.0.9", login=lambda name: names.append(name) or "MA-SHOW-TOKEN")
+        _, log = run_deploy(fake, host="10.0.0.9", login=lambda name, held: names.append(name) or "MA-SHOW-TOKEN")
         actions = dict(fake.posted("/api/services/esphome/"))
         self.assertEqual(actions["/api/services/esphome/genbushow5_sendspin_server"], {"ip": "10.0.0.6"})
         self.assertEqual(actions["/api/services/esphome/genbushow5_music_assistant"], {"token": "MA-SHOW-TOKEN"})
@@ -346,12 +367,12 @@ class DeployTests(unittest.TestCase):
 
     def test_music_assistant_token_made_for_the_show_by_name(self):
         fake, names = FakeHA(), []
-        run_deploy(fake, host="10.0.0.9", login=lambda name: names.append(name) or "MA-SHOW-TOKEN")
+        run_deploy(fake, host="10.0.0.9", login=lambda name, held: names.append(name) or "MA-SHOW-TOKEN")
         self.assertEqual(names, ["jarvis-show-5"])
         self.assertEqual(dict(fake.posted("/api/services/esphome/"))
                          ["/api/services/esphome/jarvis_show_5_music_assistant"], {"token": "MA-SHOW-TOKEN"})
         fake = FakeHA()
-        _, log = run_deploy(fake, host="10.0.0.9", login=lambda name: None)
+        _, log = run_deploy(fake, host="10.0.0.9", login=lambda name, held: None)
         self.assertNotIn("/api/services/esphome/jarvis_show_5_music_assistant",
                          dict(fake.posted("/api/services/esphome/")))
         self.assertTrue(any("lyrics won't work" in line for line in log))
@@ -359,6 +380,34 @@ class DeployTests(unittest.TestCase):
         run_deploy(fake, host="10.0.0.9")
         self.assertNotIn("/api/services/esphome/jarvis_show_5_music_assistant",
                          dict(fake.posted("/api/services/esphome/")))
+
+    def test_music_assistant_token_kept_while_it_works(self):
+        # GENBU-137: the Show names its token, and the login keeps it ("") or makes a new one.
+        posted = "/api/services/esphome/jarvis_show_5_music_assistant"
+        for says, held in (({"state": "ok", "key": "k1"}, "k1"), ({"state": "gone", "key": "k1"}, ""),
+                           ({"state": "none", "key": ""}, ""), ({}, ""), (None, "")):
+            fake, seen = FakeHA(), []
+            fake.ma_key = says
+            run_deploy(fake, host="10.0.0.9", login=lambda name, h: seen.append(h) or "")
+            self.assertEqual(seen, [held], says)
+            self.assertNotIn(posted, dict(fake.posted("/api/services/esphome/")), says)
+        fake = FakeHA()
+        fake.ma_key = {"state": "ok", "key": "k1"}
+        _, log = run_deploy(fake, host="10.0.0.9", login=lambda name, h: "MA-NEW")
+        self.assertEqual(dict(fake.posted("/api/services/esphome/"))[posted], {"token": "MA-NEW"})
+        self.assertFalse(any(line.startswith("WARN") for line in log))
+
+    def test_music_assistant_key_that_cannot_be_asked_is_none(self):
+        fake = FakeHA()
+        fake.ma_key = {"state": "ok", "key": "k1"}
+        services = fake.request
+
+        def request(method, path, body=None):
+            if path.endswith("_music_assistant_key?return_response"):
+                raise ha.HomeAssistantError(f"POST {path}: HTTP 500")
+            return services(method, path, body)
+        fake.request = request
+        self.assertEqual(ha.music_assistant_key(fake, "jarvis_show_5_music_assistant_key"), "")
 
     def test_show_without_an_address_is_found_by_its_local_name(self):
         fake = FakeHA()
@@ -494,6 +543,81 @@ class DeployTests(unittest.TestCase):
         asked = []
         run_deploy(fake, host="10.0.0.9", choose=lambda label, *_: asked.append(label), keep_replaced=lambda *_: "x")
         self.assertNotIn("assistant name", asked)
+
+    def with_genbu(self, fake, *, version="1.4.11", appears=True):
+        """Genbu set up in fake, with a recipe search; from 1.4.11 its options take a voice agent."""
+        fields = [{"name": "searxng_url", "type": "string",
+                   "description": {"suggested_value": "http://search.example.org"}}]
+        if version >= "1.4.11":
+            fields.append({"name": "conversation_agent", "selector": {"entity": {"domain": "conversation"}}})
+        request = fake.request
+
+        def genbu(method, path, body=None):
+            if path == "/api/config/config_entries/entry?domain=genbu":
+                fake.calls.append((method, path, body))
+                return [{"entry_id": "G1", "domain": "genbu", "title": "Genbu Assistant"}]
+            if path == "/api/config/config_entries/options/flow" and body == {"handler": "G1"}:
+                fake.calls.append((method, path, body))
+                return {"type": "form", "flow_id": "O2", "data_schema": fields}
+            if path == "/api/config/config_entries/options/flow/O2" and method == "POST":
+                fake.calls.append((method, path, body))
+                if appears:
+                    fake.states["conversation.genbu_assistant"] = {"state": "unknown"}
+                return {"type": "create_entry"}
+            return request(method, path, body)
+        fake.request = genbu
+        return fake
+
+    def test_half_sentences_put_genbu_in_front_of_the_model(self):
+        fake, jarvis = self.two_assistants()
+        self.with_genbu(fake)
+        kept = {}
+
+        def keep(what, config):
+            kept[what] = config
+            return "/backups/" + what
+        _, log = run_deploy(fake, host="10.0.0.9", half_sentences=True, keep_replaced=keep)
+        # The search Genbu has stays; the agent is the one the pipeline had.
+        self.assertEqual(fake.posted("/api/config/config_entries/options/flow/O2")[0][1],
+                         {"searxng_url": "http://search.example.org", "conversation_agent": "conversation.jarvis"})
+        update = [m for m in fake.ws_calls if m["type"] == "assist_pipeline/pipeline/update"]
+        self.assertEqual(update, [{"type": "assist_pipeline/pipeline/update", "pipeline_id": "p1",
+                                   **{k: v for k, v in jarvis.items() if k != "id"},
+                                   "conversation_engine": "conversation.genbu_assistant"}])
+        self.assertEqual(kept["assist-pipeline-Jarvis"]["pipeline"]["conversation_engine"], "conversation.jarvis")
+        self.assertTrue(any("hands the rest to conversation.jarvis" in line and "/backups/" in line
+                            for line in log), log)
+
+    def test_half_sentences_stay_with_the_model_unless_asked_and_able(self):
+        def pipeline_updates(fake):
+            return [m for m in fake.ws_calls if m["type"] == "assist_pipeline/pipeline/update"]
+        cases = (({"keep_replaced": lambda *_: "x"}, {}, "go to conversation.jarvis as before"),  # Enter
+                 ({"half_sentences": True}, {}, "nowhere to save the pipeline first"),
+                 ({"half_sentences": True, "keep_replaced": lambda *_: "x"}, {"version": "1.4.10"},
+                  "needs 1.4.11 or newer"),
+                 ({"half_sentences": True, "keep_replaced": lambda *_: "x"}, {"appears": False},
+                  "did not appear within a minute"))
+        for kw, genbu, said in cases:
+            fake, _ = self.two_assistants()
+            self.with_genbu(fake, **genbu)
+            choose = (lambda *_: None) if "half_sentences" not in kw else None
+            _, log = run_deploy(fake, host="10.0.0.9", choose=choose, **kw)
+            self.assertFalse(pipeline_updates(fake), kw)
+            self.assertTrue(any(said in line for line in log), (kw, log))
+            if genbu.get("version"):
+                self.assertIn(("DELETE", "/api/config/config_entries/options/flow/O2", None), fake.calls)
+        # Already in front, or Home Assistant's own agent behind it: not even asked.
+        for engine in ("conversation.genbu_assistant", "conversation.home_assistant"):
+            fake, _ = self.two_assistants()
+            fake.pipelines["pipelines"][0]["conversation_engine"] = engine
+            self.with_genbu(fake)
+            asked = []
+            run_deploy(fake, host="10.0.0.9", choose=lambda label, *_: asked.append(label),
+                       keep_replaced=lambda *_: "x")
+            self.assertNotIn("half sentences", asked)
+            self.assertFalse(pipeline_updates(fake))
+        with mock.patch.object(sys, "argv", ["jarvis-show.py", "home-assistant", "--name", "x", "--half-sentences"]):
+            self.assertIs(show_cli.parse_args().half_sentences, True)
 
     def test_enter_keeps_the_assistant_name(self):
         args = argparse.Namespace(assistant=None, wake_word=None, room=None, room_dashboard=None, voice_extras=None,
@@ -699,8 +823,8 @@ class RoomTests(unittest.TestCase):
                                   "humidity_entity": "sensor.wohnzimmer_humidity"})
         self.assertEqual(top[1]["entity"], "weather.forecast_home")
         timer = zones["bottom-center"]["widgets"][0]["card"]
-        self.assertEqual(timer, {"type": "custom:jarvis-live-timer-card", "device_id": "D1",
-                                 "satellite_id": "assist_satellite.jarvis_show_5_assist_satellite"})
+        # No device: Genbu tells the card which Show it is on (GENBU-164).
+        self.assertEqual(timer, {"type": "custom:jarvis-live-timer-card", "title": "Timer"})
         self.assertIn("the Jarvis dashboard jarvis-display made; on the Show, pick it under Dashboard to show", log)
         # Again: it is there, nothing is asked or made.
         fake.boards = [{"url_path": "jarvis-display", "mode": "storage"}]
@@ -928,29 +1052,29 @@ class CalendarTests(unittest.TestCase):
             self.assertEqual(bool(fake.posted("/api/config/config_entries/flow/C1")), added)
             self.assertEqual(fake.sources(), [{"calendars": "calendar.personal"}] if added else [])
 
-    def test_an_account_it_has_is_replaced_or_the_step_skipped(self):
-        offered = {}
-
-        def chooser(answer):
-            def choose(label, current, options, names=None):
-                offered[label] = (options, names)
-                return {"calendar account": answer, "calendars": "all"}.get(label)
-            return choose
+    def test_an_account_it_has_is_never_asked_about_again(self):
+        """The account is the house's: the next Show's install keeps it without a question."""
         fake = FakeCalendarHA(calendars=("calendar.personal", "calendar.contact_birthdays"),
                               caldav_brings=("calendar.personal_2", "calendar.contact_birthdays_2"))
-        _, log = run_deploy(fake, choose=chooser("skip"), host="10.0.0.9", voice_extras=False,
+        asked = []
+
+        def choose(label, current, options, names=None):
+            asked.append(label)
+            return {"calendars": "all"}.get(label)
+        _, log = run_deploy(fake, choose=choose, host="10.0.0.9", voice_extras=False,
                             ask_caldav=lambda: self.fail("asked for an account"))
-        options, names = offered["calendar account"]
-        self.assertEqual(options, ["replace", "skip"])
-        self.assertEqual(names["replace"], "replace the CalDAV account old-user with another one")
-        self.assertEqual(names["skip"], "skip, keep old-user and its calendars: Contact_Birthdays, Personal")
+        self.assertNotIn("calendar account", asked)
+        self.assertIn("calendars", asked)
+        self.assertIn("the house's CalDAV account old-user stays; to swap it, run this again with --caldav-url", log)
         self.assertFalse(fake.posted("/api/config/config_entries/flow/C1"))
+        self.assertNotIn(("DELETE", "/api/config/config_entries/entry/OLD", None), fake.calls)
         self.assertEqual(fake.sources(), [{"calendars": "calendar.contact_birthdays, calendar.personal"}])
 
+    def test_only_a_given_account_replaces_the_one_it_has(self):
         fake = FakeCalendarHA(calendars=("calendar.personal", "calendar.contact_birthdays"),
                               caldav_brings=("calendar.personal_2", "calendar.contact_birthdays_2"))
-        _, log = run_deploy(fake, choose=chooser("replace"), host="10.0.0.9", voice_extras=False,
-                            ask_caldav=lambda: ACCOUNT)
+        _, log = run_deploy(fake, choose=lambda label, *_: {"calendars": "all"}.get(label), host="10.0.0.9",
+                            voice_extras=False, caldav=ACCOUNT)
         self.assertIn(("DELETE", "/api/config/config_entries/entry/OLD", None), fake.calls)
         self.assertEqual(sorted(fake.calendars), ["calendar.contact_birthdays", "calendar.personal"])
         self.assertEqual(set(fake.owner.values()), {"CAL1"})
@@ -1196,10 +1320,14 @@ class GatherTests(unittest.TestCase):
         self.assertIn("  │   1  the usual  ← now", said)
 
     def test_everything_asked(self):
-        asker, _ = self.asker(["Home", "http://ha:8123/", "jade", "10.0.0.5", "10.0.0.6", "jade"],
+        asker, _ = self.asker(["Home", "http://ha:8123/", "jade", "10.0.0.5", "10.0.0.6", "jade", "radiofan"],
                               ["wifi-pass", "wifi-pass", "ha-pass", DASH_KEY, "ma-pass"])
         signed = FakeSignedIn()
         logins = []
+
+        def tunein_there(host, token):
+            logins.append(("tunein?", host, token))
+            return False
 
         def ha_login(url, user, password, code=None):
             logins.append(("ha", url, user, password))
@@ -1211,14 +1339,17 @@ class GatherTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             run = SignIns(lambda: pathlib.Path(td) / "sign-ins.json")
             s = gather(args(), asker, defaults={}, lookup=lambda *a, **k: None, nearby=lambda: [],
-                       ha_login=ha_login, ma_login=ma_login, ma_logout=lambda *a: None, run=run)
+                       ha_login=ha_login, ma_login=ma_login, ma_logout=lambda *a: None,
+                       ma_tunein_there=tunein_there, run=run)
             self.assertTrue(run.active)
         self.assertEqual(s, Settings(wifi="Home", wifi_passphrase="wifi-pass", ha_url="http://ha:8123",
                                      dashcast="10.0.0.5:9555", dashcast_key=DASH_KEY, music_assistant="10.0.0.6",
                                      music_assistant_token="ma-session", own_ha_user=True, ha_user="jade",
-                                     music_assistant_user="jade"))
+                                     music_assistant_user="jade", music_assistant_tunein="radiofan"))
         self.assertIs(s.ha_sign_in, signed)
-        self.assertEqual(logins, [("ha", "http://ha:8123", "jade", "ha-pass"), ("ma", "10.0.0.6", "jade", "ma-pass")])
+        self.assertEqual(logins, [("ha", "http://ha:8123", "jade", "ha-pass"), ("ma", "10.0.0.6", "jade", "ma-pass"),
+                                  ("tunein?", "10.0.0.6", "ma-session")])
+        self.assertIn("Music Assistant: TuneIn added as radiofan, unless it is there", s.summary())
         self.assertIn("added to Home Assistant automatically, signed in as jade until the run ends", s.summary())
         for line in s.summary():
             for secret in ("wifi-pass", "ha-pass", DASH_KEY, "ma-pass", "ma-session"):
@@ -1230,7 +1361,8 @@ class GatherTests(unittest.TestCase):
         asker, _ = self.asker(["", "", "", ""], [])
         defaults = {"wifi": "Home", "ha_url": "http://ha:8123", "dashcast": "10.0.0.5:9555", "music_assistant": "10.0.0.6"}
         s = gather(args(), asker, defaults=defaults, lookup=lambda secret, **attrs: keyring.get(secret),
-                   nearby=lambda: [])
+                   nearby=lambda: [], ma_tunein_there=lambda host, token: True)
+        self.assertIsNone(s.music_assistant_tunein, "a Music Assistant with TuneIn is not asked about it")
         self.assertEqual((s.wifi, s.ha_url, s.dashcast, s.music_assistant),
                          ("Home", "http://ha:8123", "10.0.0.5:9555", "10.0.0.6"))
         self.assertEqual((s.wifi_passphrase, s.ha_token, s.dashcast_key, s.music_assistant_token),
@@ -1305,6 +1437,53 @@ class GatherTests(unittest.TestCase):
         s = gather(args(music_assistant_local_metadata=True), Asker(False), defaults={},
                    lookup=lambda secret, **attrs: keyring.get(secret))
         self.assertIsNone(s.music_assistant_token)
+
+    def test_tunein_by_switch_is_checked_and_needs_no_question(self):
+        keyring = {"music-assistant-token": "ma-token"}
+
+        def never(host, token):
+            raise AssertionError("a switch needs no look at Music Assistant")
+        s = gather(args(music_assistant="10.0.0.6", music_assistant_tunein=" radiofan "), Asker(False), defaults={},
+                   lookup=lambda secret, **attrs: keyring.get(secret), ma_tunein_there=never)
+        self.assertEqual(s.music_assistant_tunein, "radiofan")
+        s = gather(args(music_assistant="10.0.0.6", music_assistant_tunein=""), Asker(False), defaults={},
+                   lookup=lambda secret, **attrs: keyring.get(secret), ma_tunein_there=never)
+        self.assertIsNone(s.music_assistant_tunein)
+        for bad in ("fan@example.org", "radio fan"):
+            with self.assertRaises(SettingsError):
+                gather(args(music_assistant="10.0.0.6", music_assistant_tunein=bad), Asker(False), defaults={},
+                       lookup=lambda secret, **attrs: keyring.get(secret), ma_tunein_there=never)
+        # Without a Music Assistant admin nothing could add it, so the switch is dropped.
+        s = gather(args(music_assistant="10.0.0.6", music_assistant_tunein="radiofan"), Asker(False), defaults={},
+                   lookup=lambda *a, **k: None, ma_tunein_there=never)
+        self.assertIsNone(s.music_assistant_tunein)
+
+    def test_tunein_asked_only_when_music_assistant_has_none(self):
+        keyring = {"music-assistant-token": "ma-token"}
+        asker, said = self.asker(["-", "-", "-", "10.0.0.6", "fan@example.org", "radiofan"], [])
+        s = gather(args(), asker, defaults={}, lookup=lambda secret, **attrs: keyring.get(secret), nearby=lambda: [],
+                   ma_tunein_there=lambda host, token: False)
+        self.assertEqual(s.music_assistant_tunein, "radiofan")
+        self.assertTrue(any("email address" in line for line in said))
+        self.assertTrue(any("your TuneIn username" in line for line in said))
+        asker, said = self.asker(["-", "-", "-", "10.0.0.6", ""], [])
+        s = gather(args(), asker, defaults={}, lookup=lambda secret, **attrs: keyring.get(secret), nearby=lambda: [],
+                   ma_tunein_there=lambda host, token: False)
+        self.assertIsNone(s.music_assistant_tunein)
+
+        def unreachable(host, token):
+            raise ma.MusicAssistantError("cannot reach Music Assistant")
+        for there in (unreachable, lambda host, token: True):
+            asker, said = self.asker(["-", "-", "-", "10.0.0.6"], [])
+            s = gather(args(), asker, defaults={}, lookup=lambda secret, **attrs: keyring.get(secret),
+                       nearby=lambda: [], ma_tunein_there=there)
+            self.assertIsNone(s.music_assistant_tunein)
+            self.assertFalse(any("TuneIn" in line for line in said))
+        # Taking a Show out asks nothing about the radio.
+        asker, said = self.asker(["-", "10.0.0.6"], [])
+        s = gather(args(), asker, defaults={}, lookup=lambda secret, **attrs: keyring.get(secret), want_wifi=False,
+                   want_show=False, ma_tunein_there=lambda host, token: False)
+        self.assertIsNone(s.music_assistant_tunein)
 
     def test_a_typed_root_password_has_to_be_saved(self):
         # Nobody answers yes: the install stops rather than go on with a password nobody kept.
@@ -1463,9 +1642,9 @@ class MusicAssistantTests(unittest.TestCase):
                                                           {"token_id": "t-other", "name": "phone"}]},
                            {"message_id": "5", "result": {}},
                            {"message_id": "6", "result": "show-token"})
-        token, made = ma.show_exchange(sock, "10.0.0.6:8095", "ma-token", "Jarvis Show 5",
-                                       key="dGhlIHNhbXBsZSBub25jZQ==")
-        self.assertEqual((token, made), ("show-token", True))
+        token, how = ma.show_exchange(sock, "10.0.0.6:8095", "ma-token", "Jarvis Show 5",
+                                      key="dGhlIHNhbXBsZSBub25jZQ==")
+        self.assertEqual((token, how), ("show-token", ma.MADE))
         sent = sock.messages()
         self.assertEqual([m["command"] for m in sent], ["auth", "auth/users", "auth/user/create", "auth/tokens",
                                                         "auth/token/revoke", "auth/token/create"])
@@ -1483,7 +1662,7 @@ class MusicAssistantTests(unittest.TestCase):
                            {"message_id": "3", "result": []},
                            {"message_id": "4", "result": "show-token"})
         self.assertEqual(ma.show_exchange(sock, "10.0.0.6:8095", "ma-token", "Jarvis Show 5",
-                                          key="dGhlIHNhbXBsZSBub25jZQ=="), ("show-token", False))
+                                          key="dGhlIHNhbXBsZSBub25jZQ=="), ("show-token", ma.RENEWED))
         self.assertNotIn("auth/user/create", [m["command"] for m in sock.messages()])
         sock = self.server({"message_id": "1", "result": {"authenticated": True}},
                            {"message_id": "2", "result": [{"user_id": "u5", "username": "jarvis-show-5",
@@ -1491,6 +1670,39 @@ class MusicAssistantTests(unittest.TestCase):
         with self.assertRaises(ma.MusicAssistantError):
             ma.show_exchange(sock, "10.0.0.6:8095", "ma-token", "Jarvis Show 5", key="dGhlIHNhbXBsZSBub25jZQ==")
         self.assertEqual([m["command"] for m in sock.messages()], ["auth", "auth/users"])
+
+    def test_show_token_kept_while_it_works(self):
+        # GENBU-137: the Show's token stays when it names it and it has more than a month to go; a
+        # leftover of the same name goes. Anything else gets a new one, as before.
+        now = ma.datetime(2026, 10, 14, tzinfo=ma.timezone.utc)
+        held = ma.key_name("t-show")
+
+        def run(tokens, held=held, revoked=0):
+            sock = self.server({"message_id": "1", "result": {"authenticated": True}},
+                               {"message_id": "2", "result": [{"user_id": "u5", "username": "jarvis-show-5",
+                                                               "role": "user", "enabled": True}]},
+                               {"message_id": "3", "result": tokens},
+                               *[{"message_id": str(4 + i), "result": {}} for i in range(revoked)],
+                               {"message_id": str(4 + revoked), "result": "show-token"})
+            got = ma.show_exchange(sock, "10.0.0.6:8095", "ma-token", "Jarvis Show 5", held=held,
+                                   key="dGhlIHNhbXBsZSBub25jZQ==", now=now)
+            return got, [(m["command"], m.get("args")) for m in sock.messages()][2:]
+
+        show = {"token_id": "t-show", "name": ma.TOKEN_NAME, "expires_at": "2027-10-01T22:50:00.123456+00:00"}
+        got, sent = run([show, {"token_id": "t-left", "name": ma.TOKEN_NAME, "expires_at": "2027-01-01T00:00:00"},
+                         {"token_id": "t-phone", "name": "phone"}], revoked=1)
+        self.assertEqual(got, (None, ma.KEPT))
+        self.assertEqual(sent, [("auth/tokens", {"user_id": "u5"}), ("auth/token/revoke", {"token_id": "t-left"})])
+
+        for why, tokens, h, revoked in (
+                ("the Show names no token", [show], "", 1),
+                ("it names another", [show], ma.key_name("t-other"), 1),
+                ("not called Jarvis Show", [{**show, "name": "phone"}], held, 0),
+                ("runs out within the month", [{**show, "expires_at": "2026-11-01T00:00:00+00:00"}], held, 1),
+                ("no end date", [{**show, "expires_at": None}], held, 1)):
+            got, sent = run(tokens, h, revoked)
+            self.assertEqual(got, ("show-token", ma.RENEWED), why)
+            self.assertEqual(sent[-1], ("auth/token/create", {"name": ma.TOKEN_NAME, "user_id": "u5"}), why)
 
     def test_genres_with_enough_songs_by_their_numeric_ids(self):
         few = [{"item_id": str(i)} for i in range(3)]
@@ -1509,6 +1721,87 @@ class MusicAssistantTests(unittest.TestCase):
                                                         "music/tracks/library_items", "music/tracks/library_items"])
         # Only reads, and the genre filter as numbers: Music Assistant ignores it given as text.
         self.assertEqual(sent[2]["args"], {"genre": [29], "limit": ma.GENRE_LEAST_TRACKS})
+
+    def tunein_server(self, *answers):
+        return self.server({"message_id": "1", "result": {"authenticated": True}}, *answers)
+
+    FORM = {"flow_id": "f1", "step_id": "user", "type": "form",
+            "entries": [{"key": "username", "type": "string", "required": True}]}
+
+    def tunein(self, sock, username="radiofan", **kw):
+        return ma.tunein_exchange(sock, "10.0.0.6:8095", "ma-token", username, key="dGhlIHNhbXBsZSBub25jZQ==", **kw)
+
+    def test_tunein_added_through_its_setup_flow(self):
+        sock = self.tunein_server({"message_id": "2", "result": [{"domain": "spotify", "instance_id": "s"}]},
+                                  {"message_id": "3", "result": self.FORM},
+                                  {"message_id": "4", "result": {"flow_id": "f1", "step_id": "finish", "type": "finish",
+                                                                 "result": {"instance_id": "tunein--abc"}}})
+        self.assertEqual(self.tunein(sock), "TuneIn added")
+        self.assertEqual([(m["command"], m["args"]) for m in sock.messages()], [
+            ("auth", {"token": "ma-token"}),
+            ("config/providers", {"provider_domain": "tunein"}),
+            ("config/providers/setup", {"provider_domain": "tunein"}),
+            ("config/flows/submit", {"flow_id": "f1", "values": {"username": "radiofan"}}),
+        ])
+
+    def test_tunein_there_is_left_alone(self):
+        for enabled, said in ((True, "TuneIn was there already"), (False, "switched off")):
+            sock = self.tunein_server({"message_id": "2", "result": [{"domain": "tunein", "instance_id": "tunein--x",
+                                                                      "enabled": enabled}]})
+            self.assertIn(said, self.tunein(sock))
+            self.assertEqual([m["command"] for m in sock.messages()], ["auth", "config/providers"])
+        sock = self.tunein_server({"message_id": "2", "result": [{"domain": "tunein", "instance_id": "tunein--x"}]})
+        self.assertTrue(ma.tunein_there_exchange(sock, "10.0.0.6:8095", "ma-token", key="dGhlIHNhbXBsZSBub25jZQ=="))
+
+    def test_tunein_refused_username_leaves_no_flow_open(self):
+        refused = dict(self.FORM, errors={"base": "Invalid username"})
+        sock = self.tunein_server({"message_id": "2", "result": []},
+                                  {"message_id": "3", "result": self.FORM},
+                                  {"message_id": "4", "result": refused},
+                                  {"message_id": "5", "result": None})
+        with self.assertRaises(ma.MusicAssistantError) as cm:
+            self.tunein(sock)
+        self.assertIn("Invalid username", str(cm.exception))
+        self.assertEqual([(m["command"], m["args"]) for m in sock.messages()][-1],
+                         ("config/flows/abort", {"flow_id": "f1"}))
+
+    def test_tunein_flow_that_asks_more_is_left_to_music_assistant(self):
+        more = dict(self.FORM, entries=self.FORM["entries"] + [{"key": "password", "type": "secure_string"}])
+        sock = self.tunein_server({"message_id": "2", "result": []},
+                                  {"message_id": "3", "result": more},
+                                  {"message_id": "4", "result": None})
+        with self.assertRaises(ma.MusicAssistantError) as cm:
+            self.tunein(sock)
+        self.assertIn("add it in its settings", str(cm.exception))
+        self.assertEqual([m["command"] for m in sock.messages()],
+                         ["auth", "config/providers", "config/providers/setup", "config/flows/abort"])
+
+    def test_tunein_aborted_by_music_assistant(self):
+        sock = self.tunein_server({"message_id": "2", "result": []},
+                                  {"message_id": "3", "result": {"flow_id": "f0", "step_id": "abort", "type": "abort",
+                                                                 "reason": "provider_retired"}})
+        with self.assertRaises(ma.MusicAssistantError) as cm:
+            self.tunein(sock)
+        self.assertIn("provider_retired", str(cm.exception))
+        self.assertNotIn("config/flows/abort", [m["command"] for m in sock.messages()])
+
+    def test_tunein_still_being_added_is_waited_for(self):
+        progress = {"flow_id": "f1", "step_id": "working", "type": "progress"}
+        sock = self.tunein_server({"message_id": "2", "result": []},
+                                  {"message_id": "3", "result": self.FORM},
+                                  {"message_id": "4", "result": progress},
+                                  {"message_id": "5", "result": progress},
+                                  {"message_id": "6", "result": {"flow_id": "f1", "step_id": "done", "type": "finish"}})
+        paused = []
+        self.assertEqual(self.tunein(sock, pause=paused.append), "TuneIn added")
+        self.assertEqual(len(paused), 2)
+        self.assertEqual([m["command"] for m in sock.messages()][-2:], ["config/flows/get", "config/flows/get"])
+
+    def test_tunein_username(self):
+        self.assertEqual(ma.check_tunein_username(" radiofan "), "radiofan")
+        for bad in ("", "fan@example.org", "radio fan", "fan\x00"):
+            with self.assertRaises(ValueError):
+                ma.check_tunein_username(bad)
 
     def test_show_username(self):
         self.assertEqual(ma.show_username("Jarvis Show 5"), "jarvis-show-5")
@@ -1610,9 +1903,13 @@ class OwnUserHA(FakeHA):
         self.sent_auth = []
         self.url = "http://ha:8123"
         self.owner = True
+        self.current = True  # auth/refresh_tokens marks the token it was asked with
+        self.events = []     # the handover and what was deleted, in order
 
     def request(self, method, path, body=None, *, auth=True, form=False):
         if not path.startswith("/auth/"):
+            if path.startswith("/api/services/esphome/"):
+                self.events.append(("hand over", path))
             return super().request(method, path, body)
         self.sent_auth.append((path, auth, form))
         if path == "/auth/login_flow":
@@ -1635,6 +1932,7 @@ class OwnUserHA(FakeHA):
             return [dict(u) for u in self.users]
         self.ws_calls.append(message)
         if kind == "config/auth/delete":
+            self.events.append(("delete user", message["user_id"]))
             self.users = [u for u in self.users if u["id"] != message["user_id"]]
             return None
         if kind == "config/auth/create":
@@ -1656,19 +1954,22 @@ class OwnUserHA(FakeHA):
         return super().ws(message)
 
     def as_user(self, token):
-        assert token == "USER-ACCESS"
+        # The installer's sign-in as the Show's user, or the new token the Show is given.
+        current = {"USER-ACCESS": "R-login", "SHOW-USER-TOKEN": "R-new"}[token]
         fake = self
 
         class Own:
             def ws(self, message):
                 fake.ws_calls.append(("as user", message))
                 if message["type"] == "auth/long_lived_access_token":
+                    assert token == "USER-ACCESS"
                     fake.llats.append({"id": "R-new", "type": "long_lived_access_token",
                                        "client_name": message["client_name"]})
                     return "SHOW-USER-TOKEN"
                 if message["type"] == "auth/refresh_tokens":
-                    return list(fake.llats)
+                    return [{**t, "is_current": fake.current and t["id"] == current} for t in fake.llats]
                 if message["type"] == "auth/delete_refresh_token":
+                    fake.events.append(("delete token", message["refresh_token_id"]))
                     fake.llats = [t for t in fake.llats if t["id"] != message["refresh_token_id"]]
                     return {}
                 raise AssertionError(message)
@@ -1717,15 +2018,104 @@ class OwnUserTests(unittest.TestCase):
         self.assertEqual(dict(fake.posted("/api/services/esphome/"))
                          ["/api/services/esphome/jarvis_show_5_home_assistant"]["token"], "SHOW-USER-TOKEN")
 
-    def test_an_admin_who_is_not_the_owner_makes_the_user_again(self):
+    def test_an_admin_who_is_not_the_owner_makes_a_second_user(self):
+        # Only the owner may set a password. Deleting the user first would end the token the Show
+        # still uses (GENBU-158), so a second one takes over and the first goes once the Show has it.
         fake = OwnUserHA(users=[{"id": "U1", "name": "Jarvis Show 5", "username": "show_jarvis_show_5",
                                  "group_ids": ["system-users"]}])
         fake.owner = False
+        fake.llats = [t for t in fake.llats if t["id"] != "R-old"]  # the old token is U1's, gone with it
         log = self.deploy(fake)
-        self.assertEqual([u["id"] for u in fake.users], ["U-new"])
-        self.assertTrue(any("made again" in line for line in log))
+        self.assertEqual([(u["id"], u["username"]) for u in fake.users], [("U-new", "show_jarvis_show_5-2")])
+        self.assertEqual(fake.events, [("hand over", "/api/services/esphome/jarvis_show_5_home_assistant"
+                                                     "?return_response"), ("delete user", "U1")])
+        self.assertTrue(any("made next to 'show_jarvis_show_5'" in line for line in log))
         self.assertEqual(dict(fake.posted("/api/services/esphome/"))
                          ["/api/services/esphome/jarvis_show_5_home_assistant"]["token"], "SHOW-USER-TOKEN")
+
+        # The next run by that admin goes back to the first name the same way.
+        fake.users[0]["id"] = "U2"
+        fake.events = []
+        self.deploy(fake)
+        self.assertEqual([u["username"] for u in fake.users], ["show_jarvis_show_5"])
+        self.assertEqual(fake.events[-1], ("delete user", "U2"))
+
+    def test_the_owner_keeps_using_the_second_name(self):
+        fake = OwnUserHA(users=[{"id": "U2", "name": "Jarvis Show 5", "username": "show_jarvis_show_5-2",
+                                 "group_ids": ["system-users"]}])
+        fake.passwords["show_jarvis_show_5-2"] = "old"
+        self.deploy(fake)
+        self.assertEqual([u["id"] for u in fake.users], ["U2"])
+        self.assertNotEqual(fake.passwords["show_jarvis_show_5-2"], "old")
+        self.assertNotIn(("delete user", "U2"), fake.events)
+
+    def test_the_owner_tidies_up_both_names(self):
+        fake = OwnUserHA(users=[{"id": "U1", "name": "Jarvis Show 5", "username": "show_jarvis_show_5",
+                                 "group_ids": ["system-users"]},
+                                {"id": "U2", "name": "Jarvis Show 5", "username": "show_jarvis_show_5-2",
+                                 "group_ids": ["system-users"]}])
+        self.deploy(fake)
+        self.assertEqual([u["id"] for u in fake.users], ["U1"])
+        self.assertEqual(fake.events[0][0], "hand over")
+        self.assertIn(("delete user", "U2"), fake.events)
+
+    def test_both_names_taken_and_no_owner_changes_nothing(self):
+        fake = OwnUserHA(users=[{"id": "U1", "name": "Jarvis Show 5", "username": "show_jarvis_show_5",
+                                 "group_ids": ["system-users"]},
+                                {"id": "U2", "name": "Jarvis Show 5", "username": "show_jarvis_show_5-2",
+                                 "group_ids": ["system-users"]}])
+        fake.owner = False
+        with self.assertRaisesRegex(ha.HomeAssistantError, "both 'show_jarvis_show_5' and 'show_jarvis_show_5-2'"):
+            self.deploy(fake)
+        self.assertEqual([u["id"] for u in fake.users], ["U1", "U2"])
+        self.assertEqual(fake.events, [])
+
+    def test_old_tokens_go_only_after_the_show_stored_the_new_one(self):
+        fake = OwnUserHA()
+        self.deploy(fake)
+        self.assertEqual(fake.events, [("hand over", "/api/services/esphome/jarvis_show_5_home_assistant"
+                                                     "?return_response"), ("delete token", "R-old")])
+
+    def test_a_show_that_cannot_say_keeps_the_old_tokens(self):
+        # A Show from before GENBU-158: Home Assistant refuses return_response, the token goes over the
+        # old way, and as nothing says it arrived, the one the Show had stays.
+        fake = OwnUserHA(users=[{"id": "U1", "name": "Jarvis Show 5", "username": "show_jarvis_show_5",
+                                 "group_ids": ["system-users"]}])
+        fake.owner = False
+        fake.show_answers = False
+        log = self.deploy(fake)
+        self.assertEqual([e for e in fake.events if e[0] != "hand over"], [])
+        self.assertEqual([p for _, p in fake.events], [
+            "/api/services/esphome/jarvis_show_5_home_assistant?return_response",
+            "/api/services/esphome/jarvis_show_5_home_assistant"])
+        self.assertEqual([u["id"] for u in fake.users], ["U1", "U-new"])
+        self.assertIn("R-old", [t["id"] for t in fake.llats])
+        self.assertTrue(any(line.startswith("WARN: the Show did not say it stored its new token")
+                            and "'show_jarvis_show_5'" in line for line in log))
+
+    def test_only_stored_true_counts(self):
+        for says in ({"stored": False}, {"stored": "yes"}, {}, None):
+            fake = OwnUserHA()
+            fake.show_says = says
+            self.deploy(fake)
+            self.assertEqual([e[0] for e in fake.events], ["hand over"], says)
+            self.assertIn("R-old", [t["id"] for t in fake.llats])
+
+    def test_a_failed_handover_keeps_everything(self):
+        fake = OwnUserHA(users=[{"id": "U1", "name": "Jarvis Show 5", "username": "show_jarvis_show_5",
+                                 "group_ids": ["system-users"]}])
+        fake.show_fails = "Failed to execute action home_assistant on jarvis-show-5: disk full"
+        with self.assertRaisesRegex(ha.HomeAssistantError, "disk full"):
+            self.deploy(fake)
+        self.assertEqual([e[0] for e in fake.events], ["hand over"])
+        self.assertIn("R-old", [t["id"] for t in fake.llats])
+
+    def test_no_current_token_means_nothing_is_deleted(self):
+        fake = OwnUserHA()
+        fake.current = False
+        log = self.deploy(fake)
+        self.assertEqual([e[0] for e in fake.events], ["hand over"])
+        self.assertTrue(any("did not say which token" in line for line in log))
 
     def test_an_admin_with_that_name_is_not_taken_over(self):
         fake = OwnUserHA(users=[{"id": "U1", "name": "x", "username": "show_jarvis_show_5",
@@ -1786,6 +2176,62 @@ class OwnUserTests(unittest.TestCase):
         with self.assertRaisesRegex(SettingsError, "needs an admin"):
             gather(args(ha_url="http://ha:8123", own_ha_user=True), Asker(False), defaults={},
                    lookup=lambda secret, **attrs: None)
+
+    def genbu(self, answer):
+        """OwnUserHA with Genbu 1.4.2's genbu.show_key, which answers with answer (an exception raises)."""
+        fake = OwnUserHA()
+        listed, posted = FakeHA.request, OwnUserHA.request
+
+        def request(method, path, body=None, **kw):
+            if path == "/api/services" and method == "GET":
+                return listed(fake, method, path, body) + [{"domain": "genbu", "services": {"show_key": {}}}]
+            if path.startswith("/api/services/genbu/show_key"):
+                fake.calls.append((method, path, body))
+                if isinstance(answer, Exception):
+                    raise answer
+                return {"changed_states": [], "service_response": answer}
+            return posted(fake, method, path, body, **kw)
+        fake.request = request
+        return fake
+
+    def test_genbu_gives_the_key_when_it_can(self):
+        fake = self.genbu({"stored": True, "user": "Jarvis Show 5"})
+        log = self.deploy(fake)
+        self.assertEqual(fake.posted("/api/services/genbu/"),
+                         [("/api/services/genbu/show_key", {"node": "jarvis-show-5", "url": "http://ha:8123"})])
+        # The installer itself makes no user, no token, and gives the Show nothing.
+        self.assertEqual([m for m in fake.ws_calls if isinstance(m, dict) and m["type"].startswith("config/auth")], [])
+        self.assertNotIn("/api/services/esphome/jarvis_show_5_home_assistant",
+                         dict(fake.posted("/api/services/esphome/")))
+        self.assertEqual(fake.states["switch.jarvis_show_5_dashboard_as_this_device_s_own_user"]["state"], "on")
+        self.assertTrue(any("by Genbu" in line and "home network only" in line for line in log))
+
+    def test_genbu_without_an_answer_still_gave_it(self):
+        # Genbu raises whenever the Show did not store the key, so no answer is no reason to do it twice.
+        fake = self.genbu(None)
+        self.deploy(fake)
+        self.assertEqual(fake.users, [])
+        self.assertEqual(fake.states["switch.jarvis_show_5_dashboard_as_this_device_s_own_user"]["state"], "on")
+
+    def test_a_show_genbu_does_not_know_yet_gets_the_installers_user(self):
+        fake = self.genbu(ha.HomeAssistantError(
+            'POST /api/services/genbu/show_key: HTTP 400 {"message": "no Genbu Show called jarvis-show-5 in ESPHome"}'))
+        log = self.deploy(fake)
+        self.assertEqual(fake.users[0]["username"], "show_jarvis_show_5")
+        self.assertEqual(dict(fake.posted("/api/services/esphome/"))
+                         ["/api/services/esphome/jarvis_show_5_home_assistant"]["token"], "SHOW-USER-TOKEN")
+        self.assertTrue(any("Genbu does not know the Show yet" in line for line in log))
+
+    def test_genbu_saying_no_stops_the_install(self):
+        # Genbu said why; the installer does not go round it with a user of its own.
+        fake = self.genbu(ha.HomeAssistantError(
+            'POST /api/services/genbu/show_key: HTTP 400 {"message": "Jarvis Show 5 gets no new key: its user is '
+            'switched off"}'))
+        with self.assertRaisesRegex(ha.HomeAssistantError, "switched off"):
+            self.deploy(fake)
+        self.assertEqual(fake.users, [])
+        self.assertNotIn("/api/services/esphome/jarvis_show_5_home_assistant",
+                         dict(fake.posted("/api/services/esphome/")))
 
     def test_a_hand_made_token_file_wins_over_the_own_user(self):
         with tempfile.TemporaryDirectory() as td:

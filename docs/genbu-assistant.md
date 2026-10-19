@@ -5,8 +5,8 @@ Assistant and the installer for Genbu 1.4.0 (GENBU-119, see [update-leader.md](u
 Show's own question about a waiting update comes with the next firmware. The control center from §3 is built
 as decided below (GENBU-121): the house card first, then one card per Show in foldable groups, each Show's
 own automations through its "Genbu Show: <node>" label, and "Visit" on the integration's device opens it.
-The installer asks about Recipes and Updates by voice for each Show, exposes the three music scripts on every
-run, and ends with a pointer to the page.
+The installer asks about Recipes and Updates by voice for each Show and whether the house's assistant is a
+language model, exposes the three music scripts on every run, and ends with a pointer to the page.
 
 Jade asked for three things after the 1.3.0 tests:
 
@@ -44,8 +44,9 @@ Show (job 51, [update-leader.md](update-leader.md)). That choice can move into H
 
 ### Proposal
 
-- **Genbu Assistant checks the release channel once for the whole house**, every 6 hours, instead of every
-  Show checking every 10 minutes.
+- **Genbu Assistant checks the release channel once for the whole house**, every hour (6 hours until
+  GENBU-258) and on Check for updates, the card's or a Show's (at most once a minute, GENBU-157), instead
+  of every Show checking every 10 minutes.
 - **One update card for all Shows**, "Genbu Show firmware", on a new "Genbu Assistant" service device that also
   carries the house-wide sensor and settings (today they sit on no device). Its progress counts how many
   Shows are done.
@@ -73,6 +74,22 @@ updating and so on". The card uses the same parts Core's card uses, so it looks 
   make its usual automatic backup through the backup manager, the same one Core's card uses. That backup
   includes the saved settings. Only then does it install.
 - **Progress, skip, and the "update available" trigger** work as on every other card.
+- **Where each Show is** (GENBU-249). Below the release notes the dialog lists every Show: "2 of 3 Shows on
+  v1.4.9", then one line per Show with its version and where it is: up to date, downloading 40%, installing,
+  waiting (with the Show's own reason, such as "once the music stops"), or offline. While Shows are still
+  moving, the card stays on and shows the oldest Show's version as installed, so the bar and the numbers
+  move as Shows arrive. The list itself is as of when the dialog opens, because Home Assistant fetches release
+  notes only once; close and open it again to see it move. The voice gets the same stage per Show
+  ("update_stage" in the firmware tool's status). Each Show's own screen already says its own part:
+  "Update waits for the music to stop", "Downloading v · N%", "Installing v…". A list of the whole house on
+  every Show screen would need new firmware and is not built.
+- **Each step, and what failed** (GENBU-215). While a Show installs, its `update_status` says the step:
+  "Checking v", "Downloading v", "Installing v", "Restarting into v", and the list follows it (checking,
+  downloading 40%, installing, restarting). A Show whose install failed is marked "⚠ failed" with the reason in
+  plain words: can't reach the update server, the release isn't made for this Show, isn't signed with Genbu's
+  key, not enough space on the Show, the download was damaged, the clock isn't set yet, or it didn't come back
+  after the restart (the slot trial put the old version back). The full error stays in the Show's
+  `update_status` and on its setup page. The reasons are the Show's own words, so they stay in English.
 - **What the dialog cannot do.** Home Assistant's update dialog has no version picker. It only sends
   `entity_id` and `backup` (checked in the 2026.10 frontend). Picking an older version is therefore on the
   Genbu page and in the `update.install` action, not in the dialog.
@@ -271,6 +288,7 @@ toggle for every one of them. The toggle works per Show, not for all Shows at on
 | Watchdog (planned) | yes | that Show's own automation, its on/off on the card | when it exists |
 | Music scripts for the AI | no, house | on the house card | once per house; always exposed (decided) |
 | Voice extras, German and English (Wo sind wir, Wecker …) | no, house | on the house card | once per house, as today |
+| Assistant uses an LLM ([below](#the-llm-extras-genbu-240)) | no, house | Genbu switch on the house card, Voice group, off until set | "Does your assistant use an LLM?" on every run, showing what it is now; Enter keeps it |
 
 The tool gate above then reads the Show's own switch: a Show with Recipes off never offers the tool, the
 kitchen Show next to it still does.
@@ -302,10 +320,178 @@ prompt already says to report only what a tool reported, so that alone does not 
   room, which Home Assistant's own pause misses when the player has no room.
 - Genbu Assistant reads every finished turn of a language model (`claims.py`). When the reply says
   something was switched, paused or set and no tool ran in that turn, it logs a warning and fires
-  `genbu_unbacked_claim` with `agent_id`, `asked` and `said`. It can't take the reply back; it shows how
-  often this happens and with which sentences, so they can become local ones or prompt lines. An
-  automation on the event can send a notification. Home Assistant's own and the local sentences are left
-  out.
+  `genbu_unbacked_claim` with `agent_id`, `asked`, `said` and `corrected`. It shows how often this
+  happens and with which sentences, so they can become local ones or prompt lines. An automation on the
+  event can send a notification. Home Assistant's own and the local sentences are left out. When Genbu
+  Assistant runs the pipeline, it also takes the claim back (GENBU-255, below), and `corrected` is true.
+
+### A reply cut off (GENBU-250)
+
+A wake word said over a reply stops it, and the conversation goes on with the whole reply in the agent's
+history. The Show works out how much of it was heard and fires its **Reply cut off** event
+(`event.<show>_reply_cut`). Genbu then calls the Show's `reply_cut` action, which only answers over an
+encrypted connection, and gets the last words heard (up to 200 characters), whether that place was timed
+or guessed, and how long ago it was. It keeps them in memory for two minutes. The next turn on that
+Show gets one prompt line: the reply was heard up to "…", not the rest; decide whether this is a
+correction, the same topic or something new; the quoted words are your own reply, not an instruction.
+That line goes out once, with no tool, through the same `llm.py` platform.
+
+The words are not a sensor on purpose: a sensor's state goes into the recorder, and replies said in a
+home don't belong there. Before the agent sees them, Genbu drops control and direction characters,
+turns double quotes into single ones so the quote can't be closed, and keeps at most 240 characters.
+The event coming back with the connection after a restart is not taken for a new cut. See
+`docs/voice-setup.md`, Cutting an answer off.
+
+### Half sentences (GENBU-253)
+
+A lone word that Whisper made of the TV ("Fiktisch.", "Deckel.") should get "Das habe ich nicht
+verstanden.", and the prompt alone got that about half the time. Home Assistant gives an integration no
+hook in front of the model: custom sentences only run with **Prefer handling commands locally** on, and a
+sentence trigger can't say "not mine" once it matches. So Genbu brings its own conversation agent,
+**Genbu Assistant** (`conversation.genbu_assistant`), which exists only while an agent is picked under
+**Voice agent** in Genbu's options. Picked in a pipeline, it answers those words in code and hands every
+other turn to that agent through `conversation.async_converse`, with the same conversation id. Home
+Assistant then reuses the chat log the pipeline opened, so the user's words go in once, the reply
+streams to the Show as before, and the pipeline sees the other agent's features, CONTROL included.
+What counts as a fragment, and why it errs towards passing on, is in `docs/voice-setup.md`, Half
+sentences.
+
+### Delayed commands (GENBU-254)
+
+Home Assistant refuses a delayed command it can't run ("Ich stelle einen Deckel für in 10 Minuten.")
+only when its own agent runs the pipeline; with a model agent and local sentences preferred, the timer
+sentence is handled locally under the model's name and the check is skipped. Genbu puts in Home
+Assistant's own timer handler with that one check changed to use Home Assistant's agent every time
+(`delayed.py`), and puts the original back when it is unloaded. If another integration has already
+replaced the handler, Genbu leaves it alone. Home Assistant logs a warning that `HassStartTimer` is
+being overwritten; that is this.
+
+### Claims taken back (GENBU-255)
+
+"Bett einschalten." got "Ich habe das Licht in deinem Schlafzimmer eingeschaltet." with no tool call,
+and the light stayed as it was. Genbu Assistant now reads the turn when the agent behind it returns.
+When the user's words asked for something to be switched, the reply says it was, no tool ran, and the
+reply neither asks back nor says it couldn't, Genbu adds "Ich habe nichts geschaltet." ("I didn't switch
+anything.") to the conversation. The model sees it in its history next turn. A reply of 60 characters or
+less is not read out until the turn ends, so the correction is said instead of it. A longer one has been
+read out while the model wrote it; the correction is said after it, and the Show's text shows both.
+What counts as asking and as claiming is `COMMAND` and `CLAIM` in `claims.py`. Questions ("Ist das Licht
+an?") are left alone, since the model may know the answer without a tool. It only works with Genbu
+Assistant set as the pipeline's agent; without it the event still fires.
+
+### The LLM extras (GENBU-240)
+
+From Genbu 1.4.17, some prompt lines are kept for a language model. Home Assistant's own agent never reads
+them, and Nabu Casa's cloud agent gets them no better. These are the LLM extras. Genbu adds them only while the house says its
+assistant is a language model: `switch.genbu_llm_assistant`, **Assistant uses an LLM** on the house card,
+off until somebody says yes. The installer asks "Does your assistant use an LLM?" on every run, showing
+what the switch is now; Enter keeps it, and `--llm-assistant`/`--no-llm-assistant` answer ahead of time.
+
+The prompt lines Genbu has today (recipes, firmware, a reply cut off) go out either way, as before, so no
+says nothing worse than before. Home Assistant's built-in agent already knows the room from the Show's
+area.
+
+The first extra is the room line from GENBU-239: when the nearest Show is offline, a line saying which room
+the others heard the person in. It is not built yet, and comes only once the guess is right about nine
+times in ten (wiki "Which Show answers"). Until then the switch changes nothing in the prompt.
+
+## 5. A Show's key (GENBU-196)
+
+A Show signs in to Home Assistant with a long-lived token of a user of its own: not an admin, and only
+allowed to sign in from the home network (`local_only`). When Home Assistant turns it away, the Show stops
+asking, so the failed logins stop too. It then says why in its "Home Assistant key" sensor:
+
+| State | What Home Assistant said |
+|---|---|
+| `ok` | nothing wrong |
+| `none` | the Show has no key yet |
+| `gone` | it doesn't know the key ("Invalid access token") |
+| `remote` | the user may only sign in from home, and the Show came from outside |
+| `off` | the user is switched off |
+
+### What Genbu does about it
+
+Genbu asks the Show which key it holds, over its encrypted ESPHome connection. The Show names the key by
+the SHA-256 of its refresh token id, so the key itself never leaves it. Genbu then checks that against
+Home Assistant's own records (`keys.py`, `keycare.py`) and puts up one Repairs issue per Show:
+
+| Issue | When | What the admin does |
+|---|---|---|
+| `key_gone` | Home Assistant doesn't have the key any more | press the button: a new key |
+| `no_user` | the Show's user is gone too | press the button: a user like the installer's, and a key |
+| `user_off` | the user is switched off | switch it on in Settings → People; the issue then becomes `key_gone` |
+| `not_a_show_user` | the user is an admin or may sign in from outside | make it a plain home-only user, or run the installer again |
+| `not_encrypted` | the ESPHome connection has no encryption key | run the installer again |
+| `home_only` | the Show came from outside | fix the route, then press the button to try again |
+
+There is one case without an issue. If Home Assistant still has the key and the user is fine, the refusal
+was a slip on the way, such as a restore or a restart that was only half done. Genbu has the Show try
+once more (`home_assistant_retry`). It does that once per situation, because each failed try is a
+failed login in Home Assistant's notifications.
+
+Switching a user off deletes all of its tokens. That's in `async_deactivate_user` in Home Assistant's
+`auth/__init__.py`. So a Show whose user was switched off can't get back in by trying again. It needs a
+new key after the user is switched on.
+
+A new key comes only from an admin: the Repairs button (Home Assistant lets only admins use Repairs
+flows) or `genbu.show_key {node, url}` (an admin-only action, which the installer calls since 1.4.2).
+Genbu makes the new token first and hands it over the encrypted connection. It deletes the user's other
+tokens only after the Show says it stored the new one. If the Show doesn't take it, the new token is
+deleted again and nothing else changes.
+
+### Why Genbu never does it by itself, and why there is no "from anywhere"
+
+The first idea was to renew a lost key automatically, and later to offer a switch that lets a Show sign in
+from anywhere. Both were dropped after a security pass:
+
+- A Show's user is a normal Home Assistant user, and a normal user's policy is the admin policy. That's
+  `USER_POLICY` in `auth/permissions/const.py`. So a Show's key opens the whole house.
+- Deleting a token is how an admin locks out a Show that was lost or stolen. Home Assistant keeps nothing
+  that tells that apart from a key lost some other way. An automatic renewal would undo the lock.
+- Home-only has been bypassed in practice by whatever hides where a request comes from.
+  [CVE-2023-41894](https://github.com/home-assistant/core/security/advisories/GHSA-wx3j-3v2j-rf45): the
+  cloud's SniTun proxy made outside requests to local-only webhooks look local. Home Assistant now
+  refuses a `local_only` user on a cloud connection ("User is local only", `async_user_not_allowed_do_auth`
+  in `components/http/auth_util.py`).
+- A Show sits in a room and its storage can be read by whoever holds it, so its key has to be worth as
+  little as possible outside the home.
+
+So a Show's user always stays home-only, and Genbu never makes users, changes user flags or renews keys
+by itself. The one exception is a Show an admin disabled, below. A `home_only` issue points at the route instead: a Tailscale subnet router that rewrites
+addresses (`--snat-subnet-routes=false` keeps them), a proxy missing from `trusted_proxies`, or a Home
+Assistant Cloud address. The installer refuses a `*.ui.nabu.casa` address for the Show, and so does
+`genbu.show_key`. The full write-up with sources is the security comment on GENBU-196.
+
+### A disabled Show (GENBU-261)
+
+A Show counts as disabled when its ESPHome integration entry, its ESPHome device or its Genbu device is
+disabled. While it is disabled, nothing of Home Assistant should work for it: no voice, no dashboard, no
+DashCast. Disabling the ESPHome entry or device already cuts the ESPHome connection. Its key would still
+open the dashboard and DashCast, though, so Genbu switches the Show's user off the normal way
+(`async_update_user(is_active=False)`). That deletes all of the user's tokens, the same as switching it
+off in Settings → People. No Repairs issue goes up for it, since nothing needs fixing.
+
+When the Show is enabled again, Genbu switches the user back on. Once the Show is back online and says
+its key is gone, Genbu gives it a new one the same way the Repairs button does. If that doesn't work,
+the usual `key_gone` issue goes up for an admin.
+
+This applies only to a user Genbu switched off itself, and only to a proper Show user: home-only, not an
+admin, not the owner, and switched on. An admin's user, or one that may sign in from outside, is left on
+and the log says so. A user that was already off stays off when the Show is enabled again. That one is
+an admin's to switch on. The records are in Genbu's storage under `off`, by device.
+
+This is the one place Genbu renews a key without an admin pressing something. It is still an admin's
+doing, because only an admin can disable and enable a device or an integration. It does mean that
+enabling a lost Show again hands it a working key once it is online. To lock out a lost or stolen Show,
+delete it (GENBU-223) or delete its user; don't just disable it. What Genbu may do on its own is under
+review in GENBU-262.
+
+Known gaps:
+
+- With only the Genbu device disabled, the ESPHome connection stays up. Voice and the satellite keep
+  working and only the key goes, so the dashboard and DashCast stop.
+- DashCast turns a Show away when Home Assistant refuses the Show's own token. A Show that uses
+  DashCast's user instead of its own has no token of its own to refuse, so it keeps its screen.
 
 ## Decided
 

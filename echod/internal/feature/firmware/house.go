@@ -59,8 +59,11 @@ const (
 	dueSoon = 30 * time.Minute
 	// missingAfter is how long the main Show has to be gone before a following Show mentions it.
 	missingAfter = time.Hour
-	// fetchRetry is how long a house version that could not be fetched waits before the next try.
-	fetchRetry = 10 * time.Minute
+	// fetchRetry is how long a house version that could not be fetched waits before the next try: half a
+	// minute after the first miss, twice that after each further one, up to fetchRetryMost. A router rule
+	// that lets GitHub in shows within the minute, and a Show with no way out does not keep knocking.
+	fetchRetry     = 30 * time.Second
+	fetchRetryMost = 10 * time.Minute
 )
 
 type role int
@@ -109,13 +112,18 @@ type following struct {
 	seen string
 	// movedWhileUp is the house version changing while this process ran.
 	movedWhileUp bool
-	// failed is a house version that would not install here.
-	failed string
+	// retrying is a move whose fetch failed: the next try moves too. The version counts as seen by then,
+	// and bathroomShow5, shut out of GitHub on its first move, asked instead.
+	retrying bool
+	// failed is a house version that would not install here, and why why, "" when this process didn't see it.
+	failed, why string
 	// askedThisBoot, asked and askedAt are the last "should I move?" question.
-	askedThisBoot   bool
-	asked           string
-	askedAt         time.Time
-	busy, quiet     bool
+	askedThisBoot bool
+	asked         string
+	askedAt       time.Time
+	// busy is what keeps somebody's use of the Show from being cut by a restart, if anything does.
+	busy            Hold
+	quiet           bool
 	committed, held bool // held: an install is running, or a fetch failed a moment ago
 	now             time.Time
 }
@@ -127,9 +135,9 @@ func decide(f following) move {
 	switch {
 	case f.house == "" || f.house == f.running:
 		return stay
-	case f.house == f.failed, !f.committed, f.held, f.busy:
+	case f.house == f.failed, !f.committed, f.held, f.busy.Holding():
 		return stay
-	case f.seen == "" || f.movedWhileUp:
+	case f.seen == "" || f.movedWhileUp || f.retrying:
 		return align
 	case f.quiet:
 		return stay
@@ -149,25 +157,125 @@ type house struct {
 	movedWhileUp  bool
 	askedThisBoot bool
 	retryAt       time.Time
+	fetchMisses   int
 	status        string
+	// wait is what the move waits for, while that is all it waits for: the screen says it.
+	wait Hold
 }
 
-// inUse is somebody using the Show: something playing, a call, a timer counting or ringing, or an alarm
-// about to go off.
-var inUse = func(now time.Time) bool {
-	if playing, _ := media.Get().Playing(); playing {
-		return true
+// HoldKind is what a following Show waits for before it moves to the house version.
+type HoldKind int
+
+const (
+	HoldNone HoldKind = iota
+	HoldMusic
+	HoldRinging
+	HoldCall
+	HoldInstall
+	HoldTimer
+	HoldAlarm
+)
+
+// Hold is what keeps a following Show where it is for now: the update waits for it, and update_status
+// and the screen say so (GENBU-247).
+type Hold struct {
+	Kind HoldKind
+	// Name is the timer's, empty for everything else and for a timer nobody named.
+	Name string
+	// At is when the timer ends or the alarm goes off.
+	At time.Time
+}
+
+func (h Hold) Holding() bool { return h.Kind != HoldNone }
+
+// line finishes update_status's "Moving to v once ...".
+func (h Hold) line() string {
+	at := h.At.Local().Format("15:04")
+	switch h.Kind {
+	case HoldMusic:
+		return "the music stops"
+	case HoldRinging:
+		return "the ringing stops"
+	case HoldCall:
+		return "the call ends"
+	case HoldInstall:
+		return "its own install ends"
+	case HoldTimer:
+		if h.Name == "" {
+			return "the timer ends at " + at
+		}
+		return "timer " + h.Name + " ends at " + at
+	case HoldAlarm:
+		return "the alarm at " + at + " has rung"
 	}
-	if ring.IsSounding() || update.Installing() || phone.Get().Busy() {
-		return true
+	return "nobody is using this Show"
+}
+
+// inUse is somebody using the Show in a way a restart would cut: music playing or paused a short while
+// ago, a call, something ringing, or a timer or an alarm going off before the Show would be back.
+var inUse = func(now time.Time) Hold {
+	if playing, paused := media.Get().ScreenState(); musicHolds(playing, paused, now) {
+		return Hold{Kind: HoldMusic}
 	}
-	for _, c := range timer.Get().List(now) {
-		if c.Active {
-			return true
+	switch {
+	case ring.IsSounding():
+		return Hold{Kind: HoldRinging}
+	case phone.Get().Busy():
+		return Hold{Kind: HoldCall}
+	case update.Installing():
+		return Hold{Kind: HoldInstall}
+	}
+	if h := timerHolds(timer.Get().List(now), now); h.Holding() {
+		return h
+	}
+	if next := alarm.Get().View(now).Next; next != nil && next.At.Sub(now) < dueSoon {
+		return Hold{Kind: HoldAlarm, At: next.At}
+	}
+	return Hold{}
+}
+
+// timerHolds is the soonest timer that ends before the Show would be back from a restart. Every running
+// timer used to hold, so a timer set for the evening kept the Show off the house version all afternoon.
+// A longer one outlives the restart: the Show's own are saved as their finish time and come back, and
+// Home Assistant keeps the ones set by voice and sends the finish to the Show once it is connected again,
+// which rings it even though the countdown itself is gone. That last part is read in Home Assistant's
+// code (intent/timers.py), not yet tried on a Show.
+func timerHolds(list []timer.Countdown, now time.Time) Hold {
+	for _, c := range list {
+		if c.Active && c.Left < dueSoon {
+			return Hold{Kind: HoldTimer, Name: c.Name, At: now.Add(c.Left)}
 		}
 	}
-	next := alarm.Get().View(now).Next
-	return next != nil && next.At.Sub(now) < dueSoon
+	return Hold{}
+}
+
+// pausedHolds is how long paused music keeps a following Show from moving: as long as the Show keeps a
+// paused track of its own before ending it (media's stoppedFor). Music Assistant leaves a queue paused
+// for as long as nobody touches it, so without an end a paused song would hold the update for good.
+const pausedHolds = 30 * time.Minute
+
+// paused is when the Show's music was first seen paused, zero while it is not. It is only looked at
+// while the Show has somewhere to move, so a pause from before that counts from then: later, never
+// sooner.
+var paused struct {
+	mu    sync.Mutex
+	since time.Time
+}
+
+// musicHolds is the music keeping the Show in use. What the screen shows is what counts: the Show's
+// own stream, and Music Assistant's through Sendspin, which stops the Show's own stream when it takes
+// the speaker, so the Show's own stream alone reads as idle in the middle of a song (GENBU-134).
+func musicHolds(playing, isPaused bool, now time.Time) bool {
+	paused.mu.Lock()
+	defer paused.mu.Unlock()
+	if !isPaused {
+		paused.since = time.Time{}
+		return playing
+	}
+	if paused.since.IsZero() {
+		paused.since = now
+	}
+	return now.Sub(paused.since) < pausedHolds
 }
 
 // sighting is what Home Assistant last sent about the house; have* says whether a value arrived at all.
@@ -292,21 +400,24 @@ func (u *Firmware) houseStep(ctx context.Context, now time.Time) {
 	}
 	u.publishHouse(v)
 
+	why := u.whyFailed(c.HouseFailed)
 	h := &u.house
 	h.mu.Lock()
 	f := following{
-		running: layout.Version, house: v, seen: c.HouseSeen, movedWhileUp: h.movedWhileUp,
-		failed: c.HouseFailed, askedThisBoot: h.askedThisBoot, asked: c.HouseAsked, askedAt: c.HouseAskedAt,
+		running: layout.Version, house: v, seen: c.HouseSeen, movedWhileUp: h.movedWhileUp, retrying: h.fetchMisses > 0,
+		failed: c.HouseFailed, why: why, askedThisBoot: h.askedThisBoot, asked: c.HouseAsked, askedAt: c.HouseAskedAt,
 		quiet: quiet(), committed: committed(), held: update.Installing() || now.Before(h.retryAt), now: now,
 	}
 	h.mu.Unlock()
-	f.busy = f.house != f.running && inUse(now)
+	if f.house != f.running {
+		f.busy = inUse(now)
+	}
 
 	switch decide(f) {
 	case align:
 		slog.Info("moving to the house version", "house", v, "running", layout.Version)
 		u.houseStatus("Moving to " + v)
-		u.alignTo(ctx, v)
+		u.alignTo(ctx, v, false)
 		return
 	case askFirst:
 		u.askToAlign(v, now)
@@ -315,7 +426,31 @@ func (u *Firmware) houseStep(ctx context.Context, now time.Time) {
 			u.tellHouse(s.waiting, now)
 		}
 	}
-	u.houseStatus(houseLine(f, u.mainName(), u.mainMissing(), now))
+	// An install's own steps are the line while it runs (GENBU-215).
+	if running, _ := u.Installing(); !running {
+		u.houseStatus(houseLine(f, u.mainName(), u.mainMissing(), now))
+	}
+	h.mu.Lock()
+	h.wait = waitShown(f)
+	h.mu.Unlock()
+}
+
+// waitShown is the hold the move waits for, when houseLine says the Show waits for it.
+func waitShown(f following) Hold {
+	if f.house == f.running || f.house == f.failed || !f.committed {
+		return Hold{}
+	}
+	return f.busy
+}
+
+// Waiting is what this Show's move to the house version waits for, for the screen.
+func (u *Firmware) Waiting() Hold {
+	if u.role(time.Now()) != roleFollower {
+		return Hold{}
+	}
+	u.house.mu.Lock()
+	defer u.house.mu.Unlock()
+	return u.house.wait
 }
 
 // asksAboutWaiting is this Show being the one to ask about the house update: it is on the house version
@@ -337,12 +472,19 @@ func houseLine(f following, main, missing string, now time.Time) string {
 	switch {
 	case f.house == f.running:
 		return "Following " + main + " · version " + f.house
+	case f.house == f.failed && f.why != "":
+		return "Version " + f.house + " did not install here (" + f.why + "); staying on " + f.running
 	case f.house == f.failed:
 		return "Version " + f.house + " did not install here; staying on " + f.running
 	case !f.committed:
 		return "Waiting for this version to settle before moving to " + f.house
-	case f.busy:
-		return "Moving to " + f.house + " once nobody is using this Show"
+	case f.busy.Holding():
+		return "Moving to " + f.house + " once " + f.busy.line()
+	}
+	if update.Newer(f.running, f.house) {
+		// its own card offers nothing older, so it has no Install to point at
+		return "Your other Shows are on the older " + f.house + "; this one steps back when you say yes to its " +
+			"question, or they all move up with an update on the Genbu Show card"
 	}
 	return "Your other Shows are on " + f.house + "; install it from the update card"
 }
@@ -384,7 +526,7 @@ func (u *Firmware) askToAlign(v string, now time.Time) {
 	question.Ask("house", answerWithin, func() {
 		slog.Info("moving to the house version, as asked", "house", v)
 		say(i18n.T("Okay, installing it now."))
-		safe.Go("house version install", func() { u.alignTo(context.Background(), v) })
+		safe.Go("house version install", func() { u.alignTo(context.Background(), v, true) })
 	}, func() {
 		say(i18n.T("Okay, I'll remind you later."))
 	}, func() {
@@ -396,8 +538,10 @@ func (u *Firmware) askToAlign(v string, now time.Time) {
 	}
 }
 
-// alignTo installs the house version's own release, going back if it has to.
-func (u *Firmware) alignTo(ctx context.Context, v string) {
+// alignTo installs the house version's own release, going back if it has to. asked is somebody
+// wanting it now, whose failure to even fetch it the screen says; the house's own tries only say so in
+// the update status.
+func (u *Firmware) alignTo(ctx context.Context, v string, asked bool) {
 	u.busy.Add(1)
 	defer u.busy.Add(-1)
 	m, err := fetchTag(ctx, v)
@@ -407,11 +551,21 @@ func (u *Firmware) alignTo(ctx context.Context, v string) {
 	if err != nil {
 		slog.Error("fetching the house version failed", "house", v, "err", err)
 		u.house.mu.Lock()
-		u.house.retryAt = time.Now().Add(fetchRetry)
+		wait := min(fetchRetry<<u.house.fetchMisses, fetchRetryMost)
+		if wait < fetchRetryMost {
+			u.house.fetchMisses++
+		}
+		u.house.retryAt = time.Now().Add(wait)
 		u.house.mu.Unlock()
-		u.houseStatus("Version " + v + " could not be fetched: " + err.Error())
+		u.houseStatus("Version " + v + " could not be fetched: " + explained(err))
+		if asked {
+			u.fail(v, err)
+		}
 		return
 	}
+	u.house.mu.Lock()
+	u.house.fetchMisses = 0
+	u.house.mu.Unlock()
 	if err := u.put(ctx, m, update.Align); err != nil && !errors.Is(err, update.ErrInstalling) {
 		if serr := config.Set().Update().HouseFailed(v); serr != nil {
 			slog.Error("saving the failed house version failed", "err", serr)

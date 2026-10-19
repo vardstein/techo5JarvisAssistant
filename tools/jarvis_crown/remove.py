@@ -6,9 +6,10 @@ What goes, in this order, all of it saved with keep first:
      assistant), and every automation and script with its label, "Genbu Show: <node>" (labels.py). One
      somebody made from the blueprint by hand stays theirs, unless they gave it the Show's label;
   2. its own Home Assistant user (show_<name>, under each name it went by), which ends its token;
-  3. its Music Assistant user (the one for the lyrics) and its player there. The player only goes once the
-     Show is off the network: Music Assistant makes a connected player again at once. Music Assistant
-     tells Home Assistant, which then drops the player's device too;
+  3. its Music Assistant user (the one for the lyrics) and its player there, connected or not. Music
+     Assistant tells Home Assistant, which then drops the player's device too. A Show that was reset first
+     (show_reset.py) has forgotten Music Assistant and stays away; one that was not and is still on the
+     network makes its player again;
   4. its ESPHome entry, which takes its devices, their entities and their area links with it;
   5. its place in Genbu (its last version, music choice, switches), through genbu.forget_show, after the
      ESPHome entry so that Genbu does not pick it up again first;
@@ -18,9 +19,7 @@ automations, the music scripts), the blueprints, the room's area and dashboard, 
 backups/<serial>, so the unit can be installed again. Other automations, scripts and dashboards that use its
 entities are listed, not changed.
 
-The Music Assistant player only goes once the Show is off the network, so jarvis-show.py waits for that
-before it removes anything. Run again later, it finds what is left by the names and the MAC kept from the
-first run.
+Run again later, it finds what is left by the names and the MAC kept from the first run.
 """
 from __future__ import annotations
 
@@ -31,8 +30,9 @@ from typing import Any, Callable
 
 from . import genbu, labels
 from .home_assistant import (HomeAssistant, HomeAssistantError, NotFound, find_entry, node_name, node_slug,
-                             service_prefix, show_username)
+                             service_prefix, show_usernames)
 from .rename import _dashboards, device_name, show_devices, swap
+from .show_ssh import key_path
 from .voice_kit import duck_existing
 
 Keep = Callable[[str, Any], str]
@@ -59,6 +59,8 @@ class Found:
     automations: list[tuple[str, dict]] = field(default_factory=list)   # ours, by config id
     scripts: list[tuple[str, dict]] = field(default_factory=list)       # with its label, by config id
     labels: list[dict] = field(default_factory=list)                    # its own labels, "Genbu Show: <node>"
+    house: list[str] = field(default_factory=list)    # house-wide automations and scripts; they stay
+    others: dict[str, list[str]] = field(default_factory=dict)  # the other Shows' labelled pieces; they stay
     uses: list[str] = field(default_factory=list)     # what else uses it; left alone
     users: list[dict] = field(default_factory=list)   # its Home Assistant users
     skipped_users: list[str] = field(default_factory=list)
@@ -79,11 +81,6 @@ class Found:
         visible from outside, and forgetting twice does no harm."""
         return self.genbu and bool(self.node) and self.entry is not None
 
-    @property
-    def gone_now(self) -> list[dict]:
-        """The players that can go now: Music Assistant makes one that is connected again."""
-        return [p for p in self.players if not p.get("available")]
-
 
 def _mac(device: dict) -> str:
     for kind, value in device.get("connections") or []:
@@ -99,7 +96,7 @@ def _add(names: list[str], name: Any) -> None:
 
 
 def _users(ha: HomeAssistant, found: Found) -> None:
-    wanted = {show_username(n) for n in found.names}
+    wanted = {u for n in found.names for u in show_usernames(n)}
     for user in ha.ws({"type": "config/auth/list"}) or []:
         username = str(user.get("username") or "").lower()
         if username not in wanted:
@@ -154,6 +151,33 @@ def _labeled(ha: HomeAssistant, found: Found) -> None:
             continue
         have[kind].add(item)
         into[kind].append((item, config))
+
+
+def _house(ha: HomeAssistant, found: Found) -> None:
+    """What the installer made for the whole house or for the other Shows: the automations and scripts with
+    the common label that aren't this Show's. Listed under what stays, so a removal doesn't read as all of
+    Genbu going."""
+    known = [x for x in ha.ws({"type": "config/label_registry/list"}) or [] if isinstance(x, dict)]
+    common = {x.get("label_id") for x in known
+              if str(x.get("name") or "").casefold() == labels.INSTALLED.casefold()} - {None}
+    if not common:
+        return
+    mine = {x.get("label_id") for x in found.labels}
+    prefix = labels.show_label("")
+    shows = {x.get("label_id"): str(x.get("name"))[len(prefix):] for x in known
+             if str(x.get("name") or "").casefold().startswith(prefix.casefold()) and x.get("label_id") not in mine}
+    ours = {item for item, _ in found.automations} | {item for item, _ in found.scripts}
+    for entity in ha.ws({"type": "config/entity_registry/list"}) or []:
+        have = set(entity.get("labels") or [])
+        if entity.get("platform") not in ("automation", "script") or not have & common or have & mine \
+                or str(entity.get("unique_id") or "") in ours:
+            continue
+        other = sorted(shows[x] for x in have if x in shows)
+        if other:
+            found.others.setdefault(other[0], []).append(str(entity.get("entity_id")))
+        else:
+            found.house.append(str(entity.get("entity_id")))
+    found.house.sort()
 
 
 def _uses(ha: HomeAssistant, found: Found) -> None:
@@ -214,6 +238,7 @@ def find(ha: HomeAssistant, name: str, *, also: list[str] = (), mac: str = "",
     _add(found.names, found.node)
     _automations(ha, found)
     _labeled(ha, found)
+    _house(ha, found)
     _users(ha, found)
     got = music(found.names, found.mac) if music is not None else None
     if got is not None:
@@ -228,9 +253,19 @@ def _mask(mac: str) -> str:
     return "…" + mac[-5:] if len(mac) > 5 else mac
 
 
-def plan(found: Found) -> tuple[list[str], list[str], list[str]]:
-    """What goes now, what goes on a later run, and what stays, in words."""
-    goes, later, stays = [], [], []
+def only_this(found: Found) -> str:
+    """The line above the lists: the removal is this one Show's."""
+    return (f"only {found.name} goes; Genbu, the house's voice assistant, its automations and scripts, and "
+            "the other Shows stay")
+
+
+def _count(n: int, one: str) -> str:
+    return f"{n} {one}{'' if n == 1 else 's'}"
+
+
+def plan(found: Found) -> tuple[list[str], list[str]]:
+    """What goes and what stays, in words."""
+    goes, stays = [], []
     for item, _ in found.automations:
         goes.append(f"automation {item}")
     for item, _ in found.scripts:
@@ -246,11 +281,8 @@ def plan(found: Found) -> tuple[list[str], list[str], list[str]]:
             stays.append(f"Music Assistant user {user.get('username')!r}: not a plain user, never removed here")
     for player in found.players:
         label = f"Music Assistant player {player.get('name') or player.get('player_id')!r}"
-        if player.get("available"):
-            later.append(f"{label}: Music Assistant keeps it while the Show is on the network, so this waits "
-                         "until the Show is unplugged")
-        else:
-            goes.append(f"{label} (and its device in Home Assistant)")
+        now = ", connected now" if player.get("available") else ""
+        goes.append(f"{label} (and its device in Home Assistant){now}")
     if found.entry is not None:
         goes.append(f"ESPHome entry {found.entry.get('title')!r} with its {len(found.devices)} devices, "
                     f"{len(found.entities)} entities and their area links")
@@ -266,10 +298,19 @@ def plan(found: Found) -> tuple[list[str], list[str], list[str]]:
                      "admin: --music-assistant-token-file, the keyring or signing in)")
     for use in found.uses:
         stays.append(f"{use} uses it; left as it is")
-    stays.append(f"what has only the {labels.INSTALLED!r} label (the house-wide jarvis_local_* automations, "
-                 "the music scripts), the blueprints, the room and its dashboard, the calendars, and the Show's "
-                 "backups")
-    return goes, later, stays
+    for kind in ("automation", "script"):
+        ids = [x for x in found.house if x.startswith(kind + ".")]
+        if ids:
+            stays.append(f"{_count(len(ids), 'house-wide ' + kind)}: {', '.join(ids)}")
+    for show, ids in sorted(found.others.items()):
+        stays.append(f"{show}'s own: {', '.join(sorted(ids))}")
+    if not found.house:
+        stays.append(f"what has only the {labels.INSTALLED!r} label (the house-wide jarvis_local_* automations, "
+                     "the music scripts)")
+    stays.append("the blueprints, the room and its dashboard, the calendars, and the Show's backups")
+    stays.append(f"on this computer, its SSH key and pinned host key (~/.ssh/{key_path(found.name).name}*), "
+                 "until `shows` puts them away; on the router, any rules made for its address")
+    return goes, stays
 
 
 def snapshot(found: Found) -> dict:
@@ -315,7 +356,7 @@ def remove(ha: HomeAssistant, found: Found, *, keep: Keep, drop: Drop | None = N
         step(f"Home Assistant user {user.get('username')!r}",
              lambda user=user: ha.ws({"type": "config/auth/delete", "user_id": user["id"]}))
     users = [u["user_id"] for u in found.music_users if u.get("role") == "user" and u.get("user_id")]
-    players = [p["player_id"] for p in found.gone_now if p.get("player_id")]
+    players = [p["player_id"] for p in found.players if p.get("player_id")]
     if drop is not None and (users or players):
         problems = drop(users, players)
         for problem in problems:

@@ -38,6 +38,7 @@ func TestUpNextFits(t *testing.T) {
 			_, col := r.nowPlayingLayout()
 			for _, n := range nexts {
 				_, text := r.upNext(n, col.Dx())
+				text = i18n.T(text) // as drawn
 				if strings.HasSuffix(text, "…") {
 					t.Errorf("%q %v: %q is cut: %q", lang, panel, n, text)
 				}

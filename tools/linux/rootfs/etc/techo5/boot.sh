@@ -37,6 +37,8 @@ mountpoint -q /store || mount -t ext4 -o ro,noatime $STORE_DEV /store
 mount -t tmpfs tmpfs /var/log
 mount -t tmpfs tmpfs /var/tmp
 mkdir -p /run/lock /run/techo5
+# The time this unit last knew, before anything looks at the clock (see t5_clock_restore).
+t5_clock_restore
 # Factory reset from the screen: it left a mark and restarted, and the erasing is done here, before
 # anything that keeps state is running. What it removes and boot.sh recreates (time zone, models) is
 # recreated below as on a fresh unit.
@@ -91,7 +93,7 @@ echo /sbin/mdev > /proc/sys/kernel/hotplug
 mdev -s
 mkdir -p /dev/graphics
 [ -e /dev/fb0 ] && ln -sf /dev/fb0 /dev/graphics/fb0
-hostname -F /etc/hostname
+hostname "$(t5_hostname)"  # the Show's own name; /etc/hostname's techo5 only before it has one
 log "slot $(cat /run/techo5/slot 2>/dev/null || echo '?'): $(cat /etc/techo5-release 2>/dev/null)"
 
 # --- Vendor tree: the Wi-Fi and Bluetooth drivers, firmware and audio tuning from the unit's own
@@ -152,9 +154,11 @@ export UDHCPC_SCRIPT=/etc/techo5/udhcpc.sh
 t5_wifi_up $WIFI_MODULE $LOGDIR/wpa_supplicant.conf
 
 # SSH is echod's (feature/security): off unless switched on, and only with a key on userdata.
+# The clock: udhcpc.sh started setting it when the lease came; the daemon starts once that is
+# done (it checks certificates), or once NTP has had its time.
 if [ -n "$IP" ]; then
-	t5_ntp
-	ntpd $(t5_ntp_peers) > /dev/null 2>&1
+	n=0; while [ $n -lt ${NTP_WAIT:-40} ] && [ -d "$T5_NTP_LOCK" ]; do sleep 1; n=$((n+1)); done
+	t5_clock_start
 fi
 
 # --- Bluetooth (only on a kernel that has it; see t5_bt_up).
@@ -163,9 +167,11 @@ t5_bt_up "$BT_MODULE" /var/log
 # --- Network keeper: bring Wi-Fi back if it is gone, and reboot after 15 minutes
 # without an address — an unattended unit must never sit unreachable.
 (
-	down=0
+	down=0; ticks=0
 	while true; do
 		sleep 60
+		# The time, for the next boot after a power cut: every 15 minutes, and at shutdown.
+		ticks=$((ticks+1)); [ $((ticks % 15)) -eq 0 ] && t5_clock_save
 		# Someone is choosing a network on the screen: not a fault, no reboot.
 		[ -e /run/techo5/wifi-setup ] && { down=0; continue; }
 		if [ -n "$(t5_ip)" ]; then
@@ -175,15 +181,12 @@ t5_bt_up "$BT_MODULE" /var/log
 			if ! ip route show default 2>/dev/null | grep -q default; then
 				log "network: address but no default route; renewing the lease"
 				killall udhcpc 2>/dev/null
-				udhcpc -i wlan0 -b -R -O ntpsrv -t 10 -p /run/udhcpc.pid -s "${UDHCPC_SCRIPT:-/usr/share/udhcpc/default.script}" > /tmp/udhcpc.log 2>&1
+				udhcpc -i wlan0 -b -R -O ntpsrv -x "hostname:$(t5_hostname)" -t 10 -p /run/udhcpc.pid -s "${UDHCPC_SCRIPT:-/usr/share/udhcpc/default.script}" > /tmp/udhcpc.log 2>&1
 			fi
-			# The clock is set once there is an address. When Wi-Fi takes longer than the boot
-			# script to come up, that happens here: without it the clock stays years behind,
-			# and the update check, like anything that checks a certificate, needs it right.
-			if ! pidof ntpd >/dev/null; then
-				t5_ntp
-				ntpd $(t5_ntp_peers) > /dev/null 2>&1
-			fi
+			# The clock is set once there is an address: udhcpc.sh starts it when the lease is
+			# bound. This catches an ntpd that stopped since: without it the clock drifts, and the
+			# update check, like anything that checks a certificate, needs it right.
+			t5_clock_start
 			t5_wifi_prefer5
 			continue
 		fi
@@ -201,6 +204,13 @@ t5_bt_up "$BT_MODULE" /var/log
 			log "network: rebooting"
 			sync
 			reboot
+		fi
+		# The supplicant goes on looking by itself and udhcpc asks for a lease as soon as it
+		# joins, so while both run they are left to it, and a network that comes back gets them
+		# within seconds. A restart is for one that has died, or every five minutes for one
+		# that is stuck: restarting each minute threw away any join that came while it slept.
+		if pidof wpa_supplicant >/dev/null && pidof udhcpc >/dev/null && [ $((down % 5)) -ne 0 ]; then
+			continue
 		fi
 		killall udhcpc wpa_supplicant 2>/dev/null
 		# Gone before it is started again: t5_wifi_up starts one only when none is running, and

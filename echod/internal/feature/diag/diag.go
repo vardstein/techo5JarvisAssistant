@@ -25,7 +25,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Network, Get(), component.Order(90))
+	component.Register(component.Network, Get, component.Order(90))
 }
 
 // The thermal zones worth showing, by the name the kernel gives them. The rest are board sensors that

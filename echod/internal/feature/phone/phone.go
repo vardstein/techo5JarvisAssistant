@@ -38,7 +38,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Network, Get(), component.Order(60),
+	component.Register(component.Network, Get, component.Order(60),
 		component.Supervise(service.Restart(5*time.Second, 5*time.Minute)))
 }
 

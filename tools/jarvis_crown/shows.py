@@ -19,6 +19,7 @@ class Show:
     board: str
     folder: Path
     mac: str = ""   # kept by --remove-show, for the run after its ESPHome entry is gone
+    reset: str = ""  # when --remove-show reset it over SSH; a new install's record starts without it
 
     @property
     def key_file(self) -> Path:
@@ -67,7 +68,7 @@ def known_shows(backups: Path) -> list[Show]:
         try:
             data = json.loads(record.read_text(encoding="utf-8"))
             shows.append(Show(name=str(data["name"]), board=str(data.get("board", "")), folder=record.parent,
-                              mac=str(data.get("mac") or "")))
+                              mac=str(data.get("mac") or ""), reset=str(data.get("reset") or "")))
         except (OSError, ValueError, KeyError, TypeError):
             continue
     return shows

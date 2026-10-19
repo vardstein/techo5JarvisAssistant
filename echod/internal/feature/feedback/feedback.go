@@ -23,7 +23,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Device, Get(), component.Order(15))
+	component.Register(component.Device, Get, component.Order(15))
 }
 
 // failureFlash is how long the ring shows a failure, and failureColor what it shows. Red is not used

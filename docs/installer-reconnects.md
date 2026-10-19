@@ -6,7 +6,7 @@ times. Those transitions are treated as normal state changes, not immediate fail
 Jarvis Show uses polling deadlines rather than fixed sleeps, so fast machines continue immediately
 while slow USB hosts still get enough time:
 
-- post-Amonet hacked-fastboot return: 300 seconds
+- post-Amonet write and TWRP boot: 900 seconds
 - recovery/TWRP enumeration: 300 seconds
 - TWRP reboot after userdata format: 300 seconds
 - adb -> fastboot enumeration: 180 seconds
@@ -15,8 +15,15 @@ while slow USB hosts still get enough time:
 
 A timeout stops at that stage and never falls through to a later write. Fastboot presence probes have
 their own 10-second command timeout so a wedged host-side USB process cannot make the outer deadline
-infinite. Amonet verification tolerates the device being absent while it resets, but still requires the
-same serial/product to return with `unlock_status=true`.
+infinite.
+
+After `fastbrick.sh` prints "Exploit most likely successful!" it exits, but the Show keeps writing
+preloader, LK, TEE and TWRP for up to five minutes and then boots TWRP. During that window Jarvis only
+runs `adb devices`, which sends the Show nothing. The unlock counts as proven once exactly one recovery
+device passes the TWRP board check and reports the same serial as the locked fastboot device. If TWRP
+never shows up, Jarvis asks fastboot once at the end and accepts the same serial with
+`unlock_status=true`. Every way out of this stage that isn't success tells the user to keep the Show on
+mains power and USB.
 
 These waits do not authorize retrying an unknown destructive state. A failed Amonet/flash stage still
 requires the read-only identity/recovery checks before another write-capable stage can run.

@@ -33,11 +33,11 @@ import (
 )
 
 func init() {
-	component.Register(component.Device, Get(), component.Order(32))
+	component.Register(component.Device, Get, component.Order(32))
 
 	// So that anything meaning "stop the noise" can say so without knowing there are two ring
-	// engines. Registered here rather than lazily because Get is called on the line above, so by the
-	// time a button can be pressed this is already in place.
+	// engines. Registered here, so it is in place before a button can be pressed; Get is only called
+	// when one is.
 	ring.Silences(func() bool { return Get().Stop() })
 	ring.Snoozes(func(minutes int) bool { return Get().SnoozeFor(minutes) })
 }

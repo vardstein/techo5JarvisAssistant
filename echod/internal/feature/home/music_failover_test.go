@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/gorilla/websocket"
+
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/hass"
 )
@@ -29,7 +31,10 @@ type musicHAFake struct {
 	mu     sync.Mutex
 	states map[string]hass.State
 	calls  []musicServiceCall
-	queue  map[string]any // what get_queue answers for the player, when a test sets it
+	queue  map[string]any    // what get_queue answers for the player, when a test sets it
+	render string            // what every template renders to over the websocket
+	fail   map[string]int    // "domain.service" answered with this status in place of {}
+	images map[string][]byte // a player's picture, by the path its entity_picture names
 }
 
 func newMusicHAFake() *musicHAFake {
@@ -62,6 +67,17 @@ func (f *musicHAFake) serviceCalls() []musicServiceCall {
 }
 
 func (f *musicHAFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/api/websocket" {
+		f.renderOverWebsocket(w, r)
+		return
+	}
+	f.mu.Lock()
+	image, ok := f.images[r.URL.Path]
+	f.mu.Unlock()
+	if ok {
+		_, _ = w.Write(image)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method == http.MethodGet && r.URL.Path == "/api/states" {
 		f.mu.Lock()
@@ -102,7 +118,12 @@ func (f *musicHAFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		f.mu.Lock()
 		f.calls = append(f.calls, musicServiceCall{domain: parts[0], service: parts[1], data: data})
+		code := f.fail[parts[0]+"."+parts[1]]
 		f.mu.Unlock()
+		if code != 0 {
+			http.Error(w, http.StatusText(code), code)
+			return
+		}
 
 		if parts[0] == "music_assistant" && parts[1] == "get_queue" {
 			entity, _ := data["entity_id"].(string)
@@ -124,6 +145,30 @@ func (f *musicHAFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.NotFound(w, r)
+}
+
+// renderOverWebsocket answers one render_template the way Home Assistant does for an ordinary user.
+func (f *musicHAFake) renderOverWebsocket(w http.ResponseWriter, r *http.Request) {
+	c, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer c.Close()
+	_ = c.WriteJSON(map[string]string{"type": "auth_required"})
+	var auth map[string]string
+	if c.ReadJSON(&auth) != nil {
+		return
+	}
+	_ = c.WriteJSON(map[string]string{"type": "auth_ok"})
+	var cmd map[string]any
+	if c.ReadJSON(&cmd) != nil || cmd["type"] != "render_template" {
+		return
+	}
+	f.mu.Lock()
+	out := f.render
+	f.mu.Unlock()
+	_ = c.WriteJSON(map[string]any{"id": cmd["id"], "type": "result", "success": true, "result": nil})
+	_ = c.WriteJSON(map[string]any{"id": cmd["id"], "type": "event", "event": map[string]any{"result": out, "listeners": map[string]any{}}})
 }
 
 func setupMusicFailoverTest(t *testing.T) (*Feature, *musicHAFake) {
@@ -344,4 +389,120 @@ func TestNamedGroupSubstitutesOfflineRoomAndReportsRealMembers(t *testing.T) {
 	if !reflect.DeepEqual(view.Rooms, []string{"living", "bedroom"}) {
 		t.Fatalf("Now Playing rooms = %#v, want actual resolved rooms", view.Rooms)
 	}
+}
+
+// fakeCarried makes the Show's own Sendspin stream what the room hears, or not, for one test.
+func fakeCarried(t *testing.T, carried bool) {
+	t.Helper()
+	old := localCarried
+	localCarried = func() bool { return carried }
+	t.Cleanup(func() { localCarried = old })
+}
+
+// GENBU-167: the Show plays its own queue, and a play is started on the room's speaker from somewhere
+// else. The Show stops, so the room hears one speaker, and the screen follows the speaker.
+func TestPrimaryStartedElsewhereStopsTheShowsOwnQueue(t *testing.T) {
+	f, fake := setupMusicFailoverTest(t)
+	fakeCarried(t, true)
+	fake.setState(testPrimary, "idle", "Living Room Sonos")
+	if err := config.Set().Home().MusicPrimary(testPrimary); err != nil {
+		t.Fatal(err)
+	}
+	f.musicRouteTick()
+	if calls := fake.serviceCalls(); len(calls) != 0 {
+		t.Fatalf("an idle speaker stopped the Show: %#v", calls)
+	}
+	fake.setState(testPrimary, "playing", "Living Room Sonos")
+	f.musicRouteTick()
+	calls := fake.serviceCalls()
+	if len(calls) != 1 {
+		t.Fatalf("service calls = %#v, want one stop of the Show's own player", calls)
+	}
+	requireCall(t, calls[0], "media_player", "media_stop", testLocalMA)
+	if _, active, fallback := f.MusicOutput(); active != testPrimary || fallback {
+		t.Fatalf("route = active %q fallback %v, want the room's speaker", active, fallback)
+	}
+}
+
+// A speaker that drops out and comes back already playing has not been asked for anything; the Show
+// keeps playing. Nor does a speaker grouped with the Show stop it.
+func TestPrimaryReturningOrGroupedLeavesTheShowPlaying(t *testing.T) {
+	f, fake := setupMusicFailoverTest(t)
+	fakeCarried(t, true)
+	if err := config.Set().Home().MusicPrimary(testPrimary); err != nil {
+		t.Fatal(err)
+	}
+	fake.setState(testPrimary, "unavailable", "Living Room Sonos")
+	f.musicRouteTick()
+	fake.setState(testPrimary, "playing", "Living Room Sonos")
+	f.musicRouteTick()
+	if calls := fake.serviceCalls(); len(calls) != 0 {
+		t.Fatalf("a returning speaker stopped the Show: %#v", calls)
+	}
+
+	musicRoute = musicRouteState{}
+	fake.setState(testPrimary, "idle", "Living Room Sonos")
+	f.musicRouteTick()
+	fake.setState(testPrimary, "playing", "Living Room Sonos")
+	fake.mu.Lock()
+	fake.states[testPrimary].Attributes["group_members"] = []any{testPrimary, testLocalMA}
+	fake.mu.Unlock()
+	f.musicRouteTick()
+	if calls := fake.serviceCalls(); len(calls) != 0 {
+		t.Fatalf("a speaker grouped with the Show stopped it: %#v", calls)
+	}
+}
+
+// The Show 5 on 2026-10-13: the room's speaker had played once and stayed the route, so the page drew
+// the Show's own song while its buttons went to the speaker. They go where the sound is.
+func TestScreenFollowsTheShowsOwnStream(t *testing.T) {
+	f, fake := setupMusicFailoverTest(t)
+	if err := config.Set().Home().MusicPrimary(testPrimary); err != nil {
+		t.Fatal(err)
+	}
+	fake.setState(testPrimary, "playing", "Living Room Sonos")
+	fake.setState(testLocalMA, "playing", "Living Room Jarvis")
+	f.musicRouteTick()
+	if _, active, _ := f.MusicOutput(); active != testPrimary {
+		t.Fatalf("a playing speaker is not the route: %q", active)
+	}
+
+	fakeCarried(t, true)
+	f.musicPlaybackTick()
+	if v := f.MusicPlayback(); v.Entity != testLocalMA {
+		t.Fatalf("with the Show carrying the music its page controls %q, want %q", v.Entity, testLocalMA)
+	}
+
+	// The speaker stops: once the settle time is over it is no longer the route at all.
+	fake.setState(testPrimary, "idle", "Living Room Sonos")
+	f.musicRouteTick()
+	if _, active, _ := f.MusicOutput(); active != testPrimary {
+		t.Fatalf("a play sent a moment ago was forgotten at once: %q", active)
+	}
+	musicRoute.Lock()
+	musicRoute.activeAt = musicRoute.activeAt.Add(-musicSettle)
+	musicRoute.Unlock()
+	f.musicRouteTick()
+	if _, active, _ := f.MusicOutput(); active != "" {
+		t.Fatalf("a stopped speaker is still the route: %q", active)
+	}
+}
+
+// A play asked of the room's speaker while the Show plays its own queue stops that queue first.
+func TestPlayOnPrimaryStopsTheShowsOwnQueue(t *testing.T) {
+	f, fake := setupMusicFailoverTest(t)
+	fakeCarried(t, true)
+	fake.setState(testPrimary, "idle", "Living Room Sonos")
+	if err := config.Set().Home().MusicPrimary(testPrimary); err != nil {
+		t.Fatal(err)
+	}
+	if target, err := f.PlayMusic("library://track/x"); err != nil || target != testPrimary {
+		t.Fatalf("PlayMusic = %q, %v", target, err)
+	}
+	calls := fake.serviceCalls()
+	if len(calls) != 2 {
+		t.Fatalf("service calls = %#v, want stop-local then play-primary", calls)
+	}
+	requireCall(t, calls[0], "media_player", "media_stop", testLocalMA)
+	requireCall(t, calls[1], "music_assistant", "play_media", testPrimary)
 }

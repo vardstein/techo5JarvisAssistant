@@ -105,7 +105,8 @@ All of these are on the Show, under Settings → **Display**, and are entities i
 - **Night mode** switch in Home Assistant: start or end the night now, from a bedtime automation for
   example. Set Night hours to **Controlled by Home Assistant** to leave the night to the switch alone.
   See [Turning the night on from an automation](actions.md#turning-the-night-on-from-an-automation).
-- **Clock format**, **Clock position** (center, or a smaller clock in a bottom corner so a photo
+- **Clock format** (until you pick one, it follows the screen language: 3:04 PM in English,
+  15:04 in the others), **Clock position** (center, or a smaller clock in a bottom corner so a photo
   stays in view) and **Date color** (the theme's own, its text or accent color, or another Jade
   palette's accent; each is made dark or light enough to read on the theme's ground).
 - **Theme**, **Answer time** and **Now playing** (the full page, or a strip over the clock).

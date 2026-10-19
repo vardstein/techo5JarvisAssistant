@@ -2,7 +2,11 @@
 
 package display
 
-import "image"
+import (
+	"image"
+
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
+)
 
 // The Spot's turn screen in the Glow, Wave or Bars style (turn_draw.go): the picture across the upper
 // middle of the face, clear of the rim, which still says listening, thinking or muted around it, and
@@ -50,10 +54,10 @@ func (r *roundRenderer) turnFace(s roundScene) {
 		if answer {
 			lines = 1
 		}
-		y = r.paragraph(r.small, "“"+s.heard+"”", y, colDim, lines)
+		y = r.paragraph(r.small, i18n.Verbatim("“"+s.heard+"”"), y, colDim, lines)
 		y += 6
 	}
 	if answer {
-		r.paragraph(r.body, s.reply, y, colText, 3)
+		r.paragraph(r.body, i18n.Verbatim(s.reply), y, colText, 3)
 	}
 }

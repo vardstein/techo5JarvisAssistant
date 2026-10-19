@@ -25,7 +25,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(llm.async_register_api(hass, RecipeAPI(hass, entry)))
     ir.async_create_issue(hass, DOMAIN, MOVED, is_fixable=False, is_persistent=False,
                           severity=ir.IssueSeverity.WARNING, translation_key=MOVED,
-                          learn_more_url="https://github.com/vardstein/techo5JarvisAssistant/blob/genbuShowCrown/docs/recipes.md")
+                          learn_more_url="https://github.com/vardstein/techo5JarvisAssistant/blob/stable/docs/recipes.md")
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 

@@ -114,10 +114,10 @@ func (r *renderer) nowPlaying(s scene) {
 		}
 		// Who plays it is the second thing looked for, so a long name goes a size down before it is cut.
 		artist := r.body
-		if r.width(artist, rd.Artist) > col.Dx() {
+		if r.width(artist, i18n.Verbatim(rd.Artist)) > col.Dx() {
 			artist = r.small
 		}
-		line(artist, rd.Artist, r.s(48), ink.soft)
+		line(artist, i18n.Verbatim(rd.Artist), r.s(48), ink.soft)
 		// Which take of the song it is ("Radio Edit", "Remastered 2011") is worth less than the song
 		// and who plays it, so it goes with the album, after it.
 		// When the two don't fit on one line, the take gets a line of its own under the album.
@@ -126,19 +126,20 @@ func (r *renderer) nowPlaying(s scene) {
 		if a, _ := songParts(albumName); strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(song)) {
 			albumName = ""
 		}
+		albumName = i18n.Verbatim(albumName) // a name, drawn as it is
 		album := strings.TrimPrefix(albumName+"  ·  "+version, "  ·  ")
 		switch {
 		case album == "":
 		case version == "" || albumName == "" || r.width(r.small, album) <= col.Dx():
-			line(r.small, strings.TrimSuffix(album, "  ·  "), r.s(42), ink.faint)
+			line(r.small, i18n.Verbatim(strings.TrimSuffix(album, "  ·  ")), r.s(42), ink.faint)
 		default:
 			line(r.small, albumName, r.s(42), ink.faint)
-			line(r.small, version, r.s(40), ink.faint)
+			line(r.small, i18n.Verbatim(version), r.s(40), ink.faint)
 		}
 
 		// A group says which rooms it reached; the queue says what comes next.
 		if rd.Now == "Music Assistant" && len(s.music.Rooms) > 1 {
-			line(r.small, strings.Join(s.music.Rooms, "  ·  "), r.s(40), ink.head)
+			line(r.small, i18n.Verbatim(strings.Join(s.music.Rooms, "  ·  ")), r.s(40), ink.head)
 		}
 		if rd.Now == "Music Assistant" && s.music.Next != "" {
 			face, text := r.upNext(s.music.Next, col.Dx())
@@ -153,8 +154,9 @@ func (r *renderer) nowPlaying(s scene) {
 		r.musicProgress(s.music, s.now, image.Rect(col.Min.X, bar, col.Max.X, bar+r.s(6)), ink)
 	}
 
-	// One row: the star, back, play or pause, forward, and stop. Sendspin routes these back to Music
-	// Assistant, so the page controls the real queue/group rather than a local shadow player.
+	// One row: the star, back, play or pause, forward, and stop; on a station only the star, play or
+	// stop, and stop. Sendspin routes these back to Music Assistant, so the page controls the real
+	// queue/group rather than a local shadow player.
 	_, back, play, next, stop := r.nowPlayingButtons()
 	defer r.favNotePill(s)
 	defer r.pressLight(s.pressed)
@@ -167,18 +169,28 @@ func (r *renderer) nowPlaying(s scene) {
 	if !dark() {
 		ground = shift(walnut, -6)
 	}
-	for _, b := range []image.Rectangle{fav, back, next, stop} {
+	for _, b := range []image.Rectangle{fav, stop} {
 		r.roundButton(b, rad, ground)
+	}
+	if !s.live {
+		r.roundButton(back, rad, ground)
+		r.roundButton(next, rad, ground)
 	}
 	r.roundButton(play, rad, amber)
 	cx := func(b image.Rectangle) float64 { return float64(b.Min.X+b.Max.X) / 2 }
 	cy := float64(play.Min.Y+play.Max.Y) / 2
 	u := float64(r.s(13)) // half a mark's height
-	r.markSkip(cx(back), cy, u, false, cream)
-	r.markSkip(cx(next), cy, u, true, cream)
-	if s.paused {
+	if !s.live {
+		r.markSkip(cx(back), cy, u, false, cream)
+		r.markSkip(cx(next), cy, u, true, cream)
+	}
+	switch {
+	case s.live && !s.paused:
+		// A station can't be paused, only stopped: it comes back live, not where it was.
+		r.roundFillF(cx(play)-u*0.85, cy-u*0.85, cx(play)+u*0.85, cy+u*0.85, u*0.22, onAccent())
+	case s.paused:
 		r.aaPoly([][2]float64{{cx(play) - u*0.7, cy - u*1.15}, {cx(play) + u*1.1, cy}, {cx(play) - u*0.7, cy + u*1.15}}, onAccent())
-	} else {
+	default:
 		bw := u * 0.62
 		r.roundFillF(cx(play)-u*0.8, cy-u*1.05, cx(play)-u*0.8+bw, cy+u*1.05, bw/3, onAccent())
 		r.roundFillF(cx(play)+u*0.8-bw, cy-u*1.05, cx(play)+u*0.8, cy+u*1.05, bw/3, onAccent())
@@ -534,19 +546,21 @@ func (c *coverCache) prepare(src *image.RGBA, side int) {
 // that holds it: one line at full size, then one line a size down, then two lines from full size
 // down, broken where the lines come out most even. Only a title too long for two lines of the
 // smallest size is cut, at the end of the second line. step is the line spacing, in drawn-for
-// pixels.
+// pixels. A title is a name, so it is drawn as it is, never translated: the lines come back marked
+// i18n.Verbatim.
 func (r *renderer) headlineLines(s string, w int) (face font.Face, step int, lines []string) {
 	type size struct {
 		face font.Face
 		step int
 	}
+	s = i18n.Verbatim(i18n.T(i18n.Verbatim(s)))
 	sizes := []size{{r.title, 52}, {r.title2, 46}, {r.title3, 40}}
 	for _, z := range sizes[:2] {
 		if r.width(z.face, s) <= w {
 			return z.face, z.step, []string{s}
 		}
 	}
-	words := strings.Fields(s)
+	words := strings.Fields(i18n.T(s))
 	for _, z := range sizes {
 		if two := r.evenBreak(z.face, words, w); two != nil {
 			return z.face, z.step, two
@@ -564,12 +578,12 @@ func (r *renderer) headlineLines(s string, w int) (face font.Face, step int, lin
 }
 
 // evenBreak is words as two lines no wider than w with the longer line as short as it can be, or
-// nil when no break does it.
+// nil when no break does it. The words are a name's, so the lines are marked i18n.Verbatim.
 func (r *renderer) evenBreak(face font.Face, words []string, w int) []string {
 	var best []string
 	bestW := w + 1
 	for k := 1; k < len(words); k++ {
-		a, b := strings.Join(words[:k], " "), strings.Join(words[k:], " ")
+		a, b := i18n.Verbatim(strings.Join(words[:k], " ")), i18n.Verbatim(strings.Join(words[k:], " "))
 		if most := max(r.width(face, a), r.width(face, b)); most <= w && most < bestW {
 			best, bestW = []string{a, b}, most
 		}
@@ -580,8 +594,9 @@ func (r *renderer) evenBreak(face font.Face, words []string, w int) []string {
 // upNext is the line saying what the queue plays next, made to fit width before anything is cut: a
 // size down first, then without the take ("Remastered 2011"), then the song alone without who plays it,
 // which the queue puts in front ("Artist - Song"). Only a song name too long even for that is cut.
+// The song is drawn as it is: the line comes back marked i18n.Verbatim.
 func (r *renderer) upNext(next string, width int) (font.Face, string) {
-	label := i18n.T("Next") + "  ·  "
+	label := i18n.Verbatim(i18n.T("Next") + "  ·  ")
 	song, _ := songParts(next)
 	tries := []string{next, song}
 	for _, sep := range []string{" – ", " - ", " — "} {
@@ -794,12 +809,17 @@ func (r *renderer) bareButtons(s scene, fav, back, play, next, stop image.Rectan
 	under := r.pixel(play)
 	rad := float64(play.Dy()) / 2
 	r.roundFillF(cx(play)-rad, cy-rad, cx(play)+rad, cy+rad, rad, white)
-	r.markSkip(cx(back), cy, u, false, white)
-	r.markSkip(cx(next), cy, u, true, white)
+	if !s.live {
+		r.markSkip(cx(back), cy, u, false, white)
+		r.markSkip(cx(next), cy, u, true, white)
+	}
 	m := u * 0.9
-	if s.paused {
+	switch {
+	case s.live && !s.paused:
+		r.roundFillF(cx(play)-m*0.8, cy-m*0.8, cx(play)+m*0.8, cy+m*0.8, m*0.2, under)
+	case s.paused:
 		r.aaPoly([][2]float64{{cx(play) - m*0.7, cy - m*1.15}, {cx(play) + m*1.1, cy}, {cx(play) - m*0.7, cy + m*1.15}}, under)
-	} else {
+	default:
 		bw := m * 0.62
 		r.roundFillF(cx(play)-m*0.8, cy-m*1.05, cx(play)-m*0.8+bw, cy+m*1.05, bw/3, under)
 		r.roundFillF(cx(play)+m*0.8-bw, cy-m*1.05, cx(play)+m*0.8, cy+m*1.05, bw/3, under)
@@ -981,6 +1001,11 @@ func (r *renderer) markNext(x, top int) {
 }
 
 func (r *renderer) markPlay(x, top int) { r.markTriangle(x, top, r.s(36), true) }
+
+// markStop is a station's stop: a square as tall as the pause bars' middle.
+func (r *renderer) markStop(x, top int) {
+	draw.Draw(r.dst, image.Rect(x, top, x+r.s(30), top+r.s(30)), image.NewUniform(amber), image.Point{}, draw.Src)
+}
 
 func (r *renderer) markPause(x, top int) {
 	r.markBar(x, top)

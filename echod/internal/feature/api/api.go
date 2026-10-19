@@ -39,7 +39,7 @@ func init() {
 	// that cannot be made to work therefore takes the process down and inittab brings it straight
 	// back, which is a boot that tries again rather than a device that has written the API off until
 	// somebody pulls the power. See loadPSK for the error this is really about.
-	component.Register(component.Network, Get(), component.Order(99))
+	component.Register(component.Network, Get, component.Order(99))
 }
 
 // One of Home Assistant's keepalive intervals; it gives up on us at 4.5 of them.
@@ -150,7 +150,12 @@ func (a *API) Start(ctx context.Context) error {
 		// Persist a key Home Assistant pushes, or the next connection reverts to the old one.
 		OnSetEncryptionKey: a.keySet,
 
-		OnSubscribed: func() { component.Subscribed.Emit(struct{}{}) },
+		// Only a client holding the key gets as far as subscribing (the library answers a device
+		// without one only what adding it takes), so whoever set the device up has it now.
+		OnSubscribed: func() {
+			clearSetup()
+			component.Subscribed.Emit(struct{}{})
+		},
 
 		// The handlers components answer for themselves rather than through an entity: the voice
 		// satellite's pipeline traffic, and the Bluetooth proxy's subscribe and set-mode messages.
@@ -215,7 +220,7 @@ func (a *API) Run(ctx context.Context) error {
 			stop()
 		}()
 
-		err = a.srv.Serve(serving, refusePlaintext{Listener: ln, encrypted: func() bool { return a.srv.PSK != nil }})
+		err = a.srv.Serve(serving, refusePlaintext{Listener: ln, encrypted: func() bool { return keyed(a.srv.PSK) }})
 		stop()
 
 		if err != nil || ctx.Err() != nil {

@@ -5,7 +5,7 @@ What the bootloader paints before Linux starts lives in kaeru, amonet's bootload
 here is that slot with another picture in it.
 
 - `cronos-wordmark.bin`: the TECHO5 mark. `install-show.py` writes it on a Show 5 2nd gen or a Show 8.
-- `openjade-wordmark.bin`: the OpenJade lockup, for Jarvis Shows (Crown and Checkers). The install
+- `openjade-wordmark.bin`: the OpenJade lockup, for Jarvis Shows (Crown, Checkers and Cronos). The install
   leaves expdb alone; it goes in afterwards, on its own, with
   `tools/jarvis-show.py boot-logo --name "<the Show's name>"` (and back out with `--amazon-logo`).
 - `openjade-wordmark-crown.bin`: the same lockup at 477×255, for the Show 8 (Crown), whose 8" panel made
@@ -25,7 +25,7 @@ here is that slot with another picture in it.
 
 and the slot is bytes 335308 to 341413 of the result. 64 flat colours keep the mark's shading and
 compress to 5124 bytes. `make-lockup.py` needs fontTools with brotli; `checkers-kaeru.bin` is the one in
-amonet-checkers v2.0.1. The slot is the same in Crown's kaeru, so one file serves both.
+amonet-checkers v2.0.1. The slot is the same in Crown's and Cronos' kaeru, so one file serves all three.
 
 ## The bigger one for Crown
 

@@ -68,9 +68,11 @@ restarts. Your Home Assistant can't connect to it again, and the device no longe
 Assistant. Alarms, radio stations, Wi-Fi and its other settings stay.
 
 Afterward, delete the device from **Settings → Devices & services → ESPHome** in your Home Assistant.
-The new key isn't shown anywhere. To add the device to another Home Assistant later, open its setup
-page, go to **General**, and choose **Let a Home Assistant add this device**: for 15 minutes the
-device has no key, and the Home Assistant that adds it sets one.
+The new key isn't shown anywhere, and the device stays out of Home Assistant's **Discovered** list.
+To add it to another Home Assistant later, tap **Let Home Assistant add it** on a Show's start-up
+screen, or open its setup page, go to **General**, and choose **Let a Home Assistant add this
+device**: for 15 minutes the device has no key, shows up under **Discovered**, and the Home Assistant
+that adds it sets one.
 
 ### confirm (Required)
 
@@ -82,6 +84,47 @@ Must be `leave`. Anything else changes nothing, so a stray tap in the action lis
 action: esphome.office_leave_home_assistant
 data:
   confirm: leave
+```
+
+## Erase the device back to setup
+
+In YAML, refer to this action as `esphome.<node>_reset_to_setup`.
+
+The same as **Factory reset** on the device's screen, asked from Home Assistant. The device answers,
+restarts, and erases what it was given while starting up: its name, alarms, radio stations, the
+Home Assistant URL and token, the encryption key (it gets a new random one), the SSH keys and its
+logs. The Wi-Fi goes too, unless `keep_wifi` is set. Then it starts in setup, as it was new.
+
+If the device's system is too old to be reset this way, or to keep the Wi-Fi through a reset, it
+says so and changes nothing.
+
+Afterward, delete the device from **Settings → Devices & services → ESPHome**. To add it again, tap
+**Let Home Assistant add it** on a Show's start-up screen, or open its setup page and choose **Let a
+Home Assistant add this device**, the same as after leaving.
+With Genbu 1.4.16 or later, **Delete** on the Show's Genbu device calls this action for you and takes
+the rest of the Show out of the house too ([Deleting a Show in Home Assistant](update-leader.md#deleting-a-show-in-home-assistant)).
+
+### confirm (Required)
+
+*string*
+
+Must be `reset`. Anything else changes nothing.
+
+### keep_wifi (Optional)
+
+*boolean*
+
+Keep the Wi-Fi the device knows, so it comes back in setup on the same network. Off by default.
+
+The answer says what the device will do, `{"reset": true, "keep_wifi": true}`, once it has left
+itself the note to erase. Ask for it with `response_variable`.
+
+```yaml
+action: esphome.office_reset_to_setup
+data:
+  confirm: reset
+  keep_wifi: true
+response_variable: reset
 ```
 
 ## Set an alarm

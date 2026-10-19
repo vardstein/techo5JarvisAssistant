@@ -223,7 +223,7 @@ func nearestRest(rot float64, i, n int) float64 { return rot + wrapAngle(restFor
 func itemName(s roundScene, id itemID) string {
 	if i := cameraOf(id); i >= 0 {
 		if i < len(s.cameras) {
-			return s.cameras[i].Name
+			return i18n.Verbatim(s.cameras[i].Name)
 		}
 		return "Camera"
 	}

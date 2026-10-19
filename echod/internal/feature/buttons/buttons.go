@@ -15,7 +15,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Device, Get())
+	component.Register(component.Device, Get)
 }
 
 // Event types, as Home Assistant sees them. Repeats are not reported: a volume ramp would fill the

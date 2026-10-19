@@ -28,7 +28,7 @@ class MusicNowPlayingContractTests(unittest.TestCase):
             "line(r.small, albumName",
             'strings.Join(s.music.Rooms, "  ·  ")',
             'r.upNext(s.music.Next, col.Dx())',
-            'label := i18n.T("Next") + "  ·  "',
+            'i18n.T("Next") + "  ·  "',
             "r.musicProgress(s.music, s.now",
         ):
             self.assertIn(marker, render)
@@ -64,7 +64,7 @@ class MusicNowPlayingContractTests(unittest.TestCase):
         decode = (ROOT / "echod/internal/feature/home/decode.go").read_text(encoding="utf-8")
         self.assertIn('st.Attributes["entity_picture"]', route)
         self.assertIn("hass.Get().FetchURL(fetch)", route)
-        self.assertIn("RemoteArt(b, nil)", route)
+        self.assertIn("RemoteArt(b, ours)", route)
         self.assertIn("layoutArt", art)
         self.assertIn("maxArtPixels", decode)
 

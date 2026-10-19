@@ -33,17 +33,21 @@ func testInfo() Info {
 // the same transport. Noise is covered in internal/wire.
 func startServer(t *testing.T, h Handler) (*Server, *testPeer) {
 	t.Helper()
+	return startServerWith(t, &Server{Handler: h})
+}
+
+// startServerWith is startServer for a server set up beyond its handler. The client speaks
+// plaintext whatever the server's key.
+func startServerWith(t *testing.T, srv *Server) (*Server, *testPeer) {
+	t.Helper()
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
 
-	srv := &Server{
-		Info:    testInfo(),
-		Handler: h,
-		Logger:  slog.New(slog.DiscardHandler),
-	}
+	srv.Info = testInfo()
+	srv.Logger = slog.New(slog.DiscardHandler)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
@@ -162,6 +166,123 @@ func TestDeviceInfo(t *testing.T) {
 	}
 	if !resp.GetApiEncryptionSupported() {
 		t.Error("api_encryption_supported should be true")
+	}
+	if resp.GetApiEncryptionProvisionable() {
+		t.Error("a device that isn't waiting for a key says it can be given one")
+	}
+}
+
+// A device waiting for its key lets Home Assistant read it and finish connecting, and nothing more:
+// the listing is empty, nothing reaches the handler, nobody counts as subscribed, and a key sent in
+// plaintext is turned down.
+func TestUnkeyedDeviceAnswersOnlyWhatAddingItTakes(t *testing.T) {
+	handled := make(chan proto.Message, 4)
+	keys := make(chan PSK, 1)
+	subscribed := make(chan struct{}, 1)
+	srv, peer := startServerWith(t, &Server{
+		PSK: Unprovisioned(),
+		Handler: HandlerFunc(func(_ context.Context, _ *Conn, msg proto.Message) error {
+			handled <- msg
+			return nil
+		}),
+		OnSetEncryptionKey: func(k PSK) error { keys <- k; return nil },
+		OnSubscribed:       func() { subscribed <- struct{}{} },
+	})
+	peer.hello()
+
+	peer.send(&api.DeviceInfoRequest{})
+	info, ok := peer.recv().(*api.DeviceInfoResponse)
+	if !ok {
+		t.Fatal("expected DeviceInfoResponse")
+	}
+	if !info.GetApiEncryptionProvisionable() || !info.GetApiEncryptionSupported() {
+		t.Errorf("provisionable %v, supported %v: Home Assistant won't push a key",
+			info.GetApiEncryptionProvisionable(), info.GetApiEncryptionSupported())
+	}
+
+	peer.send(&api.ListEntitiesRequest{})
+	if _, ok := peer.recv().(*api.ListEntitiesDoneResponse); !ok {
+		t.Fatal("the listing didn't end at once")
+	}
+
+	peer.send(&api.SubscribeStatesRequest{})
+	peer.send(&api.SubscribeLogsRequest{Level: api.LogLevel_LOG_LEVEL_VERY_VERBOSE})
+	peer.send(&api.ButtonCommandRequest{Key: 1})
+	peer.send(&api.NoiseEncryptionSetKeyRequest{Key: make([]byte, 31)})
+	peer.send(&api.NoiseEncryptionSetKeyRequest{Key: []byte("0123456789abcdef0123456789abcdef")})
+	for range 2 {
+		resp, ok := peer.recv().(*api.NoiseEncryptionSetKeyResponse)
+		if !ok {
+			t.Fatal("expected NoiseEncryptionSetKeyResponse")
+		}
+		if resp.GetSuccess() {
+			t.Error("a key sent in plaintext was taken")
+		}
+	}
+	peer.send(&api.PingRequest{})
+	if _, ok := peer.recv().(*api.PingResponse); !ok {
+		t.Fatal("expected PingResponse")
+	}
+
+	select {
+	case msg := <-handled:
+		t.Errorf("the handler got %T", msg)
+	case k := <-keys:
+		t.Errorf("a key was stored: %v", k.IsZero())
+	case <-subscribed:
+		t.Error("the subscribed hook fired")
+	default:
+	}
+	srv.mu.Lock()
+	for c := range srv.conns {
+		if c.StatesSubscribed() || c.LogsSubscribed() {
+			t.Error("the connection counts as subscribed")
+		}
+	}
+	srv.mu.Unlock()
+}
+
+// recording is a transport that keeps what is written to it, standing in for zero-key Noise.
+type recording struct {
+	encrypted bool
+	written   []wire.Frame
+}
+
+func (r *recording) Handshake() error          { return nil }
+func (r *recording) Read() (wire.Frame, error) { return wire.Frame{}, io.EOF }
+func (r *recording) Write(f wire.Frame) error  { r.written = append(r.written, f); return nil }
+func (r *recording) Close() error              { return nil }
+func (r *recording) Encrypted() bool           { return r.encrypted }
+
+// Over zero-key Noise the key is taken, but not the all-zeros one, which would leave the device
+// open as it is.
+func TestUnkeyedDeviceTakesAKeyOverZeroKeyNoise(t *testing.T) {
+	var stored []PSK
+	tr := &recording{encrypted: true}
+	c := newConn(tr, testInfo(), nil, slog.New(slog.DiscardHandler), hooks{
+		setKey: func(k PSK) error { stored = append(stored, k); return nil },
+	})
+
+	key := []byte("0123456789abcdef0123456789abcdef")
+	for _, raw := range [][]byte{make([]byte, 32), key} {
+		if err := c.dispatch(t.Context(), &api.NoiseEncryptionSetKeyRequest{Key: raw}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var answers []bool
+	for _, f := range tr.written {
+		var resp api.NoiseEncryptionSetKeyResponse
+		if err := proto.Unmarshal(f.Data, &resp); err != nil {
+			t.Fatal(err)
+		}
+		answers = append(answers, resp.GetSuccess())
+	}
+	if len(answers) != 2 || answers[0] || !answers[1] {
+		t.Errorf("answers %v, want the zero key turned down and the real one taken", answers)
+	}
+	if len(stored) != 1 || string(stored[0][:]) != string(key) {
+		t.Errorf("stored %d keys, want just the real one", len(stored))
 	}
 }
 

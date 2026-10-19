@@ -16,8 +16,9 @@ firmware): releases don't carry it, so it is copied into the store before the pa
 ## Unlock the bootloader first
 
 **The bootloader has to be unlocked before any of this works.** Running LineageOS does not mean it
-is: the unlock is a separate exploit, with a shorting trick to get the device into BROM mode, not a
-`fastboot flashing unlock`. Without it the installer stops at the first write with
+is: the unlock is a separate exploit (amonet's fastbrick, run from fastboot), not a
+`fastboot flashing unlock`. Nothing has to be shorted; see [hardware.md](hardware.md#unlock-and-recovery)
+for how it goes on a Show 5 2nd gen. Without it the installer stops at the first write with
 
 ```
 FAILED (remote: 'the command you input is restricted on locked hw')
@@ -83,7 +84,9 @@ python3 tools/install-show.py --lineage-zip lineage-18.1-XXXXXXXX-UNOFFICIAL-cro
 ```
 
 Before the one question it saves the unit's small partitions (bootloader chain, logo and the rest) into
-`backups/<serial>/partitions/`, each checked against its size. After it, it formats userdata (Fire OS's
+`backups/<serial>/partitions/`, each checked against its size. Those copies are a record, not
+something to write back: on a Show 5 2nd gen, LK, preloader, TZ and TEE1 are never flashed, in any mode
+(see [hardware.md](hardware.md#never-flash-these)). After it, it formats userdata (Fire OS's
 data), installs the zip from TWRP, checks that its Wi-Fi driver is built for the kernel TECHO5 uses, and
 goes on as above. `--wifi` asks for the network's passphrase and sends the unit only the WPA key made
 from it. Without `--wifi`, the Show opens its Wi-Fi page by itself a little after it starts.
@@ -323,7 +326,8 @@ Assistant, so set that if the list looks like somebody else's country.
 **2. Music Assistant (needs the Home Assistant token and the Music Assistant integration).** When Home
 Assistant has Music Assistant, Radio gets a "Music Assistant" list: the radio stations in its library,
 starred ones first. That is whatever you added there: TuneIn's presets once TuneIn is added as a
-provider, Radio Browser stations, or a stream added by hand. Nothing on the device has to know the
+provider (the installer adds it when you give it your TuneIn username), Radio Browser stations, or a
+stream added by hand. Nothing on the device has to know the
 Music Assistant server for this; the list comes through Home Assistant, and a station plays through
 Music Assistant on the room's player, the way a song does, so it follows the room's output and groups.
 A station playing that way is marked "Playing now" in the list.
@@ -420,7 +424,8 @@ If the screen can't be used (a cracked panel, touch that stopped working), hold 
 volume down together for ten seconds** while the Show is running. The screen lights up and counts
 down in red; let go of either button and nothing happens. This works on any page, the start-up
 screen included. Press them once the logo is up, not while you're powering the Show on: it only
-listens for them once it is running. Only the Show has this; a Spot or a Dot is reset from its
+listens for them once it is running, and at power-on the volume buttons start fastboot, TWRP or the
+download port instead (see [hardware.md](hardware.md#boot-keys)). Only the Show has this; a Spot or a Dot is reset from its
 settings.
 
 The Show restarts and erases, before anything else starts:
@@ -435,7 +440,21 @@ It comes back like a newly installed Show: the Wi-Fi page asks for a network, an
 closed. What it was installed as (the profile) and the TECHO5 version stay. LineageOS's own data on
 userdata (downloads and the like) isn't touched.
 
-Your Home Assistant can't reach it any more: take it out with
+Once it is on a network, the start-up screen says **Ready to set up**. Until then Home Assistant
+doesn't see it at all: no Home Assistant has its key, and a Show it found now would only ask for one.
+Tap **Let Home Assistant add it**. For 15 minutes the Show has no key, and the screen says until when.
+In Home Assistant, go to **Settings → Devices & services**: the Show is under **Discovered**. Choose
+**Add**, and the Home Assistant that adds it sets its key. If nothing adds it in time, the window shuts
+with a new key nobody has and the button comes back. The setup page's **Let a Home Assistant add this
+device** opens the same window.
+
+`python3 tools/jarvis-show.py --remove-show --name NAME --reset-show yes` does the same over SSH, and
+with `--keep-wifi yes` the Show keeps its Wi-Fi networks (a Show image from GENBU-223 on).
+
+From Genbu 1.4.16, **Delete** on the Show's Genbu device in Home Assistant does the reset and the
+house side together ([Deleting a Show in Home Assistant](update-leader.md#deleting-a-show-in-home-assistant)).
+
+After a reset on its screen your Home Assistant can't reach it any more: take it out with
 `python3 tools/jarvis-show.py --remove-show --name NAME`, which removes its device, user, automation,
 Music Assistant player and Genbu entry together ([Taking a Show out](jarvis-crown-installer.md#taking-a-show-out)),
 or delete it by hand from **Settings → Devices & services → ESPHome**. To add it again, open its setup page, go to **General** and choose **Let a Home Assistant

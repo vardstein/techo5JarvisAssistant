@@ -7,6 +7,9 @@ package mass
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +25,7 @@ import (
 	"unicode"
 
 	"github.com/HuskerMinion/techo5/echod/internal/layout"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/hook"
 )
 
 // Port is Music Assistant's web server, where its API answers.
@@ -30,6 +34,16 @@ const Port = "8095"
 // Path is where the token lives: next to the PSK, readable by root only.
 var Path = filepath.Join(filepath.Dir(layout.KeyPath), "music-assistant.json")
 
+// How the token stands, for the "Music Assistant key" sensor and for the installer, which keeps a
+// token that still works rather than making a new one on every run (GENBU-137).
+const (
+	KeyOK   = "ok"   // a token, and Music Assistant has not turned it away
+	KeyNone = "none" // no token given yet
+	// KeyGone is a token Music Assistant answered with "Authentication required": revoked, a year old,
+	// its user removed or switched off, or made by a server that has since got a new secret.
+	KeyGone = "gone"
+)
+
 type access struct {
 	Token string `json:"token"`
 }
@@ -37,10 +51,19 @@ type access struct {
 type Client struct {
 	mu    sync.Mutex
 	token string
-	http  *http.Client
+	// refused is set when Music Assistant turned the token away; it is no longer sent then. Not kept
+	// on userdata: after a restart the Show asks once more, so a refusal that was wrong does not stick.
+	refused bool
+	http    *http.Client
 	// port is Port except in tests, whose server listens where it likes.
 	port string
+
+	// Changed fires when the key's state changes: a new token, or a refusal. Listeners must not block.
+	Changed hook.Hook[struct{}]
 }
+
+// ErrRefused is a call not made because Music Assistant turned the token away.
+var ErrRefused = errors.New("mass: Music Assistant no longer accepts this Show's token; run the installer again")
 
 var (
 	once   sync.Once
@@ -70,8 +93,9 @@ func Get() *Client {
 func (c *Client) SetToken(token string) error {
 	token = clean(token)
 	c.mu.Lock()
-	c.token = token
+	c.token, c.refused = token, false
 	c.mu.Unlock()
+	c.Changed.Emit(struct{}{})
 	if token == "" {
 		if err := os.Remove(Path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
@@ -88,11 +112,66 @@ func (c *Client) SetToken(token string) error {
 	return os.Chmod(Path, 0o600)
 }
 
-// Ready reports whether there is a token to use.
+// Ready reports whether there is a token to use: one, and not turned away.
 func (c *Client) Ready() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.token != ""
+	return c.token != "" && !c.refused
+}
+
+// KeyState is how the token stands: one of the Key states.
+func (c *Client) KeyState() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	switch {
+	case c.token == "":
+		return KeyNone
+	case c.refused:
+		return KeyGone
+	}
+	return KeyOK
+}
+
+// KeyID names the token without giving it away: the sha256 of its id (the JWT's "jti"), which Music
+// Assistant lists with the user's tokens, so the installer can tell whether the Show holds the one it
+// should. "" without a token, or for one that is no JWT.
+func (c *Client) KeyID() string {
+	c.mu.Lock()
+	token := c.token
+	c.mu.Unlock()
+	return keyID(token)
+}
+
+func keyID(token string) string {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	b, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[1], "="))
+	if err != nil {
+		return ""
+	}
+	var claims struct {
+		Jti string `json:"jti"`
+	}
+	if json.Unmarshal(b, &claims) != nil || claims.Jti == "" {
+		return ""
+	}
+	h := sha256.Sum256([]byte(claims.Jti))
+	return hex.EncodeToString(h[:])
+}
+
+// refuse records that Music Assistant turned token away, unless a new one came in the meantime.
+func (c *Client) refuse(token string) {
+	c.mu.Lock()
+	if c.token != token || c.refused {
+		c.mu.Unlock()
+		return
+	}
+	c.refused = true
+	c.mu.Unlock()
+	slog.Error("mass: Music Assistant turned the token away; lyrics stop until the installer runs again")
+	c.Changed.Emit(struct{}{})
 }
 
 // StatusError is an answer Music Assistant gave with an HTTP error status: 401 for a token it does
@@ -110,10 +189,13 @@ func (e *StatusError) Error() string {
 // Call runs one command on the server at host and returns its result as Music Assistant wrote it.
 func (c *Client) Call(ctx context.Context, host, command string, args any) (json.RawMessage, error) {
 	c.mu.Lock()
-	token, port := c.token, c.port
+	token, port, refused := c.token, c.port, c.refused
 	c.mu.Unlock()
 	if token == "" {
 		return nil, errors.New("mass: no token")
+	}
+	if refused {
+		return nil, ErrRefused
 	}
 	if host == "" {
 		return nil, errors.New("mass: no server")
@@ -142,6 +224,11 @@ func (c *Client) Call(ctx context.Context, host, command string, args any) (json
 		text := strings.TrimSpace(string(out))
 		if len(text) > 200 {
 			text = text[:200]
+		}
+		// A 401 is the token turned away, but for "Authentication failed": Music Assistant's own check
+		// broke (webserver/controller.py, 2.10.6), which says nothing about the token.
+		if resp.StatusCode == http.StatusUnauthorized && text != "Authentication failed" {
+			c.refuse(token)
 		}
 		return nil, &StatusError{Command: command, Code: resp.StatusCode, Text: text}
 	}

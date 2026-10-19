@@ -62,6 +62,20 @@ func newConn(t wire.Transport, info Info, h Handler, log *slog.Logger, hk hooks)
 	return &Conn{transport: t, info: info, handler: h, log: log, hooks: hk}
 }
 
+// unkeyedTransport is what wire.Provisioning offers beyond a transport: whether the client came in
+// over zero-key Noise rather than plaintext.
+type unkeyedTransport interface{ Encrypted() bool }
+
+// provisioning reports whether this device is waiting for its first key, and so whether the client
+// came in over zero-key Noise rather than plaintext.
+func (c *Conn) provisioning() (waiting, encrypted bool) {
+	p, ok := c.transport.(unkeyedTransport)
+	if !ok {
+		return false, false
+	}
+	return true, p.Encrypted()
+}
+
 // setEncryptionKey handles Home Assistant provisioning a real key. The new key applies
 // to future connections; this one keeps its established cipher state.
 func (c *Conn) setEncryptionKey(raw []byte) bool {
@@ -176,6 +190,12 @@ func (c *Conn) serve(ctx context.Context) error {
 // dispatch answers the connection-lifecycle messages itself and passes everything else
 // to the handler.
 func (c *Conn) dispatch(ctx context.Context, msg proto.Message) error {
+	if waiting, encrypted := c.provisioning(); waiting {
+		if done, err := c.dispatchUnkeyed(msg, encrypted); done {
+			return err
+		}
+	}
+
 	switch m := msg.(type) {
 	case *api.HelloRequest:
 		return c.onHello(m)
@@ -217,6 +237,34 @@ func (c *Conn) dispatch(ctx context.Context, msg proto.Message) error {
 	}
 }
 
+// dispatchUnkeyed is all a device waiting for its key answers, beyond hello, device info, ping and
+// disconnect, which it leaves to dispatch. Anyone on the network can connect to it, so it says what
+// it is and takes a key, and nothing reaches the handler: no entity, action or voice message, and
+// no subscription to what the device does. The listing comes back empty, so Home Assistant can
+// finish connecting and push the key.
+//
+// The key is taken only over zero-key Noise. In plaintext it would cross the network readable.
+func (c *Conn) dispatchUnkeyed(msg proto.Message, encrypted bool) (done bool, err error) {
+	switch m := msg.(type) {
+	case *api.HelloRequest, *api.DeviceInfoRequest, *api.PingRequest, *api.DisconnectRequest:
+		return false, nil
+
+	case *api.ListEntitiesRequest:
+		return true, c.Send(&api.ListEntitiesDoneResponse{})
+
+	case *api.NoiseEncryptionSetKeyRequest:
+		if !encrypted {
+			c.log.Warn("refusing an encryption key sent in plaintext")
+			return true, c.Send(&api.NoiseEncryptionSetKeyResponse{Success: false})
+		}
+		return true, c.Send(&api.NoiseEncryptionSetKeyResponse{Success: c.setEncryptionKey(m.GetKey())})
+
+	default:
+		c.log.Debug("waiting for a key, ignoring", "msg", fmt.Sprintf("%T", msg))
+		return true, nil
+	}
+}
+
 func (c *Conn) handle(ctx context.Context, msg proto.Message) error {
 	if c.handler == nil {
 		return nil
@@ -248,6 +296,7 @@ func (c *Conn) deviceInfo() *api.DeviceInfoResponse {
 		devices = append(devices, &api.DeviceInfo{DeviceId: d.ID, Name: d.Name, AreaId: d.AreaID})
 	}
 
+	waiting, _ := c.provisioning()
 	return &api.DeviceInfoResponse{
 		Devices:                    devices,
 		Name:                       c.info.Name,
@@ -260,6 +309,7 @@ func (c *Conn) deviceInfo() *api.DeviceInfoResponse {
 		ProjectVersion:             c.info.ProjectVersion,
 		SuggestedArea:              c.info.SuggestedArea,
 		ApiEncryptionSupported:     true,
+		ApiEncryptionProvisionable: waiting,
 		VoiceAssistantFeatureFlags: uint32(c.info.VoiceFeatures),
 		BluetoothProxyFeatureFlags: uint32(c.info.BluetoothFeatures),
 	}

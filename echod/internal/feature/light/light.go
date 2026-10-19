@@ -22,7 +22,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Device, Get(), component.Order(10))
+	component.Register(component.Device, Get, component.Order(10))
 }
 
 type Light struct {

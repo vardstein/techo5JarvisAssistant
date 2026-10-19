@@ -3,8 +3,13 @@
   "kind": "amonet",
   "file": "amonet-cronos-v2.0.1.zip",
   "url": "https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-show-5-2nd-gen-2021-cronos.4772596/",
-  "source": "XDA thread 4772596 (R0rt1z2), browser download, not reviewed yet",
+  "sha256": "07a49c8fb2b244330297810b261333ba23976eca5ab3e0d9032f45f4c9847621",
+  "size": 44403627,
+  "source": "XDA thread 4772596 (R0rt1z2), browser download (XDA's CDN refuses scripts)",
   "manual": true,
   "kaeru": "amonet/bin/cronos-kaeru.bin",
-  "notes": "Not reviewed yet: no sha256, so the fetcher only inspects it and the installer never uses it. Its bin/twrp.img gets pinned once the zip is reviewed; until then recovery refuses to boot any TWRP on cronos. The attachment link is on the first post of the thread."
+  "members": {
+    "amonet/bin/twrp.img": "09a72dab093e9f4d444733bd4517af09444a0904a9a5243277df0ecd263873d8"
+  },
+  "notes": "Reviewed 2026-10-14: update-binary and the scripts match R0rt1z2/amonet mt8163-echo-show (main.py/common.py as of 999f8d0ab5; the two commits after it only speed up bootrom-mode eMMC writes), fastbrick.sh and fastboot(32) are the bytes unlock pins for crown, device.prop says cronos, twrp.img is the 16.1.0-20260812 omni_cronos build, and cronos-kaeru.bin is the stock kaeru install-show.py's LOGO_KAERU pins. Preloader, LK, TZ and fastbrick.img exist only in this zip. The attachment link is on the first post of the thread."
 }

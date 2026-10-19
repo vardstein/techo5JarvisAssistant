@@ -104,7 +104,10 @@ type scene struct {
 	// progress and next-item context refreshed in the background by feature/home.
 	showWeather bool
 	music       home.MusicPlaybackView
-	forecast    forecastDays
+	// live is a station playing rather than a song from a queue: there is nothing to skip to and
+	// nothing to pause, so the page has no back or forward and its play button stops (GENBU-152).
+	live     bool
+	forecast forecastDays
 	// lyrics is the words of the song on the now-playing page, when the music server has them, and
 	// showLyrics the page showing them in place of the song's details.
 	lyrics     *home.Lyrics
@@ -185,8 +188,11 @@ type scene struct {
 	update string
 	// install is an update being installed, said in a pill at the top of every page, and installAt
 	// how far its download has got: -1 once that is done and the other slot is being written.
-	install   string
-	installAt float32
+	// installFailed is install saying the last one failed, which stands still and is drawn as a
+	// warning rather than as something still going.
+	install       string
+	installAt     float32
+	installFailed bool
 
 	// strip is the music in a strip at the foot of the clock page, rather than on its own page; faved
 	// is the star having been pressed for what is playing.

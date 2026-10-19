@@ -36,6 +36,15 @@ func Lang() string {
 	return ""
 }
 
+// Known is whether Lang is an answer and not a guess: the screen has a language, the direct pipeline
+// names one, or Home Assistant said its pipeline's. Until then Lang's English is only the fallback, and
+// words spoken through the pipeline may be in a language nobody there uses: bathroomShow5 asked about
+// its update in English through a German pipeline while its own way to Home Assistant was still shut.
+func Known() bool {
+	c := config.Get()
+	return c.Screen.Language != "" || c.Brain.Direct() || assistant.Load() != nil
+}
+
 // assistant is the language of Home Assistant's voice pipeline, which a screen with no language set
 // follows. Somebody who set up their assistant in German wants the screen in German too.
 var assistant atomic.Pointer[string]
@@ -60,8 +69,11 @@ func base(code string) string {
 	return code
 }
 
-// T is s in the screen's language.
+// T is s in the screen's language. Text marked by Verbatim is not looked up, only unmarked.
 func T(s string) string {
+	if strings.Contains(s, mark) {
+		return strings.ReplaceAll(s, mark, "")
+	}
 	if l := current(); l != nil {
 		if t := l.text[s]; t != "" {
 			return t
@@ -69,6 +81,20 @@ func T(s string) string {
 	}
 	return s
 }
+
+// Verbatim is s marked to be drawn as it is: T takes the mark out and translates nothing. Names from
+// outside (a network, a speaker, a song, a calendar entry, a Show) go through it where they are drawn,
+// so a Wi-Fi network called "Office" stays "Office" on a German screen and isn't drawn as "Büro". The
+// mark is for the screen only; text that is spoken, saved or sent on must not carry it.
+func Verbatim(s string) string {
+	if s == "" || strings.HasPrefix(s, mark) {
+		return s
+	}
+	return mark + s
+}
+
+// mark is a private-use character no font draws, so text that missed T shows that it did.
+const mark = "\ue000"
 
 // F is T(template) with each {name} filled in from the name, value pairs that follow it:
 //
@@ -90,16 +116,19 @@ func In(lang, s string) string {
 var (
 	cachedAt   atomic.Int64
 	cachedLang atomic.Pointer[lang]
+	cached24   atomic.Bool
 )
 
 // current is the screen language's table, nil for English.
 func current() *lang {
 	if now := time.Now().UnixNano(); now-cachedAt.Load() > int64(time.Second) {
+		code := Lang()
 		var l *lang
-		if found, ok := langs[Lang()]; ok {
+		if found, ok := langs[code]; ok {
 			l = &found
 		}
 		cachedLang.Store(l)
+		cached24.Store(clock24(config.Get().Screen.Clock24, code))
 		cachedAt.Store(now)
 	}
 	return cachedLang.Load()
@@ -107,6 +136,20 @@ func current() *lang {
 
 // Changed drops the cached language: call it after setting a new one, for the next frame to be in it.
 func Changed() { cachedAt.Store(0) }
+
+// Clock24 is the screen showing 15:04 rather than 3:04 PM: as chosen on the Show, or else as its
+// language writes the time. Of the screen's languages only English uses 3:04 PM.
+func Clock24() bool {
+	current()
+	return cached24.Load()
+}
+
+func clock24(chosen *bool, code string) bool {
+	if chosen != nil {
+		return *chosen
+	}
+	return code != "" && code != "en"
+}
 
 func fill(s string, pairs []string) string {
 	if len(pairs) < 2 {

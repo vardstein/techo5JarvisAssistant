@@ -72,6 +72,7 @@ type splash struct {
 	titleY, subY int
 	shown        float64
 	at           time.Duration
+	offer        setupOffer
 }
 
 // newSplash places the wordmark on r's screen. Its offsets are in the Show 5's pixels like every
@@ -121,7 +122,11 @@ func (r *renderer) drawSplash(s *splash, elapsed time.Duration, step bootStep) {
 	// One line under the bar for the step, a second once waiting is the explanation.
 	y := bar.Max.Y + r.s(44)
 	line := step.label()
-	if step < stepReady {
+	offer := step == stepHomeAssistant && s.offer.shown
+	if offer {
+		line = "Ready to set up"
+	}
+	if step < stepReady && !offer {
 		line += "…"
 		count := i18n.Sprintf("  %d of %d", int(step)+1, bootSteps)
 		w := r.width(r.tiny, line) + r.width(r.tiny, count)
@@ -130,6 +135,10 @@ func (r *renderer) drawSplash(s *splash, elapsed time.Duration, step bootStep) {
 		r.text(r.tiny, count, x+r.width(r.tiny, line), y, dim)
 	} else {
 		r.text(r.tiny, line, (r.w-r.width(r.tiny, line))/2, y, cream)
+	}
+	if offer {
+		r.drawSetupOffer(s, y)
+		return
 	}
 	if elapsed >= waitingAfter {
 		if hint := step.hint(); hint != "" {

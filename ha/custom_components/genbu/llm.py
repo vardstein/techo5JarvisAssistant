@@ -9,7 +9,14 @@ never see it.
 genbu__firmware answers questions about the Shows' software and does what the house's update card does:
 installs a waiting update or goes back to the version before, after asking, skips an update, picks the
 release channel and turns Install at night on or off. A Show with Updates by voice on gets it, and so does
-an admin typing in the app; another voice device never does. See docs/genbu-assistant.md §1 and §4."""
+an admin typing in the app; another voice device never does. See docs/genbu-assistant.md §1 and §4.
+
+And when a wake word cut the Show's last reply off, the turn after it is told how much of the reply was
+heard (reply_cut.py, GENBU-250); that comes with no tool.
+
+Lines that only help a language model, the LLM extras, are added only while the house says its assistant is
+one (switch.genbu_llm_assistant, hub.house.llm, GENBU-240). The first is the room line for a request whose
+nearest Show is offline (GENBU-239); there is none yet. The lines above go out either way, as before."""
 
 from __future__ import annotations
 
@@ -36,8 +43,9 @@ except ImportError:
     import voluptuous as vol
 
 from . import recipe as rec
+from . import reply_cut
 from .const import DOMAIN, NEW_RECIPE, RECIPES, SHOW_RECIPE, UPDATE_ENTITY, VOICE_UPDATES
-from .house import CHANNELS, Show, channel_of, newer, valid
+from .house import CHANNELS, Show, channel_of, newer, stage, valid
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -52,9 +60,11 @@ PROMPT = {
            "when someone wants to hear them."),
 }
 FIRMWARE_PROMPT = {
-    "de": ("Fragen zur Software oder Version der Genbu Shows beantwortet genbu__firmware. Bevor ein Update "
+    "de": ("Fragen zur Software oder Version der Genbu Shows beantwortet genbu__firmware. Nenne nur Versionen "
+           "aus dem Ergebnis und sag nur, dass alle gleich sind, wenn all_on_house_version das sagt. Bevor ein Update "
            "installiert, zurückgegangen oder der Kanal gewechselt wird, frag immer erst nach."),
-    "en": ("genbu__firmware answers questions about the Genbu Shows' software or version. Always ask before an "
+    "en": ("genbu__firmware answers questions about the Genbu Shows' software or version. Name only versions "
+           "from its result, and say they all match only when all_on_house_version says so. Always ask before an "
            "update is installed, a version is gone back to or the channel changes."),
 }
 
@@ -83,7 +93,9 @@ def async_get_tools(hass: HomeAssistant, llm_context: llm.LLMContext, api_id: st
     if hub.shows and (hub.switched_on(show, VOICE_UPDATES) if show else llm_context.device_id is None):
         tools.append(FirmwareTool(show))
         prompt.append(FIRMWARE_PROMPT[_lang(llm_context)])
-    if not tools:
+    if show is not None and (cut := hub.take_cut(show.device)) is not None:
+        prompt.append(reply_cut.prompt(cut, _lang(llm_context)))
+    if not prompt:
         return None
     return LLMTools(tools=tools, prompt=" ".join(prompt))
 
@@ -219,8 +231,9 @@ class FirmwareTool(llm.Tool):
     name = f"{DOMAIN}__firmware"
     title = "Genbu Show software"
     description = (
-        "The software (firmware) of the Genbu Shows: you are one of them. All Shows run one version, the house "
-        "version. Use it when someone asks about your or the Shows' version, whether there is an update, what is "
+        "The software (firmware) of the Genbu Shows: you are one of them. The Shows follow one version, the house "
+        "version, but a Show can still be behind, ahead or offline: all_on_house_version says whether they match, "
+        "and not_on_house_version names the ones that don't. Use it when someone asks about your or the Shows' version, whether there is an update, what is "
         "new in it, or wants it installed, skipped, or to go back to the version before; also for the release "
         "channel and whether updates install at night. Not for other devices, their settings or readings, and "
         "not for news, weather or lists. "
@@ -305,8 +318,9 @@ class FirmwareTool(llm.Tool):
         return llm.ToolResult(data={"channel": hub.house.channel, "update_waiting": hub.waiting or None})
 
     def _status(self, hass: HomeAssistant, hub) -> dict:
-        """The house version and channel, the update waiting with its summary, and each Show's version. A
-        Show still behind the house can have an update of its own waiting too."""
+        """The house version and channel, the update waiting with its summary, each Show's version, and the
+        Shows not on the house version. A Show still behind the house can have an update of its own waiting
+        too."""
         house = hub.house
         out: dict = {"house_version": house.version or None, "channel": house.channel,
                      "update_waiting": hub.waiting or None, "whats_new": None,
@@ -321,10 +335,16 @@ class FirmwareTool(llm.Tool):
                     "online": state is not None and state.state in ("on", "off")}
             if self.show is not None and show.device == self.show.device:
                 item["this_is_you"] = True
+            if show.updating or installed != house.version:
+                item["update_stage"] = stage(show, house.version)  # downloading 40%, waiting: why (GENBU-249)
             if state is not None and state.state == "on":
                 item["update_to"] = latest = str(attrs.get("latest_version") or "")
                 if not out["update_waiting"] and (not house.version or not newer(latest, house.version)):
                     out["update_waiting"] = latest  # catching up with the house
                     out["whats_new"] = out["whats_new"] or rec._line(str(attrs.get("release_summary") or "")) or None
             out["shows"].append(item)
+        # Worked out here, not left to the model: it read "one version" as every Show's (GENBU-259).
+        odd = [f"{s['name']} {s['version'] or 'unknown'}{'' if s['online'] else ' (offline)'}"
+               for s in out["shows"] if not s["online"] or s["version"] != house.version]
+        out["all_on_house_version"], out["not_on_house_version"] = not odd, odd
         return out

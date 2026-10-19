@@ -56,8 +56,11 @@ def _address(name: str | None, backups: Path, host: str | None, find_host: Calla
     show = show_named(backups, name) if name else None
     if show is None and not host:
         raise ToFastbootError(
-            "no Show on fastboot or adb" + (f", and none named {name!r} was installed from here" if name else "")
-            + ". Put it into fastboot, or give --name of an installed Show (or --host) so it can be sent there")
+            "no Show on fastboot or adb here" + (f", and none named {name!r} was installed from here" if name else "")
+            + ". A Show in TWRP or on Android is sent to fastboot on its own once this computer sees it over "
+            "USB. If its screen is on but it isn't seen, the cable most likely only charges, or a hub is in the "
+            "way: use a data cable straight into this computer. A Show already running Jarvis: give --name "
+            "(or --host) so it can be sent there over the network")
     if not host and show is not None:
         try:
             host = (show.folder / "address").read_text(encoding="utf-8").strip()
@@ -71,7 +74,7 @@ def _address(name: str | None, backups: Path, host: str | None, find_host: Calla
 
 
 def _wait(say: Callable, *, run: Callable, sleep: Callable, clock: Callable, timeout: float, after: str) -> None:
-    say(f"waiting for it in fastboot (up to {int(timeout // 60)} min)")
+    say(f"waiting for it to reboot into fastboot (up to {int(timeout // 60)} min)")
     deadline = clock() + timeout
     while clock() < deadline:
         try:

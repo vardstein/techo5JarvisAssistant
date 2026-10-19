@@ -59,7 +59,11 @@ On the Genbu Assistant device, next to two controls:
 | `select.genbu_release_channel` | stable, staging or dev. Until one is picked, the channel of the house version. |
 | `switch.genbu_install_at_night` | Off by default. When on, a waiting update installs by itself at 03:00. |
 
-**A Show taken out for good.** The action `genbu.forget_show` (from 1.1.0) drops one Show by its node name:
+The device also carries `switch.genbu_llm_assistant`, which is not about updates
+([genbu-assistant.md](genbu-assistant.md), "The LLM extras").
+
+**A Show taken out for good.** Delete on its device does all of it ([below](#deleting-a-show-in-home-assistant)).
+The action `genbu.forget_show` (from 1.1.0) drops one Show by its node name:
 its last version, its music choice and its switches. The installer's `--remove-show` calls it after
 removing the Show's ESPHome entry, so Genbu does not find it again first. A Genbu before 1.4.0 also picked
 a new main update Show and named it in the answer (`new_main`).
@@ -100,6 +104,41 @@ dialog. The page is in English, like the entity names the Shows report.
 removes the copies and shows the originals again on its first start, except ones someone hid by hand
 since. Dashboards that used a copy (`genbu_<node>_...`) need the original instead.
 
+### Deleting a Show in Home Assistant
+
+From 1.4.16, **Delete** on a Show's Genbu device (**Settings → Devices & services → Genbu**, the Show's
+device, the three dots) takes the Show out of the house and resets it back to setup, the same as the
+installer's [`--remove-show`](jarvis-crown-installer.md#taking-a-show-out) with a reset. Home Assistant's
+own "Are you sure?" is the only question. The house device ("Genbu Assistant") can't be deleted.
+
+First Genbu keeps a copy of everything that is about to go in `.storage/genbu.removed.<node>` (the
+automations and scripts as they were, and which users and players went), and makes a backup when the
+house makes backups. Then, in this order:
+
+1. the Show's Home Assistant users (`show_<name>`, `show_<name>-2`), which ends its token; admins and the
+   owner are never removed. Our turn-the-room-down automation for it and every automation and script
+   with the Show's label ("Genbu Show: <node>") go too, as long as they are in `automations.yaml` and
+   `scripts.yaml`; ones in a package are named, not removed;
+2. the Show's own settings: it is asked over its encrypted link to [reset to setup](actions.md#erase-the-device-back-to-setup),
+   keeping its Wi-Fi. A Show whose system can reset but can't keep the Wi-Fi is reset without it; one that
+   can't be reset from Home Assistant at all is removed anyway, and you reset it on its own screen;
+3. its user and player in Music Assistant, after the reset, so the Show doesn't make its player again;
+4. its ESPHome entry with its devices and entities, what Genbu kept about it, and its label once nothing
+   else carries it.
+
+A notification then says what went, what stayed and where the copy is. Other automations, scripts and
+dashboards that use the Show are named there and left as they are. What stays is the same as with
+`--remove-show`: what has only the "Genbu Show installed" label, the blueprints, the room and its
+dashboard, the calendars, the backups, and any router rules for its address.
+
+**A Show that is offline or switched off.** Nothing is reset behind anybody's back. Step 1 happens at once;
+the reset and the rest wait, with a Repairs issue ("<name> is deleted but not reset yet"), and go on by
+themselves as soon as the Show is online and its ESPHome entry is switched on. For a Show that is gone for
+good, or one you already reset on its screen, the issue's button forgets it without the reset. The copy and
+the waiting survive a Home Assistant restart.
+
+**Switching a Show off** (disabling its ESPHome entry) never removes or resets anything. Only Delete does.
+
 ### Tests
 
 `tests/test_genbu_house.py` and `tests/test_genbu_music.py` test the logic without Home Assistant and run in CI. `ha/tests` runs the
@@ -128,6 +167,9 @@ committed, in the diagnostic text sensor `committed_version`. That is set only a
 `good` (5 minutes up), so it lags `installed_version` on the `firmware` update entity. A new house starts at
 the newest `committed_version`; after that only an install moves it, so a newer Show never pulls the house
 along. A release that breaks a Show rolls back on that Show, which then says so in `update_status`.
+While a Show installs, `update_status` names the step (`Checking v`, `Downloading v`, `Installing v`,
+`Restarting into v`); a failed install says why first, as `Update to v failed: <reason> (<error>)`, and a
+following Show keeps the reason in `Version v did not install here (<reason>); staying on r` (GENBU-215).
 
 **What it never does.** It never downloads anything and never tells a Show *what* to install beyond a tag.
 Each Show fetches that tag's signed manifest from GitHub and checks it itself.
@@ -159,7 +201,7 @@ state of `sensor.genbu_house_version` and its attributes. **No HA token is neede
 |---|---|
 | Fresh install, its version differs from the house (older **or newer**) | It moves to the house version without asking. The installer has already said so. |
 | It was off and boots on a different version than the house | It asks once by voice and on screen: "This Show is on version 1.0.2, your other Shows are on 1.0.3. Want me to switch to it now?" "Yes" installs. "No" asks again on the next boot or in 24 hours, never during quiet hours. |
-| It is running when the house version changes | It follows straight away once nobody is using it: no music, call, or timer or alarm due soon. It does not ask, because your Install counts for the house (Jade's choice). |
+| It is running when the house version changes | It follows straight away once nobody is using it: no music playing (its own or Music Assistant's) or paused in the last 30 minutes, no call, and no timer or alarm due soon. It does not ask, because your Install counts for the house (Jade's choice). |
 | The house version is not installable here | It stays and says so in `update_status`, for example when the release has no manifest for its product or board. |
 
 A following Show's HA update card shows `installed = its version` and `latest = house version`. Its Install
@@ -198,8 +240,16 @@ After the HA sign-in (job 40):
    version once it has settled, and that updates come on the `update.genbu_show_firmware` card.
 3. **The house has a version:** say that the Show follows it. The Show aligns on its own (the first row of
    the table above). The installer waits until the versions match or a failure is reported, and shows the
-   result. It waits up to 15 minutes; a fresh Show lets its own version settle for 5 of them first. After
-   that the Show carries on by itself and its update card shows how far it is.
+   result. It waits up to 15 minutes; a fresh Show lets its own version settle for 5 of them first.
+   Somebody at the terminal can press Enter at any time to go on without waiting; with `--no-questions`
+   it waits the full time. After that the Show carries on by itself and its update card shows how far it
+   is. A Show that asked and was
+   told no ("install it from the update card") moves only when someone installs it, so that ends the
+   wait at once. So does a Show that is newer than the house: its own card offers nothing older, so its
+   line says it steps back on a yes to its question, or all Shows move up with an update on the
+   `update.genbu_show_firmware` card. A release the Show could not fetch is tried again after half a
+   minute, then after twice as long each time, up to every 10 minutes; the retry moves without asking. While Home Assistant has no update status from the Show, the installer says just that:
+   the Show may be restarting, or Home Assistant may have lost its entities.
 
 ## What changes where
 

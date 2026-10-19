@@ -4,6 +4,11 @@ updates itself to it (the Shows read sensor.genbu_house_version). A version pick
 to another build the same way, and going back skips the release left behind. Skip works as on any card:
 the Shows stop asking about that version.
 
+While the Shows move to a new house version, installed is the oldest version an online Show still runs, so
+the card stays on with how far they are. Its release notes list every Show: its version and whether it is
+up to date, downloading, installing, waiting and why, or offline (GENBU-249). Home Assistant reads the
+notes when the dialog opens, so that list is as of then; the bar and installed move while it is open.
+
 It sits on the Genbu Assistant device, with the release channel and Install at night."""
 
 from __future__ import annotations
@@ -17,7 +22,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dis
 
 from .const import CHANGED, UPDATE_ENTITY
 from .coordinator import house_device
-from .house import newer
+from .house import newer, oldest_behind, overview
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add) -> None:
@@ -46,7 +51,8 @@ class HouseUpdate(UpdateEntity):
     @callback
     def _changed(self) -> None:
         house, release = self.hub.house, self.hub.release
-        self._attr_installed_version = house.version or None
+        moving = self.hub.progress() is not None and oldest_behind(self.hub.shows, house.version)
+        self._attr_installed_version = moving or house.version or None
         self._attr_latest_version = self.hub.offered or house.version or None
         self._attr_title = "Genbu Show"
         self._attr_release_summary = None
@@ -69,10 +75,15 @@ class HouseUpdate(UpdateEntity):
         # The Shows' own order, so a dev build's run number counts as on the Show.
         return newer(latest_version, installed_version)
 
+    async def async_update(self) -> None:
+        # Settings → Updates → Check for updates (homeassistant.update_entity): read the channel now,
+        # not on the next hourly read.
+        await self.hub.async_read_release()
+
     async def async_release_notes(self) -> str | None:
-        if not self.hub.offered:
-            return None
-        return str(self.hub.release.get("notes") or "") or None
+        notes = str(self.hub.release.get("notes") or "") if self.hub.offered else ""
+        shows = overview(self.hub.shows, self.hub.house.version, self.hass.config.language[:2])
+        return "\n\n---\n\n".join(p for p in (notes, shows) if p) or None
 
     async def async_install(self, version: str | None, backup: bool, **kwargs: Any) -> None:
         await self.hub.async_install_house(version, backup)

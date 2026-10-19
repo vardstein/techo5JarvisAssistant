@@ -46,6 +46,8 @@ class Check:
     level: str
     name: str
     detail: str
+    # What to do about a failed check, in words for somebody who has not read the code (GENBU-216).
+    fix: str = ""
 
     @property
     def failed(self) -> bool:
@@ -64,6 +66,18 @@ def _group_names() -> set[str]:
         except KeyError:
             pass
     return names
+
+
+def _serial_fix() -> str:
+    import getpass
+
+    user = getpass.getuser()
+    if Path("/etc/NIXOS").exists():
+        return (f"This login can't open the Show's rescue console yet. Add \"dialout\" to "
+                f"users.users.{user}.extraGroups in your NixOS configuration, run nixos-rebuild switch, then "
+                "log out and in again.")
+    return (f"This login can't open the Show's rescue console yet. Run: sudo usermod -aG dialout {user}, then "
+            "log out and in again. If you already did, logging out and in is all that's left.")
 
 
 def _modemmanager_active(run: Callable = subprocess.run) -> bool:
@@ -115,6 +129,8 @@ def _check_amonet(amonet_dir: Path, board: str = "crown") -> Check:
             "FAIL",
             "amonet",
             f"local {profile.board} Amonet bundle incomplete: " + ", ".join(missing),
+            f"The install files for the {profile.model} aren't downloaded yet. Get them with: "
+            f"python3 tools/fetch-show-assets.py --board {profile.board}",
         )
     props = _device_prop(root / "device.prop")
     if props.get("DEVICE", "").lower() != profile.board:
@@ -122,6 +138,8 @@ def _check_amonet(amonet_dir: Path, board: str = "crown") -> Check:
             "FAIL",
             "amonet",
             f"bundle declares DEVICE={props.get('DEVICE', 'unknown')}, not {profile.board}",
+            f"These Amonet files are for another Show model. Leave --amonet-dir out to use the ones for "
+            f"the {profile.model}.",
         )
     return Check("PASS", "amonet", f"{amonet_dir} (DEVICE={profile.board})")
 
@@ -147,13 +165,19 @@ def _check_lineage(path: Path | None, board: str = "crown") -> Check:
             f"not supplied yet; vendor staging requires the {profile.board} LineageOS ZIP before install",
         )
     if not path.is_file():
-        return Check("FAIL", "lineage", f"file not found: {path}")
+        return Check("FAIL", "lineage", f"file not found: {path}",
+                     "There's no LineageOS zip at that path. Check it, or leave --lineage-zip out and the "
+                     "install fetches the right one.")
     try:
         detected = lineage_board(path)
     except ValueError as exc:
-        return Check("FAIL", "lineage", f"{path}: {exc}")
+        return Check("FAIL", "lineage", f"{path}: {exc}",
+                     "That file isn't a LineageOS zip the install can use. Leave --lineage-zip out and the "
+                     "install fetches the right one.")
     if detected.lower() != profile.board:
-        return Check("FAIL", "lineage", f"ZIP declares pre-device={detected}, not {profile.board}")
+        return Check("FAIL", "lineage", f"ZIP declares pre-device={detected}, not {profile.board}",
+                     f"That LineageOS zip is for another Show model, not the {profile.model}. Leave "
+                     "--lineage-zip out and the install fetches the right one.")
     return Check("PASS", "lineage", f"{path} (pre-device={profile.board})")
 
 
@@ -162,14 +186,18 @@ def _disk_checks(work_dir: Path, backup_dir: Path, min_free_bytes: int) -> list[
     seen_devices: set[int] = set()
     for label, path in (("work-dir", work_dir), ("backup-dir", backup_dir)):
         ok, detail = _writable_dir(path)
-        checks.append(Check("PASS" if ok else "FAIL", label, f"{path}: {detail}"))
+        checks.append(Check("PASS" if ok else "FAIL", label, f"{path}: {detail}",
+                            "" if ok else f"The installer can't write to {path}. Give it another folder with "
+                                          f"--{label}, or fix that one's permissions."))
         if not ok:
             continue
         try:
             stat = path.stat()
             free = shutil.disk_usage(path).free
         except OSError as exc:
-            checks.append(Check("FAIL", f"disk-space-{label}", f"cannot inspect free space: {exc}"))
+            checks.append(Check("FAIL", f"disk-space-{label}", f"cannot inspect free space: {exc}",
+                                f"The installer can't tell how much room is left there. Give it another "
+                                f"folder with --{label}."))
             continue
         if stat.st_dev in seen_devices:
             continue
@@ -180,6 +208,8 @@ def _disk_checks(work_dir: Path, backup_dir: Path, min_free_bytes: int) -> list[
                 "FAIL",
                 f"disk-space-{label}",
                 f"{gib:.1f} GiB free; at least {min_free_bytes / (1024 ** 3):.0f} GiB required",
+                f"Not enough room for the Show's backup and the install files. Free up some space, or give "
+                f"the installer another folder with --{label}.",
             ))
         else:
             checks.append(Check("PASS", f"disk-space-{label}", f"{gib:.1f} GiB free"))
@@ -202,18 +232,21 @@ def run_preflight(
     profile = profile_for_board(board)
 
     if not sys.platform.startswith("linux"):
-        checks.append(Check("FAIL", "host-os", "Jarvis Show installer supports Linux hosts only"))
+        checks.append(Check("FAIL", "host-os", "Jarvis Show installer supports Linux hosts only",
+                            "The installer runs on Linux only. A Linux live USB stick works too."))
     else:
         checks.append(Check("PASS", "host-os", "Linux host"))
 
     if sys.version_info < (3, 10):
-        checks.append(Check("FAIL", "python", "Python 3.10 or newer is required"))
+        checks.append(Check("FAIL", "python", "Python 3.10 or newer is required",
+                            "This Python is too old. Run the installer with Python 3.10 or newer."))
     else:
         checks.append(Check("PASS", "python", f"Python {sys.version_info[0]}.{sys.version_info[1]}"))
 
     for exe, hint in REQUIRED_TOOLS.items():
         found = shutil.which(exe)
-        checks.append(Check("PASS" if found else "FAIL", f"tool-{exe}", found or hint))
+        checks.append(Check("PASS" if found else "FAIL", f"tool-{exe}", found or hint,
+                            "" if found else f"{exe} isn't on this computer: {hint}, then run this again."))
 
     if os.geteuid() == 0:
         checks.append(Check(
@@ -231,16 +264,20 @@ def run_preflight(
             checks.append(Check(
                 "FAIL",
                 "serial-permission",
-                "join dialout (or uucp) and log out/in before install; rescue console access is mandatory",
+                "this login is not in dialout (or uucp) yet, which the rescue console needs; install sorts it out or says what to run",
+                _serial_fix(),
             ))
 
     if _modemmanager_active():
-        checks.append(Check("FAIL", "modemmanager", "ModemManager is active and may seize /dev/ttyACM*; stop it for installation"))
+        checks.append(Check("FAIL", "modemmanager", "ModemManager is active and may seize /dev/ttyACM*; stop it for installation",
+                            "ModemManager is running and can grab the Show's rescue console. Stop it for the "
+                            "install with: sudo systemctl stop ModemManager"))
     else:
         checks.append(Check("PASS", "modemmanager", "not active"))
 
     if not repo_root.is_dir():
-        checks.append(Check("FAIL", "repo", f"repository missing: {repo_root}"))
+        checks.append(Check("FAIL", "repo", f"repository missing: {repo_root}",
+                            "The installer's own files are missing. Download the repository again."))
     else:
         checks.append(Check("PASS", "repo", str(repo_root)))
 
@@ -255,6 +292,8 @@ def print_checks(checks: list[Check]) -> None:
     ui.out.heading("Checks")
     for check in checks:
         say.get(check.level, ui.out.note)(f"{check.name}: {check.detail}")
+        if check.failed and check.fix:
+            ui.out.note(check.fix, indent=4)
 
 
 def preflight_ok(checks: list[Check]) -> bool:

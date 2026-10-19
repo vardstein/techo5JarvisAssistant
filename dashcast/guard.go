@@ -232,9 +232,10 @@ var showUsers = &users{ask: currentUser}
 const maxUsers = 16
 
 // guardFor is the guard for token's user and the user's name. Home Assistant is asked whose the
-// token is every time, so a token taken back since is noticed. A token it refuses, or an
-// administrator's, gets none: the Show is then shown dashcast's own user's page, which it would have
-// been without a token at all.
+// token is every time, so a token taken back since is noticed. An administrator's token gets none:
+// the Show is then shown dashcast's own user's page, which it would have been without a token at all.
+// A token Home Assistant refuses gets none either, and an error that is errTokenRefused: that Show
+// gets no page at all (GENBU-261).
 func (u *users) guardFor(ctx context.Context, cfg config, token string) (*guard, string, error) {
 	cfg.token = token
 	name, admin, err := u.ask(ctx, cfg)
@@ -268,6 +269,11 @@ func tokenID(token string) string {
 	return hex.EncodeToString(sum[:6])
 }
 
+// errTokenRefused is Home Assistant turning a token away. For a Show's own token that is on purpose:
+// its key was deleted, or its user switched off, which Genbu does while the Show is disabled in Home
+// Assistant (GENBU-261).
+var errTokenRefused = errors.New("home assistant refused the token")
+
 // haCall runs one command on Home Assistant's websocket.
 func haCall(ctx context.Context, cfg config, command string) (json.RawMessage, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
@@ -299,7 +305,7 @@ func haCall(ctx context.Context, cfg config, command string) (json.RawMessage, e
 		return nil, err
 	}
 	if msg.Type != "auth_ok" {
-		return nil, errors.New("home assistant refused the token")
+		return nil, errTokenRefused
 	}
 	if err := c.WriteJSON(map[string]any{"id": 1, "type": command}); err != nil {
 		return nil, err

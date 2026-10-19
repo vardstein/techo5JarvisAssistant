@@ -40,9 +40,12 @@ to stable on its own. Stable gets a release when a feature, or a set of them, is
   stop and look.
 - After a merge, the branch is deleted on origin and locally, and its worktree removed.
 - Every branch is pushed while it is worked on, so nothing lives only on one laptop.
-- `genbuShowCrown` predates this and stays under its name: it is the feature branch for everything built
-  until now. New jobs for it are cut from it as `task/` and `fix/` branches, and it goes into `dev` like any
-  feature. After that, new features are cut from `dev`.
+- A bug in a feature that is already in `dev` has no feature branch left to cut from. Its
+  `fix/genbu-<n>-<slug>` is cut from `dev` and merged back into `dev` with `--no-ff`, the way a hotfix is.
+- `genbuShowCrown` predates this. It was the feature branch for everything built before 2026-10-11, went
+  into `dev` like any feature and was retired on 2026-10-13 (GENBU-197): nothing is pushed to it any more,
+  and links point at `stable`. It stays on origin until a stable release carries those links, because
+  installed blueprints and Genbu's documentation link still point at it.
 
 Who does what: Claude may create, push, merge and delete `feature/`, `task/` and `fix/` branches. Merging
 a feature into `dev`, and pushing `dev`, `staging` and `stable`, is Jade's, because each of those is a
@@ -62,7 +65,7 @@ When something on stable is broken and cannot wait for the next release:
 
 | Step | What has to pass first |
 |---|---|
-| Commit on a task or fix branch | The checks for what it touches, run by hand: `python3 -m unittest discover -s tests -p 'test_*.py'`, `(cd echod && go test ./...)`, and for `ha/` the Home Assistant harness ([update-leader.md](update-leader.md#tests)). |
+| Commit on a task or fix branch | The checks for what it touches, run by hand: `python3 -m unittest discover -s tests -p 'test_*.py'`, `(cd echod && go test ./...)`, and for `ha/` the Home Assistant harness ([update-leader.md](update-leader.md#tests)). A few installer tests need real images in the gitignored `build/`; they skip until `python3 tools/fetch-test-fixtures.py` has fetched them (in CI, where that runs first, they fail instead). |
 | Push of any branch | `python3 tools/secret_scan.py --here`: no secrets, and nothing only this machine knows (its addresses, home directory, our SSH keys). The repo is public. CI runs the same scan without `--here`. |
 | Task or fix → feature | The above, plus CI (`build.yml` runs on every push to `feature/**`, `task/**` and `fix/**`). |
 | Feature → `dev` | Everything in the feature's Plane item done; its human test steps written in the item; CI green. |

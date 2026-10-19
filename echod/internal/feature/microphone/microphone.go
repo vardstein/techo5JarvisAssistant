@@ -14,7 +14,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Device, Get(), component.Order(5))
+	component.Register(component.Device, Get, component.Order(5))
 }
 
 // Names begin with the same word rather than being grouped into a sub-device: Home Assistant shows a

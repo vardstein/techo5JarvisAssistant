@@ -19,6 +19,8 @@ UPDATE = "update.genbu_show_firmware"
 
 # The Show's optional features on Genbu's side: how the installer asks for each, and Genbu's switch key.
 FEATURES = (("recipes", "recipes"), ("voice updates", "voice_updates"))
+# And one for the whole house: whether its assistant is a language model (GENBU-240), and Genbu's switch key.
+LLM_ASSISTANT = ("llm assistant", "llm_assistant")
 PAGE = "Everything is on the Genbu Control Center page in Home Assistant's sidebar"
 
 # What set_up came to.
@@ -28,6 +30,9 @@ HOW_TO_ADD = ("copy ha/custom_components/genbu/ to /config/custom_components/gen
               "and restart it")
 ON_ITS_OWN = "the Show looks for updates on its own channel, as before"
 GONE = ("unavailable", "unknown", "")
+# Said for a status in GONE: the Show may be restarting, or Home Assistant may have lost its entities, so
+# it says only what is known.
+NO_STATUS = "Home Assistant has no update status from it right now"
 
 
 @dataclass
@@ -67,13 +72,17 @@ def _status_entity(ha: HomeAssistant, entry_id: str) -> str | None:
 
 
 def _wait_aligned(ha: HomeAssistant, entry_id: str, version: str, progress: Callable[[str], None],
-                  sleep: Callable[[float], None], clock: Callable[[], float], wait: float) -> None:
+                  sleep: Callable[[float], None], clock: Callable[[], float], wait: float,
+                  enter: Callable[[float], bool] | None = None) -> None:
     """Watches the Show's update status until it follows the house version, cannot, or wait runs out.
-    A freshly installed Show first lets its own version settle (5 minutes), then moves."""
+    A freshly installed Show first lets its own version settle (5 minutes), then moves. With enter
+    (waits up to so many seconds, True when Enter was pressed) the user can go on at any time
+    (GENBU-222); without it, nobody is at the terminal and it waits as before."""
     status = _status_entity(ha, entry_id)
     if not status or wait <= 0:
         return
-    progress(f"waiting for it to move to version {version}; up to {int(wait // 60)} min")
+    start = f"waiting for it to move to version {version}; up to {int(wait // 60)} min"
+    progress(start + (". Press Enter once the update is done, or to go on without waiting" if enter else ""))
     deadline = clock() + wait
     last = ""
     while True:
@@ -81,25 +90,36 @@ def _wait_aligned(ha: HomeAssistant, entry_id: str, version: str, progress: Call
         if line.startswith("Following "):
             progress(line)
             return
-        if "did not install here" in line or "could not be fetched" in line or "not reachable since" in line:
+        failed = line.startswith("Update to ") and " failed: " in line
+        if failed or "did not install here" in line or "could not be fetched" in line or "not reachable since" in line:
             progress(f"WARN: {line}")
             return
-        if clock() >= deadline:
-            progress(f"it carries on by itself ({line or 'restarting'}); its update card in Home Assistant "
-                     "shows how far it is")
+        if "install it from the update card" in line or "with an update on the Genbu Show card" in line:
+            # it was asked and said no (or nobody answered): it moves only when someone installs it
+            progress(line)
             return
-        shown = "restarting" if line in GONE else line
+        shown = NO_STATUS if line in GONE else line
+        carries_on = f"it carries on by itself ({shown}); its update card in Home Assistant shows how far it is"
+        if clock() >= deadline:
+            progress(carries_on)
+            return
         if shown != last:
             progress(shown)
             last = shown
-        sleep(15)
+        if enter is None:
+            sleep(15)
+        elif enter(15):
+            progress(f"going on; {carries_on}")
+            return
 
 
 def set_up(ha: HomeAssistant, entry_id: str, node: str, *, choose: Chooser | None = None,
            progress: Callable[[str], None] = print, sleep: Callable[[float], None] = time.sleep,
-           clock: Callable[[], float] = time.monotonic, wait: float = 900.0) -> str:
+           clock: Callable[[], float] = time.monotonic, wait: float = 900.0,
+           enter: Callable[[float], bool] | None = None) -> str:
     """Puts the Show (its ESPHome entry_id, its node name) in the house's updates. Returns FOLLOW, or
-    SKIPPED when Genbu is not in Home Assistant."""
+    SKIPPED when Genbu is not in Home Assistant. enter lets the user end the wait for the house version
+    (see _wait_aligned)."""
     if _entry(ha) is None and not _first(ha, choose, progress):
         return SKIPPED
     found = house(ha)
@@ -109,7 +129,7 @@ def set_up(ha: HomeAssistant, entry_id: str, node: str, *, choose: Chooser | Non
         return FOLLOW
     progress(f"the house is on version {found.version}; {node} follows it, and updates come on the {UPDATE} "
              "card")
-    _wait_aligned(ha, entry_id, found.version, progress, sleep, clock, wait)
+    _wait_aligned(ha, entry_id, found.version, progress, sleep, clock, wait, enter)
     return FOLLOW
 
 
@@ -172,3 +192,27 @@ def features(ha: HomeAssistant, entry_id: str, given: dict[str, bool | None], *,
             continue
         ha.request("POST", f"/api/services/switch/turn_{'on' if on else 'off'}", {"entity_id": entity})
         progress(f"{'Recipes' if label == 'recipes' else 'Updates by voice'} {'on' if on else 'off'} on this Show")
+
+
+def llm_assistant(ha: HomeAssistant, on: bool | None, *, choose: Chooser | None = None,
+                  progress: Callable[[str], None] = print) -> None:
+    """Whether the house's assistant is a language model, for the whole house (docs/genbu-assistant.md, "The
+    LLM extras"). Taken from --llm-assistant, else asked with Genbu's switch as it is now; Enter keeps it.
+    Neither given nor asked, it stays as it is, and a Genbu without the switch is left alone."""
+    entry = _entry(ha)
+    if entry is None:
+        return
+    label, key = LLM_ASSISTANT
+    uid = f"{entry['entry_id']}_{key}"
+    entity = next((e["entity_id"] for e in ha.ws({"type": "config/entity_registry/list"}) or []
+                   if isinstance(e, dict) and e.get("platform") == DOMAIN and e.get("unique_id") == uid), None)
+    if entity is None:
+        return
+    current = {"on": "yes", "off": "no"}.get(str(_state(ha, entity).get("state") or ""), "")
+    if on is None and choose is not None:
+        picked = choose(label, current, ["yes", "no"], {})
+        on = None if picked is None else picked == "yes"
+    if on is None:
+        return
+    ha.request("POST", f"/api/services/switch/turn_{'on' if on else 'off'}", {"entity_id": entity})
+    progress(f"Assistant uses an LLM: {'yes' if on else 'no'}, for the whole house")

@@ -6,6 +6,8 @@ package hass
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +23,7 @@ import (
 	"unicode"
 
 	"github.com/HuskerMinion/techo5/echod/internal/layout"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/hook"
 )
 
 // Path is where the URL and token live: next to the PSK, readable by root only.
@@ -29,12 +32,39 @@ var Path = filepath.Join(filepath.Dir(layout.KeyPath), "hass.json")
 type access struct {
 	URL   string `json:"url"`
 	Token string `json:"token"`
+	// Refused is the sha256 of a token Home Assistant turned away, kept so that a restart does not
+	// try it again. Only a new token clears it, or, for a home-only refusal, a new try (Retry).
+	Refused string `json:"refused,omitempty"`
+	// Reason is why, one of the Key states (key.go); "" was kept before there were reasons, and is
+	// KeyGone.
+	Reason string `json:"reason,omitempty"`
+}
+
+// ErrRefused is what every call gets, without going out, once Home Assistant has turned the token away.
+//
+// A token Home Assistant no longer knows - deleted, its user removed, the installer run again - used
+// to be sent on every request for good: a 401 each time, which Home Assistant counts as a failed
+// login, so a "Login attempt failed" notification after another, and with IP banning on, the Show's
+// address banned, which also takes the voice link with it. Nothing tries again on a timer either,
+// since a failed login never resets the ban count; only a new token, from the installer, does.
+var ErrRefused = errors.New("hass: Home Assistant no longer accepts this device's token; run the installer again")
+
+// refused is whether acc's token is the one Home Assistant turned away.
+func (a access) refused() bool { return a.Token != "" && a.Refused == sum(a.Token) }
+
+func sum(token string) string {
+	h := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(h[:])
 }
 
 type Client struct {
 	mu   sync.Mutex
 	acc  access
 	http *http.Client
+
+	// Changed fires when the key's state changes: a new token, a refusal, its reason, a retry.
+	// Listeners must not block.
+	Changed hook.Hook[struct{}]
 }
 
 // statusError is an answer Home Assistant gave with an HTTP error status.
@@ -45,6 +75,13 @@ type statusError struct {
 
 func (e *statusError) Error() string {
 	return fmt.Sprintf("hass: %s %s: %s", e.method, e.path, e.status)
+}
+
+// ServerFailed is whether err is Home Assistant answering with a 5xx: it was reached and the action
+// itself failed, as against no answer at all or a request it turned down.
+func ServerFailed(err error) bool {
+	var se *statusError
+	return errors.As(err, &se) && se.code/100 == 5
 }
 
 var (
@@ -76,9 +113,15 @@ func Get() *Client {
 	return shared
 }
 
-// Set stores the URL (like http://192.168.1.20:8123) and token.
+// Set stores the URL (like http://192.168.1.20:8123) and token. An empty URL keeps the one saved: Genbu
+// hands over a new key that way (GENBU-196) and never says where the Show goes.
 func (c *Client) Set(url, token string) error {
 	url, token = cleanURL(url), clean(token)
+	if url == "" {
+		c.mu.Lock()
+		url = c.acc.URL
+		c.mu.Unlock()
+	}
 	if url == "" || token == "" {
 		return errors.New("hass: url and token are both needed")
 	}
@@ -90,9 +133,23 @@ func (c *Client) Set(url, token string) error {
 	// scheme's "http" for "ws", needs it written the way url.Parse writes it.
 	url = normalURL(u)
 	c.mu.Lock()
-	c.acc = access{URL: url, Token: token}
+	acc := access{URL: url, Token: token}
+	if sum(token) == c.acc.Refused {
+		// The same token again is still the one Home Assistant turned away, for the same reason.
+		acc.Refused, acc.Reason = c.acc.Refused, c.acc.Reason
+	}
+	c.acc = acc
 	c.mu.Unlock()
-	b, _ := json.Marshal(c.acc)
+	if acc.refused() {
+		slog.Warn("hass: given the token Home Assistant already turned away; it stays unused")
+	}
+	defer c.Changed.Emit(struct{}{})
+	return save(acc)
+}
+
+// save writes acc to Path, readable by root only.
+func save(acc access) error {
+	b, _ := json.Marshal(acc)
 	if err := os.MkdirAll(filepath.Dir(Path), 0o700); err != nil {
 		return err
 	}
@@ -127,28 +184,76 @@ func normalURL(u *neturl.URL) string {
 // cleanURL is an address cleaned, without the trailing slash the paths are joined to.
 func cleanURL(s string) string { return strings.TrimRight(clean(s), "/") }
 
-// Ready reports whether there is an access to use.
+// Ready reports whether there is an access to use: one given, and not turned away.
 func (c *Client) Ready() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.acc.URL != "" && c.acc.Token != ""
+	return c.acc.URL != "" && c.acc.Token != "" && !c.acc.refused()
+}
+
+// Refused reports whether Home Assistant turned the token away, for the screen to say so.
+func (c *Client) Refused() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.acc.refused()
 }
 
 // Token is the token itself, for the one place it is handed on: the dashcast server, inside the
 // encrypted connection, when the dashboard is to be signed in as this device's own user. "" when
-// there is none.
+// there is none, or Home Assistant turned it away.
 func (c *Client) Token() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.acc.refused() {
+		return ""
+	}
 	return c.acc.Token
 }
 
-func (c *Client) do(method, path string, body any) ([]byte, error) {
+// access is the access to make a call with, or why there is none.
+func (c *Client) access() (access, error) {
 	c.mu.Lock()
 	acc := c.acc
 	c.mu.Unlock()
-	if acc.URL == "" || acc.Token == "" {
-		return nil, errors.New("hass: no access configured")
+	switch {
+	case acc.URL == "" || acc.Token == "":
+		return acc, errors.New("hass: no access configured")
+	case acc.refused():
+		return acc, ErrRefused
+	}
+	return acc, nil
+}
+
+// refuse records that Home Assistant turned token away, and why, and keeps it across a restart. Only
+// while token is still the one in use and not refused yet: an answer to a call made before a new token
+// came says nothing about the new one, and a late 401 must not undo the reason heard since. It
+// reports whether it recorded anything.
+func (c *Client) refuse(token, why string) bool {
+	c.mu.Lock()
+	if c.acc.Token != token || c.acc.refused() {
+		c.mu.Unlock()
+		return false
+	}
+	c.acc.Refused, c.acc.Reason = sum(token), why
+	acc := c.acc
+	c.mu.Unlock()
+	slog.Error("hass: Home Assistant turned this device's token away; no more calls with it", "reason", why)
+	c.keep(acc)
+	return true
+}
+
+// keep saves acc after its refusal changed, and tells the listeners.
+func (c *Client) keep(acc access) {
+	if err := save(acc); err != nil {
+		slog.Warn("hass: could not keep the refusal; the token is tried once more after a restart", "err", err)
+	}
+	c.Changed.Emit(struct{}{})
+}
+
+func (c *Client) do(method, path string, body any) ([]byte, error) {
+	acc, err := c.access()
+	if err != nil {
+		return nil, err
 	}
 	var rd io.Reader
 	if body != nil {
@@ -174,6 +279,9 @@ func (c *Client) do(method, path string, body any) ([]byte, error) {
 	out, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
 		return nil, err
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		c.turnedAway(acc)
 	}
 	if resp.StatusCode/100 != 2 {
 		return nil, &statusError{method: method, path: path, status: resp.Status, code: resp.StatusCode}

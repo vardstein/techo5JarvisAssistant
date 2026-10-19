@@ -21,7 +21,7 @@ import (
 func init() {
 	// Early: the buttons should work whatever else is wrong, so they must not be downstream of a
 	// network listener or lost to one read error.
-	component.Register(component.Hardware, Get(), component.Order(10),
+	component.Register(component.Hardware, Get, component.Order(10),
 		component.Supervise(service.Restart(time.Second, 30*time.Second)))
 }
 

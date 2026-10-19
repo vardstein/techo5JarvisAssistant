@@ -30,7 +30,8 @@ class WifiRecoveryContractTests(unittest.TestCase):
         self.assertIn("udhcpc -i wlan0 -b", lib)
         self.assertIn("No network saved: nothing a restart or a reboot could join", boot)
         self.assertIn("pidof wpa_supplicant >/dev/null || t5_wifi_up", boot)
-        self.assertIn("grep -q '^network={' /data/techo5-linux/wpa_supplicant.conf 2>/dev/null || n=90", runner)
+        # No network saved means no association, and the runner only waits while associated.
+        self.assertIn("grep -q '^wpa_state=COMPLETED' || break", runner)
 
     def test_show_opens_wifi_picker_without_address(self):
         display = self.read("echod/internal/feature/display/display.go")

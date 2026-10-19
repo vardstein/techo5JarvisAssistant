@@ -24,7 +24,7 @@ func (r *renderer) cameraView(s scene, v home.CameraView) {
 	if s.demo {
 		name = demoCameras[0]
 	}
-	heading := name
+	heading := i18n.Verbatim(name)
 	if v.Doorbell {
 		heading = "DOORBELL  ·  " + name
 	}

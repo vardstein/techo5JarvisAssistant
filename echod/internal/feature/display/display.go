@@ -61,7 +61,7 @@ import (
 func init() {
 	// A panel that cannot be opened is retried rather than given up on: the device answers without
 	// it, and a boot where the node was late should still end with a screen.
-	component.Register(component.Device, Get(), component.Order(60),
+	component.Register(component.Device, Get, component.Order(60),
 		component.Supervise(service.Restart(time.Second, 30*time.Second)))
 }
 
@@ -163,6 +163,10 @@ type Display struct {
 	// online is whether the device had a network address at onlineAt, looked at once a second.
 	online   bool
 	onlineAt time.Time
+	// offerAt is when the splash last looked at whether the device waits to be added, and
+	// setupButtonUp whether its button for that is on the screen (splash_setup.go).
+	offerAt       time.Time
+	setupButtonUp bool
 
 	// sheet is the settings sheet being shown; restartArm is the first of the two taps Restart wants.
 	sheet      bool
@@ -186,6 +190,10 @@ type Display struct {
 	// night schedule rather than by anyone.
 	touchedAt time.Time
 	nightDark bool
+
+	// pausedKey is the song a paused page is up for, and pausedSince when it paused (music_paused.go).
+	pausedKey   string
+	pausedSince time.Time
 
 	// menuSince is when the drawer or a settings, Wi-Fi or Bluetooth page last came up; menuUp is one
 	// being up at the last frame (menu_idle.go).
@@ -445,7 +453,7 @@ func (d *Display) Entities() []esphome.Entity {
 // Restore lights the panel the way it was left. Before the framebuffer is opened: the backlight is
 // its own device.
 func (d *Display) Restore(c config.Config) {
-	setClock24(d.clock, c.Screen.Clock24)
+	setClock24(d.clock)
 	d.camTime.Set(cameraTimes[cameraTimeIndex()].label)
 	d.answerTime.Set(answerTimes[answerTimeIndex()].label)
 	useMenuSize(menuSizeIndex())
@@ -658,6 +666,9 @@ func (d *Display) gesture(g touch.Gesture) {
 	d.touchedAt = time.Now()
 	d.mu.Unlock()
 
+	if g.Kind == touch.Tap && d.setupTapped(g.X, g.Y) {
+		return
+	}
 	if !on {
 		if g.Kind == touch.Tap && d.ringing(time.Now()).any() {
 			// A ring on a panel the night left dark: the tap stops it, and the panel stays dark.
@@ -1047,6 +1058,7 @@ func (d *Display) gesture(g touch.Gesture) {
 				d.mu.Lock()
 				words, library := d.showingLyrics, d.showingLibrary
 				d.mu.Unlock()
+				live := liveStation(home.Get().Radio(), home.Get().MusicPlayback())
 				switch {
 				case library && at.In(d.r.libraryButton().Inset(-d.r.s(8))):
 					d.openLibrary()
@@ -1059,6 +1071,9 @@ func (d *Display) gesture(g touch.Gesture) {
 					go d.endMusic()
 				case at.In(fav):
 					go d.favorite()
+				case live && (at.In(back) || at.In(next)):
+					// Not drawn on a station: a tap there is a tap on the page.
+					d.musicTap(media.TransportToggle, play)
 				case at.In(back):
 					d.musicTap(media.TransportPrevious, back)
 				case at.In(next):
@@ -1139,9 +1154,12 @@ func (d *Display) musicStripGesture(g touch.Gesture) bool {
 	}
 
 	back, play, next, closeX := d.r.stripButtons()
+	live := liveStation(home.Get().Radio(), home.Get().MusicPlayback())
 	switch {
 	case at.In(closeX):
 		go d.endMusic()
+	case live && (at.In(back) || at.In(next)):
+		// Not drawn on a station: nothing to skip to.
 	case at.In(back):
 		d.musicTap(media.TransportPrevious, back)
 	case at.In(play):
@@ -1156,6 +1174,16 @@ func (d *Display) musicStripGesture(g touch.Gesture) bool {
 		d.wake()
 	}
 	return true
+}
+
+// liveStation is whether what plays is a station: one of the device's own, or one Music Assistant's
+// queue is playing. Neither has a song before or after this one; the device's own player skips
+// nowhere, and Music Assistant's queue holds the station alone.
+func liveStation(rd home.Radio, music home.MusicPlaybackView) bool {
+	if rd.Now == "Music Assistant" {
+		return music.Station != ""
+	}
+	return rd.Now != "" || rd.Chosen != ""
 }
 
 // favNoteFor is how long the word under a pressed star stays up.
@@ -1182,6 +1210,8 @@ func (d *Display) favorite() {
 		note = "Already a favorite"
 	case errors.Is(err, home.ErrOwnStationsFull):
 		note = "Your stations are full"
+	case errors.Is(err, home.ErrNotInLibrary):
+		note = "Not in your library"
 	case err != nil && on:
 		note = "Couldn't remove it"
 	case err != nil:
@@ -1449,8 +1479,9 @@ func (d *Display) closeWifi() {
 
 func (d *Display) refreshWifi() {
 	st := wifi.Current(context.Background())
+	saved := wifi.Saved()
 	d.mu.Lock()
-	d.wifi.status = st
+	d.wifi.status, d.wifi.saved = st, saved
 	d.mu.Unlock()
 	d.wake()
 }
@@ -1513,6 +1544,8 @@ func (d *Display) wifiGesture(g touch.Gesture) {
 		d.wifi.scanning, d.wifi.err = true, ""
 		d.mu.Unlock()
 		go d.wifiScan()
+	case z.kind == zoneAction && w.pick == nil && strings.HasPrefix(z.id, "forget:"):
+		d.wifiForget(strings.TrimPrefix(z.id, "forget:"))
 	case z.kind == zoneAction && w.pick != nil:
 		if k, ok := strings.CutPrefix(z.id, "key:"); ok {
 			d.wifiKey(k)
@@ -1586,6 +1619,46 @@ func (d *Display) wifiJoin(n wifi.Network, passphrase string) {
 		} else {
 			d.wifi.pick, d.wifi.text = nil, ""
 			slog.Info("wifi: joined", "ssid", n.SSID)
+		}
+		d.mu.Unlock()
+		d.refreshWifi()
+	}()
+}
+
+// forgetWifi takes a network out of the supplicant's configuration; a test stands in for it.
+var forgetWifi = wifi.Forget
+
+// wifiForget is a tap on a saved network's Forget. The first arms it; a second within restartWindow
+// takes the network out of the configuration in the background. Forgetting the one in use drops the
+// connection, and the page stays up for joining another.
+func (d *Display) wifiForget(ssid string) {
+	d.mu.Lock()
+	if d.wifi.busy != "" {
+		d.mu.Unlock()
+		return
+	}
+	armed := d.wifi.forget == ssid && time.Since(d.wifi.forgetAt) < restartWindow
+	if !armed {
+		d.wifi.forget, d.wifi.forgetAt = ssid, time.Now()
+		d.mu.Unlock()
+		d.wake()
+		return
+	}
+	d.wifi.forget, d.wifi.forgetAt = "", time.Time{}
+	d.wifi.busy, d.wifi.err = i18n.F("Forgetting {name}…", "name", ssid), ""
+	d.mu.Unlock()
+	d.wake()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		err := forgetWifi(ctx, ssid)
+		d.mu.Lock()
+		d.wifi.busy = ""
+		if err != nil {
+			d.wifi.err = i18n.F("Couldn't forget {name}", "name", ssid) + ": " + err.Error()
+			slog.Warn("wifi: forget failed", "ssid", ssid, "err", err)
+		} else {
+			slog.Info("wifi: forgot a network", "ssid", ssid)
 		}
 		d.mu.Unlock()
 		d.refreshWifi()
@@ -1766,6 +1839,7 @@ func (d *Display) frame() time.Duration {
 	t := current()
 	applyTheme(t)
 	d.syncThemeSelect(t.name)
+	followClock(d.clock)
 
 	now := time.Now()
 	// The buttons' factory reset count goes over everything, the splash and a dark night included.
@@ -1851,7 +1925,9 @@ func (d *Display) frame() time.Duration {
 	// "Connecting to Home Assistant" rather than showing pages that need Home Assistant to work.
 	d.mu.Unlock()
 	if booting {
-		d.r.drawSplash(d.logo, now.Sub(started), d.bootStep(now, started))
+		step := d.bootStep(now, started)
+		d.offerSetup(now, step)
+		d.r.drawSplash(d.logo, now.Sub(started), step)
 		if err := d.dev.Present(); err != nil {
 			slog.Warn("presenting the frame failed", "err", err)
 		}
@@ -1937,6 +2013,7 @@ func (d *Display) frame() time.Duration {
 	// live on this room's preferred external speaker rather than on this Show, so route state is also
 	// a real Now Playing session even when Sendspin is not carrying audio locally.
 	s.music = home.Get().MusicPlayback()
+	s.live = liveStation(s.radio, s.music)
 	routedMusic := s.music.Playing || s.music.Paused
 	wants := (s.phase == "idle") && (d.nowPlaying() || routedMusic)
 	d.mu.Lock()
@@ -1976,6 +2053,11 @@ func (d *Display) frame() time.Duration {
 		// Jarvis Show treats Music Assistant as a dedicated full-screen surface for the complete
 		// active/paused session. Radio may still use the legacy timed strip setting.
 		s.nowPlaying = wants
+	}
+	// A paused song gives the screen back after a while, strip and all: Music Assistant keeps a speaker
+	// paused for good. Play, or another song, brings the page back (see pausedTooLong).
+	if d.pausedTooLong(now, s.radio.Title+"\x00"+s.radio.Now+"\x00"+s.music.Entity, wants && s.paused && !s.playing) {
+		wants, s.nowPlaying = false, false
 	}
 	d.mu.Lock()
 	// Not under the sunrise light, which draws no strip: taps on a strip nobody can see would still act.
@@ -2059,9 +2141,15 @@ func (d *Display) frame() time.Duration {
 	}
 	s.missed = missedNote(now, false)
 	if s.missed == "" {
-		s.update = updateNote(false)
+		if s.update = keyNote(false); s.update == "" {
+			s.update = updateNote(false)
+		}
 	}
 	s.install, s.installAt, _ = installNote()
+	if s.install == "" {
+		s.install = failNote(now)
+		s.installFailed = s.install != ""
+	}
 
 	if boring {
 		s.slideshow = home.Get().SlideshowBackground()
@@ -2101,7 +2189,7 @@ func (d *Display) frame() time.Duration {
 	if s.redClock && s.redStyle == nightStyleFlip && d.r.flipBusy(time.Now()) {
 		return flipFrame // a card is flipping
 	}
-	if s.install != "" {
+	if s.install != "" && !s.installFailed {
 		return installFrame // the spinner turns until the restart takes the screen
 	}
 	if s.showCamera {

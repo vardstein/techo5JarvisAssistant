@@ -29,7 +29,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Network, Get(), component.Order(72))
+	component.Register(component.Network, Get, component.Order(72))
 }
 
 const (

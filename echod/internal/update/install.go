@@ -53,11 +53,18 @@ func Install(ctx context.Context, m Manifest, progress func(float32)) error {
 
 // install is Install with the version rule passed in: newer only for the channel, the house's
 // version above the floor for Align.
-func install(ctx context.Context, m Manifest, progress func(float32), allowed func(offered, running string) error) error {
+func install(ctx context.Context, m Manifest, progress func(float32), allowed func(offered, running string) error) (err error) {
 	if !installing.TryLock() {
 		return ErrInstalling
 	}
 	defer installing.Unlock()
+	// What went in waits for its restart as StepRestarting; anything else is no install running.
+	setStep(StepChecking)
+	defer func() {
+		if err != nil {
+			setStep(StepNone)
+		}
+	}()
 
 	if err := m.Valid(); err != nil {
 		return err
@@ -93,7 +100,12 @@ func install(ctx context.Context, m Manifest, progress func(float32), allowed fu
 	if err := download(ctx, b, staged, progress); err != nil {
 		return err
 	}
-	return swap(staged, m.Version)
+	setStep(StepWriting)
+	if err := swap(staged, m.Version); err != nil {
+		return err
+	}
+	setStep(StepRestarting)
+	return nil
 }
 
 // notOlder refuses a manifest offering a version below the one this binary reports as running.
@@ -121,6 +133,7 @@ func notOlder(offered, running string) error {
 func download(ctx context.Context, b Binary, to string, progress func(float32)) error {
 	ctx, cancel := context.WithTimeout(ctx, downloadTimeout)
 	defer cancel()
+	setStep(StepDownloading)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, b.URL, nil)
 	if err != nil {
@@ -154,15 +167,16 @@ func download(ctx context.Context, b Binary, to string, progress func(float32)) 
 	if err != nil {
 		return fmt.Errorf("update: downloading %s: %w", b.URL, err)
 	}
+	setStep(StepChecking)
 	if err := f.Sync(); err != nil {
 		return err
 	}
 
 	if written != b.Size {
-		return fmt.Errorf("update: %d bytes, offered as %d", written, b.Size)
+		return mark(ErrDamaged, fmt.Errorf("update: %d bytes, offered as %d", written, b.Size))
 	}
 	if got := hex.EncodeToString(sum.Sum(nil)); got != b.SHA256 {
-		return fmt.Errorf("update: hash %s, offered as %s", got, b.SHA256)
+		return mark(ErrDamaged, fmt.Errorf("update: hash %s, offered as %s", got, b.SHA256))
 	}
 	return nil
 }

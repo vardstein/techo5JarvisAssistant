@@ -32,6 +32,13 @@ type Chip struct {
 	Text   string
 }
 
+// Named is whether the chip's text is the entity's name alone, as for a light that is on: a name is
+// drawn as it is, never translated (GENBU-201).
+func (c Chip) Named() bool {
+	domain, _, _ := strings.Cut(c.Entity, ".")
+	return onOff[domain]
+}
+
 // chipMax is the longest line a chip holds; a longer one ends in an ellipsis.
 const chipMax = 28
 

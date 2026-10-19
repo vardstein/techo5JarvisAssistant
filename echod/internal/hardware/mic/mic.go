@@ -85,10 +85,9 @@ type Source struct {
 	wasDenoising bool
 	denoising    atomic.Bool
 
-	// softwareMuted is the reversible mute Home Assistant controls. transitionMuted is the
-	// immediate local cut used while a physical privacy latch is still moving. Both are applied
-	// before history, wake detection or streaming sees a frame.
-	softwareMuted   atomic.Bool
+	// transitionMuted cuts the frames while the privacy latch is still moving, before history, wake
+	// detection or streaming sees one. It also holds an old software mute (GENBU-166) from start-up
+	// until the mute feature has moved it into the latch.
 	transitionMuted atomic.Bool
 
 	// Which way the loudest sound is, as a beam, or -1 until something asks. finder belongs to the
@@ -135,20 +134,16 @@ func New() *Source {
 	s.facing.Store(-1)
 	s.leveling.Store(config.Get().Microphone.Leveling)
 	s.denoising.Store(config.Get().Microphone.Denoise)
-	s.softwareMuted.Store(config.Get().Microphone.SoftwareMuted)
+	s.transitionMuted.Store(config.Get().Microphone.SoftwareMuted)
 	return s
 }
 
-// SetSoftwareMuted changes the reversible microphone cut. It takes effect on the next captured
-// frame and does not wait for Assist, an LLM, or the physical privacy latch.
-func (s *Source) SetSoftwareMuted(muted bool) { s.softwareMuted.Store(muted) }
-
-// SoftwareMuted reports the reversible microphone cut controlled by Home Assistant.
-func (s *Source) SoftwareMuted() bool { return s.softwareMuted.Load() }
-
-// SetTransitionMuted applies the short-lived local cut used while a hardware privacy latch is
-// catching up with a button press.
+// SetTransitionMuted applies the short-lived cut used while the privacy latch is catching up with
+// a mute. It takes effect on the next captured frame.
 func (s *Source) SetTransitionMuted(muted bool) { s.transitionMuted.Store(muted) }
+
+// TransitionMuted reports whether that cut is on.
+func (s *Source) TransitionMuted() bool { return s.transitionMuted.Load() }
 
 var (
 	once   sync.Once
@@ -158,7 +153,7 @@ var (
 func init() {
 	// After the speaker: both are held for the life of the process, and the playback path is the one
 	// the vendor's own services fight over.
-	component.Register(component.Hardware, Get(), component.Order(7),
+	component.Register(component.Hardware, Get, component.Order(7),
 		component.Supervise(service.Restart(time.Second, 30*time.Second)))
 }
 
@@ -394,7 +389,7 @@ func (s *Source) broadcast(raw []byte) {
 
 	// A software-only mute cuts here, before anything reads the frame: what is not handed on cannot
 	// be heard, kept or streamed.
-	if privacy.SoftwareCut() || s.softwareMuted.Load() || s.transitionMuted.Load() {
+	if privacy.SoftwareCut() || s.transitionMuted.Load() {
 		clear(raw)
 	}
 

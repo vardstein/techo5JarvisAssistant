@@ -42,7 +42,8 @@ def make_amonet(root: pathlib.Path, board: str):
         hashes[rel] = hashlib.sha256(body).hexdigest()
     (base / "device.prop").write_text(f"DEVICE={board}\n", encoding="utf-8")
     hashes["device.prop"] = digest(base / "device.prop")
-    return base.parent, hashes
+    # A manifest names exactly the files fastbrick runs (GENBU-172).
+    return base.parent, {rel: hashes[rel] for rel in unlock.UNLOCK_FILES}
 
 
 def make_lineage(root: pathlib.Path, board: str):
@@ -175,18 +176,30 @@ class MultiBoardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td_s:
             td = pathlib.Path(td_s)
             amonet, hashes = make_amonet(td, "checkers")
-            run = mock.Mock(return_value=cp(["bash", "fastbrick.sh"]))
+            run = mock.Mock(return_value=unlock.FastbrickResult(0, "Exploit most likely successful!\n"))
             with self.assertRaisesRegex(unlock.UnlockError, "not been cryptographically pinned"):
                 unlock.unlock_show(identity, amonet, confirmation="UNLOCK", run=run)
             run.assert_not_called()
             with self.assertRaisesRegex(unlock.UnlockError, "exact confirmation"):
                 unlock.unlock_show(identity, amonet, confirmation="UNLOCK NOW", run=run, expected_hashes=hashes)
             run.assert_not_called()
+
+            def adb(argv, **kwargs):
+                if argv == ["adb", "devices"]:
+                    return cp(argv, stdout="List of devices attached\nTWRP-CHK\trecovery\n")
+                answers = {
+                    "getprop ro.product.device": "checkers",
+                    "id": "uid=0(root)",
+                    "test -b /dev/block/mmcblk0p9 && echo OK": "OK",
+                    "getprop ro.serialno": "CHK123",
+                }
+                return cp(argv, stdout=answers.get(argv[-1], "PLAIN") + "\n")
+
             result = unlock.unlock_show(
                 identity, amonet, confirmation="UNLOCK",
-                run=run, expected_hashes=hashes,
-                identify=lambda: DeviceIdentity("CHK123", "CHECKERS", True, "lk"),
-                sleep=lambda _: None,
+                run=run, expected_hashes=hashes, adb_run=adb,
+                identify=lambda: self.fail("fastboot is not asked when TWRP answers"),
+                sleep=lambda _: None, say=lambda _line: None,
             )
             self.assertTrue(result.amonet_invoked)
             self.assertTrue(result.identity.unlocked)
@@ -283,7 +296,7 @@ class MultiBoardTests(unittest.TestCase):
             with self.assertRaisesRegex(InstallError, "invalid supported boards"):
                 verify_jarvis_rootfs(broken, digest(broken), board="crown")
 
-    def test_cronos_unlock_and_twrp_stay_closed_until_pinned(self):
+    def test_cronos_unlock_stays_closed_and_twrp_is_held_to_its_pin(self):
         identity = DeviceIdentity("CRN123", "CRONOS", False, "lk")
         with tempfile.TemporaryDirectory() as td_s:
             td = pathlib.Path(td_s)
@@ -295,7 +308,7 @@ class MultiBoardTests(unittest.TestCase):
             twrp = td / "bundle" / "amonet" / "bin" / "twrp.img"
             twrp.parent.mkdir(parents=True)
             twrp.write_bytes(b"twrp")
-            with self.assertRaisesRegex(recovery.RecoveryError, "cronos TWRP image has not been cryptographically pinned"):
+            with self.assertRaisesRegex(recovery.RecoveryError, "TWRP image hash mismatch for cronos"):
                 recovery._pinned_twrp(td / "bundle", "cronos")
 
     def test_cronos_reads_its_own_signed_manifest(self):

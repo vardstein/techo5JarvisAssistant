@@ -134,7 +134,7 @@ func refreshLyrics(song queueSong) {
 func fetchLyrics(song queueSong) (*Lyrics, error) {
 	host := config.Get().Sendspin.ServerIP
 	if host == "" || !mass.Get().Ready() {
-		return nil, errors.New("no Music Assistant token, or no server paired")
+		return nil, errors.New("no Music Assistant token that works, or no server paired")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), lyricsWait)
 	defer cancel()

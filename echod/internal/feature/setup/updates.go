@@ -11,6 +11,7 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/feature/firmware"
 	"github.com/HuskerMinion/techo5/echod/internal/layout"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/safe"
+	"github.com/HuskerMinion/techo5/echod/internal/update"
 )
 
 // updatesSection is the device's own software: what runs, what is offered, a button to install it, and
@@ -20,15 +21,21 @@ func updatesSection(w http.ResponseWriter, token string) {
 	fmt.Fprintf(w, `<fieldset><legend>Updates</legend><p style="margin:0">Running <strong>%s</strong>.`,
 		html.EscapeString(layout.Version))
 	if on, at := fw.Installing(); on {
-		fmt.Fprintf(w, ` Installing <strong>%s</strong>: <span id="upat">%d%%</span> downloaded.</p>
+		fmt.Fprintf(w, ` Installing <strong>%s</strong>: <span id="upat">%s</span>.</p>
 		 <p class="note">The device restarts into it when the download is done, and is back in about a
 		  minute. This page checks by itself. After the restart, %s.</p>
-		 <script>setTimeout(()=>location.reload(),3000)</script></fieldset>`, html.EscapeString(fw.Offered()), int(at*100),
-			html.EscapeString(reopenInstruction()))
+		 <script>setTimeout(()=>location.reload(),3000)</script></fieldset>`, html.EscapeString(fw.Offered()),
+			stepWords(update.CurrentStep(), at), html.EscapeString(reopenInstruction()))
 		return
 	}
-	if why := fw.Failed(); why != "" {
-		fmt.Fprintf(w, `</p><div class="banner bad">The last install did not work: %s</div><p style="margin:0">`, html.EscapeString(why))
+	if full := fw.Failed(); full != "" {
+		// The plain reason first when there is one, as the screen says it, and the log's words under it.
+		if _, why, _ := fw.Failure(); why != "" {
+			fmt.Fprintf(w, `</p><div class="banner bad">The last install did not work: %s.<br><small>%s</small></div><p style="margin:0">`,
+				html.EscapeString(why), html.EscapeString(full))
+		} else {
+			fmt.Fprintf(w, `</p><div class="banner bad">The last install did not work: %s</div><p style="margin:0">`, html.EscapeString(full))
+		}
 	}
 	if v := fw.Offered(); v != "" {
 		fmt.Fprintf(w, ` <strong>%s</strong> is ready.</p>`, html.EscapeString(v))
@@ -52,6 +59,19 @@ func updatesSection(w http.ResponseWriter, token string) {
 	fmt.Fprintf(w, `<p><label><input type="checkbox" name="auto" value="yes"%s style="width:auto"> Install updates
 	 automatically, overnight between 2 and 5 in the morning while nothing is playing</label></p>
 	 <p><button type="submit">Save</button></p></form></fieldset>`, checked)
+}
+
+// stepWords is how far the running install has got, said after its version on the page.
+func stepWords(st update.Step, at float32) string {
+	switch st {
+	case update.StepDownloading:
+		return fmt.Sprintf("%d%% downloaded", int(min(max(at, 0), 1)*100))
+	case update.StepWriting:
+		return "writing it in"
+	case update.StepRestarting:
+		return "restarting into it"
+	}
+	return "checking it"
 }
 
 func saveUpdates(what string, auto bool) string {

@@ -1,10 +1,11 @@
 """GenbuHouse: looks at the Genbu Shows every minute and whenever one of them changes, feeds that to
 house.House, and keeps the house version: the one every Show follows, which only an install on the house's
 update card (update.py), the night install or the voice moves (GENBU-119). It reads the release channel's
-manifest every few hours for what that card offers.
+manifest every hour, and on Check for updates, for what that card offers.
 
 Each look also works out where each Show's music plays (music.py), so a Show moved to another room
-plays there without anything being set up again. And it keeps each Show's Recipes and Updates by voice,
+plays there without anything being set up again, and asks a Show turned away by Home Assistant why
+(keycare.py). It puts the Genbu icon on each Show's firmware update (picture.py). And it keeps each Show's Recipes and Updates by voice,
 which decide what the voice assistant is offered on that Show (llm.py)."""
 
 from __future__ import annotations
@@ -16,9 +17,10 @@ from datetime import datetime, timedelta
 
 import aiohttp
 
+from homeassistant.auth import EVENT_USER_ADDED, EVENT_USER_REMOVED, EVENT_USER_UPDATED
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_STATE_CHANGED, STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.core import Event, EventOrigin, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.exceptions import HomeAssistantError
@@ -31,20 +33,26 @@ from homeassistant.helpers.event import async_track_time_change, async_track_tim
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from . import picture, race, reply_cut
 from .const import (CHANGED, CONF_SEARXNG, DOMAIN, MANUFACTURERS, NAME, NIGHT_AT, PANEL, RECIPES, SHOW_RECIPE,
+                    RACED, WAKE_EVENT, WAKE_RACE, WAKE_VERDICT,
                     STORE_KEY, STORE_VERSION, UPDATE_ENTITY, VOICE_UPDATES)
 from .house import House, Show, manifest_url, newer, tag_url, valid
-from .music import Player, falls_back_to, own_player, plays_on, room_player
+from .keycare import ISSUE, KeyCare
+from .music import Player, falls_back_to, own_player, plays_on, room_player, route
 from .recipe import show_action
+from .removal import LEAVING, Removal
 
 LOGGER = logging.getLogger(__name__)
 LOOK_EVERY = timedelta(minutes=1)
-READ_EVERY = timedelta(hours=6)  # the channel's manifest
+READ_EVERY = timedelta(hours=1)  # the channel's manifest; 6 hours kept a new release off the card for half a day (GENBU-258)
+ASKED_GAP = timedelta(minutes=1)  # a Show's Check for updates reads the channel at most this often (GENBU-157)
 SETTLE = timedelta(minutes=30)  # how long after an install the card shows how far the Shows are
+TELL_EVERY = timedelta(hours=1)  # how often a Show mentions a speaker that is off (GENBU-161)
 
 
 def find_shows(hass: HomeAssistant) -> list[Show]:
-    """Every Genbu Show the ESPHome integration knows, with the two entities the house reads."""
+    """Every Genbu Show the ESPHome integration knows, with the entities the house reads."""
     devices, entities = dr.async_get(hass), er.async_get(hass)
     shows: dict[str, Show] = {}
     for entry in hass.config_entries.async_entries("esphome"):
@@ -52,30 +60,53 @@ def find_shows(hass: HomeAssistant) -> list[Show]:
             if device.manufacturer not in MANUFACTURERS or device.via_device_id:
                 continue
             node = entry.data.get("device_name") or _slug(device.name or "")
-            firmware = committed = satellite = None
-            for e in er.async_entries_for_device(entities, device.id):
+            # Disabled, its entities are too, and it is still a Show: one that is out of use (GENBU-261).
+            settings = devices.async_get_devices(identifiers={(DOMAIN, device.id)})
+            disabled = bool(entry.disabled_by or device.disabled_by or any(s.disabled_by for s in settings))
+            firmware = committed = status = satellite = key = cut = check = None
+            for e in er.async_entries_for_device(entities, device.id, include_disabled_entities=disabled):
                 if e.domain == "assist_satellite" and not e.disabled_by:
                     satellite = e.entity_id
+                elif e.domain == "sensor" and e.unique_id.endswith("-home_assistant_key") and not e.disabled_by:
+                    key = e.entity_id
+                elif e.domain == "event" and e.unique_id.endswith("-reply_cut") and not e.disabled_by:
+                    cut = e.entity_id
+                elif e.domain == "button" and e.unique_id.endswith("-check_for_updates") and not e.disabled_by:
+                    check = e.entity_id
                 elif e.domain == "update" and (e.unique_id.endswith("-firmware") or e.entity_id.endswith("_firmware")):
                     firmware = e.entity_id
                 elif e.domain == "sensor" and (e.unique_id.endswith("-committed_version")
                                                or e.entity_id.endswith("_committed_version")):
                     committed = e.entity_id
+                elif e.domain == "sensor" and (e.unique_id.endswith("-update_status")
+                                               or e.entity_id.endswith("_update_status")):
+                    status = e.entity_id
             if not node or not firmware:
                 continue
             up = hass.states.get(firmware)
             done = hass.states.get(committed) if committed else None
+            line = hass.states.get(status) if status else None
+            at = up.attributes.get("update_percentage") if up else None
             shows[node] = Show(
                 node=node,
                 name=device.name_by_user or device.name or node,
                 installed=(up.attributes.get("installed_version") or "") if up else "",
                 committed=done.state if done else "",
                 online=bool(up) and up.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN),
-                watch=(firmware, committed),
+                watch=(firmware, committed, status),
                 device=device.id,
                 area=device.area_id or "",
                 satellite=satellite or "",
                 mac=next((v for k, v in device.connections if k == dr.CONNECTION_NETWORK_MAC), ""),
+                key=key or "",
+                encrypted=bool(entry.data.get("noise_psk")),
+                model=device.model or "",
+                status=line.state if line and line.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN) else "",
+                updating=bool(up and up.attributes.get("in_progress")),
+                at=round(at) if isinstance(at, (int, float)) else None,
+                cut=cut or "",
+                check=check or "",
+                disabled=disabled,
             )
     return sorted(shows.values(), key=lambda s: s.node)
 
@@ -155,7 +186,8 @@ def show_device(show: Show) -> DeviceInfo:
 
 
 def house_device(entry: ConfigEntry) -> DeviceInfo:
-    """The device the house's own controls sit on: the update card, the channel, the night install."""
+    """The device the house's own controls sit on: the update card, the channel, the night install and
+    whether the assistant is a language model."""
     return DeviceInfo(identifiers={(DOMAIN, entry.entry_id)}, name=NAME, manufacturer="OpenJade",
                       model="Genbu Shows", entry_type=dr.DeviceEntryType.SERVICE,
                       configuration_url=f"homeassistant://{PANEL}")  # "Visit" opens the Control Center
@@ -170,10 +202,23 @@ class GenbuHouse:
         self.players: list[Player] = []
         self.music: dict[str, str] = {}  # where each Show's music plays, by device id
         self.fallback: dict[str, str] = {}  # where it goes when that player is offline, by device id
+        # When each Show last said a speaker was off and it played elsewhere, by (device id, player).
+        self.told: dict[tuple[str, str], datetime] = {}
         self.cooking: set[str] = set()  # the Shows looking a recipe up right now, by device id
         self.had_search = False  # whether a recipe search was set up when the entry was
+        self.had_agent = ""  # the agent Genbu's own hands on to, when the entry was set up (GENBU-253)
         self.release: dict = {}  # the channel's newest manifest, {} until it was read
         self.installed_at: datetime | None = None  # the last install, for how far the Shows are
+        self.keycare = KeyCare(hass, self.house, self._save)
+        self.removal = Removal(self, lambda: find_shows(hass))  # the Shows deleted in Home Assistant (GENBU-223)
+        self.referee = race.Referee()
+        self.racers: dict[str, str] = {}  # the Shows that race their wake words: device id → wake_verdict
+        self._closing: dict[str, asyncio.TimerHandle] = {}  # the races waiting out their window, by phrase
+        self.raced: dict = {}  # the last race, as sensor.genbu_wake_race shows it
+        self.cuts = reply_cut.Cuts()  # the replies a wake word cut off, for the turn after (GENBU-250)
+        self._cut_by: dict[str, str] = {}  # the Shows' reply_cut events: entity id → device id
+        self._checks: set[str] = set()  # the Shows' Check for updates buttons (GENBU-157)
+        self._asked_at: datetime | None = None  # when one of them last had the channel read
         self._watched: set[str] = set()
         self._player_ids: set[str] = set()
         self._stops: list = []
@@ -181,12 +226,13 @@ class GenbuHouse:
 
     async def async_start(self) -> None:
         self.house = House(await self.store.async_load() or {})
+        self.keycare = KeyCare(self.hass, self.house, self._save)
         self._save()  # without the main update Shows of before 1.4.0, if there were any
         if hidden := self.house.data.pop("hidden", None):
             # Left by 1.2.0, whose copies are gone (GENBU-114): the Shows' own entities come back.
             unhide(self.hass, hidden)
         for domain, issue in list(ir.async_get(self.hass).issues):
-            if domain == DOMAIN:  # the main update Show's issues of before 1.4.0
+            if domain == DOMAIN and not issue.startswith((ISSUE, LEAVING)):  # the main update Show's of before 1.4.0
                 ir.async_delete_issue(self.hass, DOMAIN, issue)
         entities = er.async_get(self.hass)
         if old := entities.async_get_entity_id("select", DOMAIN, f"{self.entry.entry_id}_main_update_show"):
@@ -202,6 +248,14 @@ class GenbuHouse:
         # A player or a Show moved to another room, or a new player.
         self._stops.append(self.hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, self._changed,
                                                       event_filter=self._player_or_satellite))
+        # A user switched on, changed or deleted: the Shows turned away are asked again now.
+        for event in (EVENT_USER_ADDED, EVENT_USER_UPDATED, EVENT_USER_REMOVED):
+            self._stops.append(self.hass.bus.async_listen(event, self._user_changed))
+        self._stops.append(self.hass.bus.async_listen(WAKE_EVENT, self._wake))
+        self._stops.append(self.hass.bus.async_listen(EVENT_STATE_CHANGED, self._reply_cut,
+                                                      event_filter=self._a_cut))
+        self._stops.append(self.hass.bus.async_listen(EVENT_STATE_CHANGED, self._check_pressed,
+                                                      event_filter=self._a_press))
         await self.async_refresh()
         # Not waited for: a slow GitHub must not hold Home Assistant's start up.
         self.entry.async_create_background_task(self.hass, self.async_read_release(), f"{DOMAIN} release")
@@ -212,6 +266,10 @@ class GenbuHouse:
             stop()
         self._stops.clear()
         self._debounce.async_cancel()
+        for handle in self._closing.values():
+            handle.cancel()
+        self._closing.clear()
+        picture.undress(self.hass)
 
     @callback
     def _watching(self, data) -> bool:
@@ -222,9 +280,11 @@ class GenbuHouse:
 
     @callback
     def _not_ours(self, data) -> bool:
-        # The genbu devices the music selects sit on would only start another look.
+        # The genbu devices the music selects sit on would only start another look, unless one was
+        # disabled or enabled: that Show goes out of use or comes back (GENBU-261).
         device = dr.async_get(self.hass).async_get(data["device_id"])
-        return device is None or device.config_entry_id != self.entry.entry_id
+        return (device is None or device.config_entry_id != self.entry.entry_id
+                or "disabled_by" in (data.get("changes") or {}))
 
     @callback
     def _player_or_satellite(self, data) -> bool:
@@ -233,6 +293,11 @@ class GenbuHouse:
     @callback
     def _changed(self, _event: Event) -> None:
         self.hass.async_create_task(self._debounce.async_call())
+
+    @callback
+    def _user_changed(self, event: Event) -> None:
+        self.keycare.again()
+        self._changed(event)
 
     async def _tick(self, _now: datetime) -> None:
         await self.async_refresh()
@@ -284,6 +349,26 @@ class GenbuHouse:
 
     async def _read(self, _now: datetime) -> None:
         await self.async_read_release()
+
+    @callback
+    def _a_press(self, data) -> bool:
+        """A Show's Check for updates button was pressed. A button's state is when it was last pressed;
+        the state it comes back with when the Show or Home Assistant starts is an old press."""
+        old, new = data["old_state"], data["new_state"]
+        return (data["entity_id"] in self._checks and old is not None and new is not None
+                and old.state != STATE_UNAVAILABLE and new.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN)
+                and new.state != old.state)
+
+    @callback
+    def _check_pressed(self, _event: Event) -> None:
+        """A following Show's own check only asks the house, which knew nothing newer until its next hourly
+        read; now the press reads the channel too (GENBU-157). Once a minute at most, for an automation that
+        presses every Show's button at once."""
+        now = dt_util.utcnow()
+        if self._asked_at is not None and now - self._asked_at < ASKED_GAP:
+            return
+        self._asked_at = now
+        self.entry.async_create_background_task(self.hass, self.async_read_release(), f"{DOMAIN} release")
 
     async def async_read_release(self) -> None:
         """Reads the channel's newest manifest; what was read before stays when GitHub doesn't answer."""
@@ -338,6 +423,11 @@ class GenbuHouse:
 
     async def async_set_night(self, on: bool) -> None:
         self.house.set_night(on)
+        self._save()
+        async_dispatcher_send(self.hass, CHANGED)
+
+    async def async_set_llm(self, on: bool) -> None:
+        self.house.set_llm(on)
         self._save()
         async_dispatcher_send(self.hass, CHANGED)
 
@@ -408,21 +498,197 @@ class GenbuHouse:
         return (by.get(room_player(show.area, self.players)),
                 by.get(own_player([show.name, show.node], self.players, show.mac)))
 
+    def music_route(self, asker: str = "", player: str = "") -> dict:
+        """genbu.music_route: where music asked for on a Show (asker, its device or satellite) plays now,
+        as facts, with tell when the voice should mention the speakers passed over: the first time, and
+        then at most once an hour (GENBU-161). A named player works without a Show, which then has no
+        Show to offer instead. {} with neither."""
+        show = next((s for s in self.shows if asker and asker in (s.device, s.satellite)), None)
+        if show is None and not player:
+            return {}
+        if show is None:
+            return {**route("", "", [], self.players, asked=player), "tell": False}
+        facts = route(self.house.music_choice(show.device), show.area, [show.name, show.node], self.players,
+                      show.mac, player)
+        now, tell = dt_util.utcnow(), False
+        for p in facts["skipped"]:
+            key = (show.device, p["player"])
+            if key not in self.told or now - self.told[key] >= TELL_EVERY:
+                self.told[key], tell = now, True
+        facts["tell"] = tell
+        return facts
+
     async def async_refresh(self) -> None:
-        self.shows = find_shows(self.hass)
+        found = find_shows(self.hass)
+        # A Show on its way out is no Show of the house any more: no music, no key care, no races.
+        self.shows = [s for s in found if s.node not in self.house.data["leaving"]]
         self.players = find_players(self.hass)
+        # A speaker that is back is mentioned again the next time it is off.
+        up = {p.entity for p in self.players if p.available}
+        self.told = {k: t for k, t in self.told.items() if k[1] not in up}
         self.music = {s.device: plays_on(self.house.music_choice(s.device), s.area, [s.name, s.node],
                                          self.players, s.mac) for s in self.shows if s.device}
         self.fallback = {s.device: falls_back_to(self.house.music_choice(s.device), s.area, [s.name, s.node],
                                                  self.players, s.mac) for s in self.shows if s.device}
         # The house's card too: skipping its update there tells the Shows to stop asking.
-        self._watched = {e for s in self.shows for e in s.watch if e} | {UPDATE_ENTITY}
+        self._watched = ({e for s in self.shows for e in s.watch if e} | {s.key for s in self.shows if s.key}
+                         | {UPDATE_ENTITY})
+        # A Show waiting to be reset is asked the moment it is back, not on the next tick.
+        self._watched |= {s.watch[0] for s in found if s.node in self.house.data["leaving"] and s.watch[0]}
         self._player_ids = {p.entity for p in self.players}
+        # Asked over the encrypted link only, which the Show checks too.
+        self._cut_by = {s.cut: s.device for s in self.shows if s.cut and s.encrypted and s.device}
+        self._checks = {s.check for s in self.shows if s.check}
         changed = self._tidy()
         changed = self.house.see(self.shows, dt_util.utcnow()) or changed
         if changed:
             self._save()
         async_dispatcher_send(self.hass, CHANGED)
+        picture.dress(self.hass, {s.watch[0] for s in self.shows if s.watch and s.watch[0]})
+        # Not waited for: asking a Show that hangs must not hold the look up.
+        self.entry.async_create_background_task(self.hass, self.keycare.async_look(list(self.shows)),
+                                                f"{DOMAIN} keys")
+        self._race_again()
+        self.removal.tidy_issues()
+        self.removal.look(found)
+
+    # A reply cut off by a wake word (GENBU-250, reply_cut.py).
+
+    @callback
+    def _a_cut(self, data) -> bool:
+        """A Show's reply_cut event fired. Not the state it comes back with when the Show or Home Assistant
+        starts: that is an old cut."""
+        old, new = data["old_state"], data["new_state"]
+        return (data["entity_id"] in self._cut_by and old is not None and new is not None
+                and old.state != STATE_UNAVAILABLE and new.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN)
+                and new.state != old.state and new.attributes.get("event_type") == reply_cut.EVENT_TYPE)
+
+    @callback
+    def _reply_cut(self, event: Event) -> None:
+        device = self._cut_by.get(event.data["entity_id"])
+        if device:
+            self.entry.async_create_background_task(self.hass, self._fetch_cut(device), f"{DOMAIN} reply cut")
+
+    async def _fetch_cut(self, device: str) -> None:
+        """Asks the Show for the words heard and keeps them for its next turn."""
+        show = self.show(device)
+        if show is None or not show.encrypted:
+            return
+        action = show_action(list(self.hass.services.async_services_for_domain("esphome")), [show.name, show.node],
+                             True, reply_cut.ACTION)
+        if action is None:
+            return
+        try:
+            async with asyncio.timeout(5):
+                answer = await self.hass.services.async_call("esphome", action, {}, blocking=True,
+                                                             return_response=True)
+        except (HomeAssistantError, TimeoutError) as exc:
+            LOGGER.debug("%s did not answer: %s", action, exc)
+            return
+        if (cut := reply_cut.from_answer(answer, dt_util.utcnow())) is not None:
+            self.cuts.put(device, cut)
+            LOGGER.debug("%s: reply cut off after %d characters", show.name, len(cut.heard))
+
+    def take_cut(self, device: str | None) -> reply_cut.Cut | None:
+        """The cut waiting for this device's turn, once."""
+        return self.cuts.take(device, dt_util.utcnow())
+
+    # The wake race (GENBU-224, race.py).
+
+    def _race_again(self) -> None:
+        """Renews the lease of every Show online that can race, which lasts it three minutes: a Show this
+        no longer reaches stops waiting for verdicts by itself. Over the encrypted link only, which the
+        Show checks too."""
+        actions = list(self.hass.services.async_services_for_domain("esphome"))
+        self.racers, leases = {}, []
+        for s in self.shows:
+            if not (s.online and s.encrypted and s.device):
+                continue
+            verdict = show_action(actions, [s.name, s.node], True, WAKE_VERDICT)
+            lease = show_action(actions, [s.name, s.node], True, WAKE_RACE)
+            if verdict and lease:
+                self.racers[s.device] = verdict
+                leases.append(lease)
+        if leases:
+            self.entry.async_create_background_task(self.hass, self._lease(leases), f"{DOMAIN} wake race")
+
+    async def _lease(self, leases: list[str]) -> None:
+        await asyncio.gather(*(self._esphome(a, {}) for a in leases))
+
+    async def _esphome(self, action: str, data: dict) -> None:
+        try:
+            await self.hass.services.async_call("esphome", action, data, blocking=False)
+        except HomeAssistantError as exc:
+            LOGGER.debug("%s did not go out: %s", action, exc)
+
+    @callback
+    def _wake(self, event: Event) -> None:
+        """A Show heard its wake word and waits for its verdict."""
+        # The ESPHome integration fires a Show's events here; one fired through the API is somebody else.
+        if event.origin is not EventOrigin.local:
+            return
+        show = self.show(event.data.get("device_id"))
+        if show is None or not show.encrypted:
+            return
+        h = race.heard(show.device, show.name, event.data, show.model)
+        if h is None:
+            return
+        what = self.referee.hear(h, set(self.racers), self.hass.loop.time())
+        if what == "late":
+            won = self.referee.would_have_won(h)
+            LOGGER.info("wake race %r: %s heard it late, would have %s: %s", h.phrase, h.name,
+                        "won" if won else "lost", race.describe(h))
+            if self.raced.get("phrase") == h.phrase:
+                self.raced = {**self.raced, "late": [*self.raced.get("late", []),
+                                                     {"show": h.name, "would_have_won": won}]}
+                async_dispatcher_send(self.hass, RACED)
+            self._verdict(h, False)
+        elif what == "open":
+            self._closing[h.phrase] = self.hass.loop.call_later(race.WINDOW, self._close, h.phrase)
+        elif what == "close":
+            self._close(h.phrase)
+
+    @callback
+    def _close(self, phrase: str) -> None:
+        if (handle := self._closing.pop(phrase, None)) is not None:
+            handle.cancel()
+        v = self.referee.close(phrase, self.hass.loop.time())
+        if v is None:
+            return
+        self._verdict(v.winner, True)
+        for h in v.losers:
+            self._verdict(h, False)
+        last = self.referee.races[phrase].last
+        LOGGER.info("wake race %r: %s answers%s, after %.0f ms. %s", phrase, v.winner.name,
+                    f" (unsure: {v.unsure})" if v.unsure else "", v.waited * 1000,
+                    "; ".join(f"{race.describe(h, last)} {v.shares.get(h.wake, 0):.0%}"
+                              for h in [v.winner, *v.losers]))
+        self.raced = {
+            "winner": v.winner.name, "phrase": phrase, "at": dt_util.utcnow().isoformat(),
+            "waited_ms": round(v.waited * 1000), "unsure": v.unsure, "still_talking": show.name if (show := self.show(last)) else "",
+            "shows": {h.name: {"share": round(v.shares.get(h.wake, 0) * 100), "points": round(race.points(
+                h, h.show == last), 1), "level_db": round(h.level_db, 1), "over_noise_db": round(h.over_noise, 1),
+                "sure": round(h.certainty, 2), "clipped": h.clipped, "odd": h.odd} for h in [v.winner, *v.losers]},
+            "late": [],
+        }
+        async_dispatcher_send(self.hass, RACED)
+        for h in [v.winner, *v.losers]:
+            if h.odd:
+                LOGGER.warning("wake race: %s said levels no microphone gives, taken as the lowest", h.name)
+        if v.flagged is not None:
+            LOGGER.warning("wake race: %s answered, but %s heard the voice %.0f dB further over its noise",
+                           v.winner.name, v.flagged.name, v.flagged.over_noise - v.winner.over_noise)
+
+    @callback
+    def _verdict(self, h: race.Heard, won: bool) -> None:
+        show = self.show(h.show)
+        action = self.racers.get(h.show) or (show_action(
+            list(self.hass.services.async_services_for_domain("esphome")), [show.name, show.node], True,
+            WAKE_VERDICT) if show else None)
+        if not action:
+            LOGGER.warning("wake race: no way to tell %s whether it answers; it opens its run by itself", h.name)
+            return
+        self.hass.async_create_task(self._esphome(action, {"wake": h.wake, "won": won}), eager_start=True)
 
     def _tidy(self) -> bool:
         """Keeps the genbu device of each Show's music select in step with the Show: its name follows a

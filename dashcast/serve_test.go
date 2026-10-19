@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"image"
 	"image/color"
 	"testing"
@@ -126,6 +128,10 @@ func TestJarvisShowApplianceProfiles(t *testing.T) {
 	}{
 		{board: "crown", w: 1280, h: 800},
 		{board: "checkers", w: 960, h: 480},
+		{board: "cronos", w: 960, h: 480},
+	}
+	if len(tests) != len(showBoards) {
+		t.Fatalf("this table has %d boards and showBoards %v; add the new one here", len(tests), showBoardNames())
 	}
 	for _, tc := range tests {
 		t.Run(tc.board, func(t *testing.T) {
@@ -153,7 +159,7 @@ func TestGenericDashcastHelloIsUnchanged(t *testing.T) {
 
 func TestUnknownJarvisShowBoardFailsClosed(t *testing.T) {
 	h := hello{W: 1, H: 1, Path: "/bad"}
-	if applyApplianceProfile(&h, "cronos") {
+	if applyApplianceProfile(&h, "not-a-show") {
 		t.Fatal("unsupported board accepted")
 	}
 }
@@ -214,5 +220,45 @@ func TestATouchWakesAStillPage(t *testing.T) {
 	d.wait(false)
 	if took := time.Since(start); took > idlePace/2 {
 		t.Errorf("a wait after an earlier touch took %v", took)
+	}
+}
+
+// The device is told whose page it got: its own user's only when its token was taken (GENBU-251).
+func TestWhose(t *testing.T) {
+	if whose("a-token") != "own" || whose("") != "dashcast" {
+		t.Errorf("whose: %q, %q", whose("a-token"), whose(""))
+	}
+}
+
+// GENBU-261: an open screen goes once Home Assistant turns the Show's key away, and only then: a
+// Home Assistant that doesn't answer for a while closes nothing.
+func TestWatchKeyClosesOnARefusal(t *testing.T) {
+	answers := make(chan error, 3)
+	answers <- errors.New("home assistant: connection refused")
+	answers <- nil
+	answers <- errTokenRefused
+	gone := make(chan struct{})
+	go watchKey(context.Background(), time.Millisecond, func(context.Context) error { return <-answers }, func() { close(gone) })
+	select {
+	case <-gone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the screen stayed after its key was turned away")
+	}
+	if len(answers) != 0 {
+		t.Error("gone before Home Assistant said so")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stopped := make(chan struct{})
+	go func() {
+		watchKey(ctx, time.Millisecond, func(context.Context) error { return nil }, func() { t.Error("gone with a good key") })
+		close(stopped)
+	}()
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the watch outlived its session")
 	}
 }

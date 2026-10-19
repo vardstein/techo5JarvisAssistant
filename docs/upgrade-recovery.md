@@ -121,7 +121,7 @@ The Amonet Show flow leaves TWRP in `recovery` (and, where required by the board
 To abandon Jarvis Show and restore LineageOS:
 
 1. Enter the board's existing TWRP recovery.
-2. Use the **exact LineageOS ZIP for that board** (`crown` or `checkers`).
+2. Use the **exact LineageOS ZIP for that board** (`crown`, `checkers` or `cronos`).
 3. Flash that ZIP, which recreates Android `system`.
 4. Restore the saved Lineage boot image from the install backup for that same unit.
 
@@ -132,7 +132,10 @@ conceptually:
 backups/<device-serial>/boot-lineage.img
 ```
 
-Never use a Crown Lineage/boot image on Checkers or vice versa.
+Never use one board's Lineage or boot image on another (Crown, Checkers and Cronos each have their own).
+
+To go all the way back to Fire OS on a Cronos, see [hardware.md](hardware.md#back-to-fire-os). That
+route is from the XDA thread and hasn't been tried here.
 
 ## 5. Keep the recovery backup offline
 
@@ -153,6 +156,11 @@ The small-partition/eMMC backup is a safety artifact, **not** a routine restore 
 `preloader`, `lk`, `tee*`, eMMC boot areas or other bootloader-chain partitions incorrectly can make
 recovery substantially harder.  Restore those only as part of a board-specific, reviewed unbrick
 procedure.  J41 must verify any such procedure against current upstream Crown/Checkers guidance.
+
+On a **Cronos** there is no such procedure: **LK, preloader, TZ and TEE1 are never written back, in
+any mode.** It has no BROM to come back from if one of them is wrong. Its only way back from a brick is
+the preloader download port with mtkclient ([hardware.md](hardware.md#unbrick)), and even that doesn't
+write those four.
 
 ## 6. Boot/kernel updates are not ordinary OTA
 

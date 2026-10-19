@@ -1,7 +1,8 @@
 """GENBU-163: the installer reads its boards from catalogue/ and still gives exactly what it gave before.
 
 tests/fixtures/board-catalogue-baseline.json froze what boards.py and the pin constants in install.py,
-recovery.py, unlock.py and assets.py gave at 7d601d0, the last commit where they owned those facts.
+recovery.py, unlock.py and assets.py gave at d448873e, dev's last commit where they owned those facts
+(first frozen at 7d601d0; redone when dev was merged in, for dev's cronos review and model name).
 The parity tests below feed the catalogue-backed code the same inputs and expect the same answers,
 error messages included. The two confirmation phrases left the board profile on the way (oddc
 answer 7), so they are compared with the step constants that own them now.
@@ -236,8 +237,9 @@ class CatalogueRefusesTest(unittest.TestCase):
         self.assertEqual(owner, "catalogue/assets/techo5-boot-crown-v1.0.1.json#/sha256")
         value, owner = self.cat.explain("checkers", "display.height")
         self.assertEqual((value, owner), (480, "catalogue/boards/checkers.json#/display/height"))
+        # A lineage zip pins only itself, never its members.
         with self.assertRaises(CatalogueError):
-            self.cat.explain("cronos", "assets.amonet.sha256")
+            self.cat.explain("cronos", "assets.lineage.members")
 
 
 class CatalogueValidatorTest(unittest.TestCase):
@@ -286,8 +288,11 @@ class CatalogueValidatorTest(unittest.TestCase):
         self.broken("assets/techo5-boot-v0.7.16.json", lambda d: d.update(sha256="UNKNOWN"))
 
     def test_member_pins_need_zip_pin(self):
-        self.broken("assets/amonet-cronos-v2.0.1.json",
-                    lambda d: d.update(members={recovery.TWRP_MEMBER: "0" * 64}))
+        def unpin(d):
+            del d["sha256"], d["size"]
+        self.broken("assets/amonet-cronos-v2.0.1.json", unpin)
+        self.broken("assets/lineage-18.1-20260904-UNOFFICIAL-cronos.json",
+                    lambda d: (d.pop("sha256"), d.pop("size"), d.update(members={"a": "0" * 64})))
 
     def test_id_must_match_file(self):
         self.broken("boards/crown.json", lambda d: d.update(id="crown2"))

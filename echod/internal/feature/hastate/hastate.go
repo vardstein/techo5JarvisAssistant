@@ -23,7 +23,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Device, Get(), component.Order(35))
+	component.Register(component.Device, Get, component.Order(35))
 }
 
 // Key names one thing followed: an entity's state (Attribute empty) or one attribute of it.

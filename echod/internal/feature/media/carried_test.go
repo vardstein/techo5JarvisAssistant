@@ -91,3 +91,23 @@ func TestARemoteStartingEndsThisPlayersTrack(t *testing.T) {
 		t.Error("the remote did not take the speaker")
 	}
 }
+
+// Music Assistant's song through Sendspin is not this player's own: Playing reads idle in the middle of
+// it, and ScreenState is what says the room is busy. A following Show deciding whether it may move
+// asks ScreenState (GENBU-134: it asked Playing and rebooted in the middle of a song).
+func TestARemotesSongIsWhatTheScreenStateSays(t *testing.T) {
+	p := &Player{stream: NewStream(speaker.NewDriver(speaker.New()), speaker.New(), func() {}, func(string) {}),
+		mp: &esphome.MediaPlayer{}}
+	p.External()
+	p.RemoteState("playing")
+	if playing, paused := p.Playing(); playing || paused {
+		t.Fatalf("own stream says playing %v paused %v under a remote", playing, paused)
+	}
+	if playing, _ := p.ScreenState(); !playing {
+		t.Error("a remote's song does not read as playing")
+	}
+	p.RemoteState("paused")
+	if playing, paused := p.ScreenState(); playing || !paused {
+		t.Errorf("a remote's pause reads playing %v paused %v", playing, paused)
+	}
+}

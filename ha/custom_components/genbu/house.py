@@ -119,6 +119,94 @@ class Show:
     area: str = ""  # the room Home Assistant has it in
     satellite: str = ""  # its assist_satellite entity
     mac: str = ""  # its MAC, which a rename doesn't change
+    key: str = ""  # its "Home Assistant key" sensor, how its key stands (GENBU-196)
+    encrypted: bool = False  # whether its ESPHome connection has an encryption key
+    model: str = ""  # its board, as its device says (the wake race's board offset)
+    status: str = ""  # its update_status line: what its move to the house version waits for (GENBU-249)
+    updating: bool = False  # its firmware update is running
+    at: int | None = None  # how far that update's download is, in percent
+    cut: str = ""  # its "Reply cut off" event: a wake word stopped its reply (GENBU-250)
+    check: str = ""  # its "Check for updates" button, which has the house read the channel too (GENBU-157)
+    disabled: bool = False  # its ESPHome entry or device, or its genbu device, is disabled (GENBU-261)
+
+
+# GENBU-249: the list of Shows under the house's update card, in Home Assistant's language. Why a Show
+# waits, or why its install failed, is its own update_status line, which the Show writes in English.
+STAGES = {
+    "de": {"head": "{done} von {online} Shows auf {house}", "current": "aktuell", "downloading": "lädt {at} %",
+           "checking": "prüft", "installing": "installiert", "restarting": "startet neu", "waiting": "wartet",
+           "offline": "offline", "failed": "⚠ fehlgeschlagen", "back": "kam nach dem Neustart nicht wieder"},
+    "en": {"head": "{done} of {online} Shows on {house}", "current": "up to date", "downloading": "downloading {at}%",
+           "checking": "checking", "installing": "installing", "restarting": "restarting", "waiting": "waiting",
+           "offline": "offline", "failed": "⚠ failed", "back": "didn't come back after the restart"},
+}
+
+# GENBU-215: the lines echod's firmware writes to update_status while an install runs, and when one fails.
+_STEPS = (("Checking ", "checking"), ("Restarting into ", "restarting"), ("Installing ", "installing"))
+_FAILED = re.compile(r"^Update to \S+ failed: (?P<why>.+)$"
+                     r"|^Version \S+ did not install here(?: \((?P<here>.+)\))?; staying on \S+$"
+                     r"|^Version \S+ could not be fetched: (?P<fetch>.+)$"
+                     r"|^rolled back from (?P<back>\S+)$")
+# A plain reason with the error behind it: the card shows the reason, the Show's sensor has the error.
+_ERROR = re.compile(r"^(?P<why>.+?) \(.+\)$")
+
+
+def failure(status: str, lang: str = "en") -> str | None:
+    """Why the Show's last install failed, from its update_status line; None when the line is no failure."""
+    m = _FAILED.match(status)
+    if not m:
+        return None
+    if m["back"]:
+        return STAGES.get(lang, STAGES["en"])["back"]
+    why = m["why"] or m["here"] or m["fetch"] or ""
+    plain = _ERROR.match(why)
+    return plain["why"] if plain else why
+
+
+def stage(show: Show, house: str, lang: str = "en") -> str:
+    """Where one Show is on its way to the house version, as one line of the update card's list."""
+    words = STAGES.get(lang, STAGES["en"])
+    if not show.online:
+        return words["offline"]
+    if show.updating:
+        for prefix, step in _STEPS:
+            if show.status.startswith(prefix):
+                return words[step]
+        if show.at is not None and show.at < 100:
+            return words["downloading"].format(at=show.at)
+        return words["installing"]
+    if show.installed == house:
+        return words["current"]
+    why = failure(show.status, lang)
+    if why is not None:
+        return f"{words['failed']}: {why}" if why else words["failed"]
+    # The Show's line names the house version once it has seen it; before that it still says what it
+    # followed, which is no reason.
+    if house and house in show.status:
+        return f"{words['waiting']}: {show.status}"
+    return words["waiting"]
+
+
+def overview(shows: list[Show], house: str, lang: str = "en") -> str:
+    """Every Show with its version and stage, as Markdown for the update card's dialog."""
+    if not shows:
+        return ""
+    online = [s for s in shows if s.online]
+    done = sum(1 for s in online if s.installed == house)
+    lines = [f"**{STAGES.get(lang, STAGES['en'])['head'].format(done=done, online=len(online), house=house)}**", ""]
+    for s in sorted(shows, key=lambda s: s.name.lower()):
+        version = f" · {s.installed}" if s.online and s.installed else ""
+        lines.append(f"- **{s.name}**{version} · {stage(s, house, lang)}")
+    return "\n".join(lines)
+
+
+def oldest_behind(shows: list[Show], house: str) -> str:
+    """The oldest version an online Show still runs below the house version; "" when none is behind."""
+    oldest = ""
+    for s in shows:
+        if s.online and valid(s.installed) and newer(house, s.installed) and (not oldest or newer(oldest, s.installed)):
+            oldest = s.installed
+    return oldest
 
 
 def channel_of(version: str) -> str:
@@ -151,9 +239,14 @@ class House:
     devices        each Show's node name by device id, to notice a rename
     music          the player picked in each Show's "Music plays on", by device id
     switches       each Show's Recipes and Updates by voice, by device id, when somebody switched them
+    keys           the Home Assistant user each Show's key was seen to belong to, by device id (GENBU-196)
+    leaving        the Shows deleted in Home Assistant and not yet gone, by node (GENBU-223, removal.py)
+    off            the Shows disabled in Home Assistant whose user Genbu switched off, by device id, until
+                   they are back with a new key (GENBU-261, keycare.py)
     house, since   the house version, the one every Show moves to, and when it last changed
     channel        the release channel the house reads; empty for the house version's own
     night          whether a waiting update installs by itself at night
+    llm            whether the house's assistant is a language model, for the LLM extras (GENBU-240)
     before         the house version before the last install, for going back
     """
 
@@ -161,11 +254,12 @@ class House:
         self.data = data if data is not None else {}
         for k in OLD_KEYS:
             self.data.pop(k, None)
-        for k in ("committed", "devices", "music", "switches"):
+        for k in ("committed", "devices", "music", "switches", "keys", "leaving", "off"):
             self.data.setdefault(k, {})
         for k in ("house", "since", "channel", "before"):
             self.data.setdefault(k, "")
         self.data.setdefault("night", False)
+        self.data.setdefault("llm", False)
 
     def see(self, shows: list[Show], now: datetime) -> bool:
         """Takes in what Home Assistant shows now; True when anything worth storing changed."""
@@ -221,6 +315,13 @@ class House:
         self.data["night"] = on
 
     @property
+    def llm(self) -> bool:
+        return bool(self.data["llm"])
+
+    def set_llm(self, on: bool) -> None:
+        self.data["llm"] = on
+
+    @property
     def before(self) -> str:
         return self.data["before"]
 
@@ -236,10 +337,13 @@ class House:
         """A Show taken out of the house for good (the installer's --remove-show): nothing about it is
         kept."""
         self.data["committed"].pop(node, None)
+        self.data["leaving"].pop(node, None)
         for device in [d for d, n in self.data["devices"].items() if n == node]:
             del self.data["devices"][device]
             self.data["music"].pop(device, None)
             self.data["switches"].pop(device, None)
+            self.data["keys"].pop(device, None)
+            self.data["off"].pop(device, None)
 
     def music_choice(self, device: str) -> str:
         return self.data["music"].get(device, "")

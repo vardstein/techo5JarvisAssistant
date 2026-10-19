@@ -13,6 +13,7 @@ import (
 
 	"github.com/HuskerMinion/techo5/echod/internal/feature/phone"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/touch"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 )
 
 // The call face: over everything while a call rings, is placed or is up. The rim pulses green; a tap
@@ -74,7 +75,7 @@ func (r *roundRenderer) callFace(s roundScene) {
 	}
 	r.centered(r.label, title, 150, colCall)
 
-	who := st.Peer
+	who := i18n.Verbatim(st.Peer)
 	if who == "" {
 		who = "Unknown"
 	}

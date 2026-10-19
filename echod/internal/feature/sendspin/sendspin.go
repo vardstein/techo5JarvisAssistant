@@ -20,7 +20,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Device, Get(), component.Order(26))
+	component.Register(component.Device, Get, component.Order(26))
 }
 
 // Player is the room's membership of a group, as Home Assistant sees it: a listening port and an

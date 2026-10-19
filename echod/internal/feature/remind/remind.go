@@ -100,10 +100,11 @@ func Get() *Feature {
 }
 
 func init() {
-	// Built now rather than on first use: Get is what listens for reminders other devices send, and
-	// on a Dot, which has no screen to ask for it, nothing else would call it until a reminder of its
-	// own came due. One sent to it before then went nowhere, without a sound or a log line.
-	Get()
+	// Built as the device is made rather than on first use: Get is what listens for reminders other
+	// devices send, and on a Dot, which has no screen to ask for it, nothing else would call it until
+	// a reminder of its own came due. One sent to it before then went nowhere, without a sound or a
+	// log line.
+	component.Wire(func() { Get() })
 
 	// The Stop alarm or timer button, and anything else that means "stop", takes a reminder down too.
 	ring.Silences(func() bool { return Get().Stop() })

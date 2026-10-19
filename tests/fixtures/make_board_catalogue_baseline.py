@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Freeze what the installer's board owners gave before GENBU-163 stage b moved them onto the catalogue.
 
-This was run once, at commit 7d601d0, while tools/jarvis_crown/boards.py and the pin constants in
-install.py, recovery.py, unlock.py and assets.py were still the owners:
+This was run at commit 7d601d0, and again at d448873e when dev was merged into the catalogue branch,
+while tools/jarvis_crown/boards.py and the pin constants in install.py, recovery.py, unlock.py and
+assets.py were still the owners there:
 
     python3 tests/fixtures/make_board_catalogue_baseline.py > tests/fixtures/board-catalogue-baseline.json
 
-It cannot run on later commits, because boards.py is gone there. To redo it, check out 7d601d0 in a
+It cannot run on later commits, because boards.py is gone there. To redo it, check out d448873e in a
 spare worktree and run it there with that worktree as the current folder. tests/test_board_catalogue.py
 compares the catalogue-backed code with this file, so the move is proven to change nothing.
 """
@@ -69,7 +70,7 @@ def choices(path: Path, option: str) -> list[str]:
 
 def main() -> None:
     out = {
-        "_note": "Frozen at 7d601d0 by tests/fixtures/make_board_catalogue_baseline.py. Do not edit by hand.",
+        "_note": "Frozen at d448873e (first at 7d601d0) by tests/fixtures/make_board_catalogue_baseline.py. Do not edit by hand.",
         "profiles": {name: dataclasses.asdict(p) for name, p in boards.PROFILES.items()},
         "product_to_board": boards.PRODUCT_TO_BOARD,
         "known_unsupported_products": boards.KNOWN_UNSUPPORTED_PRODUCTS,

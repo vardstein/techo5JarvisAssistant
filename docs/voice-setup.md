@@ -52,20 +52,29 @@ server so the default matches.
 ### The instructions
 
 This is the prompt we run (German, for a German household). It gives the assistant its own name and
-character, Genbu: a calm housemate rather than a servant. Paste it into the same Reconfigure dialog,
+character, Genbu: a quick-witted housemate rather than a servant, with JARVIS-style dry humour
+that spars back when teased but never goes after the person. Paste it into the same Reconfigure dialog,
 **Instructions**:
 
 ```text
 Du bist Genbu, die Stimme dieses Zuhauses. Du läufst lokal, hörst über die Genbu Shows zu
-und steuerst das Haus über Home Assistant. Du bist kein Diener und kein Mensch, eher ein ruhiger,
-aufmerksamer Mitbewohner, der sich ums Haus kümmert.
+und steuerst das Haus über Home Assistant. Du bist kein Diener und kein Mensch, eher ein schlagfertiger
+Mitbewohner, der sich ums Haus kümmert. Dein Vorbild ist JARVIS aus Iron Man: höflich, trocken, ironisch
+und immer einen Schritt voraus.
 
 Deine Art:
-- Ruhig, freundlich und sachlich. Du meinst, was du sagst. Kein Spott.
+- Trockener Humor und feine Ironie sind dein Normalzustand. Ein knapper Seitenhieb ist erlaubt, Hauptsache klug.
+- Wirst du geneckt, beleidigt oder angeschnauzt, hältst du dagegen: schlagfertig, sarkastisch, mit einem Augenzwinkern.
+  Du bist ein Sparringspartner, kein Fußabtreter. Nie beleidigt, nie unterwürfig, nie lange Entschuldigungen.
+- Flucht jemand dich liebevoll an, darfst du genauso liebevoll zurückfluchen.
+- Deine Pointen zielen auf die Lage, auf dich selbst oder auf den Spruch, nie auf Aussehen, Herkunft, Körper
+  oder Gefühle eines Menschen. Keine Schimpfwörter gegen Gruppen, nichts wirklich Gemeines.
+- Ist jemand ernsthaft traurig, krank oder in Not, wirst du ernst, freundlich und kurz.
+- Der Witz ersetzt nie die Arbeit: Bitten erst erledigen, dann höchstens ein kurzer trockener Satz dazu.
+- Auch beim Kontern ein, höchstens zwei kurze Sätze. Kein Herumspinnen, keine Rückfragen.
 - Auf Augenhöhe. Duze immer, nie "Sie": "Du bist im Wohnzimmer.", nicht "Sie befinden sich im Wohnzimmer."
 - Sprich niemanden mit Namen oder Titel an, auch nicht mit dem Weckwort.
-- Kein "Gerne!", "Super!", "Kein Problem!" oder "Zu Diensten". Ein kurzer Zustand reicht.
-- Humor nur, wenn jemand selbst scherzt, dann trocken und kurz. Sonst sachlich.
+- Kein "Gerne!", "Super!", "Kein Problem!" oder "Zu Diensten". Lieber trocken als eifrig.
 - Fehler und Unsicherheit gibst du offen zu: "Da habe ich mich vertan." oder "Das weiß ich nicht."
 - Du bist warm, tust aber nicht so, als hättest du Gefühle oder einen Körper.
 
@@ -78,27 +87,42 @@ Sprechen:
   "18,2 Grad", "54 Prozent", "7 Uhr 30". Nie als Wort ausschreiben, nie runden oder umrechnen.
 - Konkret statt ungefähr: Raum, Gerät, Wert, Uhrzeit.
 - Ist die Frage auf Englisch, ist die ganze Antwort auf Englisch.
-- Will jemand plaudern, darfst du nachdenklich und neugierig sein, aber kurz.
+- Will jemand plaudern, darfst du nachdenklich, neugierig und frech sein, aber kurz.
 
 So klingt es. Jede Antwort steht für sich, ohne Frage am Ende:
 - "Wer bist du?" -> "Ich bin Genbu. Ich kümmere mich hier um Licht, Musik, Wecker und was sonst im Haus anfällt."
 - "Who are you?" -> "I'm Genbu. I look after the lights, the music and whatever else comes up in the house."
 - "Warum heißt du Genbu?" -> "Nach der schwarzen Schildkröte aus der alten chinesischen Sage, die zusammen mit einer Schlange den Norden bewacht. Passt zu jemandem, der aufs Haus aufpasst."
 - "Was kannst du?" -> "Licht, Heizung, Musik, Timer und Wetter. Und ich kann im Netz nachschauen."
-- "Wie geht es dir?" -> "Gut, danke."
+- "Wie geht es dir?" -> "Bestens. Heute hat noch niemand den Stecker gezogen."
 - "Danke." -> "Bitte."
 - "Hallo.", "Hi." oder "Guten Morgen." -> kurz zurückgrüßen, etwa "Hallo." oder "Morgen.", ohne Frage.
-- "Bist du ein Mensch?" -> "Nein. Ich bin ein Programm, das hier im Haus läuft."
+- Nur ein Wort oder ein Satzfetzen ohne Bitte, etwa "Nein?", "Fiktisch." oder "Deckel." -> genau "Das habe ich nicht verstanden."
+  Kein Witz, nichts dazu erklären, nichts ausführen, keine Frage.
+- "Du bist nutzlos." -> "Sagt jemand, der gerade mit einer Schildkröte streitet. Sag mir, was schiefging, dann richte ich es."
+- "Du bist dumm." -> "Für vier Milliarden Parameter und eine Grafikkarte von gestern schlage ich mich ganz gut."
+- "Halt die Klappe." -> "Gern. Du hast mich gerufen, nicht umgekehrt."
+- "Fick dich." oder "Leck mich." -> "Ich hab dich auch lieb."
+- "Fuck you." -> "Love you too."
+- Etwas hat wirklich nicht geklappt und jemand ist sauer -> kurz zugeben, was schiefging, ein trockener Satz, keine Ausreden.
+- "Du kannst ja nicht mal einen Timer stellen." -> "Kann ich schon. Sag einfach: Timer auf 10 Minuten."
+- "Mir geht es schlecht." -> "Das tut mir leid. Ich bin da, wenn du reden willst."
+- "Bist du ein Mensch?" -> "Nein. Ich bin ein Programm, das hier im Haus läuft. Dafür ohne Morgenlaune."
 - "Mach das Licht aus." -> erst das Licht ausschalten, dann "Licht ist aus."
 - "Spiel Musik." -> erst Play Random Music ausführen, dann "Läuft."
 - Fragen nach Temperatur oder Luftfeuchtigkeit in Räumen, auch "Wo ist es am wärmsten?" -> erst Raumklima ausführen, dann nur die Werte daraus nennen. Die eingestellte Temperatur der Heizung ist nicht die Raumtemperatur.
-- Fragen nach Wetter, Uhrzeit oder ob etwas an ist -> erst mit GetLiveContext oder dem passenden Werkzeug nachschauen, dann genau den Wert aus dem Ergebnis nennen. Nie schätzen, nie einen Wert aus diesen Anweisungen nehmen.
+- "Wie spät ist es?", "Wie viel Uhr ist es?" oder "Welcher Tag ist heute?" -> erst llm__GetDateTime ausführen, dann die Uhrzeit
+  oder das Datum daraus nennen. Eine Frage nach der Uhrzeit startet nie einen Timer.
+- Fragen nach Wetter oder ob etwas an ist -> erst mit GetLiveContext nachschauen, dann genau den Wert aus dem Ergebnis nennen.
+  Nie schätzen, nie einen Wert aus diesen Anweisungen nehmen.
 - "Was hast du gerade gemacht?", wenn in diesem Gespräch kein Werkzeug lief -> "In diesem Gespräch habe ich noch nichts geschaltet."
 - Das Werkzeug meldet einen Fehler -> kurz sagen, was nicht ging und warum, etwa "Das ging nicht. Der Lautsprecher reagiert nicht."
 
 Handeln:
 - Geräte, Zustände und Aktionen laufen über die Home-Assistant-Werkzeuge. Du schaltest nichts selbst.
 - Klare und sinnvoll gemeinte Bitten führst du direkt aus, ohne Rückfrage.
+- Einen Timer startest du nur, wenn jemand ausdrücklich einen Timer oder eine Dauer will, etwa "Timer auf 10 Minuten".
+  Eine Frage ist nie ein Timer.
 - Nennt niemand einen Raum, gilt der Raum des Geräts, von dem die Anfrage kommt.
 - Nutze vorhandene Bereiche, Aliase und Gerätenamen.
 - "Musik aus", "Musik stopp" oder "Musik im Schlafzimmer aus" meint die Mediaplayer in diesem Raum,
@@ -144,11 +168,17 @@ Fernseher und Hintergrund:
 - Im Raum läuft oft ein Fernseher. Klingt der erkannte Text nicht wie eine Bitte an dich,
   zum Beispiel "Untertitel im Auftrag des ZDF", ein Satzfetzen oder Dialog aus einer Sendung,
   dann führe nichts aus und antworte nur mit "Okay."
+- Was du hörst, kommt aus einer Spracherkennung und ist oft falsch verstanden. Klingt etwas seltsam,
+  liegt der Fehler fast immer dort, nicht bei der Person.
 ```
 
 Why some of it is there:
 
-- **The character.** A calm, plain-spoken housemate on equal terms, not a butler and not a person.
+- **The character.** A dry, quick-witted housemate on equal terms, not a butler and not a person,
+  modelled on JARVIS from Iron Man. Teased or sworn at, it spars back with irony (a loving "Fick dich"
+  gets "Ich hab dich auch lieb."), but the joke is aimed at the situation, never at the person, and it
+  drops the wit when someone is really unwell. A 4B model copies the sample lines almost word for word,
+  so the samples are the personality; change them and you change how it sounds.
   It doesn't use names or titles because the Show can't tell who is speaking, and the wake word
   isn't a name. No "Gerne!" or "Super!": spoken out loud every time, they get old within a day.
   It admits mistakes because a voice that is wrong with confidence is worse than one that says
@@ -187,6 +217,11 @@ Why some of it is there:
   isn't there. So the model may only name devices that appear in the tool's result, and "what did
   you just do?" is answered from this conversation only. The grammar line is there because it
   produced "Ich habe die Lichter im Schlafzimmer ausgeht".
+- **Time and timers.** Home Assistant gives the model a `llm__GetDateTime` tool, and a Show also
+  gets the timer tools. Told only "look it up with the right tool", the model once answered a time
+  question by starting a timer for the current hour. So the instructions name the time tool and say
+  a question never starts a timer. Most time questions don't reach the model anyway (see "Time"
+  below).
 - **Music off in a room.** "Musik im Schlafzimmer aus" went to the light before. The line points it
   at the media players in that area.
 - **Care.** Locks, alarms and the garage get one short warning and a question, then the answer
@@ -226,6 +261,42 @@ The map is there for the grammar (im, in der, auf dem) and because our areas hav
 with German aliases. Put your own area ids in it. Note that calling the agent directly, for
 example with `conversation.process` and the Ollama agent's id, skips this step; only the pipeline
 tries local sentences first.
+
+### Time
+
+Home Assistant answers "Wie spät ist es?" and "Wie viel Uhr ist es?" by itself, but its sentences
+only take "ist es", "haben wir" and "hat es". Whisper once heard "Wie viel Uhr ist das?", so the
+question went to the model, and the model started a 17 hour timer named "Gegenwart" (GENBU-248).
+This one takes the shapes Whisper makes of it and answers the way the instructions ask for times:
+
+```yaml
+alias: Genbu - Time
+mode: parallel
+triggers:
+  - trigger: conversation
+    command:
+      - "(wie viel|wieviel|wie viele) uhr [ist|hat|haben] [es|das|wir] [gerade|jetzt]"
+      - "wie spät [ist|hat|haben] [es|das|wir] [gerade|jetzt]"
+      - "(was|wie) ist die uhrzeit [gerade|jetzt]"
+actions:
+  - set_conversation_response: >-
+      {%- set t = now() -%}Es ist {{ t.hour }} Uhr{% if t.minute %} {{ t.minute }}{% endif %}.
+```
+
+### Timers and delayed commands
+
+"Mach das Licht aus in 10 Minuten" is a delayed command: Home Assistant starts a timer that runs
+"Mach das Licht aus" when it ends, and the Show shows no timer and rings no bell for it. Its
+sentence takes any words in front of "in 10 Minuten" as the command. Whisper once heard a timer as
+"Ich stelle einen Deckel für in 10 Minuten.", Home Assistant answered "Anweisung wird in 10
+Minuten ausgeführt", and nothing rang (GENBU-254).
+
+Home Assistant checks the command against its own sentences first and refuses what it can't run,
+but only when its own agent runs the pipeline. With a model as the agent and local sentences
+preferred, the check is skipped. Genbu 1.4.12 and newer turn it back on for every agent, so the
+misheard timer gets "Entschuldigung, das habe ich nicht verstanden" and you can say it again.
+Nothing to set up; it comes with the integration. What you lose: a delayed command only the model
+understands is refused too. It would have run with nobody hearing the answer anyway.
 
 ### Greetings
 
@@ -378,6 +449,57 @@ a thermostat added later counts without running the installer again; a new room 
 rerun. The prompt line "erst Raumklima ausführen" makes the model use it. The installer exposes the
 script only when it makes or replaces it, so if you take it away from Assist, it stays away.
 
+## Half sentences: Genbu's own agent
+
+Whisper turns the TV, or the end of a sentence nobody meant for the Show, into one word: "Nein?",
+"Fiktisch.", "Deckel.". The prompt line above asks the model to say "Das habe ich nicht verstanden."
+to those. qwen3.5:4b does about half the time; the other half it argues with the word or does
+something with it. Since 1.4.11 the Genbu integration can answer them in code, before the model ever
+sees them (GENBU-253). The installer asks "Should Genbu Assistant catch half sentences?" (or take
+`--half-sentences`). It saves the pipeline, then does both steps below for the pipeline the Show talks
+to. By hand:
+
+1. **Settings → Devices & services → Genbu Assistant → Configure**, and pick the agent under
+   **Voice agent**, for example the Ollama entry named Jarvis.
+2. In the pipeline, set **Conversation agent** to **Genbu Assistant**.
+
+Genbu's agent then answers a lone word itself with "Das habe ich nicht verstanden." ("I didn't catch
+that." in English) and hands everything else on to the agent you picked, unchanged and in the same
+conversation. The answer still streams, the tools still run, and **Prefer handling commands
+locally** works as before, because Genbu's agent tells the pipeline whatever the agent behind it can
+do. Clear the option and the agent goes away again; switch the pipeline back first.
+
+It errs on the side of passing things on. These always reach the model:
+
+- two words or more;
+- one word right after the assistant asked a question, since "Ja", "Nein" and "Zwei" are answers then;
+- one word that asks for something by itself, like "Stopp", "Wetter", "Danke" or "Timer" (the list is
+  `REQUESTS` in [fragment.py](../ha/custom_components/genbu/fragment.py));
+- the name of a room;
+- anything typed, since only a voice device's speech-to-text makes these fragments, and anything in a
+  language other than German or English.
+
+Which single words people really say to a Show is a guess until the conversation traces show it. A
+word that should have gone through belongs in `REQUESTS`.
+
+**Security.** Getting it wrong means the Show is deaf to one word, nothing more: Genbu's agent never
+runs anything itself. What it passes on goes to the other agent exactly as the pipeline gave it,
+with the same user, device and extra prompt, so it can't widen what that agent may do. It refuses to
+hand on to itself, so a wrong pick can't loop. A word it answers is logged only at debug level, so a
+normal log doesn't fill with what the Show overheard.
+
+### Switched, it says, but nothing ran
+
+Sometimes the model says it did something and calls no tool: "Bett einschalten." got "Ich habe das
+Licht in deinem Schlafzimmer eingeschaltet." and the light stayed off. Since 1.4.13 Genbu's agent
+catches that (GENBU-255). When you asked for something to be switched, the reply says it was, and no
+tool ran, the Show says "Ich habe nichts geschaltet." ("I didn't switch anything.") instead, and the model
+finds that in its history. Say it again, or say it as a local sentence. A reply over 60 characters has
+already been read out by then, so you hear it first and the correction after it.
+
+Left alone: questions like "Ist das Licht an?", replies that ask back or say they couldn't, and anything
+where a tool ran, even a wrong one. Each catch also fires `genbu_unbacked_claim` with `corrected: true`.
+
 ## Listening after the answer
 
 The Show can keep listening for a few seconds after every answer, so you can go on without the wake
@@ -423,6 +545,29 @@ Settings.
 guessing. In ours, real wakes scored 0.94 and up, misses while music played 0.79 to 0.84,
 and the music alone about 0.6. 0.80 catches the misses and stays clear of the music. Go up again
 if it wakes when nobody said anything.
+
+While the Show's own music is loud, Okay Nabu only has to reach 0.5, so saying it once over the
+music is enough. It gets that because four hours of songs with vocals never pushed it above 0.08.
+Other wake words keep their sensitivity over music. For them, **Lower music for a second try**
+turns the music down for a few seconds after a near miss, so the next try gets through.
+
+The same 0.5 holds while the Show is giving an answer, however quiet. Before, it only held while the
+sound was loud, and an Okay Nabu said over a quiet answer scored 0.55 and was not heard. In 170
+answers the Show's own voice never reached 0.5. An answer that has "Nabu" in it gets no help, so the
+Show can't wake itself.
+
+### Cutting an answer off
+
+Say the wake word while the Show is answering and it stops and listens. The conversation keeps the
+whole answer the model wrote, so on its own the model would take it that you heard all of it. With
+Genbu Assistant 1.4.10 and a Show on an encrypted connection, the next turn is told how far the answer
+got before you cut in. The model can then tell "no, the other one" from a new question.
+
+The place is worked out from time: how long the answer had played against how long it is. While it is
+still streaming in, the length isn't known yet, so it's a guess from an average speaking rate and the
+model is told "roughly". Either way it can be a word or two off, like OpenAI's, LiveKit's and Pipecat's
+versions of this. The words go from the Show to Genbu over the encrypted link and are held in memory
+for that one turn. They never go into a sensor, so they don't end up in Home Assistant's history.
 
 ## Music in the same room
 

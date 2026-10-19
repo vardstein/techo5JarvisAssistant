@@ -61,7 +61,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Device, Get(), component.Order(60),
+	component.Register(component.Device, Get, component.Order(60),
 		component.Supervise(service.Restart(time.Second, 30*time.Second)))
 }
 
@@ -316,7 +316,7 @@ func (d *Display) Entities() []esphome.Entity {
 
 // Restore lights the panel the way it was left.
 func (d *Display) Restore(c config.Config) {
-	setClock24(d.clock, c.Screen.Clock24)
+	setClock24(d.clock)
 	d.camTime.Set(cameraTimes[cameraTimeIndex()].label)
 	d.answerTime.Set(answerTimes[answerTimeIndex()].label)
 	d.turnStyle.Set(turnStyles[turnStyleIndex()].label)
@@ -886,7 +886,7 @@ func (d *Display) act(id itemID) {
 			d.contactTop = 0
 		})
 	case itemMute:
-		mute.Get().LocalToggle()
+		go mute.Get().ScreenToggle() // mutes; unmuting is the button's (GENBU-166)
 	case itemMusic:
 		rd := home.Get().Radio()
 		playing, paused := musicState()
@@ -1037,6 +1037,7 @@ func (d *Display) Run(ctx context.Context) error {
 }
 
 func (d *Display) frame() time.Duration {
+	followClock(d.clock)
 	now := time.Now()
 	d.mu.Lock()
 	nightChanged := d.wasNight != inNight(now)
@@ -1216,7 +1217,9 @@ func (d *Display) frame() time.Duration {
 	d.alertSceneSpot(&s, now)
 	s.missed = missedNote(now, true)
 	if s.missed == "" {
-		s.update = updateNote(true)
+		if s.update = keyNote(true); s.update == "" {
+			s.update = updateNote(true)
+		}
 	}
 
 	if boring {

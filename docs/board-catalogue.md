@@ -170,9 +170,9 @@ A destructive step may run on a unit only when all three hold:
    code, so pinning more members in the catalogue does not by itself open unlock on another board.
 
 So whether a board may be unlocked is computed, not written down. Policy says *how* (all three boards say
-`amonet-kaeru`), the pins and evidence say *whether*. Checkers fails (2) today, because only its TWRP is
-pinned in its zip; cronos fails (2) because its zip isn't pinned at all. That matches what `unlock.py`
-and `recovery.py` refuse today.
+`amonet-kaeru`), the pins and evidence say *whether*. Checkers and cronos fail (2) today, because only
+their TWRP is pinned in their zips (cronos's zip was reviewed and pinned on 2026-10-14). That matches what
+`unlock.py` refuses today without a hash manifest.
 
 Units that already carry Amonet 1.x (`amonet-upgrade`) aren't a quirk and don't get a policy field. The
 unlock step reads the installed Amonet version, matches it exactly against a pinned list of upgradable
@@ -216,7 +216,7 @@ Every change that reads a new field adds its row here in the same change.
 | `assets.py` | every board's `assets.*`: `file`, `url`, `source`, `manual`, `sha256`, `size` |
 | `preflight.py`, `amonet_upgrade.py`, `flow.py`, `jarvis-show.py`, `fetch-show-assets.py` | profiles and `supported_boards()` through `catalogue.py` |
 | `validate-jarvis-show.sh` | runs `catalogue.py check` |
-| `tests/test_board_catalogue.py` | everything (parity against the 7d601d0 baseline) |
+| `tests/test_board_catalogue.py` | everything (parity against the d448873e baseline) |
 
 The catalogue loads once per process, on first use. A broken catalogue stops the installer at import
 with a `CatalogueError`, before any device is touched.
@@ -305,8 +305,8 @@ Stage b moved the installer (`tools/jarvis_crown/` and the two CLIs that use it)
 board fact of their own:
 
 - `boot_logo.py` `KAERU` and `install-show.py` `LOGO_KAERU`: kaeru offsets, lengths and hashes. The two
-  disagree on crown's "with logo" hash, and `install-show.py` pins a stock cronos kaeru hash while the
-  cronos Amonet zip itself is unpinned.
+  disagree on crown's "with logo" hash, and `install-show.py` pins a stock cronos kaeru hash that the
+  catalogue doesn't hold yet: the cronos Amonet zip is pinned, its kaeru member isn't.
 - `amonet_upgrade.py` `TARGETS`: the partition map, checkers only ("Only Checkers has been mapped on a
   real unit"). Partition layout is a board fact.
 - `dashcast/serve.go` geometry, `manifest.go` board list, `install-show.py` `BOARDS`.

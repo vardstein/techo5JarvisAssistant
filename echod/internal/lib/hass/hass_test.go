@@ -3,6 +3,7 @@ package hass
 import (
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -123,5 +124,25 @@ func TestTheAddressIsCleanedAndChecked(t *testing.T) {
 		if err := c.Set(bad, "abc"); err == nil {
 			t.Errorf("%q was taken as an address", bad)
 		}
+	}
+}
+
+// ServerFailed tells an action Home Assistant took and failed (a 5xx) from one it turned down or never
+// got: the star on a station's song reads a 500 as "no provider has that song".
+func TestServerFailedIsAFiveHundredOnly(t *testing.T) {
+	codes := map[string]int{"/api/services/button/press": 500, "/api/services/a/bad": 400}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, http.StatusText(codes[r.URL.Path]), codes[r.URL.Path])
+	}))
+	c := &Client{acc: access{URL: srv.URL, Token: "secret"}, http: srv.Client()}
+	if err := c.Call("button", "press", nil); !ServerFailed(err) {
+		t.Errorf("a 500: err %v, ServerFailed false", err)
+	}
+	if err := c.Call("a", "bad", nil); err == nil || ServerFailed(err) {
+		t.Errorf("a 400: err %v, want an error ServerFailed is false for", err)
+	}
+	srv.Close()
+	if err := c.Call("button", "press", nil); err == nil || ServerFailed(err) {
+		t.Errorf("no answer: err %v, want an error ServerFailed is false for", err)
 	}
 }

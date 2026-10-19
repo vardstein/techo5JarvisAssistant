@@ -309,21 +309,21 @@ class KeyringHintTests(unittest.TestCase):
         asker = Asker(True, ask=lambda _: "", ask_secret=lambda _: "", say=said.append,
                       out=ui.Out(io.StringIO(), color=False, fancy=True, width=200))
         settings_mod._keyring_hint(asker, "DashCast key", "secret dashcast-key")
-        return next(line for line in said if "store --label" in line)
+        return next(line for line in said if "store --label" in line), said
 
-    def test_secret_tool_off_path_is_named_by_its_path(self):
+    def test_the_command_is_the_plain_name_wherever_secret_tool_is(self):
         home = os.path.expanduser("~")
-        with mock.patch.object(settings_mod, "secret_tool", return_value=home + "/.local/share/x/bin/secret-tool"), \
-                mock.patch.object(settings_mod.shutil, "which", return_value=None):
-            self.assertIn("~/.local/share/x/bin/secret-tool store --label='Jarvis Show: DashCast key'", self.hint())
-
-    def test_secret_tool_on_path_or_missing_is_just_its_name(self):
-        for found in ("/usr/bin/secret-tool", None):
-            with mock.patch.object(settings_mod, "secret_tool", return_value=found), \
-                    mock.patch.object(settings_mod.shutil, "which", return_value=found):
-                line = self.hint()
-                self.assertIn("secret-tool store", line)
+        for found in ("/usr/bin/secret-tool", home + "/.local/share/x/bin/secret-tool", None):
+            with mock.patch.object(settings_mod, "secret_tool", return_value=found):
+                line, _ = self.hint()
+                self.assertIn("secret-tool store --label='Jarvis Show: DashCast key'", line)
                 self.assertNotIn("/", line.split("secret-tool store")[0])
+
+    def test_off_path_it_says_where_secret_tool_comes_from(self):
+        for found, told in (("/usr/bin/secret-tool", False), (None, True)):
+            with mock.patch.object(settings_mod.shutil, "which", return_value=found):
+                _, said = self.hint()
+                self.assertEqual(any("libsecret" in line for line in said), told)
 
 
 class MusicAssistantSignInTests(unittest.TestCase):

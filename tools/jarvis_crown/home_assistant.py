@@ -154,6 +154,11 @@ def normalize_ha_url(url: str) -> str:
         raise ValueError("a Home Assistant address has no user in it; the token is asked for separately")
     if u.path not in ("", "/") or u.query or u.fragment:
         raise ValueError("a Home Assistant address is only the scheme, host and port")
+    host = u.hostname.lower()
+    if host == "ui.nabu.casa" or host.endswith(".ui.nabu.casa"):
+        # The Show's user may only sign in from home (GENBU-196), and the cloud comes in from outside.
+        raise ValueError("that is the Home Assistant Cloud address; the Show is at home, so give it the one "
+                         "it reaches at home, like http://homeassistant.local:8123")
     return f"{scheme}://{u.netloc}"
 
 
@@ -666,25 +671,31 @@ def _pipeline_selects(ha: HomeAssistant) -> dict[str, str]:
     return found
 
 
+def _show_pipeline(ha: HomeAssistant, entities: list[str]) -> tuple[dict | None, list[dict], str]:
+    """The Assist pipeline the Show talks to, every pipeline, and why there is none when there isn't."""
+    matches = [e for e in entities if e.startswith("select.") and e.endswith("_assistant")]
+    if not matches:
+        return None, [], "there is no assistant select on this Show"
+    current = str((ha.request("GET", f"/api/states/{min(matches, key=len)}") or {}).get("state") or "")
+    try:
+        listed = ha.ws({"type": "assist_pipeline/pipeline/list"}) or {}
+    except HomeAssistantError as exc:
+        return None, [], f"Home Assistant did not list its pipelines ({exc})"
+    pipelines = [p for p in listed.get("pipelines") or [] if isinstance(p, dict)]
+    want_id = listed.get("preferred_pipeline") if current == "preferred" else None
+    pipeline = next((p for p in pipelines if (p.get("id") == want_id if want_id else p.get("name") == current)), None)
+    return pipeline, pipelines, "" if pipeline else f"no pipeline {current!r} in Home Assistant"
+
+
 def _name_assistant(ha: HomeAssistant, entities: list[str], wanted: bool | None, choose: Chooser | None,
                     keep: Callable[[str, Any], str] | None) -> str:
     """Calls the Assist pipeline the Show talks to ASSISTANT_NAME, when wanted or choose says so. Devices
     pick a pipeline by its name, and Home Assistant turns a select whose name went away back to
     "preferred"; so every select that was on the old name is put on the new one, and none of them ends up
     talking to another assistant. The pipeline and those selects are saved first. Returns what happened."""
-    matches = [e for e in entities if e.startswith("select.") and e.endswith("_assistant")]
-    if not matches:
-        return "no assistant select on this Show, so its assistant keeps its name"
-    current = str((ha.request("GET", f"/api/states/{min(matches, key=len)}") or {}).get("state") or "")
-    try:
-        listed = ha.ws({"type": "assist_pipeline/pipeline/list"}) or {}
-    except HomeAssistantError as exc:
-        return f"the assistant keeps its name: Home Assistant did not list its pipelines ({exc})"
-    pipelines = [p for p in listed.get("pipelines") or [] if isinstance(p, dict)]
-    want_id = listed.get("preferred_pipeline") if current == "preferred" else None
-    pipeline = next((p for p in pipelines if (p.get("id") == want_id if want_id else p.get("name") == current)), None)
+    pipeline, pipelines, why = _show_pipeline(ha, entities)
     if pipeline is None:
-        return f"the assistant keeps its name: no pipeline {current!r} in Home Assistant"
+        return f"the assistant keeps its name: {why}"
     old = str(pipeline.get("name") or "")
     if old == ASSISTANT_NAME:
         return f"the assistant is already called {ASSISTANT_NAME}"
@@ -705,6 +716,72 @@ def _name_assistant(ha: HomeAssistant, entities: list[str], wanted: bool | None,
         ha.request("POST", "/api/services/select/select_option", {"entity_id": entity, "option": ASSISTANT_NAME})
     on = f"; {', '.join(sorted(selects))} follow{'s' if len(selects) == 1 else ''} it" if selects else ""
     return f"the assistant {old} is now called {ASSISTANT_NAME}{on}; the old one is in {saved}"
+
+
+# Genbu's own conversation agent (Genbu 1.4.11, GENBU-253): it answers a lone word the speech-to-text made of
+# the TV with "Das habe ich nicht verstanden." and hands every other turn to the agent it stands in front of.
+GENBU_AGENT = "conversation.genbu_assistant"
+
+
+def _half_sentences(ha: HomeAssistant, entities: list[str], wanted: bool | None, choose: Chooser | None,
+                    keep: Callable[[str, Any], str] | None, sleep: Callable[[float], None],
+                    clock: Callable[[], float]) -> str:
+    """Puts GENBU_AGENT in front of the agent the Show's pipeline talks to, when wanted or choose says so:
+    Genbu's options get that agent, and the pipeline gets Genbu's. The pipeline is saved first, and the
+    search Genbu already has stays. Returns what happened."""
+    pipeline, _, why = _show_pipeline(ha, entities)
+    if pipeline is None:
+        return f"half sentences go to the model as before: {why}"
+    name, engine = str(pipeline.get("name") or ""), str(pipeline.get("conversation_engine") or "")
+    if engine == GENBU_AGENT:
+        return f"Genbu Assistant already answers half sentences for {name}"
+    if engine in ("", "conversation.home_assistant", "homeassistant"):
+        return f"{name} answers with Home Assistant's own agent, which has no half sentences to keep from a model"
+    try:
+        entries = ha.request("GET", "/api/config/config_entries/entry?domain=genbu") or []
+    except HomeAssistantError:
+        entries = []
+    entry_id = next((str(e.get("entry_id") or "") for e in entries if isinstance(e, dict)
+                     and e.get("domain", "genbu") == "genbu"), "")
+    if not _ENTRY_ID_RE.fullmatch(entry_id):
+        return "half sentences go to the model as before: the Genbu Assistant integration is not set up"
+    if wanted is None and choose:
+        wanted = choose("half sentences", "", ["yes", "no"],
+                        {"yes": f"yes, Genbu Assistant answers them and hands the rest to {engine}",
+                         "no": "no, the model hears them"}) == "yes"
+    if not wanted:
+        return f"half sentences go to {engine} as before"
+    if keep is None:
+        return "half sentences go to the model as before: there is nowhere to save the pipeline first"
+    form = ha.request("POST", "/api/config/config_entries/options/flow", {"handler": entry_id})
+    flow_id = form.get("flow_id") if isinstance(form, dict) else None
+    fields = [f for f in (form.get("data_schema") or []) if isinstance(f, dict)] if flow_id else []
+    if not any(f.get("name") == "conversation_agent" for f in fields):
+        if flow_id:
+            ha.request("DELETE", f"/api/config/config_entries/options/flow/{flow_id}")
+        return "half sentences go to the model as before: Genbu Assistant needs 1.4.11 or newer for them"
+    answer = {}
+    for field in fields:  # what is set today comes back as the field's suggested value
+        was = (field.get("description") or {}).get("suggested_value", field.get("default"))
+        if field.get("name") and was not in (None, ""):
+            answer[field["name"]] = was
+    answer["conversation_agent"] = engine
+    saved = keep(f"assist-pipeline-{name}", {"pipeline": pipeline})
+    done = ha.request("POST", f"/api/config/config_entries/options/flow/{flow_id}", answer)
+    if not isinstance(done, dict) or done.get("type") != "create_entry":
+        errors = done.get("errors") if isinstance(done, dict) else done
+        return f"half sentences go to the model as before: Genbu Assistant did not take {engine} ({errors})"
+    deadline = clock() + 60
+    while (ha.request("GET", f"/api/states/{GENBU_AGENT}") or {}).get("state") is None:
+        if clock() >= deadline:
+            return (f"Genbu Assistant has {engine} as its voice agent, but {GENBU_AGENT} did not appear within a "
+                    f"minute; {name} still talks to {engine}. Pick Genbu Assistant as its conversation agent "
+                    "in Settings -> Voice assistants")
+        sleep(2)
+    ha.ws({"type": "assist_pipeline/pipeline/update", "pipeline_id": pipeline["id"],
+           **{k: pipeline[k] for k in _PIPELINE_FIELDS if k in pipeline}, "conversation_engine": GENBU_AGENT})
+    return (f"{name} now talks to Genbu Assistant, which answers half sentences and hands the rest to {engine}; "
+            f"the old pipeline is in {saved}")
 
 
 def _switch_on(ha: HomeAssistant, entities: list[str], suffix: str) -> str:
@@ -881,9 +958,10 @@ RECIPE_SENSORS = ("sensor.genbu_recipe", "sensor.jarvis_recipe")
 
 
 def _jarvis_cards(room: str, temperature: str | None, humidity: str | None, weather: str | None,
-                  satellite: str | None, device: str, calendar: str) -> dict:
+                  calendar: str) -> dict:
     """ha-dashboard/jarvis-dashboard.yaml with the house's entities in it; keep the two alike. A corner
-    with nothing to show is left out."""
+    with nothing to show is left out. The timer card needs no device: Genbu tells it which Show it is on
+    (GENBU-164), so every Show can share the one dashboard."""
     def widget(card: dict, **style: Any) -> dict:
         return {"type": "ha-card", "transparent": True, "style": style, "card": card}
     top = []
@@ -895,10 +973,7 @@ def _jarvis_cards(room: str, temperature: str | None, humidity: str | None, weat
     if weather:
         top.append(widget({"type": "custom:jarvis-weather-card", "title": "Wetter", "entity": weather},
                           widthMode="content", margin="0 0 0 auto"))
-    bottom = []
-    if satellite and device:
-        bottom.append(widget({"type": "custom:jarvis-live-timer-card", "device_id": device,
-                              "satellite_id": satellite}, widthMode="fill", grow=1))
+    bottom = [widget({"type": "custom:jarvis-live-timer-card", "title": "Timer"}, widthMode="fill", grow=1)]
     bottom.append(widget({"type": "custom:jarvis-calendar-card", "entity": calendar, "title": "Kalender",
                           "daysAhead": 14}, widthMode="fill", grow=2))
     zones: dict[str, Any] = {}
@@ -981,7 +1056,7 @@ def _jarvis_dashboard(ha: HomeAssistant, entities: list[str], make: bool | None,
         weather = "weather.forecast_home" if "weather.forecast_home" in weathers else next(iter(weathers), None)
         calendar = next(iter(sorted(e for e in states if e.startswith("calendar."))), "calendar.personal")
         config = _jarvis_cards(_areas(ha).get(area, area) if area else "Zimmer", measured("temperature", ("°C", "°F")),
-                               measured("humidity", ("%",)), weather, satellite, device, calendar)
+                               measured("humidity", ("%",)), weather, calendar)
         ha.ws({"type": "lovelace/dashboards/create", "url_path": JARVIS_BOARD, "title": "Jarvis",
                "icon": "mdi:tablet-dashboard", "require_admin": False, "show_in_sidebar": True, "mode": "storage"})
         ha.ws({"type": "lovelace/config/save", "url_path": JARVIS_BOARD, "config": config})
@@ -1009,10 +1084,10 @@ def node_name(ha: HomeAssistant, entry_id: str) -> str | None:
     return node if isinstance(node, str) and node.strip() else None
 
 
-def _services(ha: HomeAssistant) -> set[str]:
-    for domain in ha.request("GET", "/api/services") or []:
-        if domain.get("domain") == "esphome":
-            return set((domain.get("services") or {}).keys())
+def _services(ha: HomeAssistant, domain: str = "esphome") -> set[str]:
+    for listed in ha.request("GET", "/api/services") or []:
+        if listed.get("domain") == domain:
+            return set((listed.get("services") or {}).keys())
     return set()
 
 
@@ -1208,7 +1283,8 @@ def _set_up_calendars(ha: HomeAssistant, prefix: str, opts: "DeployOptions", cho
                       clock: Callable[[], float]) -> None:
     """A CalDAV account for Home Assistant when one is given or wanted, then the calendars this Show
     shows, a quick check that each of them answers, and the dashboard's calendar card pointed at them. An account never comes in
-    next to one Home Assistant has: it replaces it, or the step is skipped."""
+    next to one Home Assistant has: it replaces it, or the step is skipped. The account is the house's, so
+    it is asked for only while Home Assistant has none; only --caldav-url replaces one."""
     have = _calendars(ha)
     old = _caldav_entries(ha)
     registered = {str(e.get("entity_id")) for e in ha.ws({"type": "config/entity_registry/list"}) or []}
@@ -1222,17 +1298,13 @@ def _set_up_calendars(ha: HomeAssistant, prefix: str, opts: "DeployOptions", cho
                  "is added. To replace it, remove the calendar: block there, restart Home Assistant and run "
                  "this again")
         account = None
+    elif asking and old:
+        # every Show shares it: a quick answer on the next Show's install must not swap it
+        accounts = ", ".join(str(e.get("title") or e.get("entry_id")) for e in old)
+        progress(f"the house's CalDAV account {accounts} stays; to swap it, run this again with --caldav-url")
     elif asking:
-        if old:
-            accounts = ", ".join(str(e.get("title") or e.get("entry_id")) for e in old)
-            its = "its" if len(old) == 1 else "their"
-            names = {"replace": f"replace the CalDAV account {accounts} with another one",
-                     "skip": f"skip, keep {accounts} and {its} calendars: " + ", ".join(sorted(set(have.values())))}
-            wanted = choose("calendar account", "", ["replace", "skip"], names) == "replace"
-        else:
-            names = {"yes": "yes, a CalDAV account (Nextcloud, iCloud, mailbox.org ...)", "no": "no"}
-            wanted = choose("calendar account", "", ["yes", "no"], names) == "yes"
-        if wanted:
+        names = {"yes": "yes, a CalDAV account (Nextcloud, iCloud, mailbox.org ...)", "no": "no"}
+        if choose("calendar account", "", ["yes", "no"], names) == "yes":
             account = opts.ask_caldav()
     if account is not None:
         try:
@@ -1364,34 +1436,86 @@ def _sign_in(ha: HomeAssistant, username: str, password: str) -> dict:
         raise HomeAssistantError(f"the Show's user {username!r} could not sign in ({exc})") from None
 
 
-def make_show_user(ha: HomeAssistant, name: str, *, progress: Callable[[str], None] = print) -> str:
+def show_usernames(name: str) -> tuple[str, str]:
+    """The Show's user, and the second name it takes while an admin who is not the owner replaces it
+    (make_show_user). service_prefix never makes a "-", so the second name is nobody else's first."""
+    first = show_username(name)
+    return first, first + "-2"
+
+
+@dataclass
+class ShowKey:
+    """A new token of the Show's own user, and what it replaces: the user's older tokens and, when the
+    user had to be made again, the old user. They are deleted only once the Show says it has stored the
+    new token (retire), as until then they are what it uses (GENBU-158)."""
+
+    token: str
+    username: str
+    old_tokens: int = 0
+    old_users: list[dict] = field(default_factory=list)
+
+    def retire(self, ha: HomeAssistant, confirmed: bool, progress: Callable[[str], None]) -> None:
+        if not confirmed:
+            if self.old_tokens or self.old_users:
+                what = [f"{self.old_tokens} older token(s) of {self.username!r}"] if self.old_tokens else []
+                what += [f"the user {u.get('username')!r}" for u in self.old_users]
+                progress(f"WARN: the Show did not say it stored its new token, so {' and '.join(what)} "
+                         "stay in Home Assistant; run this again once the Show is up to date")
+            return
+        if self.old_tokens:
+            # Signed in with the new token itself, which is_current marks, so it cannot delete itself.
+            own = ha.as_user(self.token)
+            tokens = own.ws({"type": "auth/refresh_tokens"}) or []
+            if not any(t.get("is_current") for t in tokens):
+                progress(f"WARN: Home Assistant did not say which token of {self.username!r} is the new one, "
+                         "so the older ones stay")
+            else:
+                old = [t["id"] for t in tokens if t.get("type") == "long_lived_access_token"
+                       and not t.get("is_current") and t.get("id")]
+                for token_id in old:
+                    own.ws({"type": "auth/delete_refresh_token", "refresh_token_id": token_id})
+                if old:
+                    progress(f"{len(old)} older token(s) of {self.username!r} removed")
+        for user in self.old_users:
+            ha.ws({"type": "config/auth/delete", "user_id": user["id"]})
+            progress(f"Home Assistant user {user.get('username')!r} removed; the Show is {self.username!r} now")
+
+
+def make_show_user(ha: HomeAssistant, name: str, *, progress: Callable[[str], None] = print) -> ShowKey:
     """Makes the Show a Home Assistant user of its own, not an admin and only reachable from home,
-    and returns a new long-lived token of that user. Its password is random and kept nowhere, so
-    nobody signs in as it; the token is what the Show uses. Its older tokens are removed."""
-    username = show_username(name)
+    and a new long-lived token of that user. Its password is random and kept nowhere, so nobody signs
+    in as it; the token is what the Show uses. Nothing the Show may still be using is deleted here:
+    that waits for ShowKey.retire."""
+    names = show_usernames(name)
     password = secrets.token_urlsafe(32)
     users = ha.ws({"type": "config/auth/list"}) or []
-    user = next((u for u in users if (u.get("username") or "").lower() == username), None)
-    if user is not None:
-        if user.get("is_owner") or user.get("system_generated") or \
-                "system-admin" in (user.get("group_ids") or []):
-            raise HomeAssistantError(f"the Home Assistant user {username!r} is an admin or Home Assistant's "
-                                     "own; the Show does not take it over")
-        if not user.get("is_active", True):
-            raise HomeAssistantError(f"the Home Assistant user {username!r} is switched off")
+    found = sorted((u for u in users if (u.get("username") or "").lower() in names),
+                   key=lambda u: names.index((u.get("username") or "").lower()))
+    for u in found:
+        if u.get("is_owner") or u.get("system_generated") or "system-admin" in (u.get("group_ids") or []):
+            raise HomeAssistantError(f"the Home Assistant user {u.get('username')!r} is an admin or Home "
+                                     "Assistant's own; the Show does not take it over")
+        if not u.get("is_active", True):
+            raise HomeAssistantError(f"the Home Assistant user {u.get('username')!r} is switched off")
+    user = None
+    if found:
         try:
-            ha.ws({"type": "config/auth_provider/homeassistant/admin_change_password", "user_id": user["id"],
+            ha.ws({"type": "config/auth_provider/homeassistant/admin_change_password", "user_id": found[0]["id"],
                    "password": password})
-            progress(f"Home Assistant user {username!r} is already there")
+            user = found[0]
+            progress(f"Home Assistant user {user['username']!r} is already there")
         except HomeAssistantError as exc:
-            # Only the owner may set another user's password. Any admin may remove a user and make it
-            # again, which costs the Show nothing: its old tokens end either way.
+            # Only the owner may set another user's password. Any admin may make a second user and
+            # remove the first once the Show has the second one's token.
             if "unauthorized" not in str(exc).lower():
                 raise
-            ha.ws({"type": "config/auth/delete", "user_id": user["id"]})
-            progress(f"Home Assistant user {username!r} made again (only the owner may change its password)")
-            user = None
     if user is None:
+        taken = {(u.get("username") or "").lower() for u in found}
+        username = next((n for n in names if n not in taken), None)
+        if username is None:
+            raise HomeAssistantError(f"Home Assistant has both {names[0]!r} and {names[1]!r}, left by a run the "
+                                     "Show never confirmed, and only the owner may reuse one; remove the one "
+                                     "the Show does not use, or run this with the owner's token")
         made = ha.ws({"type": "config/auth/create", "name": name, "group_ids": ["system-users"],
                       "local_only": True})
         user_id = made["user"]["id"]
@@ -1401,8 +1525,14 @@ def make_show_user(ha: HomeAssistant, name: str, *, progress: Callable[[str], No
         except HomeAssistantError:
             ha.ws({"type": "config/auth/delete", "user_id": user_id})
             raise
-        progress(f"Home Assistant user {username!r} made (not an admin, home network only)")
+        user = {"id": user_id, "username": username}
+        if found:
+            progress(f"Home Assistant user {username!r} made next to {found[0]['username']!r}, which goes once "
+                     "the Show has the new token (only the owner may change a password)")
+        else:
+            progress(f"Home Assistant user {username!r} made (not an admin, home network only)")
 
+    username = user["username"]
     tokens = _sign_in(ha, username, password)
     try:
         own = ha.as_user(tokens["access_token"])
@@ -1410,18 +1540,56 @@ def make_show_user(ha: HomeAssistant, name: str, *, progress: Callable[[str], No
         token = own.ws({"type": "auth/long_lived_access_token", "client_name": label, "lifespan": 3650})
         if not isinstance(token, str) or not token:
             raise HomeAssistantError(f"Home Assistant made no token for {username!r}")
-        old = [t["id"] for t in own.ws({"type": "auth/refresh_tokens"}) or []
-               if t.get("type") == "long_lived_access_token" and t.get("client_name") != label and t.get("id")]
-        for token_id in old:
-            own.ws({"type": "auth/delete_refresh_token", "refresh_token_id": token_id})
-        progress(f"new token for {username!r}" + (f", {len(old)} older one(s) removed" if old else ""))
+        old = [t for t in own.ws({"type": "auth/refresh_tokens"}) or []
+               if t.get("type") == "long_lived_access_token" and t.get("client_name") != label]
+        progress(f"new token for {username!r}")
     finally:
         if tokens.get("refresh_token"):
             try:
                 ha.request("POST", "/auth/revoke", {"token": tokens["refresh_token"]}, auth=False, form=True)
             except HomeAssistantError as exc:
                 progress(f"WARN: the installer's own sign-in as {username!r} is left in Home Assistant: {exc}")
-    return token
+    return ShowKey(token, username, len(old), [u for u in found if u["id"] != user["id"]])
+
+
+def hand_over_key(ha: HomeAssistant, svc: str, data: dict) -> bool:
+    """Gives the Show its Home Assistant access and returns whether the Show said it stored it. A Show
+    from before GENBU-158 cannot say so: it is given the access all the same, and False keeps the old
+    tokens. A failure on the Show raises, as Home Assistant answers it with an error."""
+    try:
+        answer = ha.request("POST", f"/api/services/esphome/{svc}?return_response", data) or {}
+    except HomeAssistantError as exc:
+        if "does not support responses" not in str(exc):
+            raise
+        ha.request("POST", f"/api/services/esphome/{svc}", data)
+        return False
+    return (answer.get("service_response") or {}).get("stored") is True
+
+
+def music_assistant_key(ha: HomeAssistant, svc: str) -> str:
+    """The Show's name for the Music Assistant token it holds (its music_assistant_key action, GENBU-137),
+    when it says Music Assistant has not turned the token away; "" otherwise. A Show from before that,
+    or one that could not answer, gets a new token, as every run gave it before."""
+    try:
+        answer = ha.request("POST", f"/api/services/esphome/{svc}?return_response", {}) or {}
+    except HomeAssistantError:
+        return ""
+    said = answer.get("service_response") or {}
+    return str(said.get("key") or "") if said.get("state") == "ok" else ""
+
+
+def genbu_show_key(ha: HomeAssistant, node: str, url: str) -> dict | None:
+    """Has Genbu give the Show its user and key (genbu.show_key, Genbu 1.4.2, GENBU-196): it does it inside
+    Home Assistant, the same way its Repairs button does for a Show whose key was lost, and deletes the
+    user's old keys once the Show has stored the new one. None when Genbu does not know the Show yet;
+    a refusal raises, with Genbu's reason."""
+    try:
+        answer = ha.request("POST", "/api/services/genbu/show_key?return_response", {"node": node, "url": url})
+    except HomeAssistantError as exc:
+        if "no Genbu Show called" in str(exc):
+            return None
+        raise
+    return (answer or {}).get("service_response") or {}
 
 
 @dataclass(frozen=True)
@@ -1433,9 +1601,10 @@ class DeviceSettings:
     ha_url: str | None = None
     ha_token: str | None = None
     music_assistant: str | None = None
-    # Makes the Show's own Music Assistant user, for lyrics, and returns its token, or None when that
-    # failed (and said why). Given the Show's name; called only once the Show can take the token.
-    music_assistant_login: Callable[[str], str | None] | None = None
+    # Makes the Show's own Music Assistant user, for lyrics, and returns its token, "" when the Show's
+    # token still works and is kept, or None when that failed (and said why). Given the Show's name and
+    # its name for the token it holds (music_assistant_key); called only once the Show can take a token.
+    music_assistant_login: Callable[[str, str], str | None] | None = None
     # The Show gets a Home Assistant user of its own (make_show_user) and that user's token instead of
     # ha_token, and its streamed dashboard is shown as that user.
     own_user: bool = False
@@ -1454,6 +1623,7 @@ class DeployOptions:
     voice_extras: bool | None = None    # the house's answers and music sentences (voice_kit); None: ask
     music_genres: dict[str, str] | None = None  # Music Assistant's genres for the random music, URI -> name
     assistant_name: bool | None = None  # call the Show's pipeline ASSISTANT_NAME; None: ask
+    half_sentences: bool | None = None  # put GENBU_AGENT in front of the pipeline's agent; None: ask
     calendars: str | None = None   # the calendar entities the Show shows, "a, b"; '': leave them; None: ask
     caldav: CalDAVAccount | None = None  # a calendar account to add to Home Assistant, without asking
     ask_caldav: Callable[[], CalDAVAccount | None] | None = None  # asks for one, once choose says yes
@@ -1569,6 +1739,8 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
         progress(_select(ha, entities, "_assistant", opts.assistant, choose))
     if opts.assistant_name or (opts.assistant_name is None and choose):
         progress(_name_assistant(ha, entities, opts.assistant_name, choose, opts.keep_replaced))
+    if opts.half_sentences or (opts.half_sentences is None and choose):
+        progress(_half_sentences(ha, entities, opts.half_sentences, choose, opts.keep_replaced, sleep, clock))
     if opts.wake_word or choose:
         progress(_select(ha, entities, "_wake_word", opts.wake_word, choose))
     from . import labels
@@ -1593,6 +1765,7 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
         except HomeAssistantError as exc:
             progress(f"WARN: the voice extras stopped part way: {exc}")
     services = _services(ha) if wanted else set()
+    genbu = _services(ha, "genbu") if wanted else set()
     own_given = False
     for svc, data, what in wanted:
         if svc not in services:
@@ -1600,14 +1773,35 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
                      "given; run this again once the Show is online")
             continue
         if data is None and svc == f"{prefix}_music_assistant":
-            token = s.music_assistant_login(node or opts.name)
+            asks = f"{prefix}_music_assistant_key"
+            token = s.music_assistant_login(node or opts.name,
+                                            music_assistant_key(ha, asks) if asks in services else "")
+            if token == "":  # the Show's own still works
+                continue
             if not token:
                 progress(f"WARN: {what} not set, so lyrics won't work on the Show")
                 continue
             data = {"token": token}
         elif data is None:
-            data = {"url": s.ha_url, "token": make_show_user(ha, opts.name, progress=progress)}
+            if "show_key" in genbu:
+                made = genbu_show_key(ha, node or node_slug(opts.name), s.ha_url)
+                if made is not None:
+                    progress(f"{what} given to the Show by Genbu, as {made.get('user')!r} "
+                             "(not an admin, home network only)")
+                    own_given = True
+                    continue
+                progress("Genbu does not know the Show yet, so the installer makes its user itself")
+            key = make_show_user(ha, opts.name, progress=progress)
+            data = {"url": s.ha_url, "token": key.token}
+            try:
+                stored = hand_over_key(ha, svc, data)
+            except HomeAssistantError:
+                key.retire(ha, False, progress)
+                raise
+            progress(f"{what} given to the Show" + ("" if stored else ", which did not say it stored it"))
+            key.retire(ha, stored, progress)
             own_given = True
+            continue
         ha.request("POST", f"/api/services/esphome/{svc}", data)
         progress(f"{what} given to the Show")
     if s.music_assistant and f"{prefix}_sendspin_server" in services:

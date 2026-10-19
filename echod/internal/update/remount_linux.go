@@ -24,7 +24,7 @@ func room(at string, need int64) error {
 
 	free := int64(fs.Bavail) * int64(fs.Bsize)
 	if free < need {
-		return fmt.Errorf("update: %d bytes free on %s, need %d", free, at, need)
+		return mark(ErrNoRoom, fmt.Errorf("update: %d bytes free on %s, need %d", free, at, need))
 	}
 	return nil
 }

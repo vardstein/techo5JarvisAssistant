@@ -1,6 +1,6 @@
-// Package mute owns both microphone privacy layers: a reversible software cut for Home Assistant
-// and the device's physical privacy latch. Either one makes the microphone effectively muted; only
-// the button on the device can release a latched Crown/Checkers hardware mute.
+// Package mute owns the microphone mute. There is one state, the device's privacy latch, and the
+// mute LED shows it. Home Assistant and the screen can engage it; only the button on the device
+// releases it (GENBU-166). The button is the master: a press overrides whatever asked for the mute.
 package mute
 
 import (
@@ -14,7 +14,6 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/component"
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/ring"
-	"github.com/HuskerMinion/techo5/echod/internal/feature/security"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/buttons"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/led"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/mic"
@@ -24,7 +23,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Device, Get(), component.Order(30))
+	component.Register(component.Device, Get, component.Order(30))
 }
 
 // The two levels the mute LED has. Neither way of reaching it offers anything between them.
@@ -45,6 +44,9 @@ type Mute struct {
 	line       privacy.Mute
 	led        privacy.LED
 	physical   atomic.Bool
+
+	// mu keeps a press, a Home Assistant command and a screen tap from moving the latch at once.
+	mu sync.Mutex
 
 	// ring is the animation to show while the microphones are cut, and claim is where it goes. The
 	// select lives here rather than with the other settings because choosing one has to take effect
@@ -144,105 +146,131 @@ func (m *Mute) Entities() []esphome.Entity {
 // Muted reports whether the line is cut, which is what a turn has to check before opening the
 // microphones.
 func (m *Mute) Muted() (bool, error) {
-	software := mic.Get().SoftwareMuted()
 	if m.line == nil {
-		return software, nil
+		return mic.Get().TransitionMuted(), nil
 	}
 	physical, err := m.line.Get()
 	if err != nil {
-		return m.physical.Load() || software, err
+		return m.effective(), err
 	}
 	m.physical.Store(physical)
-	return physical || software, nil
+	return m.effective(), nil
 }
 
-// Restore puts both mute layers back. The saved physical latch remains a local privacy choice; the
-// separate software cut is the reversible Home Assistant control and is already seeded in mic.New
-// so not one captured frame leaks before this Device-phase component starts.
+// Restore puts the latch back where it was saved.
+//
+// Until GENBU-166 Home Assistant and the screen had a second, software-only mute that the button
+// could not clear. A device saved with it on gets the latch instead, so it glows red and one press
+// brings it back. mic.New already holds the frames from that save, so nothing leaks until then.
 func (m *Mute) Restore(c config.Config) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	// What to show while cut, before cutting, so the ring is right the first time settled looks.
 	component.RestoreEffect(m.ring, c.Ring.Muted, nil, config.Set().Ring().Muted)
-	mic.Get().SetSoftwareMuted(c.Microphone.SoftwareMuted)
-	m.sw.Set(c.Microphone.SoftwareMuted)
 
+	legacy := c.Microphone.SoftwareMuted
 	if m.line != nil {
 		was, err := m.line.Get()
 		if err != nil {
 			slog.Error("reading mute state failed", "err", err)
 		} else {
 			m.physical.Store(was)
-			want := c.Microphone.Muted
+			want := c.Microphone.Muted || legacy
 			if want != was {
 				if err := m.line.Set(want); err != nil {
 					slog.Error("setting physical mute failed", "muted", want, "err", err)
+				} else {
+					m.await(was)
 				}
 			}
 			m.settledPhysical(false, was)
 		}
 	}
+	if legacy {
+		m.migrate()
+	}
+	m.sw.Set(m.effective())
 	m.refresh(false)
-	slog.Info("restored", "what", "microphone software mute", "muted", m.sw.Get())
+	slog.Info("restored", "what", "microphone mute", "muted", m.sw.Get())
 
 	m.applyBrightness(c.Microphone.LEDBright)
 	slog.Info("restored", "what", m.brightness.ObjectID, "using", label(c.Microphone.LEDBright))
 }
 
-// Set is the reversible software mute in Home Assistant. Muting is always accepted and takes
-// effect on the next captured frame. Unmuting is a stronger action: the owner must have opted in on
-// the device/setup UI and the native API must have a real encryption key. Neither path can release
-// the physical privacy latch.
+// migrate finishes moving an old software mute into the latch. If the latch did not take it, the
+// frames stay cut, fail closed, until the button is pressed (Toggle), so a device someone muted
+// never comes back live by itself.
+func (m *Mute) migrate() {
+	if !m.physical.Load() {
+		slog.Error("old software mute could not move into the latch; microphones stay cut until the button is pressed")
+		return
+	}
+	mic.Get().SetTransitionMuted(false)
+	if err := config.Set().Microphone().Muted(true); err != nil {
+		slog.Error("saving physical mute state failed", "err", err)
+	}
+	if err := config.Set().Microphone().ClearSoftwareMuted(); err != nil {
+		slog.Error("clearing the old software mute failed", "err", err)
+	}
+	slog.Info("old software mute moved into the latch")
+}
+
+// Set is the switch in Home Assistant. Muting engages the latch, which lights the mute LED.
+// Unmuting is the button's job and is refused: the switch stays on and the status says to press it.
+// A false with nothing muted is not an unmute: Home Assistant replays the current state after
+// reconnecting, and that must not turn into a refusal.
 func (m *Mute) Set(muted bool) {
-	// An already-clear software cut is not an unmute operation. In particular, Home Assistant may
-	// replay the entity's current false state after reconnecting; that must not turn into a refusal.
-	if !muted && !mic.Get().SoftwareMuted() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if muted == m.effective() {
+		m.sw.Set(muted)
+		m.refresh(false)
+		return
+	}
+	if !muted {
+		m.sw.Set(true)
+		m.refresh(true)
+		slog.Warn("microphone unmute refused: only the button on the device unmutes")
+		return
+	}
+	if m.line == nil {
 		m.sw.Set(false)
 		m.refresh(false)
 		return
 	}
-	allowed := config.Get().Microphone.AllowRemoteUnmute
-	encrypted := security.APIEncrypted()
-	if !muted && !canRemoteUnmute(allowed, encrypted) {
-		m.sw.Set(mic.Get().SoftwareMuted())
-		m.refresh(true)
-		slog.Warn("remote microphone unmute refused", "allowed", allowed, "encrypted", encrypted)
-		return
-	}
-	m.setSoftware(muted)
-}
-
-func canRemoteUnmute(allowed, encrypted bool) bool { return allowed && encrypted }
-
-func (m *Mute) setSoftware(muted bool) {
-	before := m.effective()
-	mic.Get().SetSoftwareMuted(muted)
-	m.sw.Set(muted)
-	if err := config.Set().Microphone().SoftwareMuted(muted); err != nil {
-		slog.Error("saving software mute state failed", "err", err)
-	}
-	m.refresh(false)
-	m.changed(before)
-	slog.Info("microphone software mute", "muted", muted)
-}
-
-// LocalToggle is the touchscreen control. It owns only the reversible software cut: the physical
-// button remains the hardware privacy control, and a latched hardware mute cannot be cleared by a
-// screen tap either. Local software unmute never needs the Home Assistant permission.
-func (m *Mute) LocalToggle() {
-	if m.physical.Load() {
+	// As for a press: stop handing frames on now, not when the latch has caught up.
+	mic.Get().SetTransitionMuted(true)
+	if err := m.line.Set(true); err != nil {
+		mic.Get().SetTransitionMuted(false)
+		m.sw.Set(m.effective())
 		m.refresh(false)
+		slog.Error("engaging mute failed", "err", err)
 		return
 	}
-	m.setSoftware(!mic.Get().SoftwareMuted())
+	m.settledPhysical(true, false)
 }
+
+// ScreenToggle is the Microphone control on the screen. It follows the same rule as Home Assistant:
+// it mutes, and when muted it says to press the button. The latch can take a second or so to
+// settle, so the screen runs it on a goroutine of its own.
+func (m *Mute) ScreenToggle() { m.Set(!m.effective()) }
 
 // Toggle is the button on top of the device. Where the hardware has already acted on the press, the
 // press is only news: what follows is the same either way. Whether it has can depend on which way
 // the press goes, and the switch still holds the state from before it.
 func (m *Mute) Toggle() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	was := m.physical.Load()
+	if !was && mic.Get().TransitionMuted() {
+		// An old software mute the latch did not take (migrate): this press is its unmute.
+		m.release()
+		return
+	}
 	if m.line == nil {
 		return
 	}
-	was := m.physical.Load()
 	if !m.line.HardwareActs(was) {
 		// On Crown/Checkers engaging the latch takes about a second. Stop handing frames on before
 		// the driver pulse so a local mute press is immediate from software's point of view too.
@@ -256,6 +284,19 @@ func (m *Mute) Toggle() {
 		}
 	}
 	m.settledPhysical(true, was)
+}
+
+// release lets go of the frames migrate held, and drops the old setting with them.
+func (m *Mute) release() {
+	mic.Get().SetTransitionMuted(false)
+	if err := config.Set().Microphone().ClearSoftwareMuted(); err != nil {
+		slog.Error("clearing the old software mute failed", "err", err)
+	}
+	m.sw.Set(false)
+	m.refresh(false)
+	m.Changed.Emit(false)
+	speaker.Sound().Chime(speaker.MuteSound(false))
+	slog.Info("old software mute released by the button")
 }
 
 // pressed is the mute button. A hold only sounds: nothing is bound to it, and the tone says the
@@ -295,6 +336,8 @@ func (m *Mute) pressed(e buttons.Event) {
 // So the line is put back. If it will not go back, what the hardware did is taken as the press it
 // was, and published like any other, so that the device at least says what it is doing.
 func (m *Mute) keep() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.line == nil {
 		return
 	}
@@ -328,21 +371,28 @@ func (m *Mute) keep() {
 }
 
 // settledPhysical publishes what the privacy latch now reads — not what was asked for. from is the
-// last observed latch state, kept separately from the Home Assistant software-mute switch.
+// last observed latch state.
 func (m *Mute) settledPhysical(asked bool, from bool) {
 	if asked {
 		m.await(from)
 	}
 
+	// The transition cut is only let go after a request. At start-up it can be an old software mute
+	// on its way into the latch, which Restore settles itself.
 	muted, err := m.line.Get()
 	if err != nil {
-		mic.Get().SetTransitionMuted(false)
+		if asked {
+			mic.Get().SetTransitionMuted(false)
+		}
 		slog.Error("reading mute state failed", "err", err)
 		return
 	}
 	before := m.effective()
 	m.physical.Store(muted)
-	mic.Get().SetTransitionMuted(false)
+	if asked {
+		mic.Get().SetTransitionMuted(false)
+	}
+	m.sw.Set(m.effective())
 	m.refresh(false)
 
 	// A latch that has just been released may have taken the microphone chip down with it, which
@@ -363,7 +413,9 @@ func (m *Mute) settledPhysical(asked bool, from bool) {
 	m.changed(before)
 }
 
-func (m *Mute) effective() bool { return m.physical.Load() || mic.Get().SoftwareMuted() }
+// effective is the latch, plus the moment a mute is on its way to it, and an old software mute the
+// latch did not take (migrate).
+func (m *Mute) effective() bool { return m.physical.Load() || mic.Get().TransitionMuted() }
 
 func (m *Mute) changed(before bool) {
 	after := m.effective()
@@ -374,22 +426,23 @@ func (m *Mute) changed(before bool) {
 	speaker.Sound().Chime(speaker.MuteSound(after))
 }
 
-func (m *Mute) refresh(remoteRefused bool) {
+// refresh shows the state. refused is an unmute that was just turned away.
+func (m *Mute) refresh(refused bool) {
 	if m.ring != nil && m.claim != nil {
 		m.show(component.ChosenEffect(m.ring))
 	}
 	if m.status != nil {
-		m.status.Set(statusLabel(m.physical.Load(), mic.Get().SoftwareMuted(), remoteRefused))
+		m.status.Set(statusLabel(m.line != nil, m.effective(), refused))
 	}
 }
 
-func statusLabel(physical, software, remoteRefused bool) string {
+func statusLabel(available, muted, refused bool) string {
 	switch {
-	case physical:
-		return "physical mute active"
-	case remoteRefused:
-		return "remote unmute not permitted"
-	case software:
+	case !available:
+		return "mute unavailable"
+	case muted && refused:
+		return "press the mute button to unmute"
+	case muted:
 		return "muted"
 	default:
 		return "unmuted"

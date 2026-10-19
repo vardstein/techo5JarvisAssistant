@@ -34,7 +34,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Device, Get(), component.Order(36))
+	component.Register(component.Device, Get, component.Order(36))
 }
 
 // Weather is what the clock shows.
@@ -183,6 +183,15 @@ type Feature struct {
 	slideshowShuffleSw    *esphome.Switch
 	slideshowSubfoldersSw *esphome.Switch
 	slideshow             slideshowState
+
+	// keyTxt says how the Show's Home Assistant key stands (key.go).
+	keyTxt *esphome.TextSensor
+	// maKeyTxt says how its Music Assistant token stands (key.go).
+	maKeyTxt *esphome.TextSensor
+
+	// replyCutEv says a reply was cut off by a wake word, and replyCut holds where (reply_cut.go).
+	replyCutEv *esphome.Event
+	replyCut   replyCut
 }
 
 // forecastEvery is how often the forecast is refreshed while there is a weather entity.
@@ -194,6 +203,7 @@ func (f *Feature) Run(ctx context.Context) error {
 	go f.musicRouteLoop(ctx)
 	go f.assistLanguageLoop(ctx)
 	go f.nameLoop(ctx)
+	go f.retryOnMove(ctx)
 	if hasScreen {
 		go f.slideshowLoop(ctx)
 	}
@@ -250,6 +260,8 @@ func Get() *Feature {
 		shared.buildCameraSoundSwitch()
 		shared.buildSlideshowSelect()
 		shared.buildRadioSensors()
+		shared.buildKeySensor()
+		shared.buildReplyCut()
 		hastate.Get().Changed.Listen(shared.stateChanged)
 		media.Get().OnPlay.Listen(shared.played)
 		media.Get().OnEnd.Listen(shared.ended)
@@ -367,6 +379,8 @@ func (f *Feature) Restore(c config.Config) {
 	f.radarSel.Set(radarChoices[RadarSourceIndex()].label)
 	f.alertsSw.Set(!c.Home.AlertsOff)
 	f.showRadio(meta{}) // nothing plays at a start; the poller fills them in
+	f.keyTxt.Set(hass.Get().KeyState())
+	f.maKeyTxt.Set(mass.Get().KeyState())
 	f.cameraSoundSw.Set(c.Home.CameraSound)
 	if hasScreen {
 		f.slideshowSel.Set(slideshowLabelFor(c.Home.Slideshow.Mode))
@@ -442,6 +456,8 @@ func (f *Feature) locationAction() *esphome.Action {
 // radio page is wired. Both persist and take effect at the next connection.
 func (f *Feature) Actions() []*esphome.Action {
 	actions := append(f.cameraActions(), f.accessAction(), musicAssistantAction())
+	actions = append(actions, keyActions()...)
+	actions = append(actions, f.replyCutAction())
 	if hasScreen {
 		actions = append(actions, f.slideshowAction(), f.calendarAction(), f.locationAction())
 	}
@@ -574,18 +590,21 @@ func (f *Feature) rewire() {
 }
 
 // accessAction is the third action: the URL and a long-lived token for Home Assistant's REST
-// API, for the forecast and, later, pictures and cameras.
+// API, for the forecast and, later, pictures and cameras. It answers once the token is on disk, so the
+// installer deletes the old one only after that (GENBU-158); a failed write reaches it as a failure.
+// An empty URL keeps the saved one: Genbu hands a renewed key over that way (GENBU-196).
 func (f *Feature) accessAction() *esphome.Action {
 	return &esphome.Action{
-		Name: "home_assistant",
-		Args: []esphome.Arg{{Name: "url", Type: esphome.ArgString}, {Name: "token", Type: esphome.ArgString}},
+		Name:    "home_assistant",
+		Args:    []esphome.Arg{{Name: "url", Type: esphome.ArgString}, {Name: "token", Type: esphome.ArgString}},
+		Answers: true,
 		Run: func(c esphome.Call) (any, error) {
 			if err := hass.Get().Set(c.String("url"), c.String("token")); err != nil {
 				return nil, err
 			}
 			slog.Info("home: home assistant access stored")
 			f.wake()
-			return nil, nil
+			return map[string]any{"stored": true}, nil
 		},
 	}
 }

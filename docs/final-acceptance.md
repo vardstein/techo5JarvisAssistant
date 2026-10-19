@@ -19,13 +19,13 @@ not a claim that the product is accepted today.
   - [ ] a room with no preferred speaker uses its Jarvis Show as primary;
   - [ ] named/whole-home groups substitute unavailable room primaries with their Jarvis fallbacks;
   - [ ] Now Playing reports the real resolved endpoint/room/group, never an unavailable preferred speaker.
-- [ ] J46 microphone privacy/control acceptance is complete.
-  - [ ] HA software mute cuts captured audio immediately, before history/wake/stream consumers;
-  - [ ] HA may always mute, but clearing an active software mute requires the device-local opt-in;
-  - [ ] remote unmute is refused unless the native API is provisioned with a real encryption key;
-  - [ ] the local touchscreen can clear the reversible software mute without granting HA permission;
-  - [ ] a physical Crown/Checkers privacy latch always wins and cannot be released by HA or touchscreen;
-  - [ ] HA reports `muted`, `unmuted`, `physical mute active`, and `remote unmute not permitted` truthfully.
+- [ ] Microphone mute acceptance is complete (GENBU-166, which replaced J46's two states with one).
+  - [ ] there is one mute, the privacy latch, and the red mute LED shows it;
+  - [ ] HA and the touchscreen mute at once: captured audio stops on the next frame, before the latch settles;
+  - [ ] HA and the touchscreen never unmute: the switch stays on and HA's status says `press the mute button to unmute`;
+  - [ ] the mute button always unmutes, whatever muted it, and mutes again on the next press;
+  - [ ] a device saved with the old software mute comes back muted, glowing red, and one press unmutes it;
+  - [ ] HA reports `muted`, `unmuted`, `mute unavailable` and `press the mute button to unmute` truthfully.
 - [ ] The release manifest is signed by the Jarvis Show release key and tamper verification fails as expected.
 - [ ] Rootfs contains `genbu-show-v1`, version and both supported-board markers.
 - [ ] Published release contains only intended Show artifacts; no upstream/legacy publisher path was used.
@@ -66,7 +66,7 @@ For each board separately:
 - [ ] **J39 installed-firmware HA/Klar E2E:** while HA owns the turn, `Was ist ein Taco?` remains informational and an explicit Taco recipe/web-search request follows the intended web/search path rather than becoming a device action;
 - [ ] alarms/timers/reminders survive HA outage as designed;
 - [ ] DND/privacy/intercom/Drop In/SIP behavior passes;
-- [ ] physical mute, touchscreen software mute, HA mute, and trusted/untrusted HA unmute behavior pass;
+- [ ] mute button, touchscreen mute and HA mute behave as GENBU-166 says, and an HA unmute is refused;
 - [ ] Setup page and first-boot Wi-Fi provisioning pass;
 - [ ] music fallback/group/full-screen Now Playing passes;
 - [ ] device remains stable for the A/B health-commit window;

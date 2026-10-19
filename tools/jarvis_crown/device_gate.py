@@ -207,3 +207,27 @@ def identify_crown(*, run: Callable = subprocess.run) -> DeviceIdentity:
 def identify_checkers(*, run: Callable = subprocess.run) -> DeviceIdentity:
     """Require an Echo Show 5 1st gen / checkers target."""
     return identify_show(expected_board="checkers", run=run)
+
+
+def in_plain_words(err: DeviceGateError) -> str:
+    """Why the Show could not be checked, and what to do, for somebody who has not read the above. The
+    gate's own message stays in the log line next to it (GENBU-216)."""
+    said = str(err)
+    if said == "no fastboot device detected":
+        return ("No Show was found in fastboot. Plug it in over USB and start it in fastboot, or leave it "
+                "running: install restarts a Show on Android, TWRP or Jarvis into fastboot itself. To check "
+                "only this computer, give --board crown, checkers or cronos.")
+    if said.startswith("exactly one fastboot device"):
+        return "More than one device is in fastboot. Unplug everything but the Show and run this again."
+    if said.startswith("cannot execute fastboot"):
+        return "fastboot isn't on this computer: install Android platform-tools, then run this again."
+    if said.startswith("fastboot query timed out"):
+        return ("The Show stopped answering in fastboot. Unplug it, start it in fastboot again and run this "
+                "again.")
+    if said.startswith("connected product"):
+        return ("The Show plugged in is another model than --board says. Give the right --board, or leave "
+                "it out and the installer goes by the Show.")
+    if "not a supported Jarvis Show target" in said or "intentionally unsupported" in said:
+        return ("This device isn't one the installer supports, so nothing will be written to it. Only "
+                f"{SUPPORTED_SUMMARY} are.")
+    return said

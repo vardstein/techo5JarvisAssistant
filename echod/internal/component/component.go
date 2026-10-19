@@ -9,7 +9,7 @@
 // neither:
 //
 //	func init() {
-//	    component.Register(component.Hardware, Get(), component.Order(10))
+//	    component.Register(component.Hardware, Get, component.Order(10))
 //	}
 package component
 

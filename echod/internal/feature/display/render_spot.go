@@ -432,11 +432,11 @@ func (r *roundRenderer) conversation(s roundScene) {
 		y += 50
 	}
 	if s.heard != "" {
-		y = r.paragraph(r.body, s.heard, y, colDim, 3)
+		y = r.paragraph(r.body, i18n.Verbatim(s.heard), y, colDim, 3)
 		y += 12
 	}
 	if s.reply != "" && (s.phase == "replying" || s.phase == "lingering") {
-		r.paragraph(r.body, s.reply, y, colText, 5)
+		r.paragraph(r.body, i18n.Verbatim(s.reply), y, colText, 5)
 	}
 }
 
@@ -616,7 +616,7 @@ func (r *roundRenderer) paragraph(face font.Face, s string, baseline int, c colo
 	words := strings.Fields(i18n.T(s))
 	for n := 0; n < maxLines && len(words) > 0; n++ {
 		avail := chord(baseline-10) - 56
-		line := words[0]
+		line := i18n.Verbatim(words[0])
 		k := 1
 		for ; k < len(words); k++ {
 			try := line + " " + words[k]

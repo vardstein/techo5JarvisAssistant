@@ -87,7 +87,7 @@ Filesystem            Size  Used Avail Use% Mounted on
 15269888
 
 ===== kernel cmdline
-console=tty0 console=ttyS0,921600n1 earlycon=uart8250,mmio32,0x11002000 root=/dev/ram vmalloc=496M androidboot.hardware=mt8163 firmware_class.path=/vendor/firmware androidboot.brom_cmd_dis=1 androidboot.product=cronos androidboot.unlocked_kernel=true androidboot.verifiedbootstate=yellow androidboot.rpmb_state=1 androidboot.secure_cpu=1 androidboot.prod=1 androidboot.pl_version=0x0000 androidboot.tee_version=0x0000 androidboot.lk_version=0x0000 androidboot.pl_build_desc=29ba1b5-20210311_160043 androidboot.lk_build_desc=44072a3-20240709_162755 bootopt=64S3,32N2,64N2 console=ttyMT0,921600n1 firmware_class.path=/vendor/firmware androidboot.selinux=permissive buildvariant=userdebug lcm=1-st7701s_wsvga_dsi_vdo_cronos_st_truly fps=5964 vram=7340032 androidboot.veritymode=disabled bl_level=90 printk.disable_uart=1 bootprof.pl_t=2131 bootprof.lk_t=3969 boot_reason=4 androidboot.serialno=G000000000000000 androidboot.bootreason=wdt_by_pass_pwk nt35521_id=3
+console=tty0 console=ttyS0,921600n1 earlycon=uart8250,mmio32,0x11002000 root=/dev/ram vmalloc=496M androidboot.hardware=mt8163 firmware_class.path=/vendor/firmware androidboot.brom_cmd_dis=1 androidboot.product=cronos androidboot.unlocked_kernel=true androidboot.verifiedbootstate=yellow androidboot.rpmb_state=1 androidboot.secure_cpu=1 androidboot.prod=1 androidboot.pl_version=0x0000 androidboot.tee_version=0x0000 androidboot.lk_version=0x0000 androidboot.pl_build_desc=29ba1b5-20210311_160043 androidboot.lk_build_desc=44072a3-20240709_162755 bootopt=64S3,32N2,64N2 console=ttyMT0,921600n1 firmware_class.path=/vendor/firmware androidboot.selinux=permissive buildvariant=userdebug lcm=1-st7701s_wsvga_dsi_vdo_cronos_st_truly fps=5964 vram=7340032 androidboot.veritymode=disabled bl_level=90 printk.disable_uart=1 bootprof.pl_t=2131 bootprof.lk_t=3969 boot_reason=4 androidboot.serialno=<redacted> androidboot.bootreason=wdt_by_pass_pwk nt35521_id=3
 
 ===== modules
 Module                  Size  Used by
@@ -837,7 +837,7 @@ U:480x960p-0
 add device 7: /dev/input/event1
 
 ===== network
-0a:1b:2c:3d:4e:5f
+<redacted-mac>
 ap0
 ifb0
 ifb1
@@ -856,7 +856,7 @@ wlan0
 [init.svc.vendor.bluetooth-1-0]: [running]
 [init.svc_debug_pid.vendor.bluetooth-1-0]: [251]
 [net.bt.name]: [Android]
-[persist.adb.wifi.guid]: [adb-G000000000000000-xxxxxx]
+[persist.adb.wifi.guid]: [<redacted>]
 [persist.bluetooth.btsnoopdefaultmode]: []
 [persist.bluetooth.enablenewavrcp]: [false]
 [ro.boottime.vendor.bluetooth-1-0]: [3808338845]
@@ -919,9 +919,9 @@ board_id=0000000000000000
 product_name=0
 productid=0
 productid2=0
-serial=G000000000000000
-mac_addr=0A1B2C3D4E5F
-bt_mac_addr=0A1B2C3D4E60
+serial=<redacted>
+mac_addr=<redacted>
+bt_mac_addr=<redacted>
 
 ===== thermal
 /sys/class/thermal/thermal_zone0: skin_virtual 

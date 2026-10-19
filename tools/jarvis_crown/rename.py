@@ -15,7 +15,7 @@ import unicodedata
 from typing import Any, Callable
 
 from .home_assistant import (HomeAssistant, HomeAssistantError, NotFound, _areas, _services, service_prefix,
-                             show_username)
+                             show_usernames)
 
 Keep = Callable[[str, Any], str]
 
@@ -204,27 +204,28 @@ def _entry_title(ha: HomeAssistant, entry_id: str, new: str, progress: Callable[
 
 
 def _show_user(ha: HomeAssistant, old: str, new: str, progress: Callable[[str], None]) -> None:
-    """The Show's own Home Assistant user, from show_<old> to show_<new>, when there is one."""
-    was, now = show_username(old), show_username(new)
-    if was == now:
-        return
+    """The Show's own Home Assistant user, from show_<old> to show_<new>, when there is one; the
+    second name it may have (show_usernames) follows the same way."""
     users = ha.ws({"type": "config/auth/list"}) or []
-    user = next((u for u in users if (u.get("username") or "").lower() == was), None)
-    if user is None:
-        return
-    if any((u.get("username") or "").lower() == now for u in users):
-        progress(f"WARN: Home Assistant has both {was!r} and {now!r}; the Show's user stays {was!r}")
-        return
-    try:
-        ha.ws({"type": "config/auth_provider/homeassistant/admin_change_username", "user_id": user["id"],
-               "username": now})
-    except HomeAssistantError as exc:
-        if "unauthorized" not in str(exc).lower():
-            raise
-        progress(f"WARN: the Show's user stays {was!r}: only Home Assistant's owner may rename users")
-        return
-    ha.ws({"type": "config/auth/update", "user_id": user["id"], "name": new})
-    progress(f"Home Assistant user {was!r} is now {now!r}")
+    for was, now in zip(show_usernames(old), show_usernames(new)):
+        if was == now:
+            return
+        user = next((u for u in users if (u.get("username") or "").lower() == was), None)
+        if user is None:
+            continue
+        if any((u.get("username") or "").lower() == now for u in users):
+            progress(f"WARN: Home Assistant has both {was!r} and {now!r}; the Show's user stays {was!r}")
+            continue
+        try:
+            ha.ws({"type": "config/auth_provider/homeassistant/admin_change_username", "user_id": user["id"],
+                   "username": now})
+        except HomeAssistantError as exc:
+            if "unauthorized" not in str(exc).lower():
+                raise
+            progress(f"WARN: the Show's user stays {was!r}: only Home Assistant's owner may rename users")
+            return
+        ha.ws({"type": "config/auth/update", "user_id": user["id"], "name": new})
+        progress(f"Home Assistant user {was!r} is now {now!r}")
 
 
 def follow(ha: HomeAssistant, entry_id: str, old: str, new: str, *, keep: Keep | None,

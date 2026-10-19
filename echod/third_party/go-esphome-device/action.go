@@ -116,8 +116,11 @@ func wireType(t ArgType) api.ServiceArgType {
 	}
 }
 
-// call runs the action and builds the reply. A caller that did not ask for one gets nothing back, which
-// is what makes an action that only does something as cheap as it looks.
+// call runs the action and builds the reply. A call with an id waits for one: Home Assistant numbers
+// every call to an action that answers, return_response or not, and gives up after 30 seconds if no
+// success or failure comes back. Only a caller that asked for return_response gets the answer itself.
+// A call without an id expects nothing, which is what makes an action that only does something as
+// cheap as it looks.
 func (a *Action) call(m *api.ExecuteServiceRequest) proto.Message {
 	named := make(map[string]*api.ExecuteServiceArgument, len(m.GetArgs()))
 	for i, arg := range m.GetArgs() {
@@ -127,7 +130,7 @@ func (a *Action) call(m *api.ExecuteServiceRequest) proto.Message {
 	}
 
 	answer, err := a.Run(Call{args: named})
-	if !m.GetReturnResponse() {
+	if m.GetCallId() == 0 && !m.GetReturnResponse() {
 		return nil
 	}
 
@@ -136,7 +139,7 @@ func (a *Action) call(m *api.ExecuteServiceRequest) proto.Message {
 		reply.ErrorMessage = err.Error()
 		return reply
 	}
-	if answer == nil {
+	if answer == nil || !m.GetReturnResponse() {
 		return reply
 	}
 

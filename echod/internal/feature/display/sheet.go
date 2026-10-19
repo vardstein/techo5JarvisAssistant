@@ -110,9 +110,9 @@ func categoryRows(sv sheetView) (rows []settingRow, note string) {
 			settingRow{id: "answertime", label: "Answer time", sub: "How long an answer stays up; a tap clears it", kind: ctlChoice, value: answerTimes[answerTimeIndex()].label},
 		), ""
 	case catSound:
-		mic := "Listening"
+		mic, micSub := "Listening", "The mute button does this too"
 		if st.muted {
-			mic = "Muted"
+			mic, micSub = "Muted", "Press the mute button to turn it back on"
 		}
 		sendspinSub := "Play music in sync with other rooms"
 		if !sendspin.Get().Paired() {
@@ -120,7 +120,7 @@ func categoryRows(sv sheetView) (rows []settingRow, note string) {
 		}
 		return []settingRow{
 			{id: "volume", label: "Volume", kind: ctlStepper, value: i18n.Sprintf("%d of %d", st.volume, sheetVolumeSteps)},
-			{id: "mic", label: "Microphone", sub: "The mute button does this too", kind: ctlToggle, on: !st.muted, value: mic},
+			{id: "mic", label: "Microphone", sub: micSub, kind: ctlToggle, on: !st.muted, value: mic},
 			{id: "dnd", label: "Do not disturb", sub: "Silence announcements and doorbells; turn away incoming calls", kind: ctlToggle, on: config.Get().Home.DoNotDisturb},
 			{id: "wakeword", label: "Wake word", kind: ctlChoice, value: st.wakeWord},
 			{id: "wakesens", label: "Wake word sensitivity", sub: "Higher wakes by mistake less often", kind: ctlStepper,
@@ -234,6 +234,8 @@ func generalRows(sv sheetView) []settingRow {
 	// says the first press did nothing.
 	if line, _, ok := installNote(); ok {
 		updates.sub, updates.button = line, ""
+	} else if line := failNote(st.now); line != "" {
+		updates.sub = line // the button stays: trying again is the obvious next thing
 	}
 	restart := settingRow{id: "restart", label: "Restart", sub: "Back in about a minute", kind: ctlDanger, button: "Restart"}
 	if !st.restartArm.IsZero() && st.now.Sub(st.restartArm) < restartWindow {
@@ -613,12 +615,11 @@ func (d *Display) choose(id string, i int) {
 	case "menusize":
 		d.chooseMenuSize(i)
 	case "clock":
-		on := i == 1
-		if err := config.Set().Screen().Clock24(on); err != nil {
+		if err := config.Set().Screen().Clock24(i == 1); err != nil {
 			slog.Warn("saving the clock format failed", "err", err)
 			return
 		}
-		setClock24(d.clock, on)
+		setClock24(d.clock)
 	case "camtime":
 		setCameraTime(d.camTime, i)
 	case "answertime":
@@ -820,7 +821,9 @@ func (d *Display) rowTap(id string, p part, opt int) {
 			media.Get().Adjust(+1)
 		}
 	case "mic":
-		mute.Get().LocalToggle()
+		// Mutes, or says why it cannot unmute: only the button does that (GENBU-166). Off the touch loop,
+		// since a mute waits for the microphones to go quiet.
+		go mute.Get().ScreenToggle()
 	case "wakesens":
 		v := config.Get().Wake.Slot(0).Threshold
 		switch p {

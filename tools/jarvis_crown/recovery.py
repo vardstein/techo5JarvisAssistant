@@ -31,6 +31,9 @@ SMALL_PARTITIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 14, 15)
 BOOT_AREAS = ("boot0", "boot1")
 TWRP_WAIT_INTERVAL_SECONDS = POLL_SECONDS
 TWRP_WAIT_ATTEMPTS = int(TWRP_REENUM_TIMEOUT_SECONDS / TWRP_WAIT_INTERVAL_SECONDS)
+# A TWRP that has only just come up can hand back an empty read (adb exec-out passes no exit status on),
+# seen on a cronos right after the TWRP handoff. Reading again is harmless; a short read never counts.
+READ_ATTEMPTS = 5
 
 
 class RecoveryError(RuntimeError):
@@ -143,14 +146,39 @@ def verify_twrp_board(serial: str, board: str, *, run: Callable = subprocess.run
     if layout == "AMONET1":
         raise RecoveryError(
             "legacy Amonet 1.x boot microloader detected; its boot layout is incompatible "
-            "with Jarvis Show. Upgrade it first with: jarvis-show.py amonet-upgrade --board <board> "
-            "(tools/fetch-show-assets.py picks up and checks the Amonet zip)"
+            "with Jarvis Show. " + amonet1_upgrade_hint(board)
         )
     if layout != "PLAIN":
         raise RecoveryError(
             f"cannot prove a modern/plain boot layout (probe returned {layout!r}); "
             "refusing any later Jarvis boot write"
         )
+
+
+def amonet1_upgrade_hint(board: str) -> str:
+    """Where a unit still on Amonet 1.x goes next. amonet-upgrade only knows the boards whose
+    partitions were mapped on a real unit (GENBU-206); pointing anything else at it is a dead end."""
+    # Imported here: amonet_upgrade imports this module.
+    from jarvis_crown.amonet_upgrade import TARGETS
+
+    if board in TARGETS:
+        return (
+            f"Upgrade it first with: jarvis-show.py amonet-upgrade --board {board} "
+            "(tools/fetch-show-assets.py picks up and checks the Amonet zip)"
+        )
+    if board == "cronos":
+        thread = catalogue.default().resolve(board)["assets"]["amonet"]["url"]
+        return (
+            "amonet-upgrade has no map for cronos. The XDA thread updates an unlocked cronos by "
+            "flashing the new amonet-cronos zip in TWRP (tools/fetch-show-assets.py picks up and "
+            "checks it). Nobody here has done that from 1.x, and the zip rewrites the bootloader on a "
+            f"board with no BROM, so read the thread first: {thread} Then run this again; "
+            "this check runs before anything is written."
+        )
+    return (
+        f"amonet-upgrade has no map for {board}. Update Amonet the way the board's XDA thread says, "
+        "then run this again."
+    )
 
 
 def verify_twrp_crown(serial: str, *, run: Callable = subprocess.run) -> None:
@@ -323,11 +351,16 @@ def _backup_one(
     sys_name: str,
     filename: str,
     destination: Path,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> tuple[str, int]:
     expected_size = _block_size(client, sys_name)
     out = destination / filename
-    client.dump_block(block, out)
-    actual_size = out.stat().st_size
+    for attempt in range(READ_ATTEMPTS):
+        client.dump_block(block, out)
+        actual_size = out.stat().st_size
+        if actual_size >= expected_size or attempt + 1 == READ_ATTEMPTS:
+            break
+        sleep(POLL_SECONDS)
     if actual_size != expected_size:
         raise RecoveryError(
             f"backup size mismatch for {block}: got {actual_size}, expected {expected_size}"

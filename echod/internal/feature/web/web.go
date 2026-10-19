@@ -30,7 +30,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Network, Get(), component.Order(70))
+	component.Register(component.Network, Get, component.Order(70))
 }
 
 // Port is where all of it is served: http://<device>:8181/.

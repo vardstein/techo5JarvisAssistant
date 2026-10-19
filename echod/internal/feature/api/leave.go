@@ -40,6 +40,11 @@ func (a *API) Actions() []*esphome.Action {
 			if strings.ToLower(strings.TrimSpace(c.String("confirm"))) != leaveWord {
 				return nil, errors.New(`nothing was changed: set confirm to "leave" to disconnect this device from Home Assistant for good`)
 			}
+			// Marked first: stopped before the key changes, the device is still in its Home Assistant,
+			// and the first time that connects the mark goes again.
+			if err := markSetup(); err != nil {
+				return nil, err
+			}
 			if err := leave(layout.KeyPath, hass.Path); err != nil {
 				return nil, err
 			}
@@ -50,7 +55,7 @@ func (a *API) Actions() []*esphome.Action {
 			})
 			return nil, nil
 		},
-	}}
+	}, resetAction()}
 }
 
 // leave forgets the access first and changes the key second: stopped between the two, the device

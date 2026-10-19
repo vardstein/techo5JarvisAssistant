@@ -8,6 +8,7 @@ import (
 	"golang.org/x/image/font"
 
 	"github.com/HuskerMinion/techo5/echod/internal/feature/home"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 )
 
 // glanceStrip draws the chips centered along the foot of the clock page, above the footer's line: a
@@ -28,7 +29,7 @@ func (r *renderer) glanceStrip(chips []home.Chip, callButton bool) {
 	widthsIn := func(f font.Face) []int {
 		ws := make([]int, len(chips))
 		for i, c := range chips {
-			ws[i] = pad + r.s(icon) + iconGap + r.width(f, c.Text) + pad
+			ws[i] = pad + r.s(icon) + iconGap + r.width(f, chipText(c)) + pad
 		}
 		return ws
 	}
@@ -48,7 +49,7 @@ func (r *renderer) glanceStrip(chips []home.Chip, callButton bool) {
 		box := image.Rect(x, bottom-h, x+w, bottom)
 		r.roundFill(box, float64(h)/2, ember, ember)
 		r.mdiIcon(c.Icon, x+pad, bottom-h+(h-r.s(icon))/2, icon, amber)
-		r.text(face, c.Text, x+pad+r.s(icon)+iconGap, bottom-h/2+lift, cream)
+		r.text(face, chipText(c), x+pad+r.s(icon)+iconGap, bottom-h/2+lift, cream)
 		x += w + gap
 	}
 }
@@ -68,4 +69,12 @@ func fitChips(widths []int, gap, room int) (keep []int, total int) {
 		keep, total = append(keep, i), next
 	}
 	return keep, total
+}
+
+// chipText is what a chip says, its name drawn as it is.
+func chipText(c home.Chip) string {
+	if c.Named() {
+		return i18n.Verbatim(c.Text)
+	}
+	return c.Text
 }

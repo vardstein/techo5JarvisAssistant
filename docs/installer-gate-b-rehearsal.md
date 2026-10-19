@@ -24,7 +24,7 @@ were restored only into ignored `build/` paths. They did not modify Git-tracked 
 | Gate B requirement | Evidence in focused tests |
 |---|---|
 | Auto-detection selects the correct first-generation profile | `test_generic_identity_accepts_both_and_cross_target_fails`, `test_checkers_uses_same_flow_with_board_pins`, `test_install_show_provisions_board_specific_profile` |
-| `CRONOS` and unknown/newer products fail before writes | `test_cronos_second_gen_is_explicitly_refused`, `test_unknown_product_warns_newer_generation_and_fails_closed`, `test_wrong_product_never_invokes_amonet` |
+| `CRONOS` is identified as its own board (since GENBU-185; refused when this gate ran), unknown/newer products fail before writes | `test_cronos_second_gen_is_identified`, `test_unknown_product_warns_newer_generation_and_fails_closed`, `test_wrong_product_never_invokes_amonet` |
 | Device serial remains pinned through destructive handoffs | `test_auto_detected_serial_cannot_be_swapped_before_flow_identity`, `test_serial_change_after_exploit_fails_closed`, `test_backup_must_match_current_recovery_serial` |
 | Already-unlocked devices skip Amonet | `test_already_unlocked_skips_amonet_without_confirmation`, `test_unlocked_crown_one_command_order` |
 | Locked devices require board-specific Amonet proof/confirmation | `test_locked_crown_requires_exact_confirmation`, `test_success_runs_known_script_and_reverifies_unlock`, `test_checkers_unlock_is_pin_gated_and_uses_checkers_confirmation` |

@@ -124,6 +124,9 @@ type leveler struct {
 	bandPublished atomic.Uint32
 	level         atomic.Uint32
 	clipped       atomic.Uint64
+
+	// heard keeps the last second's band level and raw peaks, for Voice.
+	heard heard
 }
 
 // forget throws away what has been learned, so switching leveling off and on again is a way out of
@@ -215,6 +218,7 @@ func (l *leveler) observe(frame []int16) (rms, peak float32) {
 	l.bandPublished.Store(math.Float32bits(l.bandFloor))
 
 	l.publishLevel(l.bandRMS)
+	l.heard.push(l.bandRMS, peak)
 	return rms, peak
 }
 
@@ -365,7 +369,16 @@ func (s *Source) Floor() float64 {
 // reads zero almost always and catches a syllable now and then. The peak over the interval is the useful
 // shape of the same thing: whether anything happened in this room while nobody was looking.
 func (s *Source) Peak() float64 {
-	return float64(math.Float32frombits(s.leveler.peak.Swap(0)))
+	return quiet(float64(math.Float32frombits(s.leveler.peak.Swap(0))))
+}
+
+// quiet is a level with what is left of a decay toward silence taken as silence: the smoothing only
+// ever halves its way down, and Home Assistant showed a quiet room as 5.6e-45.
+func quiet(v float64) float64 {
+	if v < 1e-6 {
+		return 0
+	}
+	return v
 }
 
 // Gain is what the leveler is currently applying, in dB.

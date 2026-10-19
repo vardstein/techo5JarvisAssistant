@@ -20,6 +20,8 @@ var (
 	ErrFavoriteElsewhere = errors.New("the favorite is kept where this device cannot change it")
 	// ErrOwnStationsFull is a station starred with the device's own list already full.
 	ErrOwnStationsFull = errors.New("the device's own stations are full")
+	// ErrNotInLibrary is a song on a station Music Assistant could not find to save (GENBU-152).
+	ErrNotInLibrary = errors.New("the song on the station is not in the music library")
 )
 
 // radioFavoriteScript is the script some houses have for Home Assistant's own Radio Favorites list.
@@ -61,6 +63,11 @@ func (f *Feature) FavoriteNow() error {
 		}
 		slog.Info("favorite: Music Assistant track", "button", button)
 		if err := hass.Get().Call("button", "press", map[string]any{"entity_id": button}); err != nil {
+			// On a station Music Assistant saves the song only by finding "artist - title" with its
+			// music providers, and raises when none has it, which Home Assistant answers with a 500.
+			if playback.Station != "" && hass.ServerFailed(err) {
+				return ErrNotInLibrary
+			}
 			return err
 		}
 		requeue()

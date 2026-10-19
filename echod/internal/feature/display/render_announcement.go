@@ -29,7 +29,7 @@ const (
 // right amount of room. An automation sending a paragraph gets the start of it and a mark saying
 // there was more, which beats both a wall of text and a sentence that simply stops.
 func clipText(r *renderer, f font.Face, s string, width int) string {
-	s = i18n.T(s)
+	s = i18n.Verbatim(i18n.T(s))
 	if r.width(f, s) <= width {
 		return s
 	}

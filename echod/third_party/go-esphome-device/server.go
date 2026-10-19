@@ -22,8 +22,9 @@ type Server struct {
 	// PSK selects the transport, and the three options serve different purposes:
 	//
 	//   a real key       authenticated Noise — production
-	//   Unprovisioned()  Noise with the reserved zero key, so Home Assistant can push a
-	//                    real one; needs aioesphomeapi 45.6.0 or newer
+	//   Unprovisioned()  waiting for a key: plaintext so Home Assistant can add the device,
+	//                    and Noise with the reserved zero key so it can push a real one.
+	//                    Either way the connection answers only what that takes.
 	//   nil              plaintext — readable on the wire, so useful for debugging,
 	//                    but ESPHome is removing it in 2027.2.0
 	PSK *PSK
@@ -102,7 +103,7 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	case s.PSK == nil:
 		log.Warn("plaintext api: no encryption, no authentication")
 	case s.PSK.IsZero():
-		log.Warn("unprovisioned: zero-psk accepts any client")
+		log.Warn("unprovisioned: any client can read the device and give it a key")
 	}
 	log.Info("listening", "addr", ln.Addr().String(), "name", s.Info.Name)
 
@@ -160,10 +161,13 @@ func (s *Server) serveConn(ctx context.Context, nc net.Conn) {
 	}
 
 	var transport wire.Transport
-	if s.PSK != nil {
-		transport = wire.NewNoise(nc, s.PSK[:], s.Info.Name)
-	} else {
+	switch {
+	case s.PSK == nil:
 		transport = wire.NewPlaintext(nc)
+	case s.PSK.IsZero():
+		transport = wire.NewProvisioning(nc, s.Info.Name)
+	default:
+		transport = wire.NewNoise(nc, s.PSK[:], s.Info.Name)
 	}
 
 	c := newConn(transport, s.Info, s.Handler, log, hooks{
@@ -187,12 +191,6 @@ func (s *Server) serveConn(ctx context.Context, nc net.Conn) {
 }
 
 func (s *Server) logPlaintextMismatch(log *slog.Logger) {
-	if s.PSK != nil && s.PSK.IsZero() {
-		log.Error("client connected in plaintext but this device is unprovisioned (zero-psk Noise). " +
-			"Home Assistant needs aioesphomeapi 45.6.0+ for zero-psk provisioning; " +
-			"otherwise set a real key, or run plaintext explicitly")
-		return
-	}
 	log.Error("client connected in plaintext but this device requires Noise; check the key in Home Assistant")
 }
 

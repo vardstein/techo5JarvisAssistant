@@ -57,11 +57,19 @@ compares every file in it with the public source (R0rt1z2/amonet) and sorts them
 - binaries the installer already pins elsewhere (unlock payloads, the board's TWRP);
 - binaries only the zip carries (preloader, LK, TZ, kaeru, and so on).
 
+For a cronos zip, a file that matches only the `mt8163-cronos` branch is a red flag: that branch is
+the 1.x exploit, and 2.0.1 is built from `mt8163-echo-show` (`fastbrick/cronos/`). Don't pin a zip
+with one until it's explained.
+
 Then it stops. The hash goes into `tools/jarvis_crown/assets.py` only after someone has read that
-list. The crown and checkers 2.0.1 zips went through this on 2026-10-09 and are pinned.
-The cronos (Echo Show 5 2nd gen) zip has not been through it yet. Until it has, there is no pin for
-it or for its TWRP, so `unlock` refuses a cronos unless you pass reviewed hashes with `--amonet-hashes`,
-and recovery refuses to boot any TWRP on it. Its boot image is pinned: upstream TECHO5 stopped making
+list. The crown and checkers 2.0.1 zips went through this on 2026-10-09 and are pinned, and the
+cronos (Echo Show 5 2nd gen) zip on 2026-10-14, together with its TWRP. The unlock payload hashes are
+only built in for crown, the board they were proven on. A checkers or cronos `unlock` refuses until
+you pass the hashes of the unpacked files with `--amonet-hashes`, and that first run is the proof.
+The JSON names exactly the six files fastbrick runs: `fastbrick.sh`, `profile.sh`, `device.prop`,
+`bin/fastbrick.img`, `bin/fastboot` and `bin/fastboot32`. A file left out or one more is refused, and so is
+the switch on crown, whose hashes are built in (GENBU-172).
+The cronos boot image is pinned: upstream TECHO5 stopped making
 cronos boot images after v0.7.16, and that is the one used. A cronos install also needs a Genbu release
 whose root filesystem lists cronos; releases up to v1.2.2 don't. The OpenJade boot logo isn't there for
 cronos yet, so it keeps the stock one.
@@ -102,6 +110,12 @@ in TWRP, it goes through these steps:
 
 If anything fails after the backup, the error names the backup folder. After a PASS, the normal
 `install` flow runs as usual.
+
+`amonet-upgrade` only knows checkers, the board whose partitions were mapped on a real unit. A crown or
+cronos still on 1.x is told so instead of being sent there. For cronos, the XDA thread's way to update
+an unlocked unit is flashing the new amonet-cronos zip in TWRP. Nobody here has done that from 1.x, and
+the zip rewrites the bootloader on a board with no BROM, so read the thread before trying it. A
+`TARGETS` entry for cronos waits for a map taken from a real unit, not from guesses (GENBU-206).
 
 The Amonet package stays a local/user-supplied dependency rather than a Jarvis Crown release asset.
 Later installer stages must not weaken or bypass this gate.
@@ -149,12 +163,16 @@ Before execution, Jarvis Crown SHA-256 verifies the exact known-good archived by
 - `bin/fastboot` and `bin/fastboot32`.
 
 A hash mismatch is fatal. The wrapper runs only the pinned `fastbrick.sh`; it does not duplicate or
-rewrite the exploit. When Amonet exits, Jarvis Crown treats the state as unproven until the read-only
-J18 gate sees the same fastboot serial, `product=CROWN`, and `unlock_status=true`. A timeout, Amonet
-error, serial change, or persistent locked state stops the workflow and requires re-identification
-before any retry.
+rewrite the exploit. Its output is shown as it runs. Only an exit after "Exploit most likely
+successful!" counts; worn-out eMMC and device mismatch are reported as such. The Show then writes for
+up to five minutes and boots TWRP, and Jarvis Crown waits for that by polling `adb devices` only. The
+state stays unproven until one TWRP device passes the board check with the same serial; failing that,
+one last read-only J18 check must see the same serial, `product=CROWN` and `unlock_status=true`. A
+timeout, Amonet error, serial change, or persistent locked state stops the workflow, tells the user to
+keep the Show powered, and requires re-identification before any retry.
 
-J19 does not flash TWRP, write TECHO5 partitions, or start the rootfs installer. Those operations are
+J19 itself does not flash TWRP (the Amonet payload installs the TWRP from its bundle), write TECHO5
+partitions, or start the rootfs installer. Those operations are
 separate later gates.
 
 ## J20 — TWRP handoff and recovery backup gate
@@ -387,7 +405,7 @@ these that has it:
 1. its switch (`--ha-token-file`, `--ha-admin-token-file`, `--dashcast-key-file`,
    `--wifi-passphrase-file`, `--music-assistant-token-file`);
 2. the desktop keyring, through `secret-tool` (or `$JARVIS_SHOW_SECRET_TOOL`; on OpenJade desktops
-   it is `~/.local/share/jplane/libsecret/bin/secret-tool`, which the installer finds by itself);
+   the installer also finds jplane's own copy by itself);
 3. a hidden question.
 
 To keep them in the keyring:
@@ -408,9 +426,9 @@ the user of its own.
 
 The Music Assistant admin, signed in or by token, is optional and asked for whenever there is a Music
 Assistant server. It is used for this run only: to make the Show a plain Music Assistant user of its
-own for the lyrics on the now-playing page ([Lyrics](lyrics.md)), and with
-`--music-assistant-local-metadata` (below) to switch the online lookups off. The Show keeps only the
-token of its own user.
+own for the lyrics on the now-playing page ([Lyrics](lyrics.md)), with
+`--music-assistant-local-metadata` (below) to switch the online lookups off, and to add TuneIn for the
+radio when you give your TuneIn username (below). The Show keeps only the token of its own user.
 
 The addresses have switches too (`--ha-url`, `--dashcast`, `--music-assistant`), and
 `--no-questions` (or `TECHO5_NO_PROMPT=1`, or no terminal) asks nothing at all. Such a run also
@@ -423,6 +441,16 @@ What happens with the answers:
   writes `/data/misc/techo5/hass.json` (address and token) and a small first `state.json` with only
   the DashCast server and key and the Music Assistant address (Sendspin on). The daemon fills in
   every other default itself. A `state.json` that is already there is kept as it is.
+- **What the Show can reach, right after first boot.** Before the Home Assistant step the tool logs
+  in to the Show with its own SSH key and tries, from the Show, everything it dials itself: Home
+  Assistant, DashCast, Music Assistant (8095), GitHub (443, for updates), whether its clock got set
+  over NTP, and whether this computer finds it by its `.local` name. For each one that is blocked it
+  says which rule the router is missing, with the Show's address and MAC, the destination, port and
+  protocol filled in, and what doesn't work without it. When Music Assistant's address is known it
+  also prints the line for the install guide's `genbu_rules` helper on OpenWrt. It never changes the
+  router. Add the rules, answer yes to "Check again?", and it tries once more; no goes on without
+  them. [iot-firewall-policy.md](iot-firewall-policy.md) lists every rule. With `--no-ssh` this is
+  skipped.
 - **In Home Assistant, right after.** With an admin signed in (or an admin token) and Wi-Fi, the
   tool waits up to five minutes for the Show to come up, then over Home Assistant's REST API:
   1. adds it as an ESPHome device with its encryption key, by its address or else by its `.local`
@@ -444,7 +472,15 @@ What happens with the answers:
      of them, other satellites too, to the new name right after. The pipeline as it was, and the
      list of devices on it, are saved first in `backups/home-assistant/`. Nothing is asked when it
      already has that name or another pipeline does. `--genbu-assistant` and
-     `--no-genbu-assistant` answer ahead of time;
+     `--no-genbu-assistant` answer ahead of time.
+     Then it asks whether Genbu Assistant should catch half sentences (Enter is no): a lone word
+     Whisper made of the TV gets "Das habe ich nicht verstanden." from Genbu, and everything else
+     goes to the pipeline's agent as before. With a yes it saves the pipeline in
+     `backups/home-assistant/`, picks the pipeline's agent as Genbu's **Voice agent** and makes
+     Genbu Assistant the pipeline's conversation agent. Nothing is asked when the pipeline already
+     uses it, uses Home Assistant's own agent, or Genbu is older than 1.4.11. See
+     [voice-setup.md](voice-setup.md#half-sentences-genbus-own-agent). `--half-sentences` and
+     `--no-half-sentences` answer ahead of time;
   4. asks which room (Home Assistant area) it stands in and puts its device there, over the
      websocket API since REST has no device registry. The room is how the Show finds the Music
      Assistant speaker whose music it shows, when it is the only one in that area. `--room` answers
@@ -514,17 +550,20 @@ What happens with the answers:
      its own actions, and turns its Sendspin switch on;
   8. with a Music Assistant admin, makes the Show's own Music Assistant user (`jarvis-show-5` for
      "Jarvis Show 5", not an admin, with a random password nobody keeps) and gives the Show a token
-     for it, replacing the one made last time. See [Lyrics](lyrics.md);
+     for it. A token the Show still holds and Music Assistant still takes is kept, unless it ends
+     within a month; otherwise a new one replaces it. See [Lyrics](lyrics.md);
   9. sets up the calendars ([Calendars](calendars.md)). When there's someone at the terminal, it
      first asks whether to add a calendar account to Home Assistant. An account never comes in next
-     to one Home Assistant has (its calendars would all turn up twice, as `calendar.<name>_2`). When
-     there's a CalDAV account already, the question is replace or skip. Replace adds the new account,
+     to one Home Assistant has (its calendars would all turn up twice, as `calendar.<name>_2`). The
+     account is the whole house's, so when Home Assistant has a CalDAV account already, nothing is
+     asked and it stays; a quick answer while installing the next Show can't swap it. Only
+     `--caldav-url` replaces it: that adds the new account,
      and only once Home Assistant has taken it does it remove the old one and give the new calendars
      the ids the old ones had, so dashboards and Shows that use `calendar.personal` keep working. A
      refused password, or the same account again, leaves the old one as it is. Calendars from a
      `calendar:` block in `configuration.yaml` can't be removed over the API, so then no account is
-     added at all; the tool says to remove the block, restart Home Assistant and run it again. Yes or
-     replace asks for the CalDAV server's address, the user name and the password (an app password
+     added at all; the tool says to remove the block, restart Home Assistant and run it again. Yes
+     asks for the CalDAV server's address, the user name and the password (an app password
      where the server has them).
      It fills these into Home Assistant's own CalDAV form, which tries them before saving. The
      password goes to Home Assistant only. The installer doesn't write it anywhere, and the Show
@@ -544,14 +583,20 @@ What happens with the answers:
      With the Genbu integration copied to Home Assistant but not set up yet, it sets it up; the form
      asks nothing. When Home Assistant doesn't have Genbu, it says how to copy it and asks to check
      again or skip; skipped, the Show looks for updates on its own channel. When the house already has
-     a version, the Show follows it, and the tool waits up to 15 minutes for it to get there. Updates
-     then come on one card in Home Assistant, **Genbu Show firmware**.
+     a version, the Show follows it, and the tool waits up to 15 minutes for it to get there. Press
+     Enter once the update is done, or to go on without waiting; the Show carries on by itself. The
+     wait also ends as soon as the Show says it follows the house. Updates then come on one card in
+     Home Assistant, **Genbu Show firmware**.
   11. asks about this Show's optional features in Genbu: **Recipes** ("Recipes on this Show?", only
      when a recipe search is set up in Genbu Assistant) and **Updates by voice** ("Ask this Show about
      updates by voice?"). Enter is yes for both. `--recipes`/`--no-recipes` and
      `--voice-updates`/`--no-voice-updates` answer ahead of time; with nobody at the terminal and no
-     switch, Genbu's own default stays. Both can be changed later on the Show's card. The run ends
-     with "Everything is on the Genbu Control Center page in Home Assistant's sidebar."
+     switch, Genbu's own default stays. Both can be changed later on the Show's card. Then it asks once
+     for the whole house, "Does your assistant use an LLM?", showing what Genbu has now (no until
+     somebody says yes). Yes lets Genbu add prompt lines only a language model can use
+     ([genbu-assistant.md](genbu-assistant.md), "The LLM extras"); Enter keeps it, and
+     `--llm-assistant`/`--no-llm-assistant` answer ahead of time. It can be changed later on the house
+     card. The run ends with "Everything is on the Genbu Control Center page in Home Assistant's sidebar."
 
   The Show's actions are named after its ESPHome node (`esphome.<node>_dashboard_server` and so on).
   The tool takes the node from Home Assistant, so a Show renamed since it was installed is still
@@ -589,6 +634,20 @@ What happens with the answers:
   failure here is a warning and does not stop the install; it runs again with
   `home-assistant --name NAME --music-assistant-local-metadata`. Both are ordinary Music Assistant
   settings, switched back on in its own settings pages.
+- **TuneIn in Music Assistant, when you give a username.** With a Music Assistant admin and no TuneIn
+  there yet, the installer asks for your TuneIn username (`--music-assistant-tunein USERNAME` answers
+  ahead of time, `''` skips it; Enter skips too). It adds Music Assistant's TuneIn provider with it,
+  through the same setup Music Assistant's own settings page runs (Settings, Music providers, add
+  TuneIn). Music Assistant then lists the stations that TuneIn account follows, and the Show's Radio
+  page has them in its Music Assistant list; TuneIn also stands in for local stations when Radio
+  Browser is down. It's the username, not the email address you sign in with. A Music Assistant that
+  has TuneIn already is not asked and keeps it as it is, so running this again adds no second one.
+  Music Assistant keeps the username in its settings and sends it to TuneIn (opml.radiotime.com)
+  each time it fetches the list. Music Assistant 2.10 makes those calls without checking TuneIn's
+  certificate, so someone between your house and TuneIn could read the username and change the
+  station list; leave TuneIn out if that matters to you. A failure here is a warning; it runs again with
+  `home-assistant --name NAME --music-assistant-tunein USERNAME`, and Music Assistant's settings
+  remove TuneIn again.
 
 Without Wi-Fi at install (it is picked on the Show's screen instead) or without an admin, the
 tool says how to finish later. The same steps run on their own for a Show that is already installed:
@@ -640,7 +699,7 @@ has the default given here.
 
 | Command | What it does | Needs |
 | --- | --- | --- |
-| `preflight` (the default) | Checks this computer and the input files. Touches no Show. With a Show on fastboot it also says which board it is. | nothing |
+| `preflight` (the default) | Checks this computer and the input files. Touches no Show. With a Show on fastboot it also says which board it is. When everything passes it asks whether to go on with the install; a yes carries on as `install` would. A failed check says what to do under it, and so does a Show that can't be found or isn't supported. With `--no-questions` it asks nothing and ends there. | nothing |
 | `identify` | Reads the Show on fastboot, read-only: board, serial, whether it is unlocked. | a Show on fastboot |
 | `unlock` | Runs Amonet on the Show on fastboot, after you type the confirmation. Does nothing on a unit that is already unlocked. Sends the Show to fastboot first, like `install`. | a Show on fastboot, adb or SSH |
 | `install` | The whole install: sends the Show to fastboot (from Android or TWRP with adb, from a running Jarvis over SSH), fetches what it needs, unlocks if needed, recovery backup, LineageOS's drivers, Jarvis, and then Home Assistant (below). Asks everything before it writes. | `--name` |
@@ -648,7 +707,8 @@ has the default given here.
 | `wifi` | Puts an installed Show on a Wi-Fi network over its USB cable, for when it is offline. | `--wifi` |
 | `home-assistant` | Adds an installed Show to Home Assistant and sets it up: the steps above. Safe to run again. | `--name` |
 | `boot-logo` | Puts the OpenJade logo in place of Amazon's at boot, over SSH ([boot logos](../tools/boot-logo/README.md)). | `--name` |
-| `--remove-show` | Not a command but a run of its own: takes a Show out of Home Assistant and Music Assistant, so it can be added again as a new device or given away ([Taking a Show out](#taking-a-show-out)). Lists first, asks you to type the Show's name, then waits for you to unplug the Show. | `--name`, an admin |
+| `shows` | Lists every Show it finds, on the network, on USB and in `backups/`, and says where each one stands. Offers to put away what Shows gone from the house left on this computer ([Finding Shows](#finding-shows)). Never adds a Show; that is Home Assistant's. | nothing; an admin to say which are in Home Assistant |
+| `--remove-show` | Not a command but a run of its own: takes a Show out of Home Assistant and Music Assistant, so it can be added again as a new device or given away ([Taking a Show out](#taking-a-show-out)). Lists first, asks whether to reset the Show over SSH first, then asks you to type the Show's name. | `--name`, an admin |
 
 ### The Show and its files
 
@@ -657,8 +717,8 @@ has the default given here.
 | `--name NAME` | install, home-assistant, boot-logo, --remove-show | The Show's name, as Home Assistant shows it. The installer records it in `backups/<serial>/show.json`, and the other commands find the unit by it. |
 | `--board crown\|checkers\|cronos` | all | Cross-checks the board. Normally it is detected; `amonet-upgrade` needs it, and `install` needs it to carry on from TWRP. |
 | `--serial SERIAL` | wifi, home-assistant | Which unit. `wifi` talks to that Show on USB (not needed when only one is attached); `home-assistant` takes its key from `backups/<serial>/`. |
-| `--host ADDRESS` | home-assistant, boot-logo, install, unlock | The Show's address, when `backups/<serial>/address`, mDNS and Home Assistant cannot find it (a Show on another VLAN, say). For `install` and `unlock`, where a Show running Jarvis is reached over SSH to send it to fastboot. |
-| `--ssh-identity FILE` | boot-logo, install, unlock | The private key that logs in to the Show over SSH. Default `~/.ssh/genbu_<name>` when it is there: each Show has a key of its own, which no other Show lets in. Without either, ssh picks a key the usual way. |
+| `--host ADDRESS` | home-assistant, boot-logo, install, unlock, --remove-show | The Show's address, when `backups/<serial>/address`, mDNS and Home Assistant cannot find it (a Show on another VLAN, say). For `install` and `unlock`, where a Show running Jarvis is reached over SSH to send it to fastboot. |
+| `--ssh-identity FILE` | boot-logo, install, unlock, --remove-show | The private key that logs in to the Show over SSH. Default `~/.ssh/genbu_<name>` when it is there: each Show has a key of its own, which no other Show lets in. Without either, ssh picks a key the usual way. |
 | `--key-file FILE` | home-assistant | The Show's ESPHome encryption key. Default `backups/<serial>/home-assistant.key`. |
 | `--lineage-zip ZIP` | install, amonet-upgrade, preflight | LineageOS 18.1 for this board. Default the cached one, which `install` downloads and checks when it isn't there yet. |
 | `--boot-image FILE` | install | The board's boot image. Default fetched and checked the same way. |
@@ -668,14 +728,16 @@ has the default given here.
 | `--rootfs-sha256 HASH` | install | Its SHA-256. |
 | `--amonet-dir DIR` | install, unlock, preflight | The unpacked Amonet 2.x package. Default `../third_party/<board>`, else the asset cache, which `install` fills (through the browser) when it is empty. |
 | `--amonet-zip ZIP` | amonet-upgrade | The Amonet 2.x zip. Default the cached one. |
-| `--amonet-hashes JSON` | install, unlock | SHA-256s for an Amonet package with no pin built in. |
+| `--amonet-hashes JSON` | install, unlock | SHA-256s of the six unlock files, for an Amonet package with no pin built in (checkers, cronos; refused on crown). |
 | `--twrp-sha256 HASH` | install | The same for TWRP. |
 | `--work-dir DIR` | install, preflight | Scratch space. Default `../work` next to the repo. |
 | `--backup-dir DIR` | all | Each unit's backups, key, name and address. Default `../backups`. Keep it: `boot-logo` needs the saved expdb from here. |
 | `--ssh-key FILE` | install | An SSH public key root accepts from the first boot, instead of the key the installer makes for this Show (`~/.ssh/genbu_<name>`). Refused when it is another Show's key. |
 | `--no-ssh` | install | No key at all: SSH stays off, the USB console is the way in. |
 | `--amazon-logo` | boot-logo | Puts Amazon's logo back instead. |
-| `--yes-remove` | --remove-show | Removes without typing the Show's name first. Without it, `--no-questions` only lists what would go. |
+| `--yes-remove` | --remove-show, shows | Removes without typing the Show's name first; for `shows`, puts leftovers away without asking. Without it, `--no-questions` only lists. |
+| `--reset-show yes\|no` | --remove-show | Reset the Show over SSH before it is removed (`no`: Home Assistant's side only, say for a Show that is dead or gone). Asked when left out. Also `true`/`false`, `1`/`0`. |
+| `--keep-wifi yes\|no` | --remove-show | With a reset: the Show keeps the Wi-Fi it knew and comes back in setup mode on the same network. Needs a Show image that can do this; an older one refuses before anything changes. Asked when left out. |
 
 ### Taking a Show out
 
@@ -683,22 +745,45 @@ has the default given here.
 python3 tools/jarvis-show.py --remove-show --name "Kitchen Show"
 ```
 
+With Genbu 1.4.16 or later, **Delete** on the Show's Genbu device in Home Assistant does the same
+without this computer, and resets the Show over its ESPHome link instead of SSH
+([Deleting a Show in Home Assistant](update-leader.md#deleting-a-show-in-home-assistant)). The run here
+is for a house without Genbu or a Show Home Assistant can't reach, and it also lists the SSH key on this
+computer and the router rules for the Show, which Home Assistant doesn't see.
+
 It needs a Home Assistant admin, and a Music Assistant admin for the Show's user and player there
-(without one it says so and leaves Music Assistant alone). First it lists what goes, what waits for the
-Show to be unplugged, and what stays. Once you have typed the Show's name it asks you to unplug the Show
-when Music Assistant still has it connected, and waits for that (up to 10 minutes; Ctrl-C stops without
-removing anything). Then it saves everything that goes in `backups/home-assistant/` and removes it, in
-this order:
+(without one it says so and leaves Music Assistant alone). First it lists what goes and what stays.
+Then it asks whether to reset the Show first, and if so, whether it keeps its Wi-Fi (`--reset-show` and
+`--keep-wifi` answer that ahead).
+
+**The reset.** It logs in to the Show with its own key (`~/.ssh/genbu_<name>`) under its pinned host key,
+and checks that the serial it reports is the one in `backups/<serial>/`, so a stale address can't reset
+another Show. Its address comes from `--host`, its IP address sensor in Home Assistant, the install
+record, or mDNS, in that order, and is never printed. Once you have typed the Show's name it leaves the
+reset mark and restarts the Show, which erases the same as [Factory reset](install.md#factory-reset) on
+its screen and comes back in setup mode. With `--keep-wifi yes` it keeps the networks it knew; a Show
+whose image predates that refuses before anything changes, and you update it or answer no. The run
+then waits up to a minute for the Show to go down; one that still runs says so, and erases the next time
+it starts (unplug it and plug it back in). A Show that can't be reached, or whose reset doesn't go
+through, is not waited for: the house side goes anyway, and the run ends with "removed only" and tells
+you to reset it on its screen. A reset is noted in `backups/<serial>/show.json`: a later run can't log
+in any more (the keys went with the reset) and says the earlier run reset it. The Show has a new SSH
+host key after a reset, so ssh to it stops at the old one until an install over USB pins the new one.
+
+When nothing of the Show is left in Home Assistant (say, it was taken out without a reset), the run
+says so and still offers the reset, as long as this computer has the Show's key and no earlier run
+reset it.
+
+Then it saves everything that goes in `backups/home-assistant/` and removes it, in this order:
 
 1. our turn-the-room-down automation for it (`techo5_turn_room_down_<name>`), and every automation and
    script with the Show's label (below); one made from the blueprint by hand stays, unless you gave it
    the Show's label;
 2. its own Home Assistant user (`show_<name>`), which ends its token. Admins and the owner are never
    removed;
-3. its Music Assistant user (for the lyrics) and its player. Music Assistant keeps a player that is
-   connected and makes it again at once, which is why the run waits for the Show to be unplugged. If it
-   is still on the network after 10 minutes, the rest goes and the player stays for the next run. Home
-   Assistant drops the player's device when Music Assistant removes it;
+3. its Music Assistant user (for the lyrics) and its player, connected or not. A reset Show has forgotten
+   Music Assistant and stays away; one that was not reset and is still on the network makes its player
+   again, and the run says so. Home Assistant drops the player's device when Music Assistant removes it;
 4. its ESPHome entry, which takes its devices, their entities and their area links with it;
 5. its place in Genbu (its last version, music choice and switches), with `genbu.forget_show`. A Genbu
    older than 1.1.0 has no such action: copy the new folder over and restart Home Assistant;
@@ -706,7 +791,10 @@ this order:
 
 What stays: everything with only the "Genbu Show installed" label (the house-wide `jarvis_local_*`
 automations and the music scripts), the blueprints, the room and its dashboard, the calendars, and
-`backups/<serial>/`, so the unit can be installed again. Other automations, scripts
+`backups/<serial>/`, so the unit can be installed again. The run says so in one line above the lists, and
+names the house-wide automations and scripts it found, and the other Shows' own ones, with a count. On this computer the Show's SSH key and its
+pinned host key stay (`~/.ssh/genbu_<name>*`), and so do any router rules made for its address; the
+run lists them, and `shows` puts the keys away later ([Finding Shows](#finding-shows)). Other automations, scripts
 and dashboards that use the Show are listed, not changed: they show up as unavailable entities until
 you change them.
 
@@ -719,7 +807,34 @@ pieces are found by name, as before.
 
 Run it again any time. It finds what is left by the names the Show went by and the MAC address it kept
 in `backups/<serial>/show.json` on the first run, and says so when nothing is left. To use the Show
-again, reset it ([Factory reset](install.md#factory-reset)) and add it the usual way.
+again after "removed only", reset it ([Factory reset](install.md#factory-reset)); then add it the usual way.
+
+### Finding Shows
+
+`shows` lists every Show this computer can find and where each one stands:
+
+- **On the network.** Shows answer as ESPHome devices. One waiting to be added says so for the 15
+  minutes after somebody taps "Let Home Assistant add it" on its screen; add it in Home Assistant under
+  **Settings → Devices & services**, Discovered. The list never adds a Show itself, and a Show that
+  isn't in this Home Assistant (a neighbour's, say) is only listed.
+- **On USB.** In fastboot, in TWRP, on Android, or running. A running one is asked over its serial
+  console whether it is in setup; one whose console wants root's password is listed as locked and left
+  alone.
+- **In `backups/`.** Every Show installed from here, matched to the network by name or MAC address and
+  to USB by serial.
+
+With an admin (`--ha-url` and the usual login questions) it also says which Shows are in this Home
+Assistant. Without one, nothing counts as gone.
+
+A Show installed from here that is gone from this Home Assistant, because it was reset (from here or by
+its Delete in Home Assistant) or isn't on the network any more, leaves things behind on this computer:
+its SSH key pair, the host key pinned for it and its install record. The run offers, one Show at a
+time, to put them away in `backups/<serial>/retired-<date>/`. Nothing is deleted, and the unlock backups
+stay where they are. If a Show turns out to be only switched off, move the files back. `--no-questions`
+only lists; `--no-questions --yes-remove` puts away without asking.
+
+The router keeps the rules made for a Show's address until you take them out; the installer never
+changes the router. On OpenWrt the install guide's `genbu_unrules <name>` helper does it.
 
 ### What the Show is ready with
 
@@ -738,15 +853,18 @@ uses the Home Assistant, DashCast, Music Assistant and choice switches.
 | `--dashcast-key-file FILE` | A file holding the DashCast key. |
 | `--music-assistant HOST` | The Music Assistant server. |
 | `--music-assistant-local-metadata` | Music Assistant stops looking metadata up online and keeps to the library's own tags. Off unless given. |
-| `--music-assistant-token-file FILE` | A file holding a Music Assistant admin's long-lived token, used instead of signing in, once for the Show's own user there (lyrics) and the switch above. |
+| `--music-assistant-tunein USERNAME` | Add Music Assistant's TuneIn with this TuneIn username, for the radio, unless it has TuneIn already. `''` leaves it alone. Asked otherwise, when there is a Music Assistant admin and no TuneIn; Enter skips it. |
+| `--music-assistant-token-file FILE` | A file holding a Music Assistant admin's long-lived token, used instead of signing in, once for the Show's own user there (lyrics) and the switches above. |
 | `--assistant NAME` | The Assist pipeline it talks to, or `preferred`. `''` leaves it alone. |
 | `--genbu-assistant`, `--no-genbu-assistant` | Call the Show's assistant "Genbu Assistant" in Home Assistant, and keep every device that was on it there, or leave the name alone. Asked otherwise, Enter is no. |
+| `--half-sentences`, `--no-half-sentences` | Let Genbu Assistant answer a lone misheard word itself and hand everything else to the pipeline's agent, or leave the pipeline alone. Asked otherwise, Enter is no. |
 | `--wake-word NAME` | One of the wake words the Show offers. `''` leaves it alone. |
 | `--room NAME` | The Home Assistant area it stands in, by name or id. `''` leaves it alone. |
 | `--room-dashboard`, `--no-room-dashboard` | Make a small dashboard for its room when the room has none, or never. Asked otherwise. |
 | `--jarvis-dashboard`, `--no-jarvis-dashboard` | Make the Jarvis dashboard and the recipe page when the house has none, or never. Needs Genbu 1.3.1 and wall-clock-card. Asked otherwise. |
 | `--recipes`, `--no-recipes` | Recipe search by voice on this Show, when Genbu Assistant has a recipe search (step 11 above). Asked otherwise, Enter is yes. |
 | `--voice-updates`, `--no-voice-updates` | Asking this Show about firmware updates by voice (step 11 above). Asked otherwise, Enter is yes. |
+| `--llm-assistant`, `--no-llm-assistant` | Whether the house's assistant is a language model, for the whole house (step 11 above). Asked otherwise, Enter keeps what Genbu has. |
 | `--voice-extras`, `--no-voice-extras` | Set up the voice extras in Home Assistant (step 6 above), or don't. Asked otherwise. |
 | `--rename-entities`, `--no-rename-entities` | For a Show renamed since it was installed: give its entities, and what uses them, the new name too, or don't. Asked otherwise. |
 | `--calendars LIST` | The calendars the Show shows, like `calendar.personal, calendar.familie` (step 9 above). `''` leaves them alone. Asked otherwise. |

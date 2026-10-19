@@ -6,7 +6,8 @@
 // name from a Home Assistant that sends one. A zone that differs from the one in force is written to
 // userdata — a zoneinfo file built from the rule, or a link to the named zone — so it holds across
 // reboots, slot changes and Home Assistant being away, and the daemon restarts to pick it up. That
-// last part is why nothing here touches time.Local: see apply.
+// last part is why nothing here touches time.Local: see apply. A zone from Home Assistant waits a
+// little before that restart: see settle.
 package timezone
 
 import (
@@ -30,7 +31,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Device, Get(), component.Order(11))
+	component.Register(component.Device, Get, component.Order(11))
 }
 
 // Where the zone lives. /etc/localtime and /etc/timezone in the image link to these.
@@ -44,6 +45,14 @@ var (
 	// on a device that has never met a Home Assistant, where nothing else would ever set one.
 	hereFile = layout.StateDir + "/timezone-set-here"
 )
+
+// settle is how long a zone from Home Assistant waits before the restart that puts it in force. The
+// answer it comes in arrives a tenth of a second after Home Assistant subscribes, and on a fresh device
+// that is in the middle of Home Assistant setting it up for the first time: a restart there left 148 of
+// its 156 entities unavailable for twenty minutes, through a reconnect, until the session after that
+// (GENBU-221). Later restarts, an update's, come back within seconds. The zone is on userdata at once;
+// only the restart waits.
+var settle = 30 * time.Second
 
 type Zone struct{}
 
@@ -66,7 +75,7 @@ func (z *Zone) Handle(ctx context.Context, c *esphome.Conn, msg proto.Message) e
 		if z.SetHere() {
 			return nil // chosen on the device; Home Assistant does not override that
 		}
-		if err := z.apply(m.GetTimezone()); err != nil {
+		if err := z.apply(m.GetTimezone(), settle); err != nil {
 			slog.Warn("time zone from home assistant not applied", "zone", m.GetTimezone(), "err", err)
 		}
 	}
@@ -117,9 +126,10 @@ func (z *Zone) SetHere() bool {
 }
 
 // Choose applies a zone picked on the device and remembers that it was picked here, so Home
-// Assistant's zone no longer replaces it.
+// Assistant's zone no longer replaces it. It restarts at once: somebody at the screen is waiting to
+// see the clock change.
 func (z *Zone) Choose(zone string) error {
-	if err := z.apply(zone); err != nil {
+	if err := z.apply(zone, 0); err != nil {
 		return err
 	}
 	if err := os.WriteFile(hereFile, []byte(zone+"\n"), 0o644); err != nil {
@@ -182,9 +192,10 @@ func Zones(region string) []string {
 	return out
 }
 
-// apply makes zone the device's zone: a POSIX rule, or a zone name this image has. Nothing is written
-// when it is the saved zone already, or when it is neither.
-func (z *Zone) apply(zone string) error {
+// apply makes zone the device's zone: a POSIX rule, or a zone name this image has, and restarts the
+// daemon after wait to put it in force. Nothing is written when it is the saved zone already, or when
+// it is neither.
+func (z *Zone) apply(zone string, wait time.Duration) error {
 	zone = strings.TrimSpace(zone)
 	if zone == "" {
 		return nil // an older Home Assistant sends no zone
@@ -241,8 +252,15 @@ func (z *Zone) apply(zone string) error {
 	// cheap, correct one, and it is the same unwind an update uses, so the speaker and the ring are
 	// put down properly rather than cut off.
 	name, offset := time.Now().In(loc).Zone()
-	slog.Info("time zone changed, restarting", "zone", zone, "now", name, "offset_h", float64(offset)/3600)
-	update.Restart("time zone " + zone)
+	why := "time zone " + zone
+	if wait <= 0 {
+		slog.Info("time zone changed, restarting", "zone", zone, "now", name, "offset_h", float64(offset)/3600)
+		update.Restart(why)
+		return nil
+	}
+	slog.Info("time zone changed, restarting soon", "zone", zone, "now", name, "offset_h", float64(offset)/3600,
+		"in", wait)
+	time.AfterFunc(wait, func() { update.Restart(why) })
 	return nil
 }
 

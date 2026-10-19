@@ -219,8 +219,8 @@ func TestDemoHidesStations(t *testing.T) {
 	}
 	s.demo = false
 	rows, _ = drawerRows(s)
-	if rows[1].label != "101.1 WXYZ" {
-		t.Errorf("without demo, first station = %q", rows[1].label)
+	if got := i18n.T(rows[1].label); got != "101.1 WXYZ" { // as drawn
+		t.Errorf("without demo, first station = %q", got)
 	}
 }
 
@@ -368,10 +368,10 @@ func TestACutLineLeavesTheValueWhole(t *testing.T) {
 			h := map[int]int{showWide: showHigh, show8Wide: show8High}[w]
 			r := newRenderer(image.NewRGBA(image.Rect(0, 0, w, h)))
 			l := r.carLayout(row, r.w-2*r.cz(carIn))
-			if l.value != row.value {
-				t.Errorf("%d wide at %d%%: the value is cut to %q", w, menuZoom.Load(), l.value)
+			if i18n.T(l.value) != row.value {
+				t.Errorf("%d wide at %d%%: the value is cut to %q", w, menuZoom.Load(), i18n.T(l.value))
 			}
-			if strings.Join(l.label, " ") == row.label {
+			if i18n.T(strings.Join(l.label, " ")) == row.label {
 				t.Fatalf("%d wide at %d%%: the label was not cut, so this does not test anything", w, menuZoom.Load())
 			}
 		}

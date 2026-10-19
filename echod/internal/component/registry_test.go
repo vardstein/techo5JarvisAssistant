@@ -153,3 +153,49 @@ func TestEmptyRegistry(t *testing.T) {
 	}
 	r.Restore(config.Defaults())
 }
+
+// A component is made when the registry is first read and not when it registers, so a process that
+// never runs the device (`techo5 help`, a tool) never makes it. Made once, however often it is read.
+func TestMadeOnFirstReadOnly(t *testing.T) {
+	r := New()
+	made := 0
+	r.add(Device, func() Component { made++; return bare{"late"} }, nil)
+	if made != 0 {
+		t.Fatalf("made %d times on registering, want 0", made)
+	}
+
+	r.Build()
+	r.All()
+	r.Entities()
+	if made != 1 {
+		t.Fatalf("made %d times, want 1", made)
+	}
+}
+
+// What a package wires between components runs once, after all of them are made, whatever order they
+// registered in relative to it.
+func TestWiredAfterMade(t *testing.T) {
+	r := New()
+	var made []string
+	var seen []string
+	r.Wire(func() { seen = slices.Clone(made) })
+	r.add(Device, func() Component { made = append(made, "a"); return bare{"a"} }, nil)
+	r.add(Hardware, func() Component { made = append(made, "b"); return bare{"b"} }, nil)
+	if seen != nil {
+		t.Fatal("wired before anything was read")
+	}
+
+	r.Build()
+	r.All()
+	if len(seen) != 2 {
+		t.Fatalf("wiring saw %v made, want both", seen)
+	}
+
+	runs := 0
+	r.Wire(func() { runs++ })
+	r.All()
+	r.All()
+	if runs != 1 {
+		t.Fatalf("wiring added later ran %d times, want 1", runs)
+	}
+}

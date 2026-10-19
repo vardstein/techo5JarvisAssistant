@@ -145,6 +145,86 @@ class ChannelTests(unittest.TestCase):
         self.assertIn('"channel-dev"', channel)
 
 
+class OverviewTests(unittest.TestCase):
+    """GENBU-249: the update card lists every Show and where it is on its way to the house version."""
+
+    def moving(self):
+        return [
+            show("hall", "v1.5.0"),
+            house.Show(node="kitchen", name="Kitchen", installed="v1.4.0", online=True, updating=True, at=40),
+            house.Show(node="bath", name="Bath", installed="v1.4.0", online=True, updating=True, at=100),
+            house.Show(node="desk", name="Desk", installed="v1.4.0", online=True,
+                       status="Moving to v1.5.0 once the music stops"),
+            house.Show(node="attic", name="Attic", installed="v1.3.0", online=True,
+                       status="Following the house · version v1.3.0"),
+            show("cellar", "v1.2.0", online=False, installed=""),
+        ]
+
+    def test_each_stage(self):
+        lines = dict(line.removeprefix("- **").split("**", 1)
+                     for line in house.overview(self.moving(), "v1.5.0").splitlines() if line.startswith("- "))
+        self.assertEqual(lines, {
+            "Hall": " · v1.5.0 · up to date",
+            "Kitchen": " · v1.4.0 · downloading 40%",
+            "Bath": " · v1.4.0 · installing",
+            "Desk": " · v1.4.0 · waiting: Moving to v1.5.0 once the music stops",
+            # Its line is from before the house moved: no reason yet.
+            "Attic": " · v1.3.0 · waiting",
+            "Cellar": " · offline",
+        })
+
+    def test_the_head_counts_the_shows_online(self):
+        self.assertTrue(house.overview(self.moving(), "v1.5.0").startswith("**1 of 5 Shows on v1.5.0**\n"))
+        self.assertTrue(house.overview(self.moving(), "v1.5.0", "de").startswith("**1 von 5 Shows auf v1.5.0**\n"))
+        self.assertIn("Kitchen** · v1.4.0 · lädt 40 %", house.overview(self.moving(), "v1.5.0", "de"))
+
+    def test_each_step_and_failure(self):
+        """GENBU-215: the step each Show is at, and a failed one with its reason."""
+        def at(status, updating=False, at=None, lang="en"):
+            s = house.Show(node="x", name="X", installed="v1.4.0", online=True, updating=updating, at=at,
+                           status=status)
+            return house.stage(s, "v1.5.0", lang)
+
+        self.assertEqual(at("Checking v1.5.0", True, 0), "checking")
+        self.assertEqual(at("Downloading v1.5.0", True, 40), "downloading 40%")
+        self.assertEqual(at("Installing v1.5.0", True, 100), "installing")
+        self.assertEqual(at("Restarting into v1.5.0", True, 100), "restarting")
+        self.assertEqual(at("Restarting into v1.5.0", True, 100, "de"), "startet neu")
+        self.assertEqual(at("Update to v1.5.0 failed: can't reach the update server (update: dial tcp: refused)"),
+                         "⚠ failed: can't reach the update server")
+        self.assertEqual(at("Update to v1.5.0 failed: update: something new"), "⚠ failed: update: something new")
+        self.assertEqual(at("Version v1.5.0 did not install here (not enough space on the Show); staying on v1.4.0"),
+                         "⚠ failed: not enough space on the Show")
+        self.assertEqual(at("Version v1.5.0 did not install here; staying on v1.4.0"), "⚠ failed")
+        self.assertEqual(at("Version v1.5.0 could not be fetched: can't reach the update server (dial tcp)"),
+                         "⚠ failed: can't reach the update server")
+        self.assertEqual(at("rolled back from v1.5.0"), "⚠ failed: didn't come back after the restart")
+        self.assertEqual(at("rolled back from v1.5.0", lang="de"),
+                         "⚠ fehlgeschlagen: kam nach dem Neustart nicht wieder")
+
+    def test_the_show_writes_the_lines_the_card_reads(self):
+        """The lines above are echod's: a change there has to be a change here."""
+        firmware = (ROOT / "echod" / "internal" / "feature" / "firmware" / "firmware.go").read_text()
+        house_go = (ROOT / "echod" / "internal" / "feature" / "firmware" / "house.go").read_text()
+        for line in ('"Checking " + v', '"Downloading " + v', '"Installing " + v', '"Restarting into " + v',
+                     '"Update to "+found.Version+" failed: "', '"rolled back from "'):
+            self.assertIn(line, firmware)
+        for line in ('" did not install here (" + f.why + "); staying on "', '" could not be fetched: "'):
+            self.assertIn(line, house_go)
+
+    def test_no_shows_no_list(self):
+        self.assertEqual(house.overview([], "v1.5.0"), "")
+
+    def test_oldest_behind(self):
+        self.assertEqual(house.oldest_behind(self.moving(), "v1.5.0"), "v1.3.0")  # the cellar is offline
+        self.assertEqual(house.oldest_behind([show("hall", "v1.5.0")], "v1.5.0"), "")
+        # Going back: a Show still on the newer one is not behind.
+        self.assertEqual(house.oldest_behind([show("hall", "v1.5.0")], "v1.4.0"), "")
+
+    def test_every_language_has_every_word(self):
+        self.assertEqual(set(house.STAGES["de"]), set(house.STAGES["en"]))
+
+
 class ForgetTests(unittest.TestCase):
     """genbu.forget_show, which the installer's --remove-show calls once the Show is out of ESPHome."""
 
@@ -187,11 +267,12 @@ class FilesTests(unittest.TestCase):
             other = json.loads((GENBU / "translations" / f"{lang}.json").read_text())
             self.assertEqual(keys(other), keys(strings), lang)
 
-    def test_no_issues_any_more(self):
+    def test_no_main_update_issues_any_more(self):
+        # The main update Show's issues went with 1.4.0; the only issues now are a Show's key (GENBU-196).
         strings = json.loads((GENBU / "strings.json").read_text())
-        self.assertNotIn("issues", strings)
+        self.assertFalse(set(strings["issues"]) & {"main_missing", "no_main", "main_picked", "main_dropped"})
         self.assertEqual(set(strings["options"]["step"]), {"init"})
-        self.assertFalse((GENBU / "repairs.py").exists())
+        self.assertNotIn("main", (GENBU / "repairs.py").read_text())
 
     def test_the_house_entities_have_their_texts(self):
         entity = json.loads((GENBU / "strings.json").read_text())["entity"]

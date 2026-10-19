@@ -13,9 +13,10 @@ import (
 func adoptFiles(t *testing.T) esphome.PSK {
 	t.Helper()
 	dir := t.TempDir()
-	oldKey, oldAdopt := keyFile, adoptPath
+	oldKey, oldAdopt, oldSetup := keyFile, adoptPath, setupPath
 	keyFile, adoptPath = filepath.Join(dir, "psk"), filepath.Join(dir, "adopt-until")
-	t.Cleanup(func() { keyFile, adoptPath = oldKey, oldAdopt })
+	setupPath = filepath.Join(dir, "setup-mode")
+	t.Cleanup(func() { keyFile, adoptPath, setupPath = oldKey, oldAdopt, oldSetup })
 	var k esphome.PSK
 	k[0] = 9
 	if err := writePSK(keyFile, k); err != nil {
@@ -109,5 +110,62 @@ func TestARestartShutsAWindowPastItsTime(t *testing.T) {
 	}
 	if _, err := os.Stat(adoptPath); !os.IsNotExist(err) {
 		t.Error("a window a key was set in was kept")
+	}
+}
+
+// Setup mode: a window puts the device in it, the key Home Assistant sets takes it out, and a client
+// that gets as far as subscribing (only one with the key can) takes it out as well.
+func TestSetupModeLastsUntilAHomeAssistantHasTheKey(t *testing.T) {
+	adoptFiles(t)
+	a := newTestAPI()
+	if a.InSetup() {
+		t.Fatal("a device with a key and no mark is in setup mode")
+	}
+	if _, err := a.OpenAdoption(); err != nil {
+		t.Fatal(err)
+	}
+	if !a.InSetup() {
+		t.Error("opening the window did not put the device in setup mode")
+	}
+	a.takeNextPSK()
+	var theirs esphome.PSK
+	theirs[1] = 7
+	if err := a.keySet(theirs); err != nil {
+		t.Fatal(err)
+	}
+	if a.InSetup() {
+		t.Error("still in setup mode after Home Assistant set the key")
+	}
+
+	if err := markSetup(); err != nil {
+		t.Fatal(err)
+	}
+	clearSetup()
+	clearSetup() // and again, with nothing to clear
+	if a.InSetup() {
+		t.Error("clearing the mark left the device in setup mode")
+	}
+}
+
+// In setup mode with a key nobody holds, the device keeps off mDNS; with a window open it is
+// advertised as one that takes a key, and outside setup mode as an ordinary encrypted device.
+func TestTheAdvertKeepsQuietUntilTheDeviceCanBeAdded(t *testing.T) {
+	adoptFiles(t)
+	a := newTestAPI()
+	if show, unkeyed := a.advertMode(); !show || unkeyed {
+		t.Errorf("a set-up device: show %v unkeyed %v, want shown and keyed", show, unkeyed)
+	}
+	if err := markSetup(); err != nil {
+		t.Fatal(err)
+	}
+	if show, _ := a.advertMode(); show {
+		t.Error("a device in setup mode with a key nobody holds is advertised")
+	}
+	if _, err := a.OpenAdoption(); err != nil {
+		t.Fatal(err)
+	}
+	a.takeNextPSK()
+	if show, unkeyed := a.advertMode(); !show || !unkeyed {
+		t.Errorf("with the window open: show %v unkeyed %v, want shown and unkeyed", show, unkeyed)
 	}
 }

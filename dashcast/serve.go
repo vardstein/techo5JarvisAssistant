@@ -15,6 +15,7 @@ import (
 	"image/png"
 	"log/slog"
 	"net"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,6 +33,8 @@ import (
 //	kindPicture  2-byte x, 2-byte y, then a JPEG to draw with its top left there
 //	kindProblem  a sentence for the screen to show: the key was wrong, the page would not load
 //	kindHalf     2-byte x, 2-byte y, then a JPEG at half size, to draw doubled with its top left there
+//	kindWhose    whose Home Assistant user the page is signed in as, before the first picture: "own"
+//	             (the Show's, from its token) or "dashcast"; a device that knows no kindWhose skips it
 //
 // The first picture is the whole screen; after it, only what changed. While most of the screen is
 // changing - a page scrolling - the pictures go at half size, a quarter of the work for a device to
@@ -40,6 +43,7 @@ const (
 	kindPicture = 1
 	kindProblem = 2
 	kindHalf    = 3
+	kindWhose   = 4
 )
 
 // soft is how much of the screen has to change in one frame before it goes at half size, and
@@ -75,6 +79,26 @@ type hello struct {
 // (browser.go, musicScript): a screen anyone can touch is not where its providers and players are set up.
 const pageMusic = "music"
 
+// showBoards is every Jarvis Show board dashcast serves, with its screen size. main.go checks
+// JARVIS_SHOW_BOARD against it and applyApplianceProfile takes the size from it, so a board is either
+// here for both or for neither. tests/test_show_board_lists.py keeps it in step with echod's update
+// boards and the installer's board profiles.
+var showBoards = map[string]struct{ w, h int }{
+	"crown":    {1280, 800},
+	"checkers": {960, 480},
+	"cronos":   {960, 480},
+}
+
+// showBoardNames is showBoards' names in order, for messages.
+func showBoardNames() []string {
+	names := make([]string, 0, len(showBoards))
+	for name := range showBoards {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 func applyApplianceProfile(h *hello, board string) bool {
 	if board == "" {
 		return true
@@ -82,14 +106,11 @@ func applyApplianceProfile(h *hello, board string) bool {
 	// Jarvis Show is an appliance, not a generic browser client. The server owns the viewport,
 	// path and browser chrome contract so stale/misconfigured device state cannot reintroduce the
 	// old header/black-bar problems. Board geometry is fixed server-side.
-	switch board {
-	case "crown":
-		h.W, h.H = 1280, 800
-	case "checkers":
-		h.W, h.H = 960, 480
-	default:
+	size, ok := showBoards[board]
+	if !ok {
 		return false
 	}
+	h.W, h.H = size.w, size.h
 	h.Path = "/jarvis-display"
 	h.Kiosk = true
 	return true
@@ -178,9 +199,14 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 		h.Path = "/" + h.Path
 	}
 	// Whose page it is: the Show's own user's when it sent a token that will do, dashcast's otherwise.
+	// A token Home Assistant turns away gets nothing: that Show is locked out on purpose (GENBU-261).
 	token, user := "", ""
 	if h.Token != "" {
-		if ug, name, err := showUsers.guardFor(ctx, cfg, h.Token); err != nil {
+		if ug, name, err := showUsers.guardFor(ctx, cfg, h.Token); errors.Is(err, errTokenRefused) {
+			slog.Warn("Home Assistant turned the Show's own key away, so it gets no page", "name", h.Name)
+			out.problem(keyTurnedAway)
+			return
+		} else if err != nil {
 			slog.Warn("the Show's own Home Assistant user can't be used, so it gets dashcast's", "name", h.Name, "user", name, "err", err)
 		} else {
 			g, token, user = ug, h.Token, name
@@ -235,6 +261,9 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 	defer sessions.Add(-1)
 	slog.Info("device connected", "name", h.Name, "from", c.RemoteAddr(), "size", [2]int{h.W, h.H}, "path", h.Path, "user", user)
 	defer slog.Info("device gone", "name", h.Name)
+	// The Show's log says whose page it got, so one that sent its token can tell it was not used
+	// (GENBU-251): a dashcast too old for own users signs every screen in as its own user.
+	_ = out.send(kindWhose, []byte(whose(token)))
 
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -261,8 +290,17 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 	} else {
 		slog.Info("dashboard picked up where it was left", "name", h.Name)
 	}
-	// Parked when this session ends, for the screen to come back to.
-	defer warm.park(w)
+	// Parked when this session ends, for the screen to come back to; closed when its key was turned
+	// away, so nothing of it is handed out again.
+	var turnedAway atomic.Bool
+	defer func() {
+		if turnedAway.Load() {
+			w.watch(nil)
+			w.close()
+			return
+		}
+		warm.park(w)
+	}()
 	tab := w.ctx
 
 	d := &differ{}
@@ -324,6 +362,19 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 		c.Close()
 	}()
 	go keepOnDashboards(sctx, tab, b.cfg.ha+h.Path, haOrigin(g.cfg.ha), allows, music, h.Name)
+	if token != "" {
+		mine := cfg
+		mine.token = token
+		go watchKey(sctx, keyWatch, func(ctx context.Context) error {
+			_, _, err := showUsers.ask(ctx, mine)
+			return err
+		}, func() {
+			turnedAway.Store(true)
+			slog.Warn("Home Assistant turned the Show's own key away; its screen is closed", "name", h.Name)
+			out.problem(keyTurnedAway)
+			cancel()
+		})
+	}
 	for lines.Scan() {
 		var t touchMsg
 		if json.Unmarshal(lines.Bytes(), &t) != nil {
@@ -337,6 +388,33 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 }
 
 // touch replays one of the device's touches on the page.
+// keyTurnedAway is what a Show whose own key Home Assistant turns away is told instead of a page.
+const keyTurnedAway = "Home Assistant turned this Show's key away, so it gets no dashboard. Is the Show disabled there?"
+
+// keyWatch is how often a screen signed in as a Show's own user has Home Assistant asked whether its
+// key still lets it in.
+const keyWatch = time.Minute
+
+// watchKey asks every so often whether a Show's key still lets it in, and calls gone once Home
+// Assistant turns it away: a Show disabled in Home Assistant has its user switched off, which
+// deletes its key, and its open screen goes too (GENBU-261). A Home Assistant that doesn't answer
+// is no answer.
+func watchKey(ctx context.Context, every time.Duration, ask func(context.Context) error, gone func()) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if err := ask(ctx); errors.Is(err, errTokenRefused) {
+				gone()
+				return
+			}
+		}
+	}
+}
+
 func touch(ctx context.Context, t touchMsg) error {
 	at := []*input.TouchPoint{{X: float64(t.X), Y: float64(t.Y)}}
 	switch t.T {
@@ -377,6 +455,14 @@ func (s *sender) send(kind byte, payload ...[]byte) error {
 	_ = s.c.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	_, err := s.c.Write(msg)
 	return err
+}
+
+// whose is what kindWhose says for a page signed in with token: "" is dashcast's own.
+func whose(token string) string {
+	if token != "" {
+		return "own"
+	}
+	return "dashcast"
 }
 
 func (s *sender) problem(text string) { _ = s.send(kindProblem, []byte(text)) }

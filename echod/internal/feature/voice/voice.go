@@ -28,7 +28,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Device, Get(), component.Order(30))
+	component.Register(component.Device, Get, component.Order(30))
 }
 
 // Features is what the device claims it can do with a voice pipeline. Announce and

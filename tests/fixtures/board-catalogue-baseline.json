@@ -1,5 +1,5 @@
 {
-  "_note": "Frozen at 7d601d0 by tests/fixtures/make_board_catalogue_baseline.py. Do not edit by hand.",
+  "_note": "Frozen at d448873e (first at 7d601d0) by tests/fixtures/make_board_catalogue_baseline.py. Do not edit by hand.",
   "profiles": {
     "crown": {
       "board": "crown",
@@ -28,7 +28,7 @@
     "cronos": {
       "board": "cronos",
       "fastboot_product": "CRONOS",
-      "model": "Echo Show 5 2nd gen",
+      "model": "Echo Show 5 2nd gen / C76N8S",
       "product_id": "genbu-cronos-v1",
       "display_width": 960,
       "display_height": 480,
@@ -89,7 +89,7 @@
       "ok": {
         "board": "cronos",
         "fastboot_product": "CRONOS",
-        "model": "Echo Show 5 2nd gen",
+        "model": "Echo Show 5 2nd gen / C76N8S",
         "product_id": "genbu-cronos-v1",
         "display_width": 960,
         "display_height": 480,
@@ -131,7 +131,7 @@
       "ok": {
         "board": "cronos",
         "fastboot_product": "CRONOS",
-        "model": "Echo Show 5 2nd gen",
+        "model": "Echo Show 5 2nd gen / C76N8S",
         "product_id": "genbu-cronos-v1",
         "display_width": 960,
         "display_height": 480,
@@ -187,7 +187,7 @@
       "ok": {
         "board": "cronos",
         "fastboot_product": "CRONOS",
-        "model": "Echo Show 5 2nd gen",
+        "model": "Echo Show 5 2nd gen / C76N8S",
         "product_id": "genbu-cronos-v1",
         "display_width": 960,
         "display_height": 480,
@@ -229,7 +229,7 @@
       "ok": {
         "board": "cronos",
         "fastboot_product": "CRONOS",
-        "model": "Echo Show 5 2nd gen",
+        "model": "Echo Show 5 2nd gen / C76N8S",
         "product_id": "genbu-cronos-v1",
         "display_width": 960,
         "display_height": 480,
@@ -279,7 +279,7 @@
     "TWRP_SHA256_BY_BOARD": {
       "crown": "b6b1446436de27cf860ebc170d4e3dffe3068ab90396ec915a123589d0d6f7d8",
       "checkers": "dcc75bb651894c343039d45af73c4d900594762f6f55187c1ebdaf12d0ae59f5",
-      "cronos": null
+      "cronos": "09a72dab093e9f4d444733bd4517af09444a0904a9a5243277df0ecd263873d8"
     }
   },
   "unlock": {
@@ -376,9 +376,9 @@
           "kind": "amonet",
           "name": "amonet-cronos-v2.0.1.zip",
           "url": "https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-show-5-2nd-gen-2021-cronos.4772596/",
-          "sha256": "",
-          "size": 0,
-          "source": "XDA thread 4772596 (R0rt1z2), browser download, not reviewed yet",
+          "sha256": "07a49c8fb2b244330297810b261333ba23976eca5ab3e0d9032f45f4c9847621",
+          "size": 44403627,
+          "source": "XDA thread 4772596 (R0rt1z2), browser download (XDA's CDN refuses scripts)",
           "manual": true
         }
       ]
@@ -475,9 +475,9 @@
               "kind": "amonet",
               "name": "amonet-cronos-v2.0.1.zip",
               "url": "https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-show-5-2nd-gen-2021-cronos.4772596/",
-              "sha256": "",
-              "size": 0,
-              "source": "XDA thread 4772596 (R0rt1z2), browser download, not reviewed yet",
+              "sha256": "07a49c8fb2b244330297810b261333ba23976eca5ab3e0d9032f45f4c9847621",
+              "size": 44403627,
+              "source": "XDA thread 4772596 (R0rt1z2), browser download (XDA's CDN refuses scripts)",
               "manual": true
             }
           ]

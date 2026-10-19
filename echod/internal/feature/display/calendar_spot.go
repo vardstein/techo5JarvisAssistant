@@ -54,7 +54,7 @@ func (r *roundRenderer) calendarFace(s roundScene) {
 	shown := rows[:min(len(rows), 3)]
 	for _, e := range shown {
 		width := chordAt(y)
-		title := clip(r.body, r, e.Summary, width-24)
+		title := clip(r.body, r, i18n.Verbatim(e.Summary), width-24)
 		tw := r.width(r.body, title)
 		r.discAt(float64(center-tw/2-16), float64(y-9), 6, calendarColor(s.calOrder, e.Calendar))
 		r.centered(r.body, title, y, colText)

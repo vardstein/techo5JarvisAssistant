@@ -3,6 +3,10 @@ package echod
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -19,13 +23,15 @@ func newMediaCmd() *cobra.Command {
 	)
 
 	c := &cobra.Command{
-		Use:   "media <url>",
+		Use:   "media <url|file>",
 		Short: "Stream audio from a url through the media path",
 		Long: "Plays a url through the same player Home Assistant's media_player uses, which\n" +
 			"streams rather than downloading and expects 48 kHz stereo 16-bit WAV — what the\n" +
 			"ffmpeg proxy is asked to convert to. Serve one with:\n" +
 			"  afconvert -f WAVE -d LEI16@48000 -c 2 track.wav track48.wav\n" +
-			"  python3 -m http.server 8000\n\n" +
+			"  python3 -m http.server 8000\n" +
+			"or copy it to the device and give its path (or a file:// url): the device cannot\n" +
+			"reach a server of its own, and a bench take should not need one on the network.\n\n" +
 			"--duck takes the speaker away part way through, the way a voice turn does, and\n" +
 			"gives it back after --hold: playing should carry on from where it stopped rather\n" +
 			"than skipping ahead.\n\n" +
@@ -55,7 +61,7 @@ func newMediaCmd() *cobra.Command {
 			sound := speaker.NewDriver(p)
 			player := media.NewStream(sound, p, func() {}, nil)
 
-			player.Play(args[0])
+			player.Play(source(args[0]))
 
 			if duck > 0 {
 				go func() {
@@ -94,3 +100,25 @@ func newMediaCmd() *cobra.Command {
 	c.Flags().DurationVar(&hold, "hold", 5*time.Second, "how long to keep it")
 	return c
 }
+
+// source is what the player is given for arg: a url as it is, and a path on the device as a file://
+// url, which this command, and only this one, can open (GENBU-160). The daemon's player is never given
+// files: what Home Assistant asks it to play stays on the network.
+func source(arg string) string {
+	if !strings.Contains(arg, "://") {
+		abs, err := filepath.Abs(arg)
+		if err == nil {
+			arg = "file://" + abs
+		}
+	}
+	if strings.HasPrefix(arg, "file://") {
+		files.Do(func() {
+			if t, ok := http.DefaultTransport.(*http.Transport); ok {
+				t.RegisterProtocol("file", http.NewFileTransport(http.Dir("/")))
+			}
+		})
+	}
+	return arg
+}
+
+var files sync.Once

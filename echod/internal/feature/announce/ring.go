@@ -3,6 +3,7 @@ package announce
 import (
 	"time"
 
+	"github.com/HuskerMinion/techo5/echod/internal/component"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/led"
 )
 
@@ -31,21 +32,23 @@ var (
 )
 
 func init() {
-	f := Get()
-	ring := led.Get().Claim(led.PriorityBusy)
-	notice := led.Get().Claim(led.PriorityNotice)
+	component.Wire(func() {
+		f := Get()
+		ring := led.Get().Claim(led.PriorityBusy)
+		notice := led.Get().Claim(led.PriorityNotice)
 
-	recording := false
-	f.Changed.Listen(func(struct{}) {
-		if now := f.Recording(); now != recording {
-			recording = now
-			if recording {
-				ring.Play(led.EffectPulse, speakingColor)
-			} else {
-				ring.Clear()
+		recording := false
+		f.Changed.Listen(func(struct{}) {
+			if now := f.Recording(); now != recording {
+				recording = now
+				if recording {
+					ring.Play(led.EffectPulse, speakingColor)
+				} else {
+					ring.Clear()
+				}
 			}
-		}
-	})
+		})
 
-	f.Arrived.Listen(func(Message) { notice.PaintFor(led.Solid(arrivedColor), arrivedFor) })
+		f.Arrived.Listen(func(Message) { notice.PaintFor(led.Solid(arrivedColor), arrivedFor) })
+	})
 }

@@ -261,6 +261,9 @@ func TestShowScenesDraw(t *testing.T) {
 	// under the microphone's pill when that is up too.
 	scenes["install-download"] = scene{now: at, phase: "idle", weather: sky, install: "Downloading 1.0.2 · 42%", installAt: 0.42}
 	scenes["install-writing-muted"] = scene{now: at, phase: "idle", weather: sky, muted: true, install: "Installing 1.0.2…", installAt: -1}
+	// And one that didn't go in: no spinner, the reason, a bar that says it stopped.
+	scenes["install-failed"] = scene{now: at, phase: "idle", weather: sky, installFailed: true,
+		install: "Update to 1.0.2 failed: can't reach the update server"}
 	later := wind
 	later.ID, later.Onset, later.Ends = "c", at.Add(26*time.Hour), at.Add(40*time.Hour)
 	scenes["alert-page-later"] = scene{now: at, phase: "idle", showAlert: true, alerts: home.AlertView{Here: []home.Alert{later}}}

@@ -24,7 +24,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Device, Get(), component.Order(20))
+	component.Register(component.Device, Get, component.Order(20))
 }
 
 // Slots is how many wake words Home Assistant offers at once, and so how many assistants there are to

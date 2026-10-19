@@ -18,6 +18,8 @@ const SKIP = new Set(["camera", "event"]);
 const SETTINGS_MODEL = "Genbu Show settings";
 // The house's own device, with the update card, the channel and the night install.
 const HOUSE_MODEL = "Genbu Shows";
+// Its rows that are about the voice assistant, not updates (GENBU-240).
+const HOUSE_VOICE = new Set(["llm_assistant"]);
 const INSTALLED = "Genbu Show installed";
 const SHOW_LABEL = "Genbu Show: ";
 
@@ -193,7 +195,7 @@ class GenbuPanel extends HTMLElement {
       device: houseDevice?.id, rows: [] };
     if (houseDevice) {
       for (const e of entities.filter((x) => x.device_id === houseDevice.id)) {
-        house.rows.push(row(hass, e, house.title, "Updates"));
+        house.rows.push(row(hass, e, house.title, HOUSE_VOICE.has(e.translation_key) ? "Voice" : "Updates"));
       }
     }
     // The house-wide pieces: labeled as installed, and not one Show's own.

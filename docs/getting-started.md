@@ -15,7 +15,7 @@ The model number is on the bottom of the device, or in the Alexa app under the d
 
 | Device | Codename | Model | Supported by | Difficulty today |
 |---|---|---|---|---|
-| **Echo Show 5, 2nd gen** (2021) | `cronos` | C76N82 | [TECHO5](https://github.com/HuskerMinion/techo5) | Moderate: the unlock and LineageOS by hand, then a one-command installer |
+| **Echo Show 5, 2nd gen** (2021) | `cronos` | C76N8S | [TECHO5](https://github.com/HuskerMinion/techo5) | Moderate: the unlock and LineageOS by hand, then a one-command installer |
 | **Echo Dot, 2nd gen** (2016) | `biscuit` | RS03QR | [TECHO5 Dot](https://github.com/HuskerMinion/techo5-dot) | Moderate: the unlock and Fire OS steps by hand, then a one-command installer |
 | **Echo Spot, 1st gen** (2017) | `rook` | VN94DQ | [TECHO5 Spot](https://github.com/HuskerMinion/techo5-spot) | Moderate: the unlock and LineageOS by hand, then a one-command installer |
 | **Echo Show 5, 1st gen** (2019) | `checkers` | H23K37 | [TECHO5](https://github.com/HuskerMinion/techo5) | Moderate: the unlock and LineageOS by hand, then the same one-command installer |
@@ -72,21 +72,22 @@ board is called out — `checkers`, `cronos`, `crown`.
 
 1. **Unlock it with amonet.** On a 2nd gen, follow
    [[UNLOCK][ROOT][TWRP][UNBRICK] Echo Show 5 2nd Gen (cronos)](https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-show-5-2nd-gen-2021-cronos.4772596/)
-   on XDA (source: [R0rt1z2/amonet, branch mt8163-cronos](https://github.com/R0rt1z2/amonet/tree/mt8163-cronos)).
+   on XDA (source: [R0rt1z2/amonet, branch mt8163-echo-show](https://github.com/R0rt1z2/amonet/tree/mt8163-echo-show),
+   `fastbrick/cronos/`; the old `mt8163-cronos` branch is the 1.x exploit).
    In short: with the Show on mains power, hold all three buttons until the screen says
-   `=> FASTBOOT mode`, connect USB, and run the fastbrick step from the thread. It reboots into TWRP
-   on its own; don't interrupt it.
+   `=> FASTBOOT mode`, connect USB, and run the fastbrick step from the thread. It keeps writing for
+   up to five minutes after it says it's done, then reboots into TWRP on its own; don't interrupt it.
    **Use amonet v2.0.1 or later.** An older one can leave the bootloader still locked while
    everything else looks like it worked, and the first sign is the installer being refused with
    `the command you input is restricted on locked hw` when it writes the boot image. That is the
    bootloader talking, not the installer (techo5 issue #19).
    On a **1st gen**, the same thing with the `checkers` tools:
    [[UNLOCK][ROOT][TWRP][UNBRICK] Echo Show 5 1st Gen (checkers)](https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-show-5-1st-gen-2019-checkers.4762900/)
-   (amonet branch `mt8163-checkers`). A unit fresh out of the box may have shipped with firmware too
+   (amonet branch `mt8163-echo-show`, `fastbrick/checkers/`). A unit fresh out of the box may have shipped with firmware too
    new to unlock, so read the version before letting it reach the internet.
    On a **Show 8**, the same again with the `crown` tools:
    [[UNLOCK][ROOT][TWRP][UNBRICK] Amazon Echo Show 8 1st Gen - 2019 (crown)](https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-show-8-1st-gen-2019-crown.4766687/)
-   (amonet branch `mt8163-crown`).
+   (amonet branch `mt8163-echo-show`, `fastbrick/crown/`).
    *Check:* the Show boots into TWRP.
 
    **Shortcut: straight from TWRP.** Steps 2 to 4 can be skipped. Download the LineageOS zip from step

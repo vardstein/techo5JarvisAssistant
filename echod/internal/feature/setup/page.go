@@ -253,10 +253,6 @@ func (f *Feature) save(w http.ResponseWriter, r *http.Request) {
 		}
 	case "dashboard":
 		problem = saveDashboard(r)
-	case "remote-unmute":
-		if err := config.Set().Microphone().AllowRemoteUnmute(r.PostFormValue("allow") == "yes"); err != nil {
-			problem = "could not save the microphone permission: " + err.Error()
-		}
 	case "timezone":
 		zone := strings.TrimSpace(r.PostFormValue("zone"))
 		switch {
@@ -387,7 +383,6 @@ func timezoneSection(w http.ResponseWriter, token string) {
 // these stay on the device's own screen and in Home Assistant.
 func privacySection(w http.ResponseWriter, token string) {
 	s := config.Get().Security
-	mic := config.Get().Microphone
 	onOff := func(on bool) string {
 		if on {
 			return "<strong>on</strong>"
@@ -403,18 +398,9 @@ func privacySection(w http.ResponseWriter, token string) {
 	  is left alone. It is on your own network, without encryption. It never touches SSH keys or the
 	  software the device runs, and never shows the Home Assistant key. It can let a Home Assistant add
 	  the device for 15 minutes (General), which sets a new key.</p></fieldset>`)
-	fmt.Fprint(w, `<fieldset><legend>Microphone remote unmute</legend><form method="post" action="/setup/save">`)
-	hidden(w, token, "remote-unmute", "privacy")
-	checked := ""
-	if mic.AllowRemoteUnmute {
-		checked = " checked"
-	}
-	fmt.Fprintf(w, `<p><label><input type="checkbox" name="allow" value="yes"%s style="width:auto">
-	 Allow trusted Home Assistant to clear its software microphone mute</label></p>
-	 <p class="note">Off by default. Unmute is accepted only over the encrypted native Home Assistant
-	 API. This permission cannot release the physical privacy latch: when the red hardware mute is active,
-	 only the button on the device can make the microphones live again.</p>
-	 <p><button type="submit">Save microphone permission</button></p></form></fieldset>`, checked)
+	fmt.Fprint(w, `<fieldset><legend>Microphone</legend>
+	 <p class="note" style="margin:0">Home Assistant and the screen can mute the microphones. Only the mute
+	  button on the device turns them back on; while they are muted it glows red.</p></fieldset>`)
 }
 
 // wifiSection is the networks: what the device is on, what it remembers, and how to add another.

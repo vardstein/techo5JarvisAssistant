@@ -8,38 +8,125 @@ import (
 
 	"github.com/HuskerMinion/techo5/echod/internal/feature/firmware"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/ring"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/hass"
+	"github.com/HuskerMinion/techo5/echod/internal/update"
 )
+
+// keyNote is the line that says Home Assistant turned this device's token away, and why, or nothing.
+// It takes the update's place, ahead of it, as nothing that needs Home Assistant works until the key
+// is fixed, and the device stops asking (lib/hass), so nobody would find out any other way. Genbu
+// renews a gone key where Home Assistant's own records say it may, and raises a repair where a
+// person has to decide (GENBU-196); the line points there.
+func keyNote(short bool) string {
+	switch hass.Get().KeyState() {
+	case hass.KeyGone:
+		if short {
+			return "Key refused"
+		}
+		return "Home Assistant refused this device · Settings › Repairs"
+	case hass.KeyRemote:
+		if short {
+			return "Home only"
+		}
+		return "Home Assistant lets this device in from home only · Settings › Repairs"
+	case hass.KeyOff:
+		if short {
+			return "User switched off"
+		}
+		return "This device's user is switched off in Home Assistant"
+	}
+	return ""
+}
 
 // updateNote is the line that says an update is ready to install, or nothing. It shares the place a
 // missed ring is said in, and gives way to one. short is the round face's, where only a few words fit.
+// A following Show whose move waits for something says what, so a room that wonders why the update
+// has not happened can read it off the Show (GENBU-247).
 func updateNote(short bool) string {
 	v := firmware.Get().Offered()
 	switch {
 	case v == "":
 		return ""
 	case short:
+		if firmware.Get().Waiting().Holding() {
+			return "Update waits"
+		}
 		return "Update ready"
+	}
+	if w := waitNote(firmware.Get().Waiting()); w != "" {
+		return w
 	}
 	return i18n.F("Update ready: {version} · Settings › Updates", "version", v)
 }
 
+// waitNote says what a following Show's update waits for, or nothing.
+func waitNote(h firmware.Hold) string {
+	switch h.Kind {
+	case firmware.HoldMusic:
+		return i18n.T("Update waits for the music to stop")
+	case firmware.HoldRinging:
+		return i18n.T("Update waits for the ringing to stop")
+	case firmware.HoldCall:
+		return i18n.T("Update waits for the call to end")
+	case firmware.HoldTimer:
+		if h.Name == "" {
+			return i18n.F("Update waits for the timer at {time}", "time", clockText(h.At.Local()))
+		}
+		return i18n.F("Update waits for timer {name} at {time}", "name", h.Name, "time", clockText(h.At.Local()))
+	case firmware.HoldAlarm:
+		return i18n.F("Update waits for the alarm at {time}", "time", clockText(h.At.Local()))
+	}
+	return ""
+}
+
 // installNote says how far an install has got, or ok is false when none is running. at is the
-// download's fraction, and -1 once the download is done: checking it and writing the other slot report
-// nothing of their own, so that part gets a spinner and no percentage.
+// download's fraction while it downloads, -1 for the steps that report nothing of their own (checking
+// it, writing the other slot), which get a spinner and no percentage, and 1 once it waits for the
+// restart.
 //
 // Before this the screen said nothing at all from the press of Install to the reboot, which on a slow
-// link is minutes of a device that looks like it ignored the tap.
+// link is minutes of a device that looks like it ignored the tap; then only "installing", which a
+// stuck Show says as well as a slow one (GENBU-214).
 func installNote() (line string, at float32, ok bool) {
 	running, at := firmware.Get().Installing()
 	if !running {
 		return "", 0, false
 	}
 	v := firmware.Get().Offered()
-	if at < 1 {
-		pct := strconv.Itoa(int(max(at, 0) * 100))
+	switch update.CurrentStep() {
+	case update.StepDownloading:
+		pct := strconv.Itoa(int(min(max(at, 0), 1) * 100))
 		return i18n.F("Downloading {version} · {percent}%", "version", v, "percent", pct), at, true
+	case update.StepWriting:
+		return i18n.F("Installing {version}…", "version", v), -1, true
+	case update.StepRestarting:
+		return i18n.F("Restarting into {version}…", "version", v), 1, true
 	}
-	return i18n.F("Installing {version}…", "version", v), -1, true
+	if v == "" {
+		return i18n.T("Looking for the update…"), -1, true
+	}
+	return i18n.F("Checking {version}…", "version", v), -1, true
+}
+
+// failShown is how long the screen says an install failed: long enough to be seen by whoever pressed
+// it and walked off, short enough that it isn't still there tomorrow.
+const failShown = 10 * time.Minute
+
+// failNote says the last install somebody asked for did not go in, and why, for failShown after it
+// failed; "" otherwise. The full error is on the setup page, which the line points at when the reason
+// is none the update knows.
+func failNote(now time.Time) string {
+	v, why, at := firmware.Get().Failure()
+	if at.IsZero() || now.Sub(at) > failShown || now.Before(at) {
+		return ""
+	}
+	if why == "" {
+		why = "the setup page has the details"
+	}
+	if v == "" {
+		return i18n.F("The update failed: {reason}", "reason", i18n.T(why))
+	}
+	return i18n.F("Update to {version} failed: {reason}", "version", v, "reason", i18n.T(why))
 }
 
 // missedNote is the line that says a ring fell due and never sounded, or nothing. The latest one by
