@@ -64,7 +64,7 @@ class MusicNowPlayingContractTests(unittest.TestCase):
         decode = (ROOT / "echod/internal/feature/home/decode.go").read_text(encoding="utf-8")
         self.assertIn('st.Attributes["entity_picture"]', route)
         self.assertIn("hass.Get().FetchURL(fetch)", route)
-        self.assertIn("RemoteArt(b, nil)", route)
+        self.assertIn("RemoteArt(b, ours)", route)
         self.assertIn("layoutArt", art)
         self.assertIn("maxArtPixels", decode)
 
