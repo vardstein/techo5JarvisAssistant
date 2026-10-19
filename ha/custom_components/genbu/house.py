@@ -243,6 +243,7 @@ class House:
     house, since   the house version, the one every Show moves to, and when it last changed
     channel        the release channel the house reads; empty for the house version's own
     night          whether a waiting update installs by itself at night
+    llm            whether the house's assistant is a language model, for the LLM extras (GENBU-240)
     before         the house version before the last install, for going back
     """
 
@@ -255,6 +256,7 @@ class House:
         for k in ("house", "since", "channel", "before"):
             self.data.setdefault(k, "")
         self.data.setdefault("night", False)
+        self.data.setdefault("llm", False)
 
     def see(self, shows: list[Show], now: datetime) -> bool:
         """Takes in what Home Assistant shows now; True when anything worth storing changed."""
@@ -308,6 +310,13 @@ class House:
 
     def set_night(self, on: bool) -> None:
         self.data["night"] = on
+
+    @property
+    def llm(self) -> bool:
+        return bool(self.data["llm"])
+
+    def set_llm(self, on: bool) -> None:
+        self.data["llm"] = on
 
     @property
     def before(self) -> str:

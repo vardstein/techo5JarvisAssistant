@@ -54,6 +54,9 @@
       "install_at_night": {
         "name": "Nachts installieren"
       },
+      "llm_assistant": {
+        "name": "Assistent nutzt ein LLM"
+      },
       "recipes": {
         "name": "Rezepte"
       },

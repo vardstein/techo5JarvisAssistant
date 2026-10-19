@@ -12,7 +12,11 @@ release channel and turns Install at night on or off. A Show with Updates by voi
 an admin typing in the app; another voice device never does. See docs/genbu-assistant.md §1 and §4.
 
 And when a wake word cut the Show's last reply off, the turn after it is told how much of the reply was
-heard (reply_cut.py, GENBU-250); that comes with no tool."""
+heard (reply_cut.py, GENBU-250); that comes with no tool.
+
+Lines that only help a language model, the LLM extras, are added only while the house says its assistant is
+one (switch.genbu_llm_assistant, hub.house.llm, GENBU-240). The first is the room line for a request whose
+nearest Show is offline (GENBU-239); there is none yet. The lines above go out either way, as before."""
 
 from __future__ import annotations
 

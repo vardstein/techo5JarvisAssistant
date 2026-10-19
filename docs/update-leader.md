@@ -59,6 +59,9 @@ On the Genbu Assistant device, next to two controls:
 | `select.genbu_release_channel` | stable, staging or dev. Until one is picked, the channel of the house version. |
 | `switch.genbu_install_at_night` | Off by default. When on, a waiting update installs by itself at 03:00. |
 
+The device also carries `switch.genbu_llm_assistant`, which is not about updates
+([genbu-assistant.md](genbu-assistant.md), "The LLM extras").
+
 **A Show taken out for good.** Delete on its device does all of it ([below](#deleting-a-show-in-home-assistant)).
 The action `genbu.forget_show` (from 1.1.0) drops one Show by its node name:
 its last version, its music choice and its switches. The installer's `--remove-show` calls it after

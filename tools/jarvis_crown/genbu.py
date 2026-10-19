@@ -19,6 +19,8 @@ UPDATE = "update.genbu_show_firmware"
 
 # The Show's optional features on Genbu's side: how the installer asks for each, and Genbu's switch key.
 FEATURES = (("recipes", "recipes"), ("voice updates", "voice_updates"))
+# And one for the whole house: whether its assistant is a language model (GENBU-240), and Genbu's switch key.
+LLM_ASSISTANT = ("llm assistant", "llm_assistant")
 PAGE = "Everything is on the Genbu Control Center page in Home Assistant's sidebar"
 
 # What set_up came to.
@@ -190,3 +192,27 @@ def features(ha: HomeAssistant, entry_id: str, given: dict[str, bool | None], *,
             continue
         ha.request("POST", f"/api/services/switch/turn_{'on' if on else 'off'}", {"entity_id": entity})
         progress(f"{'Recipes' if label == 'recipes' else 'Updates by voice'} {'on' if on else 'off'} on this Show")
+
+
+def llm_assistant(ha: HomeAssistant, on: bool | None, *, choose: Chooser | None = None,
+                  progress: Callable[[str], None] = print) -> None:
+    """Whether the house's assistant is a language model, for the whole house (docs/genbu-assistant.md, "The
+    LLM extras"). Taken from --llm-assistant, else asked with Genbu's switch as it is now; Enter keeps it.
+    Neither given nor asked, it stays as it is, and a Genbu without the switch is left alone."""
+    entry = _entry(ha)
+    if entry is None:
+        return
+    label, key = LLM_ASSISTANT
+    uid = f"{entry['entry_id']}_{key}"
+    entity = next((e["entity_id"] for e in ha.ws({"type": "config/entity_registry/list"}) or []
+                   if isinstance(e, dict) and e.get("platform") == DOMAIN and e.get("unique_id") == uid), None)
+    if entity is None:
+        return
+    current = {"on": "yes", "off": "no"}.get(str(_state(ha, entity).get("state") or ""), "")
+    if on is None and choose is not None:
+        picked = choose(label, current, ["yes", "no"], {})
+        on = None if picked is None else picked == "yes"
+    if on is None:
+        return
+    ha.request("POST", f"/api/services/switch/turn_{'on' if on else 'off'}", {"entity_id": entity})
+    progress(f"Assistant uses an LLM: {'yes' if on else 'no'}, for the whole house")

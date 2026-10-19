@@ -259,6 +259,69 @@ class FeaturesTest(unittest.TestCase):
         self.assertTrue(any("Genbu Control Center" in line for line in lines), lines)
 
 
+class LlmHouse(Features):
+    """Genbu's house switch for whether the assistant is a language model, as it is now."""
+
+    def __init__(self, *, state="off", switch=True):
+        super().__init__()
+        self.state, self.switch = state, switch
+
+    def ws(self, msg):
+        found = super().ws(msg)
+        if msg["type"] == "config/entity_registry/list" and self.switch:
+            found.append({"platform": "genbu", "unique_id": "G1_llm_assistant",
+                          "entity_id": "switch.genbu_llm_assistant"})
+        return found
+
+    def request(self, method, path, body=None):
+        if path == "/api/states/switch.genbu_llm_assistant":
+            self.calls.append((method, path, body))
+            return {"state": self.state}
+        return super().request(method, path, body)
+
+
+def llm(fake, on=None, answer="unasked"):
+    lines, asked = [], []
+
+    def choose(label, current, options, names):
+        asked.append((label, current))
+        return answer
+    genbu.llm_assistant(fake, on, choose=choose if answer != "unasked" else None, progress=lines.append)
+    return lines, asked
+
+
+class LlmAssistantTest(unittest.TestCase):
+    """GENBU-240: one question for the whole house, shown as it is now, and Enter keeps it."""
+
+    def test_asked_with_the_switch_as_it_is_and_set(self):
+        fake = LlmHouse(state="off")
+        lines, asked = llm(fake, answer="yes")
+        self.assertEqual(asked, [("llm assistant", "no")])
+        self.assertEqual(fake.switched(), [("turn_on", "switch.genbu_llm_assistant")])
+        self.assertIn("Assistant uses an LLM: yes, for the whole house", lines)
+
+    def test_enter_keeps_it(self):
+        fake = LlmHouse(state="on")
+        lines, asked = llm(fake, answer=None)
+        self.assertEqual(asked, [("llm assistant", "yes")])
+        self.assertEqual((fake.switched(), lines), ([], []))
+
+    def test_the_switch_answers_without_asking(self):
+        fake = LlmHouse(state="on")
+        _, asked = llm(fake, on=False, answer="yes")
+        self.assertEqual(asked, [])
+        self.assertEqual(fake.switched(), [("turn_off", "switch.genbu_llm_assistant")])
+
+    def test_nobody_at_the_terminal_and_no_switch_leave_it(self):
+        fake = LlmHouse()
+        self.assertEqual(llm(fake), ([], []))
+        self.assertEqual(fake.switched(), [])
+
+    def test_an_older_genbu_without_the_switch_is_left_alone(self):
+        fake = LlmHouse(switch=False)
+        self.assertEqual(llm(fake, on=True, answer="yes"), ([], []))
+        self.assertEqual(fake.switched(), [])
+
 
 class EnterAtTheTerminalTest(unittest.TestCase):
     """The installer's side of GENBU-222: what ends the wait at a real terminal."""

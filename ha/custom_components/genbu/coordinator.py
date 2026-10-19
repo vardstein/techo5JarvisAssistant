@@ -182,7 +182,8 @@ def show_device(show: Show) -> DeviceInfo:
 
 
 def house_device(entry: ConfigEntry) -> DeviceInfo:
-    """The device the house's own controls sit on: the update card, the channel, the night install."""
+    """The device the house's own controls sit on: the update card, the channel, the night install and
+    whether the assistant is a language model."""
     return DeviceInfo(identifiers={(DOMAIN, entry.entry_id)}, name=NAME, manufacturer="OpenJade",
                       model="Genbu Shows", entry_type=dr.DeviceEntryType.SERVICE,
                       configuration_url=f"homeassistant://{PANEL}")  # "Visit" opens the Control Center
@@ -416,6 +417,11 @@ class GenbuHouse:
 
     async def async_set_night(self, on: bool) -> None:
         self.house.set_night(on)
+        self._save()
+        async_dispatcher_send(self.hass, CHANGED)
+
+    async def async_set_llm(self, on: bool) -> None:
+        self.house.set_llm(on)
         self._save()
         async_dispatcher_send(self.hass, CHANGED)
 

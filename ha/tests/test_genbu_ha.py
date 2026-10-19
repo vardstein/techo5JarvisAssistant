@@ -20,6 +20,7 @@ DOMAIN = "genbu"
 UPDATE = "update.genbu_show_firmware"
 CHANNEL = "select.genbu_release_channel"
 NIGHT = "switch.genbu_install_at_night"
+LLM = "switch.genbu_llm_assistant"
 
 
 def add_show(hass: HomeAssistant, node: str, version: str, manufacturer: str = "OpenJade") -> str:
@@ -355,6 +356,22 @@ async def test_install_at_night(hass: HomeAssistant, freezer):
     assert hass.states.get(NIGHT).state == "on"
     await three_oclock()
     assert entry.runtime_data.house.version == "v1.0.4"
+
+
+async def test_the_llm_switch_is_off_until_somebody_says_yes_and_kept(hass: HomeAssistant):
+    add_show(hass, "hall", "v1.0.3")
+    entry = await setup(hass)
+    assert hass.states.get(LLM).state == "off"
+    assert er.async_get(hass).async_get(LLM).device_id == er.async_get(hass).async_get(NIGHT).device_id
+
+    await hass.services.async_call("switch", "turn_on", {"entity_id": LLM}, blocking=True)
+    await hass.async_block_till_done()
+    assert hass.states.get(LLM).state == "on" and entry.runtime_data.house.llm
+
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get(LLM).state == "on"
+    assert hass.states.get(NIGHT).state == "off"
 
 
 async def test_install_updates_moves_the_house(hass: HomeAssistant):

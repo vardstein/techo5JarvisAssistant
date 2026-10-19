@@ -137,6 +137,9 @@ def parse_args() -> argparse.Namespace:
     setup.add_argument("--voice-updates", action=argparse.BooleanOptionalAction, default=None,
                        help="let people ask this Show about firmware updates and install them by voice "
                             "(default: ask; Enter is yes)")
+    setup.add_argument("--llm-assistant", action=argparse.BooleanOptionalAction, default=None,
+                       help="say whether the house's assistant is a language model, for the whole house; yes "
+                            "lets Genbu add prompt lines only a model can use (default: ask; Enter keeps it)")
     setup.add_argument("--genbu-assistant", action=argparse.BooleanOptionalAction, default=None,
                        help="call the Assist pipeline the Show talks to 'Genbu Assistant'; every device on it "
                             "follows the new name, and the pipeline is saved first (default: ask; Enter is no)")
@@ -435,6 +438,11 @@ QUESTIONS = {  # label: (question, help, names for the options, the answers Ente
     "voice updates": ("Ask this Show about updates by voice?",
                       "\"Any updates?\" and \"install the update\" work at this Show. It always asks before "
                       "installing.", {}, ("yes",)),
+    "llm assistant": ("Does your assistant use an LLM?",
+                      "Yes when the Assist pipeline's conversation agent is a language model, like OpenAI, "
+                      "Ollama or Google's; no when it is Home Assistant's own. This is for the whole house, not "
+                      "only this Show. Yes lets Genbu add hints to the prompt that only a language model can "
+                      "use. No leaves everything as it works today.", {}, ()),
     "new name": ("The Show has a new name. Give its entities the new name too?",
                  "Its automations, scripts and dashboards follow, each saved first. The history stays.", {}, ()),
     "calendar account": ("Add a calendar account to Home Assistant?",
@@ -484,7 +492,8 @@ def _chooser(args):
              "calendars": args.calendars, "new name": getattr(args, "rename_entities", None),
              "assistant name": getattr(args, "genbu_assistant", None),
              "half sentences": getattr(args, "half_sentences", None),
-             "recipes": getattr(args, "recipes", None), "voice updates": getattr(args, "voice_updates", None)}
+             "recipes": getattr(args, "recipes", None), "voice updates": getattr(args, "voice_updates", None),
+             "llm assistant": getattr(args, "llm_assistant", None)}
 
     def choose(label: str, current: str, options: list[str], shown: dict[str, str] | None = None) -> str | None:
         if given.get(label) is not None:
@@ -596,6 +605,10 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
                            choose=choose, progress=ui.out.progress)
         except ha_api.HomeAssistantError as exc:
             ui.out.progress(f"WARN: Recipes and Updates by voice were not set: {exc}")
+        try:
+            genbu.llm_assistant(hc, getattr(args, "llm_assistant", None), choose=choose, progress=ui.out.progress)
+        except ha_api.HomeAssistantError as exc:
+            ui.out.progress(f"WARN: whether the assistant uses an LLM was not set: {exc}")
         ui.out.note(f"{genbu.PAGE}.")
     ui.out.finish(f"{now_called[0]} is in Home Assistant and set up")
     return 0

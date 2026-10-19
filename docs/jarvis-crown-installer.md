@@ -591,8 +591,12 @@ What happens with the answers:
      when a recipe search is set up in Genbu Assistant) and **Updates by voice** ("Ask this Show about
      updates by voice?"). Enter is yes for both. `--recipes`/`--no-recipes` and
      `--voice-updates`/`--no-voice-updates` answer ahead of time; with nobody at the terminal and no
-     switch, Genbu's own default stays. Both can be changed later on the Show's card. The run ends
-     with "Everything is on the Genbu Control Center page in Home Assistant's sidebar."
+     switch, Genbu's own default stays. Both can be changed later on the Show's card. Then it asks once
+     for the whole house, "Does your assistant use an LLM?", showing what Genbu has now (no until
+     somebody says yes). Yes lets Genbu add prompt lines only a language model can use
+     ([genbu-assistant.md](genbu-assistant.md), "The LLM extras"); Enter keeps it, and
+     `--llm-assistant`/`--no-llm-assistant` answer ahead of time. It can be changed later on the house
+     card. The run ends with "Everything is on the Genbu Control Center page in Home Assistant's sidebar."
 
   The Show's actions are named after its ESPHome node (`esphome.<node>_dashboard_server` and so on).
   The tool takes the node from Home Assistant, so a Show renamed since it was installed is still
@@ -860,6 +864,7 @@ uses the Home Assistant, DashCast, Music Assistant and choice switches.
 | `--jarvis-dashboard`, `--no-jarvis-dashboard` | Make the Jarvis dashboard and the recipe page when the house has none, or never. Needs Genbu 1.3.1 and wall-clock-card. Asked otherwise. |
 | `--recipes`, `--no-recipes` | Recipe search by voice on this Show, when Genbu Assistant has a recipe search (step 11 above). Asked otherwise, Enter is yes. |
 | `--voice-updates`, `--no-voice-updates` | Asking this Show about firmware updates by voice (step 11 above). Asked otherwise, Enter is yes. |
+| `--llm-assistant`, `--no-llm-assistant` | Whether the house's assistant is a language model, for the whole house (step 11 above). Asked otherwise, Enter keeps what Genbu has. |
 | `--voice-extras`, `--no-voice-extras` | Set up the voice extras in Home Assistant (step 6 above), or don't. Asked otherwise. |
 | `--rename-entities`, `--no-rename-entities` | For a Show renamed since it was installed: give its entities, and what uses them, the new name too, or don't. Asked otherwise. |
 | `--calendars LIST` | The calendars the Show shows, like `calendar.personal, calendar.familie` (step 9 above). `''` leaves them alone. Asked otherwise. |

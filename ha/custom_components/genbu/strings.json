@@ -54,6 +54,9 @@
       "install_at_night": {
         "name": "Install at night"
       },
+      "llm_assistant": {
+        "name": "Assistant uses an LLM"
+      },
       "recipes": {
         "name": "Recipes"
       },

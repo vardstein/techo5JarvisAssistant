@@ -5,7 +5,12 @@ recorder, so llm.py reads them without a state lookup.
 
 And switch.genbu_install_at_night on the Genbu Assistant device: when on, an update waiting on the house's
 card installs by itself at 03:00, and the Shows follow while nobody uses them. Off until somebody turns it
-on."""
+on.
+
+And switch.genbu_llm_assistant next to it, "Assistant uses an LLM": whether the house's assistant is a
+language model. The prompt lines only a language model can use (the LLM extras, GENBU-240) go out only while
+it is on; Home Assistant's own agent never reads them, so it changes nothing there. Off until somebody says
+yes, in the installer or here."""
 
 from __future__ import annotations
 
@@ -17,7 +22,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from .const import CHANGED, CONF_SEARXNG, NIGHT_SWITCH, RECIPES, VOICE_UPDATES
+from .const import CHANGED, CONF_SEARXNG, LLM_SWITCH, NIGHT_SWITCH, RECIPES, VOICE_UPDATES
 from .coordinator import house_device, show_device
 from .house import Show
 
@@ -26,7 +31,7 @@ ICONS = {RECIPES: "mdi:chef-hat", VOICE_UPDATES: "mdi:account-voice"}
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add) -> None:
     hub = entry.runtime_data
-    add([InstallAtNight(entry)])
+    add([InstallAtNight(entry), UsesLlm(entry)])
     keys = [RECIPES, VOICE_UPDATES] if entry.options.get(CONF_SEARXNG) else [VOICE_UPDATES]
     made: set[str] = set()
 
@@ -74,16 +79,17 @@ class ShowSwitch(SwitchEntity):
         await self.hub.async_switch(self.device, self.key, False)
 
 
-class InstallAtNight(SwitchEntity):
+class HouseSwitch(SwitchEntity):
+    """A switch for the whole house, on the Genbu Assistant device."""
     _attr_has_entity_name = True
-    _attr_translation_key = "install_at_night"
-    _attr_icon = "mdi:weather-night"
     _attr_entity_category = EntityCategory.CONFIG
     _attr_should_poll = False
+    key = ""
 
-    def __init__(self, entry: ConfigEntry) -> None:
-        self.entity_id = NIGHT_SWITCH
-        self._attr_unique_id = f"{entry.entry_id}_install_at_night"
+    def __init__(self, entry: ConfigEntry, entity_id: str) -> None:
+        self.entity_id = entity_id
+        self._attr_translation_key = self.key
+        self._attr_unique_id = f"{entry.entry_id}_{self.key}"
         self._attr_device_info = house_device(entry)
         self.hub = entry.runtime_data
 
@@ -93,11 +99,45 @@ class InstallAtNight(SwitchEntity):
 
     @callback
     def _changed(self) -> None:
-        self._attr_is_on = self.hub.house.night
+        self._attr_is_on = self._read()
         self.async_write_ha_state()
 
+    def _read(self) -> bool:
+        raise NotImplementedError
+
+    async def _set(self, on: bool) -> None:
+        raise NotImplementedError
+
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self.hub.async_set_night(True)
+        await self._set(True)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.hub.async_set_night(False)
+        await self._set(False)
+
+
+class InstallAtNight(HouseSwitch):
+    key = "install_at_night"
+    _attr_icon = "mdi:weather-night"
+
+    def __init__(self, entry: ConfigEntry) -> None:
+        super().__init__(entry, NIGHT_SWITCH)
+
+    def _read(self) -> bool:
+        return self.hub.house.night
+
+    async def _set(self, on: bool) -> None:
+        await self.hub.async_set_night(on)
+
+
+class UsesLlm(HouseSwitch):
+    key = "llm_assistant"
+    _attr_icon = "mdi:robot-outline"
+
+    def __init__(self, entry: ConfigEntry) -> None:
+        super().__init__(entry, LLM_SWITCH)
+
+    def _read(self) -> bool:
+        return self.hub.house.llm
+
+    async def _set(self, on: bool) -> None:
+        await self.hub.async_set_llm(on)

@@ -5,8 +5,8 @@ Assistant and the installer for Genbu 1.4.0 (GENBU-119, see [update-leader.md](u
 Show's own question about a waiting update comes with the next firmware. The control center from §3 is built
 as decided below (GENBU-121): the house card first, then one card per Show in foldable groups, each Show's
 own automations through its "Genbu Show: <node>" label, and "Visit" on the integration's device opens it.
-The installer asks about Recipes and Updates by voice for each Show, exposes the three music scripts on every
-run, and ends with a pointer to the page.
+The installer asks about Recipes and Updates by voice for each Show and whether the house's assistant is a
+language model, exposes the three music scripts on every run, and ends with a pointer to the page.
 
 Jade asked for three things after the 1.3.0 tests:
 
@@ -288,6 +288,7 @@ toggle for every one of them. The toggle works per Show, not for all Shows at on
 | Watchdog (planned) | yes | that Show's own automation, its on/off on the card | when it exists |
 | Music scripts for the AI | no, house | on the house card | once per house; always exposed (decided) |
 | Voice extras, German and English (Wo sind wir, Wecker …) | no, house | on the house card | once per house, as today |
+| Assistant uses an LLM ([below](#the-llm-extras-genbu-240)) | no, house | Genbu switch on the house card, Voice group, off until set | "Does your assistant use an LLM?" on every run, showing what it is now; Enter keeps it |
 
 The tool gate above then reads the Show's own switch: a Show with Recipes off never offers the tool, the
 kitchen Show next to it still does.
@@ -377,6 +378,22 @@ read out while the model wrote it; the correction is said after it, and the Show
 What counts as asking and as claiming is `COMMAND` and `CLAIM` in `claims.py`. Questions ("Ist das Licht
 an?") are left alone, since the model may know the answer without a tool. It only works with Genbu
 Assistant set as the pipeline's agent; without it the event still fires.
+
+### The LLM extras (GENBU-240)
+
+From Genbu 1.4.17, some prompt lines are kept for a language model. Home Assistant's own agent never reads
+them, and Nabu Casa's cloud agent gets them no better. These are the LLM extras. Genbu adds them only while the house says its
+assistant is a language model: `switch.genbu_llm_assistant`, **Assistant uses an LLM** on the house card,
+off until somebody says yes. The installer asks "Does your assistant use an LLM?" on every run, showing
+what the switch is now; Enter keeps it, and `--llm-assistant`/`--no-llm-assistant` answer ahead of time.
+
+The prompt lines Genbu has today (recipes, firmware, a reply cut off) go out either way, as before, so no
+says nothing worse than before. Home Assistant's built-in agent already knows the room from the Show's
+area.
+
+The first extra is the room line from GENBU-239: when the nearest Show is offline, a line saying which room
+the others heard the person in. It is not built yet, and comes only once the guess is right about nine
+times in ten (wiki "Which Show answers"). Until then the switch changes nothing in the prompt.
 
 ## 5. A Show's key (GENBU-196)
 

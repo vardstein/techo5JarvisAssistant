@@ -8,6 +8,8 @@ UPDATE_ENTITY = "update.genbu_show_firmware"
 CHANNEL_SELECT = "select.genbu_release_channel"
 NIGHT_SWITCH = "switch.genbu_install_at_night"
 NIGHT_AT = (3, 0)  # when a waiting update installs by itself, local time, if Install at night is on
+# Whether the house's assistant is a language model: the prompt lines only one can use wait for it (GENBU-240).
+LLM_SWITCH = "switch.genbu_llm_assistant"
 CHANGED = f"{DOMAIN}_changed"  # dispatcher signal: the house was looked at again
 STORE_KEY = f"{DOMAIN}.house"
 STORE_VERSION = 1
