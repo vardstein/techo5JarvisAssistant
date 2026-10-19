@@ -25,8 +25,9 @@ Jarvis Show supports exactly:
 
 - `CROWN` — Echo Show 8 1st gen / C7H6N3
 - `CHECKERS` — Echo Show 5 1st gen / H23K37
+- `CRONOS` — Echo Show 5 2nd gen / C76N8S (since GENBU-185)
 
-`CRONOS` is explicitly refused as a newer Show 5 generation, and every unknown product is refused before writes. Automatic board detection is the source of truth; an optional `--board` argument can only narrow/reject the detected board, never override it. The initially detected fastboot serial is pinned across the destructive flow.
+When this audit ran, `CRONOS` was refused. Since GENBU-185 it is identified and installed with its own pins; its unlock refuses until `--amonet-hashes` is given on the first run, and it has no BROM, so the unlock warns that a brick there is permanent. Every unknown product is still refused before writes. Automatic board detection is the source of truth; an optional `--board` argument can only narrow/reject the detected board, never override it. The initially detected fastboot serial is pinned across the destructive flow.
 
 ## PASS — checkers flashes only pinned boot and TWRP images, never guessed assets
 

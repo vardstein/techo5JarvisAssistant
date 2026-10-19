@@ -57,6 +57,10 @@ compares every file in it with the public source (R0rt1z2/amonet) and sorts them
 - binaries the installer already pins elsewhere (unlock payloads, the board's TWRP);
 - binaries only the zip carries (preloader, LK, TZ, kaeru, and so on).
 
+For a cronos zip, a file that matches only the `mt8163-cronos` branch is a red flag: that branch is
+the 1.x exploit, and 2.0.1 is built from `mt8163-echo-show` (`fastbrick/cronos/`). Don't pin a zip
+with one until it's explained.
+
 Then it stops. The hash goes into `tools/jarvis_crown/assets.py` only after someone has read that
 list. The crown and checkers 2.0.1 zips went through this on 2026-10-09 and are pinned, and the
 cronos (Echo Show 5 2nd gen) zip on 2026-10-14, together with its TWRP. The unlock payload hashes are

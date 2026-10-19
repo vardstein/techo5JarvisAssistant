@@ -13,6 +13,7 @@ Rule: complete and validate one job before starting the next. Do not build a rel
 - [x] **J02 — Freeze Crown-v1 product scope and supported hardware contract**
   - CROWN / Echo Show 8 1st gen only.
   - Refuse cronos/checkers/other products in installer.
+  - Later: checkers joined in J23C, and cronos in GENBU-185 with its own pins.
   - Add machine-readable product profile and docs.
 
 - [x] **J03 — Third-party asset and redistribution audit**
@@ -212,7 +213,7 @@ Rule: complete and validate one job before starting the next. Do not build a rel
 - [x] **J23C — First-generation auto-detect installer gate**
   - `jarvis-show install` now reads the fastboot product itself; `--board` is optional and only a cross-check.
   - `CROWN` selects Jarvis Crown v1 and `CHECKERS` selects Jarvis Checkers v1.
-  - `CRONOS` is explicitly refused as Echo Show 5 2nd gen; every other unknown product warns that it may be a newer generation and stops with no write attempted.
+  - `CRONOS` is explicitly refused as Echo Show 5 2nd gen (later: identified and installed since GENBU-185; its unlock needs `--amonet-hashes` on the first run); every other unknown product warns that it may be a newer generation and stops with no write attempted.
   - The first read-only fastboot serial is bound to the destructive flow; swapping devices before the second identity gate aborts before recovery/writes.
   - Installer/device-flow regression tests cover second-gen refusal, unknown-product refusal and serial-swap rejection.
 

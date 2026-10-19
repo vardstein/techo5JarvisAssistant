@@ -16,8 +16,9 @@ firmware): releases don't carry it, so it is copied into the store before the pa
 ## Unlock the bootloader first
 
 **The bootloader has to be unlocked before any of this works.** Running LineageOS does not mean it
-is: the unlock is a separate exploit, with a shorting trick to get the device into BROM mode, not a
-`fastboot flashing unlock`. Without it the installer stops at the first write with
+is: the unlock is a separate exploit (amonet's fastbrick, run from fastboot), not a
+`fastboot flashing unlock`. Nothing has to be shorted; see [hardware.md](hardware.md#unlock-and-recovery)
+for how it goes on a Show 5 2nd gen. Without it the installer stops at the first write with
 
 ```
 FAILED (remote: 'the command you input is restricted on locked hw')
@@ -83,7 +84,9 @@ python3 tools/install-show.py --lineage-zip lineage-18.1-XXXXXXXX-UNOFFICIAL-cro
 ```
 
 Before the one question it saves the unit's small partitions (bootloader chain, logo and the rest) into
-`backups/<serial>/partitions/`, each checked against its size. After it, it formats userdata (Fire OS's
+`backups/<serial>/partitions/`, each checked against its size. Those copies are a record, not
+something to write back: on a Show 5 2nd gen, LK, preloader, TZ and TEE1 are never flashed, in any mode
+(see [hardware.md](hardware.md#never-flash-these)). After it, it formats userdata (Fire OS's
 data), installs the zip from TWRP, checks that its Wi-Fi driver is built for the kernel TECHO5 uses, and
 goes on as above. `--wifi` asks for the network's passphrase and sends the unit only the WPA key made
 from it. Without `--wifi`, the Show opens its Wi-Fi page by itself a little after it starts.
@@ -421,7 +424,8 @@ If the screen can't be used (a cracked panel, touch that stopped working), hold 
 volume down together for ten seconds** while the Show is running. The screen lights up and counts
 down in red; let go of either button and nothing happens. This works on any page, the start-up
 screen included. Press them once the logo is up, not while you're powering the Show on: it only
-listens for them once it is running. Only the Show has this; a Spot or a Dot is reset from its
+listens for them once it is running, and at power-on the volume buttons start fastboot, TWRP or the
+download port instead (see [hardware.md](hardware.md#boot-keys)). Only the Show has this; a Spot or a Dot is reset from its
 settings.
 
 The Show restarts and erases, before anything else starts:

@@ -466,21 +466,28 @@ and `productid2` read `0` on the unit seen.
 
 ## Unlock and recovery
 
-- **amonet-cronos v2.0.1** (k4y0z, r0rt1z2). With the device on mains power,
-  hold all three buttons until the screen shows `=> FASTBOOT mode`, connect
-  USB, run the fastbrick payload. The exploit reboots the device into TWRP.
-  Never interrupt it.
+- **amonet-cronos v2.0.1** (k4y0z, r0rt1z2), built from the `mt8163-echo-show`
+  branch of [R0rt1z2/amonet](https://github.com/R0rt1z2/amonet/tree/mt8163-echo-show)
+  (`fastbrick/cronos/`). `mt8163-cronos` is the old 1.x exploit. With the device
+  on mains power, hold all three buttons until the screen shows
+  `=> FASTBOOT mode`, connect USB, run the fastbrick payload. It keeps writing
+  for up to five minutes after fastbrick says it's done, then comes up in TWRP,
+  not fastboot. Never interrupt it.
+- **There is no BROM on cronos.** The unlock is fastbrick, run from fastboot;
+  nothing on this board is reached by shorting pins. A brick during the unlock
+  can't be undone.
 - Fastboot reports `product: CRONOS`, `version: 0.5`, `kaeru-version: 2.0.0`;
   `unlock_status` flips to `true` afterwards. `max-download-size` is 109 MB.
 - amonet's LK does **not** implement `fastboot boot` ("unknown command"): test
   images must be flashed. After `adb reboot bootloader`, `fastboot reboot` lands
   back in fastboot; use `fastboot continue` to boot normally. Volume-down while
   plugging in enters fastboot (`TW_HACKED_BL_BUTTON`).
-- **The `recovery` slot boots 32-bit kernels only.** The 64-bit LineageOS
-  kernel flashed to `recovery` (even the untouched stock image) produces no
-  kernel output at all; the watchdog resets the unit (`bootreason
-  wdt_by_pass_pwk`) and LK boots `boot` instead. Verified with a command-line
-  marker. 64-bit images go in `boot`.
+- **The `recovery` slot booted 32-bit kernels only** when this was tested. The
+  64-bit LineageOS kernel flashed to `recovery` (even the untouched stock image)
+  produced no kernel output at all; the watchdog reset the unit (`bootreason
+  wdt_by_pass_pwk`) and LK booted `boot` instead. Verified with a command-line
+  marker. Later kaeru versions force 64-bit kernels and move recovery to `swdl`,
+  so this may no longer hold on 2.0.1; not re-checked. 64-bit images go in `boot`.
 - `reboot recovery` is signaled through the RTC spare register
   (`rtc_mark_recovery` in the kernel log), not the MISC bootloader message;
   MISC stays zero. LK keeps a boot counter in idme (`/proc/idme/bootcount`) and
@@ -493,6 +500,59 @@ and `productid2` read `0` on the unit seen.
   a 4.9.77 32-bit kernel (`cm-14.1` branch) with a small userspace; `adb shell`
   in TWRP is root, and `/dev/snd`, `/dev/input`, `/dev/graphics/fb0` are all
   usable there (the bench for non-Android experiments).
+
+The rest of this section is from the first post of the amonet-cronos 2.0.1
+thread on XDA, unless it says otherwise. It hasn't all been tried on a unit
+here.
+
+### Boot keys
+
+What the buttons do while the Show is powering on, after the unlock:
+
+| Keys at power-on | Result |
+|---|---|
+| Volume Down | hacked fastboot |
+| Volume Up | TWRP |
+| Mute + Volume Down, USB connected | preloader USBDL: the screen stays black, and the PC sees `0e8d:2000 "MT8163 Preloader"`, manufacturer `PWNED` |
+
+Once TECHO5 is running, the same buttons mean something else (holding both
+volume buttons is the factory reset, see [install.md](install.md#factory-reset)).
+
+### Never flash these
+
+**LK, preloader, TZ and TEE1, never, in any mode.** With no BROM there's
+nothing underneath them to come back from. The installer's backup in
+`backups/<serial>/partitions/` holds copies of them; that's a record, not
+something to write back. To update an unlocked unit to a newer amonet, flash
+the new zip in TWRP.
+
+### Unbrick
+
+The preloader USBDL port (Mute + Volume Down with USB connected, above) is the
+only way back for a cronos that no longer boots. amonet 2.0.0 and later leave it
+open on purpose, and [mtkclient](https://github.com/bkerler/mtkclient) talks to
+it. Even then, don't write LK, preloader, TZ or TEE1 through it.
+
+### Back to Fire OS
+
+Take the stock `update.bin` for this model from ftvdb.com and rename it to
+`.zip`. In TWRP, run Wipe > Factory Reset, then Install it. Reading TWRP's
+source, its `lk`, `tee1` and `tee2` entries point at `/dev/null`, so Fire OS's
+update can't overwrite the unlock. Not tried on a unit here.
+
+### UART
+
+The serial console's RX is on pad TP55. LK turns kernel UART logging off by
+default (amonet `4fc7ee9810`), so expect the bootloader's lines and little from
+the kernel.
+
+### Where TWRP comes from
+
+The TWRP in the zip is built from
+[amazon-oss/android_bootable_recovery](https://github.com/amazon-oss/android_bootable_recovery)
+and [R0rt1z2/twrp_device_amazon_echo-mt8163](https://github.com/R0rt1z2/twrp_device_amazon_echo-mt8163).
+The device tree ships its kernel and tools prebuilt, so there's no source for
+those parts to build from; the installer pins the `twrp.img` hash instead.
 
 ## LineageOS 18.1 (unofficial, r0rt1z2)
 

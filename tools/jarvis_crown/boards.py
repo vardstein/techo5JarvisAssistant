@@ -49,12 +49,12 @@ PROFILES = {
         install_confirmation="ERASE",
     ),
     # The 2nd gen Echo Show 5 (2021). Same MT8163 and MT7668 as checkers, its own panel and
-    # codec. Its amonet zip and TWRP are not pinned yet, so unlock and recovery stay closed
-    # until they are reviewed (see unlock.py and recovery.py).
+    # codec. Its amonet zip and TWRP are pinned (assets.py, recovery.py); it has no BROM, so the
+    # unlock warns that a brick there is permanent (unlock.py).
     "cronos": BoardProfile(
         board="cronos",
         fastboot_product="CRONOS",
-        model="Echo Show 5 2nd gen",
+        model="Echo Show 5 2nd gen / C76N8S",
         product_id="genbu-cronos-v1",
         display_width=960,
         display_height=480,
