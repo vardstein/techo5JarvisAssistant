@@ -126,6 +126,7 @@ class Show:
     updating: bool = False  # its firmware update is running
     at: int | None = None  # how far that update's download is, in percent
     cut: str = ""  # its "Reply cut off" event: a wake word stopped its reply (GENBU-250)
+    check: str = ""  # its "Check for updates" button, which has the house read the channel too (GENBU-157)
 
 
 # GENBU-249: the list of Shows under the house's update card, in Home Assistant's language. Why a Show

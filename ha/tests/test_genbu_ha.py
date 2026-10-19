@@ -157,6 +157,41 @@ async def test_a_new_release_shows_within_the_hour_or_on_check(hass: HomeAssista
     assert hass.states.get(UPDATE).attributes["latest_version"] == "v1.0.5"
 
 
+async def test_a_shows_check_for_updates_reads_the_channel_too(hass: HomeAssistant, freezer):
+    """GENBU-157: a following Show's check only asks the house, so its press has the house read the channel."""
+    up = add_show(hass, "hall", "v1.0.3")
+    entities = er.async_get(hass)
+    show = entities.async_get(up)
+    button = entities.async_get_or_create("button", "esphome", "aa:hall-button-check_for_updates",
+                                          config_entry=hass.config_entries.async_get_entry(show.config_entry_id),
+                                          device_id=show.device_id, suggested_object_id="hall_check_for_updates")
+    hass.states.async_set(button.entity_id, "unavailable")
+    await setup(hass)
+
+    def press(state=None):
+        hass.states.async_set(button.entity_id, state or dt_util.utcnow().isoformat())
+
+    def latest():
+        return hass.states.get(UPDATE).attributes["latest_version"]
+
+    release("v1.0.4")
+    press("2026-10-01T08:00:00+00:00")  # the Show connecting again with its last press: not a press
+    await hass.async_block_till_done()
+    assert latest() == "v1.0.3"
+    press()
+    await hass.async_block_till_done()
+    assert latest() == "v1.0.4"
+    release("v1.0.5")
+    freezer.tick(timedelta(seconds=20))
+    press()  # within the minute: nothing more
+    await hass.async_block_till_done()
+    assert latest() == "v1.0.4"
+    freezer.tick(timedelta(seconds=41))
+    press()
+    await hass.async_block_till_done()
+    assert latest() == "v1.0.5"
+
+
 async def test_install_moves_the_house_and_the_shows_follow(hass: HomeAssistant):
     up = add_show(hass, "hall", "v1.0.3")
     kitchen = add_show(hass, "kitchen", "v1.0.3")

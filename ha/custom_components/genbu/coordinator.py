@@ -45,6 +45,7 @@ from .recipe import show_action
 LOGGER = logging.getLogger(__name__)
 LOOK_EVERY = timedelta(minutes=1)
 READ_EVERY = timedelta(hours=1)  # the channel's manifest; 6 hours kept a new release off the card for half a day (GENBU-258)
+ASKED_GAP = timedelta(minutes=1)  # a Show's Check for updates reads the channel at most this often (GENBU-157)
 SETTLE = timedelta(minutes=30)  # how long after an install the card shows how far the Shows are
 TELL_EVERY = timedelta(hours=1)  # how often a Show mentions a speaker that is off (GENBU-161)
 
@@ -58,7 +59,7 @@ def find_shows(hass: HomeAssistant) -> list[Show]:
             if device.manufacturer not in MANUFACTURERS or device.via_device_id:
                 continue
             node = entry.data.get("device_name") or _slug(device.name or "")
-            firmware = committed = status = satellite = key = cut = None
+            firmware = committed = status = satellite = key = cut = check = None
             for e in er.async_entries_for_device(entities, device.id):
                 if e.domain == "assist_satellite" and not e.disabled_by:
                     satellite = e.entity_id
@@ -66,6 +67,8 @@ def find_shows(hass: HomeAssistant) -> list[Show]:
                     key = e.entity_id
                 elif e.domain == "event" and e.unique_id.endswith("-reply_cut") and not e.disabled_by:
                     cut = e.entity_id
+                elif e.domain == "button" and e.unique_id.endswith("-check_for_updates") and not e.disabled_by:
+                    check = e.entity_id
                 elif e.domain == "update" and (e.unique_id.endswith("-firmware") or e.entity_id.endswith("_firmware")):
                     firmware = e.entity_id
                 elif e.domain == "sensor" and (e.unique_id.endswith("-committed_version")
@@ -98,6 +101,7 @@ def find_shows(hass: HomeAssistant) -> list[Show]:
                 updating=bool(up and up.attributes.get("in_progress")),
                 at=round(at) if isinstance(at, (int, float)) else None,
                 cut=cut or "",
+                check=check or "",
             )
     return sorted(shows.values(), key=lambda s: s.node)
 
@@ -206,6 +210,8 @@ class GenbuHouse:
         self.raced: dict = {}  # the last race, as sensor.genbu_wake_race shows it
         self.cuts = reply_cut.Cuts()  # the replies a wake word cut off, for the turn after (GENBU-250)
         self._cut_by: dict[str, str] = {}  # the Shows' reply_cut events: entity id → device id
+        self._checks: set[str] = set()  # the Shows' Check for updates buttons (GENBU-157)
+        self._asked_at: datetime | None = None  # when one of them last had the channel read
         self._watched: set[str] = set()
         self._player_ids: set[str] = set()
         self._stops: list = []
@@ -241,6 +247,8 @@ class GenbuHouse:
         self._stops.append(self.hass.bus.async_listen(WAKE_EVENT, self._wake))
         self._stops.append(self.hass.bus.async_listen(EVENT_STATE_CHANGED, self._reply_cut,
                                                       event_filter=self._a_cut))
+        self._stops.append(self.hass.bus.async_listen(EVENT_STATE_CHANGED, self._check_pressed,
+                                                      event_filter=self._a_press))
         await self.async_refresh()
         # Not waited for: a slow GitHub must not hold Home Assistant's start up.
         self.entry.async_create_background_task(self.hass, self.async_read_release(), f"{DOMAIN} release")
@@ -332,6 +340,26 @@ class GenbuHouse:
 
     async def _read(self, _now: datetime) -> None:
         await self.async_read_release()
+
+    @callback
+    def _a_press(self, data) -> bool:
+        """A Show's Check for updates button was pressed. A button's state is when it was last pressed;
+        the state it comes back with when the Show or Home Assistant starts is an old press."""
+        old, new = data["old_state"], data["new_state"]
+        return (data["entity_id"] in self._checks and old is not None and new is not None
+                and old.state != STATE_UNAVAILABLE and new.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN)
+                and new.state != old.state)
+
+    @callback
+    def _check_pressed(self, _event: Event) -> None:
+        """A following Show's own check only asks the house, which knew nothing newer until its next hourly
+        read; now the press reads the channel too (GENBU-157). Once a minute at most, for an automation that
+        presses every Show's button at once."""
+        now = dt_util.utcnow()
+        if self._asked_at is not None and now - self._asked_at < ASKED_GAP:
+            return
+        self._asked_at = now
+        self.entry.async_create_background_task(self.hass, self.async_read_release(), f"{DOMAIN} release")
 
     async def async_read_release(self) -> None:
         """Reads the channel's newest manifest; what was read before stays when GitHub doesn't answer."""
@@ -492,6 +520,7 @@ class GenbuHouse:
         self._player_ids = {p.entity for p in self.players}
         # Asked over the encrypted link only, which the Show checks too.
         self._cut_by = {s.cut: s.device for s in self.shows if s.cut and s.encrypted and s.device}
+        self._checks = {s.check for s in self.shows if s.check}
         changed = self._tidy()
         changed = self.house.see(self.shows, dt_util.utcnow()) or changed
         if changed:
