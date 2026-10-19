@@ -111,6 +111,12 @@ in TWRP, it goes through these steps:
 If anything fails after the backup, the error names the backup folder. After a PASS, the normal
 `install` flow runs as usual.
 
+`amonet-upgrade` only knows checkers, the board whose partitions were mapped on a real unit. A crown or
+cronos still on 1.x is told so instead of being sent there. For cronos, the XDA thread's way to update
+an unlocked unit is flashing the new amonet-cronos zip in TWRP. Nobody here has done that from 1.x, and
+the zip rewrites the bootloader on a board with no BROM, so read the thread before trying it. A
+`TARGETS` entry for cronos waits for a map taken from a real unit, not from guesses (GENBU-206).
+
 The Amonet package stays a local/user-supplied dependency rather than a Jarvis Crown release asset.
 Later installer stages must not weaken or bypass this gate.
 

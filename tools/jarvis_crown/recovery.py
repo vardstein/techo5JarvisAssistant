@@ -144,14 +144,39 @@ def verify_twrp_board(serial: str, board: str, *, run: Callable = subprocess.run
     if layout == "AMONET1":
         raise RecoveryError(
             "legacy Amonet 1.x boot microloader detected; its boot layout is incompatible "
-            "with Jarvis Show. Upgrade it first with: jarvis-show.py amonet-upgrade --board <board> "
-            "(tools/fetch-show-assets.py picks up and checks the Amonet zip)"
+            "with Jarvis Show. " + amonet1_upgrade_hint(board)
         )
     if layout != "PLAIN":
         raise RecoveryError(
             f"cannot prove a modern/plain boot layout (probe returned {layout!r}); "
             "refusing any later Jarvis boot write"
         )
+
+
+def amonet1_upgrade_hint(board: str) -> str:
+    """Where a unit still on Amonet 1.x goes next. amonet-upgrade only knows the boards whose
+    partitions were mapped on a real unit (GENBU-206); pointing anything else at it is a dead end."""
+    # Imported here: amonet_upgrade imports this module.
+    from jarvis_crown.amonet_upgrade import TARGETS
+    from jarvis_crown.assets import XDA_CRONOS_THREAD
+
+    if board in TARGETS:
+        return (
+            f"Upgrade it first with: jarvis-show.py amonet-upgrade --board {board} "
+            "(tools/fetch-show-assets.py picks up and checks the Amonet zip)"
+        )
+    if board == "cronos":
+        return (
+            "amonet-upgrade has no map for cronos. The XDA thread updates an unlocked cronos by "
+            "flashing the new amonet-cronos zip in TWRP (tools/fetch-show-assets.py picks up and "
+            "checks it). Nobody here has done that from 1.x, and the zip rewrites the bootloader on a "
+            f"board with no BROM, so read the thread first: {XDA_CRONOS_THREAD} Then run this again; "
+            "this check runs before anything is written."
+        )
+    return (
+        f"amonet-upgrade has no map for {board}. Update Amonet the way the board's XDA thread says, "
+        "then run this again."
+    )
 
 
 def verify_twrp_crown(serial: str, *, run: Callable = subprocess.run) -> None:

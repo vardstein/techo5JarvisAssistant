@@ -152,6 +152,19 @@ class RecoveryTests(unittest.TestCase):
                 self.identity(), pathlib.Path("/unused"), adb_run=adb,
             )
 
+    def test_amonet1_hint_only_sends_mapped_boards_to_amonet_upgrade(self):
+        from jarvis_crown.amonet_upgrade import TARGETS
+
+        for board in ("crown", "checkers", "cronos"):
+            hint = recovery.amonet1_upgrade_hint(board)
+            if board in TARGETS:
+                self.assertIn(f"amonet-upgrade --board {board}", hint)
+            else:
+                self.assertNotIn("jarvis-show.py amonet-upgrade", hint)
+        cronos = recovery.amonet1_upgrade_hint("cronos")
+        self.assertIn("in TWRP", cronos)
+        self.assertIn("xdaforums.com", cronos)
+
     def test_unreadable_boot_layout_is_rejected_in_twrp(self):
         base = self.adb_runner()
 
