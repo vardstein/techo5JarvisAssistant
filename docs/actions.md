@@ -68,9 +68,11 @@ restarts. Your Home Assistant can't connect to it again, and the device no longe
 Assistant. Alarms, radio stations, Wi-Fi and its other settings stay.
 
 Afterward, delete the device from **Settings → Devices & services → ESPHome** in your Home Assistant.
-The new key isn't shown anywhere. To add the device to another Home Assistant later, open its setup
-page, go to **General**, and choose **Let a Home Assistant add this device**: for 15 minutes the
-device has no key, and the Home Assistant that adds it sets one.
+The new key isn't shown anywhere, and the device stays out of Home Assistant's **Discovered** list.
+To add it to another Home Assistant later, tap **Let Home Assistant add it** on a Show's start-up
+screen, or open its setup page, go to **General**, and choose **Let a Home Assistant add this
+device**: for 15 minutes the device has no key, shows up under **Discovered**, and the Home Assistant
+that adds it sets one.
 
 ### confirm (Required)
 
@@ -96,8 +98,9 @@ logs. The Wi-Fi goes too, unless `keep_wifi` is set. Then it starts in setup, as
 If the device's system is too old to be reset this way, or to keep the Wi-Fi through a reset, it
 says so and changes nothing.
 
-Afterward, delete the device from **Settings → Devices & services → ESPHome**. To add it again, open
-its setup page and choose **Let a Home Assistant add this device**, the same as after leaving.
+Afterward, delete the device from **Settings → Devices & services → ESPHome**. To add it again, tap
+**Let Home Assistant add it** on a Show's start-up screen, or open its setup page and choose **Let a
+Home Assistant add this device**, the same as after leaving.
 With Genbu 1.4.16 or later, **Delete** on the Show's Genbu device calls this action for you and takes
 the rest of the Show out of the house too ([Deleting a Show in Home Assistant](update-leader.md#deleting-a-show-in-home-assistant)).
 

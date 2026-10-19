@@ -440,6 +440,14 @@ It comes back like a newly installed Show: the Wi-Fi page asks for a network, an
 closed. What it was installed as (the profile) and the TECHO5 version stay. LineageOS's own data on
 userdata (downloads and the like) isn't touched.
 
+Once it is on a network, the start-up screen says **Ready to set up**. Until then Home Assistant
+doesn't see it at all: no Home Assistant has its key, and a Show it found now would only ask for one.
+Tap **Let Home Assistant add it**. For 15 minutes the Show has no key, and the screen says until when.
+In Home Assistant, go to **Settings → Devices & services**: the Show is under **Discovered**. Choose
+**Add**, and the Home Assistant that adds it sets its key. If nothing adds it in time, the window shuts
+with a new key nobody has and the button comes back. The setup page's **Let a Home Assistant add this
+device** opens the same window.
+
 `python3 tools/jarvis-show.py --remove-show --name NAME --reset-show yes` does the same over SSH, and
 with `--keep-wifi yes` the Show keeps its Wi-Fi networks (a Show image from GENBU-223 on).
 

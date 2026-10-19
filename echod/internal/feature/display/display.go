@@ -163,6 +163,10 @@ type Display struct {
 	// online is whether the device had a network address at onlineAt, looked at once a second.
 	online   bool
 	onlineAt time.Time
+	// offerAt is when the splash last looked at whether the device waits to be added, and
+	// setupButtonUp whether its button for that is on the screen (splash_setup.go).
+	offerAt       time.Time
+	setupButtonUp bool
 
 	// sheet is the settings sheet being shown; restartArm is the first of the two taps Restart wants.
 	sheet      bool
@@ -662,6 +666,9 @@ func (d *Display) gesture(g touch.Gesture) {
 	d.touchedAt = time.Now()
 	d.mu.Unlock()
 
+	if g.Kind == touch.Tap && d.setupTapped(g.X, g.Y) {
+		return
+	}
 	if !on {
 		if g.Kind == touch.Tap && d.ringing(time.Now()).any() {
 			// A ring on a panel the night left dark: the tap stops it, and the panel stays dark.
@@ -1918,7 +1925,9 @@ func (d *Display) frame() time.Duration {
 	// "Connecting to Home Assistant" rather than showing pages that need Home Assistant to work.
 	d.mu.Unlock()
 	if booting {
-		d.r.drawSplash(d.logo, now.Sub(started), d.bootStep(now, started))
+		step := d.bootStep(now, started)
+		d.offerSetup(now, step)
+		d.r.drawSplash(d.logo, now.Sub(started), step)
 		if err := d.dev.Present(); err != nil {
 			slog.Warn("presenting the frame failed", "err", err)
 		}
