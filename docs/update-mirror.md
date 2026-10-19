@@ -53,7 +53,16 @@ which node has what through a shared table, and falls back to the real registry 
 4. It keeps the house version, the one before it (for going back) and the one on offer. Everything else
    is deleted. Before downloading it checks free space; if space is short, that's a repair.
 5. The cache lives in a folder that HA's backups leave out, so a backup doesn't grow by 70 MB per
-   release. Still to check on the live box: which folder that is.
+   release: `hass.config.cache_path("genbu", "releases")`, which is `/config/.cache/genbu/releases`.
+   HA documents its `.cache` folder as "temporary data that can be regenerated and is not included in
+   backups". Both backup paths skip it: the Supervisor's list (`HOMEASSISTANT_BACKUP_EXCLUDE` in
+   `supervisor/homeassistant/module.py`, main at 87984b62) and core's own for installs without a
+   Supervisor (`EXCLUDE_FROM_BACKUP` in `components/backup/const.py`, 2026.10.2) both have `.cache/*`.
+   That pattern matches `.cache/genbu` itself, and securetar's walk doesn't go into a folder that
+   matches, so nothing below it is saved either (tried with `PurePath.full_match`). `tts/*` is the only
+   other skipped folder, and it belongs to TTS. Read in code; not yet seen in a real backup of the live
+   box. After a restore the cache is empty, so the next check downloads again, and until then HA must
+   show "not downloaded yet", not "up to date".
 6. It serves two read-only paths over HA's own HTTPS, behind the normal HA login:
    - `GET /api/genbu/release/<version>/<manifest name>` and the same path with `.sig`
    - `GET /api/genbu/blob/<sha256>`, where the name must be exactly 64 hex characters. It sends the
@@ -109,7 +118,7 @@ it only if HA turns out to be too slow to serve a house.
 - Breaks unless handled:
   - Shows on older firmware still use GitHub, so keep the router rule until every Show has updated once
     to a build that asks HA.
-  - The cache would bloat HA backups if it's put in the wrong folder.
+  - The cache would bloat HA backups if it's put anywhere but `.cache` (see step 5).
   - Install guide 732 and firewall pages 180/378 need updating, but only after the change is done.
 
 ## Steps
