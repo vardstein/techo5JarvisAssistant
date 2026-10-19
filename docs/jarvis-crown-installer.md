@@ -787,7 +787,8 @@ Then it saves everything that goes in `backups/home-assistant/` and removes it, 
 
 What stays: everything with only the "Genbu Show installed" label (the house-wide `jarvis_local_*`
 automations and the music scripts), the blueprints, the room and its dashboard, the calendars, and
-`backups/<serial>/`, so the unit can be installed again. On this computer the Show's SSH key and its
+`backups/<serial>/`, so the unit can be installed again. The run says so in one line above the lists, and
+names the house-wide automations and scripts it found, and the other Shows' own ones, with a count. On this computer the Show's SSH key and its
 pinned host key stay (`~/.ssh/genbu_<name>*`), and so do any router rules made for its address; the
 run lists them, and `shows` puts the keys away later ([Finding Shows](#finding-shows)). Other automations, scripts
 and dashboards that use the Show are listed, not changed: they show up as unavailable entities until

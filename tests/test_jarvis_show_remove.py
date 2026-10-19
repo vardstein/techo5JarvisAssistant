@@ -356,7 +356,7 @@ class LabelTests(unittest.TestCase):
         goes, stays = remove.plan(found)
         self.assertIn("script show5_radio", goes)
         self.assertIn("label 'Genbu Show: genbushow5'", goes)
-        self.assertTrue(any("only the 'Genbu Show installed' label" in s for s in stays))
+        self.assertIn("1 house-wide automation: automation.jarvis_local_timer", stays)
 
         saved, keep = kept()
         lines = []
@@ -371,6 +371,25 @@ class LabelTests(unittest.TestCase):
         # the label goes last, once the Show's pieces are gone
         writes = [c[1] for c in house.calls if c[0] in ("DELETE", "POST") or c[1].endswith("/delete")]
         self.assertEqual(writes[-1], "config/label_registry/delete")
+
+    def test_what_stays_is_named_and_counted(self):
+        house = labeled_house()
+        house.labels.append({"label_id": "genbu_show_hall", "name": "Genbu Show: hallshow5"})
+        house.automations["jarvis_local_weather"] = {"id": "jarvis_local_weather", "triggers": []}
+        house.entities += [labeled("automation", "jarvis_local_weather", INSTALLED["label_id"]),
+                           labeled("automation", "techo5_turn_room_down_hallshow5", "genbu_show_hall",
+                                   INSTALLED["label_id"])]
+        found = remove.find(house, "genbuShow5")
+        self.assertEqual(found.house, ["automation.jarvis_local_timer", "automation.jarvis_local_weather",
+                                       "script.jarvis_music_play"])
+        self.assertEqual(found.others, {"hallshow5": ["automation.techo5_turn_room_down_hallshow5"]})
+        stays = remove.plan(found)[1]
+        self.assertIn("2 house-wide automations: automation.jarvis_local_timer, automation.jarvis_local_weather",
+                      stays)
+        self.assertIn("1 house-wide script: script.jarvis_music_play", stays)
+        self.assertIn("hallshow5's own: automation.techo5_turn_room_down_hallshow5", stays)
+        self.assertFalse(any("only the 'Genbu Show installed' label" in s for s in stays))
+        self.assertTrue(remove.only_this(found).startswith("only genbuShow5 goes;"))
 
     def test_the_label_stays_while_something_still_carries_it(self):
         house = labeled_house()

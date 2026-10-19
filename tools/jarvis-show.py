@@ -831,6 +831,8 @@ def remove_show_command(args, backups: Path) -> int:
     if show is not None and found.mac and found.mac != show.mac:
         update_show(show.folder, mac=found.mac)  # for the run after its ESPHome entry is gone
     goes, stays = gone.plan(found)
+    if goes:
+        ui.out.note(gone.only_this(found))
     for label, items, say in (("Goes", goes, ui.out.step), ("Stays", stays, ui.out.note)):
         if items:
             ui.out.heading(label)

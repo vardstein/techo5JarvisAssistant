@@ -59,6 +59,8 @@ class Found:
     automations: list[tuple[str, dict]] = field(default_factory=list)   # ours, by config id
     scripts: list[tuple[str, dict]] = field(default_factory=list)       # with its label, by config id
     labels: list[dict] = field(default_factory=list)                    # its own labels, "Genbu Show: <node>"
+    house: list[str] = field(default_factory=list)    # house-wide automations and scripts; they stay
+    others: dict[str, list[str]] = field(default_factory=dict)  # the other Shows' labelled pieces; they stay
     uses: list[str] = field(default_factory=list)     # what else uses it; left alone
     users: list[dict] = field(default_factory=list)   # its Home Assistant users
     skipped_users: list[str] = field(default_factory=list)
@@ -151,6 +153,33 @@ def _labeled(ha: HomeAssistant, found: Found) -> None:
         into[kind].append((item, config))
 
 
+def _house(ha: HomeAssistant, found: Found) -> None:
+    """What the installer made for the whole house or for the other Shows: the automations and scripts with
+    the common label that aren't this Show's. Listed under what stays, so a removal doesn't read as all of
+    Genbu going."""
+    known = [x for x in ha.ws({"type": "config/label_registry/list"}) or [] if isinstance(x, dict)]
+    common = {x.get("label_id") for x in known
+              if str(x.get("name") or "").casefold() == labels.INSTALLED.casefold()} - {None}
+    if not common:
+        return
+    mine = {x.get("label_id") for x in found.labels}
+    prefix = labels.show_label("")
+    shows = {x.get("label_id"): str(x.get("name"))[len(prefix):] for x in known
+             if str(x.get("name") or "").casefold().startswith(prefix.casefold()) and x.get("label_id") not in mine}
+    ours = {item for item, _ in found.automations} | {item for item, _ in found.scripts}
+    for entity in ha.ws({"type": "config/entity_registry/list"}) or []:
+        have = set(entity.get("labels") or [])
+        if entity.get("platform") not in ("automation", "script") or not have & common or have & mine \
+                or str(entity.get("unique_id") or "") in ours:
+            continue
+        other = sorted(shows[x] for x in have if x in shows)
+        if other:
+            found.others.setdefault(other[0], []).append(str(entity.get("entity_id")))
+        else:
+            found.house.append(str(entity.get("entity_id")))
+    found.house.sort()
+
+
 def _uses(ha: HomeAssistant, found: Found) -> None:
     """The automations, scripts, scenes and dashboards outside ours that use the Show."""
     ours = {("automation", item) for item, _ in found.automations} | {("script", item) for item, _ in found.scripts}
@@ -209,6 +238,7 @@ def find(ha: HomeAssistant, name: str, *, also: list[str] = (), mac: str = "",
     _add(found.names, found.node)
     _automations(ha, found)
     _labeled(ha, found)
+    _house(ha, found)
     _users(ha, found)
     got = music(found.names, found.mac) if music is not None else None
     if got is not None:
@@ -221,6 +251,16 @@ def find(ha: HomeAssistant, name: str, *, also: list[str] = (), mac: str = "",
 
 def _mask(mac: str) -> str:
     return "…" + mac[-5:] if len(mac) > 5 else mac
+
+
+def only_this(found: Found) -> str:
+    """The line above the lists: the removal is this one Show's."""
+    return (f"only {found.name} goes; Genbu, the house's voice assistant, its automations and scripts, and "
+            "the other Shows stay")
+
+
+def _count(n: int, one: str) -> str:
+    return f"{n} {one}{'' if n == 1 else 's'}"
 
 
 def plan(found: Found) -> tuple[list[str], list[str]]:
@@ -258,11 +298,18 @@ def plan(found: Found) -> tuple[list[str], list[str]]:
                      "admin: --music-assistant-token-file, the keyring or signing in)")
     for use in found.uses:
         stays.append(f"{use} uses it; left as it is")
-    stays.append(f"what has only the {labels.INSTALLED!r} label (the house-wide jarvis_local_* automations, "
-                 "the music scripts), the blueprints, the room and its dashboard, the calendars, and the Show's "
-                 "backups")
-    stays.append(f"on this computer, its SSH key and pinned host key (~/.ssh/{key_path(found.name).name}*); on "
-                 "the router, any rules made for its address")
+    for kind in ("automation", "script"):
+        ids = [x for x in found.house if x.startswith(kind + ".")]
+        if ids:
+            stays.append(f"{_count(len(ids), 'house-wide ' + kind)}: {', '.join(ids)}")
+    for show, ids in sorted(found.others.items()):
+        stays.append(f"{show}'s own: {', '.join(sorted(ids))}")
+    if not found.house:
+        stays.append(f"what has only the {labels.INSTALLED!r} label (the house-wide jarvis_local_* automations, "
+                     "the music scripts)")
+    stays.append("the blueprints, the room and its dashboard, the calendars, and the Show's backups")
+    stays.append(f"on this computer, its SSH key and pinned host key (~/.ssh/{key_path(found.name).name}*), "
+                 "until `shows` puts them away; on the router, any rules made for its address")
     return goes, stays
 
 
