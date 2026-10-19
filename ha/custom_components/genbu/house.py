@@ -127,6 +127,7 @@ class Show:
     at: int | None = None  # how far that update's download is, in percent
     cut: str = ""  # its "Reply cut off" event: a wake word stopped its reply (GENBU-250)
     check: str = ""  # its "Check for updates" button, which has the house read the channel too (GENBU-157)
+    disabled: bool = False  # its ESPHome entry or device, or its genbu device, is disabled (GENBU-261)
 
 
 # GENBU-249: the list of Shows under the house's update card, in Home Assistant's language. Why a Show
@@ -240,6 +241,8 @@ class House:
     switches       each Show's Recipes and Updates by voice, by device id, when somebody switched them
     keys           the Home Assistant user each Show's key was seen to belong to, by device id (GENBU-196)
     leaving        the Shows deleted in Home Assistant and not yet gone, by node (GENBU-223, removal.py)
+    off            the Shows disabled in Home Assistant whose user Genbu switched off, by device id, until
+                   they are back with a new key (GENBU-261, keycare.py)
     house, since   the house version, the one every Show moves to, and when it last changed
     channel        the release channel the house reads; empty for the house version's own
     night          whether a waiting update installs by itself at night
@@ -251,7 +254,7 @@ class House:
         self.data = data if data is not None else {}
         for k in OLD_KEYS:
             self.data.pop(k, None)
-        for k in ("committed", "devices", "music", "switches", "keys", "leaving"):
+        for k in ("committed", "devices", "music", "switches", "keys", "leaving", "off"):
             self.data.setdefault(k, {})
         for k in ("house", "since", "channel", "before"):
             self.data.setdefault(k, "")
@@ -340,6 +343,7 @@ class House:
             self.data["music"].pop(device, None)
             self.data["switches"].pop(device, None)
             self.data["keys"].pop(device, None)
+            self.data["off"].pop(device, None)
 
     def music_choice(self, device: str) -> str:
         return self.data["music"].get(device, "")

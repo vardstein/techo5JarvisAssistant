@@ -115,6 +115,13 @@ class RenewTests(unittest.TestCase):
         self.assertEqual(keys.may_renew(show_user(admin=True), True), keys.NOT_A_SHOW_USER)
         self.assertEqual(keys.may_renew(show_user(home_only=False), True), keys.NOT_A_SHOW_USER)
 
+    def test_may_switch_off_only_a_show_user_that_is_on(self):
+        self.assertTrue(keys.may_switch_off(show_user()))
+        self.assertFalse(keys.may_switch_off(None))
+        self.assertFalse(keys.may_switch_off(show_user(active=False)))
+        self.assertFalse(keys.may_switch_off(show_user(admin=True)))
+        self.assertFalse(keys.may_switch_off(show_user(home_only=False)))
+
     def test_retire_keeps_only_the_new_key(self):
         self.assertEqual(keys.retire(("a", "new", "b"), "new"), ["a", "b"])
         self.assertEqual(keys.retire(("new",), "new"), [])

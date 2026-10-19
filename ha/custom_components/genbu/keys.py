@@ -13,6 +13,13 @@ So a new key, and a user made for a Show that has none, only ever come from an a
 on the Repairs issue (or calling genbu.show_key). Genbu does not change users either: a Show's user is
 not an admin and may only come from home, and a user that is anything else gets no key from Genbu.
 
+With one exception, which is Jade's call (GENBU-261): a Show an admin disables in Home Assistant is out of
+use until it is enabled again, so Genbu switches its user off, which deletes its keys. Enabled again, Genbu
+switches that user back on and gives the Show a new key, as the Repairs button would. Only for a Show
+Genbu itself switched off this way, and only a proper Show user (may_switch_off). Disabling and enabling a
+device or an integration takes an admin in Home Assistant, so it is still an admin's doing. What Genbu may
+do is under review in GENBU-262.
+
 Everything here is plain Python so the tests run without Home Assistant installed."""
 
 from __future__ import annotations
@@ -125,6 +132,13 @@ def may_renew(user: User | None, encrypted: bool) -> str | None:
     if user.admin or not user.home_only:
         return NOT_A_SHOW_USER
     return None
+
+
+def may_switch_off(user: User | None) -> bool:
+    """Whether Genbu switches off the user of a Show that was disabled (GENBU-261): a proper Show user
+    that is on. An admin's, or one that may come from outside, is left alone, and so is one that is off
+    already, which is an admin's to switch on again."""
+    return user is not None and user.active and not user.admin and user.home_only
 
 
 def password() -> str:

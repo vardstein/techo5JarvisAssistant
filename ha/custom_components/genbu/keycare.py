@@ -5,7 +5,11 @@ an admin can act on it.
 
 A new key only ever comes from an admin: the Repairs issue's button (repairs.py, which Home Assistant only
 lets admins use) or genbu.show_key, an admin-only action. See keys.py for why Genbu never does it by
-itself, and docs/genbu-assistant.md."""
+itself, and docs/genbu-assistant.md.
+
+The one exception is a Show an admin disabled in Home Assistant (GENBU-261): Genbu switches its user off
+while it is disabled, which deletes its keys, so its dashboard and DashCast turn it away. Enabled again,
+Genbu switches the user back on and gives the Show a new key once it is back online."""
 
 from __future__ import annotations
 
@@ -69,6 +73,12 @@ class KeyCare:
     def recorded(self) -> dict[str, dict]:
         return self.house.data["keys"]
 
+    @property
+    def off(self) -> dict[str, dict]:
+        """The disabled Shows Genbu switched the user of off, by device id: {"user": its id, "back": True
+        once it is enabled again and waits for its new key}. "user" is "" when there was none to switch."""
+        return self.house.data["off"]
+
     def again(self) -> None:
         """A user changed: every turned-away Show is asked again on the next look."""
         self.asked.clear()
@@ -79,10 +89,11 @@ class KeyCare:
         if self._lock.locked():
             return
         async with self._lock:
+            await self._switch(shows)
             now = dt_util.utcnow()
             for show in shows:
-                if not show.key or not show.device:
-                    continue
+                if not show.key or not show.device or show.disabled:
+                    continue  # a disabled Show is turned away on purpose: nothing to fix
                 st = self.hass.states.get(show.key)
                 state = st.state if st else ""
                 if not keys.ask(state, self.seen.get(show.device), self.asked.get(show.device), now):
@@ -93,6 +104,67 @@ class KeyCare:
                 except HomeAssistantError as err:
                     LOGGER.info("Could not ask %s about its Home Assistant key: %s", show.name, err)
             self._drop_gone()
+
+    async def _switch(self, shows: list[Show]) -> None:
+        """A Show disabled has its user switched off, and enabled again, back on (GENBU-261)."""
+        for show in shows:
+            if not show.device:
+                continue
+            mine = self.off.get(show.device)
+            if show.disabled and (mine is None or mine.get("back")):
+                await self._switch_off(show)
+            elif not show.disabled and mine is not None and not mine.get("back"):
+                await self._switch_on(show, mine)
+
+    async def _switch_off(self, show: Show) -> None:
+        users = [_user(u) for u in await self._users()]
+        user = keys.show_user(users, self.recorded.get(show.device, {}).get("user", ""), show_prefix(show.node))
+        ir.async_delete_issue(self.hass, DOMAIN, issue_id(show.device))  # out of use: nothing to fix now
+        self.tried.discard(show.device)
+        if not keys.may_switch_off(user):
+            self.off[show.device] = {"user": ""}
+            self._save()
+            if user is None:
+                LOGGER.warning("%s is disabled; it has no Home Assistant user of its own to switch off", show.name)
+            elif user.active:
+                LOGGER.warning("%s is disabled, but its Home Assistant user is an admin or may come from outside, "
+                               "so Genbu leaves it on", show.name)
+            return
+        hass_user = await self.hass.auth.async_get_user(user.id)
+        if hass_user is None:
+            return
+        await self.hass.auth.async_update_user(hass_user, is_active=False)
+        self.off[show.device] = {"user": hass_user.id}
+        self._save()
+        LOGGER.info("%s is disabled: its Home Assistant user %s is switched off, and with that its key deleted",
+                    show.name, hass_user.name)
+
+    async def _switch_on(self, show: Show, mine: dict) -> None:
+        hass_user = await self.hass.auth.async_get_user(mine["user"]) if mine.get("user") else None
+        if hass_user is None:
+            del self.off[show.device]
+            self._save()
+            return
+        if not hass_user.is_active:
+            await self.hass.auth.async_update_user(hass_user, is_active=True)
+        mine["back"] = True
+        self._save()
+        self.seen.pop(show.device, None)  # asked about its key as soon as it is back online
+        self.asked.pop(show.device, None)
+        LOGGER.info("%s is enabled again: its Home Assistant user %s is switched on; it gets a new key once it "
+                    "is back online", show.name, hass_user.name)
+
+    async def _welcome_back(self, show: Show) -> bool:
+        """A Show enabled again after Genbu switched its user off gets a new key by itself. True when it
+        did; when it couldn't, it gets the Repairs issue any Show without a key gets, for an admin."""
+        try:
+            await self.async_renew(show)
+        except HomeAssistantError as err:
+            LOGGER.warning("%s is enabled again, but could not be given a new key: %s", show.name, err)
+            return False
+        self.off.pop(show.device, None)
+        self._save()
+        return True
 
     async def _ask(self, show: Show) -> dict:
         """The Show's own word on its key: {"state": ..., "key": ...}. {} when it has no encryption key,
@@ -139,10 +211,15 @@ class KeyCare:
         if state == keys.OK:
             ir.async_delete_issue(self.hass, DOMAIN, issue_id(show.device))
             self.tried.discard(show.device)
+            if self.off.pop(show.device, None) is not None:
+                self._save()
             if found := keys.owner(key, users):
                 self._record(show, found[0].id)
             return
         kind = keys.why(state, key, show.encrypted, user)
+        if kind == keys.KEY_GONE and self.off.get(show.device, {}).get("back"):
+            if await self._welcome_back(show):
+                return
         if kind == keys.TRY_AGAIN:
             if show.device in self.tried:
                 # Tried once and still turned away: another try would only be another failed login.
@@ -253,5 +330,9 @@ class KeyCare:
             del self.recorded[device]
             self.seen.pop(device, None)
             self.asked.pop(device, None)
-        if gone:
+        # A disabled Show that is gone keeps its user off: it is somebody else's to delete (GENBU-223 does).
+        off = [d for d in self.off if devices.async_get(d) is None]
+        for device in off:
+            del self.off[device]
+        if gone or off:
             self._save()

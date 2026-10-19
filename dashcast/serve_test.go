@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"image"
 	"image/color"
 	"testing"
@@ -225,5 +227,38 @@ func TestATouchWakesAStillPage(t *testing.T) {
 func TestWhose(t *testing.T) {
 	if whose("a-token") != "own" || whose("") != "dashcast" {
 		t.Errorf("whose: %q, %q", whose("a-token"), whose(""))
+	}
+}
+
+// GENBU-261: an open screen goes once Home Assistant turns the Show's key away, and only then: a
+// Home Assistant that doesn't answer for a while closes nothing.
+func TestWatchKeyClosesOnARefusal(t *testing.T) {
+	answers := make(chan error, 3)
+	answers <- errors.New("home assistant: connection refused")
+	answers <- nil
+	answers <- errTokenRefused
+	gone := make(chan struct{})
+	go watchKey(context.Background(), time.Millisecond, func(context.Context) error { return <-answers }, func() { close(gone) })
+	select {
+	case <-gone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the screen stayed after its key was turned away")
+	}
+	if len(answers) != 0 {
+		t.Error("gone before Home Assistant said so")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stopped := make(chan struct{})
+	go func() {
+		watchKey(ctx, time.Millisecond, func(context.Context) error { return nil }, func() { t.Error("gone with a good key") })
+		close(stopped)
+	}()
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the watch outlived its session")
 	}
 }

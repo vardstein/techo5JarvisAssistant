@@ -199,9 +199,14 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 		h.Path = "/" + h.Path
 	}
 	// Whose page it is: the Show's own user's when it sent a token that will do, dashcast's otherwise.
+	// A token Home Assistant turns away gets nothing: that Show is locked out on purpose (GENBU-261).
 	token, user := "", ""
 	if h.Token != "" {
-		if ug, name, err := showUsers.guardFor(ctx, cfg, h.Token); err != nil {
+		if ug, name, err := showUsers.guardFor(ctx, cfg, h.Token); errors.Is(err, errTokenRefused) {
+			slog.Warn("Home Assistant turned the Show's own key away, so it gets no page", "name", h.Name)
+			out.problem(keyTurnedAway)
+			return
+		} else if err != nil {
 			slog.Warn("the Show's own Home Assistant user can't be used, so it gets dashcast's", "name", h.Name, "user", name, "err", err)
 		} else {
 			g, token, user = ug, h.Token, name
@@ -285,8 +290,17 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 	} else {
 		slog.Info("dashboard picked up where it was left", "name", h.Name)
 	}
-	// Parked when this session ends, for the screen to come back to.
-	defer warm.park(w)
+	// Parked when this session ends, for the screen to come back to; closed when its key was turned
+	// away, so nothing of it is handed out again.
+	var turnedAway atomic.Bool
+	defer func() {
+		if turnedAway.Load() {
+			w.watch(nil)
+			w.close()
+			return
+		}
+		warm.park(w)
+	}()
 	tab := w.ctx
 
 	d := &differ{}
@@ -348,6 +362,19 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 		c.Close()
 	}()
 	go keepOnDashboards(sctx, tab, b.cfg.ha+h.Path, haOrigin(g.cfg.ha), allows, music, h.Name)
+	if token != "" {
+		mine := cfg
+		mine.token = token
+		go watchKey(sctx, keyWatch, func(ctx context.Context) error {
+			_, _, err := showUsers.ask(ctx, mine)
+			return err
+		}, func() {
+			turnedAway.Store(true)
+			slog.Warn("Home Assistant turned the Show's own key away; its screen is closed", "name", h.Name)
+			out.problem(keyTurnedAway)
+			cancel()
+		})
+	}
 	for lines.Scan() {
 		var t touchMsg
 		if json.Unmarshal(lines.Bytes(), &t) != nil {
@@ -361,6 +388,33 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 }
 
 // touch replays one of the device's touches on the page.
+// keyTurnedAway is what a Show whose own key Home Assistant turns away is told instead of a page.
+const keyTurnedAway = "Home Assistant turned this Show's key away, so it gets no dashboard. Is the Show disabled there?"
+
+// keyWatch is how often a screen signed in as a Show's own user has Home Assistant asked whether its
+// key still lets it in.
+const keyWatch = time.Minute
+
+// watchKey asks every so often whether a Show's key still lets it in, and calls gone once Home
+// Assistant turns it away: a Show disabled in Home Assistant has its user switched off, which
+// deletes its key, and its open screen goes too (GENBU-261). A Home Assistant that doesn't answer
+// is no answer.
+func watchKey(ctx context.Context, every time.Duration, ask func(context.Context) error, gone func()) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if err := ask(ctx); errors.Is(err, errTokenRefused) {
+				gone()
+				return
+			}
+		}
+	}
+}
+
 func touch(ctx context.Context, t touchMsg) error {
 	at := []*input.TouchPoint{{X: float64(t.X), Y: float64(t.Y)}}
 	switch t.T {

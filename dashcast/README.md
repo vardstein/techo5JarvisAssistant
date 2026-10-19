@@ -94,8 +94,10 @@ touch. So treat the token and the key with care:
 - **A Show can be its own user.** A Show set to use its own Home Assistant user sends that user's
   token inside the encrypted connection, and its page is then signed in as that user, in a browser
   profile of its own, rather than as dashcast's. dashcast asks Home Assistant whose the token is
-  each time the Show connects. An administrator's token, or one Home Assistant refuses, is not used:
-  the Show gets dashcast's own user and the log says why. The token is never written to the log.
+  each time the Show connects. An administrator's token is not used: the Show gets dashcast's own
+  user and the log says why. A token Home Assistant refuses gets no page at all. That Show's key was
+  taken away, for instance because the Show is disabled in Home Assistant, and an open screen is
+  closed within a minute of it. The token is never written to the log.
   The Show is told whose page it got, and its own log warns when that is not its own: a dashcast
   from before own users says nothing and signs every screen in as its own user, so a timer card
   there lists every Show's timers.

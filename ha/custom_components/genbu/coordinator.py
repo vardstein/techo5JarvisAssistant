@@ -60,8 +60,11 @@ def find_shows(hass: HomeAssistant) -> list[Show]:
             if device.manufacturer not in MANUFACTURERS or device.via_device_id:
                 continue
             node = entry.data.get("device_name") or _slug(device.name or "")
+            # Disabled, its entities are too, and it is still a Show: one that is out of use (GENBU-261).
+            settings = devices.async_get_devices(identifiers={(DOMAIN, device.id)})
+            disabled = bool(entry.disabled_by or device.disabled_by or any(s.disabled_by for s in settings))
             firmware = committed = status = satellite = key = cut = check = None
-            for e in er.async_entries_for_device(entities, device.id):
+            for e in er.async_entries_for_device(entities, device.id, include_disabled_entities=disabled):
                 if e.domain == "assist_satellite" and not e.disabled_by:
                     satellite = e.entity_id
                 elif e.domain == "sensor" and e.unique_id.endswith("-home_assistant_key") and not e.disabled_by:
@@ -103,6 +106,7 @@ def find_shows(hass: HomeAssistant) -> list[Show]:
                 at=round(at) if isinstance(at, (int, float)) else None,
                 cut=cut or "",
                 check=check or "",
+                disabled=disabled,
             )
     return sorted(shows.values(), key=lambda s: s.node)
 
@@ -276,9 +280,11 @@ class GenbuHouse:
 
     @callback
     def _not_ours(self, data) -> bool:
-        # The genbu devices the music selects sit on would only start another look.
+        # The genbu devices the music selects sit on would only start another look, unless one was
+        # disabled or enabled: that Show goes out of use or comes back (GENBU-261).
         device = dr.async_get(self.hass).async_get(data["device_id"])
-        return device is None or device.config_entry_id != self.entry.entry_id
+        return (device is None or device.config_entry_id != self.entry.entry_id
+                or "disabled_by" in (data.get("changes") or {}))
 
     @callback
     def _player_or_satellite(self, data) -> bool:

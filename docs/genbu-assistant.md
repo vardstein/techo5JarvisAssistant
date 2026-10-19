@@ -457,10 +457,41 @@ from anywhere. Both were dropped after a security pass:
   little as possible outside the home.
 
 So a Show's user always stays home-only, and Genbu never makes users, changes user flags or renews keys
-by itself. A `home_only` issue points at the route instead: a Tailscale subnet router that rewrites
+by itself. The one exception is a Show an admin disabled, below. A `home_only` issue points at the route instead: a Tailscale subnet router that rewrites
 addresses (`--snat-subnet-routes=false` keeps them), a proxy missing from `trusted_proxies`, or a Home
 Assistant Cloud address. The installer refuses a `*.ui.nabu.casa` address for the Show, and so does
 `genbu.show_key`. The full write-up with sources is the security comment on GENBU-196.
+
+### A disabled Show (GENBU-261)
+
+A Show counts as disabled when its ESPHome integration entry, its ESPHome device or its Genbu device is
+disabled. While it is disabled, nothing of Home Assistant should work for it: no voice, no dashboard, no
+DashCast. Disabling the ESPHome entry or device already cuts the ESPHome connection. Its key would still
+open the dashboard and DashCast, though, so Genbu switches the Show's user off the normal way
+(`async_update_user(is_active=False)`). That deletes all of the user's tokens, the same as switching it
+off in Settings → People. No Repairs issue goes up for it, since nothing needs fixing.
+
+When the Show is enabled again, Genbu switches the user back on. Once the Show is back online and says
+its key is gone, Genbu gives it a new one the same way the Repairs button does. If that doesn't work,
+the usual `key_gone` issue goes up for an admin.
+
+This applies only to a user Genbu switched off itself, and only to a proper Show user: home-only, not an
+admin, not the owner, and switched on. An admin's user, or one that may sign in from outside, is left on
+and the log says so. A user that was already off stays off when the Show is enabled again. That one is
+an admin's to switch on. The records are in Genbu's storage under `off`, by device.
+
+This is the one place Genbu renews a key without an admin pressing something. It is still an admin's
+doing, because only an admin can disable and enable a device or an integration. It does mean that
+enabling a lost Show again hands it a working key once it is online. To lock out a lost or stolen Show,
+delete it (GENBU-223) or delete its user; don't just disable it. What Genbu may do on its own is under
+review in GENBU-262.
+
+Known gaps:
+
+- With only the Genbu device disabled, the ESPHome connection stays up. Voice and the satellite keep
+  working and only the key goes, so the dashboard and DashCast stop.
+- DashCast turns a Show away when Home Assistant refuses the Show's own token. A Show that uses
+  DashCast's user instead of its own has no token of its own to refuse, so it keeps its screen.
 
 ## Decided
 
