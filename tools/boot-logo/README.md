@@ -32,7 +32,7 @@ amonet-checkers v2.0.1. The slot is the same in Crown's and Cronos' kaeru, so on
 kaeru draws the wordmark in one function (`0x4bd0f5f8` in Crown's kaeru), and the box it draws in is
 written into four instructions there as immediates: `mvn r3,#314`, `subs r0,#170`, `addw r2,r4,#315` and
 `add.w r5,r1,#170`, at file offsets 63490, 63500, 63512 and 63518. The 477×255 logo changes those to
-476, 255, 477 and 255 and nothing else in the code; `boot_logo.py` holds the 32 bytes around them both
+476, 255, 477 and 255 and nothing else in the code; the board catalogue holds the 32 bytes around them both
 ways. That is about one and a half times as wide and as tall. kaeru unpacks the picture into the third page of its video memory,
 which at 1280×800 is 2 MB, and the bigger picture is 486540 bytes, so it fits with room to spare.
 

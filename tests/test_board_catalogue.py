@@ -298,6 +298,21 @@ class CatalogueValidatorTest(unittest.TestCase):
     def test_id_must_match_file(self):
         self.broken("boards/crown.json", lambda d: d.update(id="crown2"))
 
+    def test_wordmark(self):
+        crown = "assets/amonet-crown-v2.0.1.json"
+        self.assertIn("not in", self.broken(crown, lambda d: d["wordmark"]["logos"].update(amazon="0" * 64)))
+        self.assertIn("non-empty", self.broken(crown, lambda d: d["wordmark"].update(logos={})))
+        self.assertIn("wrong form", self.broken(crown, lambda d: d["wordmark"].update(stock="UNKNOWN")))
+        self.assertIn("positive", self.broken(crown, lambda d: d["wordmark"].update(offset=0)))
+        self.assertIn("needs logos.openjade",
+                      self.broken(crown, lambda d: d["wordmark"]["logos"].pop("openjade")))
+        self.assertIn("differ in length",
+                      self.broken(crown, lambda d: d["wordmark"]["openjade_large"].update(code="ab")))
+        self.assertIn("wrong form",
+                      self.broken(crown, lambda d: d["wordmark"]["openjade_large"].update(code="abc")))
+        self.assertIn("amonet zips only", self.broken("assets/techo5-boot-v0.7.16.json",
+                                                       lambda d: d.update(wordmark={})))
+
     def test_notes_must_be_text(self):
         self.broken("boards/cronos.json", lambda d: d.update(notes=""))
         self.broken("assets/techo5-boot-v0.7.16.json", lambda d: d.update(notes=["a list"]))
@@ -348,7 +363,8 @@ class BrokenCatalogueStopsPlainlyTest(unittest.TestCase):
         data["camera"] = True
         board.write_text(json.dumps(data))
         for tool, args in (("jarvis-show.py", ["--help"]), ("jarvis-show.py", ["preflight", "--board", "crown"]),
-                           ("jarvis-crown.py", ["--help"]), ("fetch-show-assets.py", ["--help"])):
+                           ("jarvis-crown.py", ["--help"]), ("fetch-show-assets.py", ["--help"]),
+                           ("install-show.py", ["--help"])):
             with self.subTest(tool=tool, args=args):
                 run = subprocess.run([sys.executable, str(tmp / "tools" / tool), *args], cwd=tmp,
                                      capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
@@ -357,6 +373,32 @@ class BrokenCatalogueStopsPlainlyTest(unittest.TestCase):
                 self.assertIn("no Show was touched", run.stderr)
                 self.assertIn("cronos.json: unknown ['camera']", run.stderr)
                 self.assertEqual(run.stdout, "")
+
+
+class OneWordmarkSlotTest(unittest.TestCase):
+    """GENBU-175: boot_logo.py and install-show.py read kaeru's wordmark slot from the same catalogue block,
+    so they can't disagree on where it is or what stock kaeru looks like. Each keeps its own logo's hash."""
+
+    def test_both_tools_read_the_catalogue(self):
+        from jarvis_crown import boot_logo
+        spec = importlib.util.spec_from_file_location("install_show", ROOT / "tools" / "install-show.py")
+        show = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(show)
+        cat = catalogue.default()
+        for board in catalogue.supported_boards():
+            w = cat.resolve(board)["assets"]["amonet"]["wordmark"]
+            with self.subTest(board=board):
+                k = boot_logo.KAERU[board]
+                self.assertEqual((k.offset, k.length, k.amazon, k.openjade),
+                                 (w["offset"], w["length"], w["stock"], w["logos"]["openjade"]))
+                if "techo5" in w["logos"]:
+                    self.assertEqual(show.LOGO_KAERU[board], dict(offset=w["offset"], length=w["length"],
+                                                                  stock=w["stock"], logo=w["logos"]["techo5"]))
+                else:
+                    self.assertNotIn(board, show.LOGO_KAERU)
+        self.assertEqual(sorted(show.LOGO_KAERU), ["cronos", "crown"])
+        self.assertEqual(boot_logo.KAERU["crown"].large.code_at, 63488)
+        self.assertIsNone(boot_logo.KAERU["checkers"].large)
 
 
 class ProductIdSpelledOnceTest(unittest.TestCase):

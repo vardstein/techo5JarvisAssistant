@@ -8,6 +8,15 @@
   "source": "XDA thread 4772596 (R0rt1z2), browser download (XDA's CDN refuses scripts)",
   "manual": true,
   "kaeru": "amonet/bin/cronos-kaeru.bin",
+  "wordmark": {
+    "offset": 335736,
+    "length": 399440,
+    "stock": "a9fb5acb08ee99ab5562da612b329249157f96dabc5702fad6e14ec6cf5a415b",
+    "logos": {
+      "openjade": "b1431ecd6d54f89a1dd87782422e65e9d1d8a5c9938ea0a074fb38dd3256b981",
+      "techo5": "8f062790f7d150928bfcf4967039e38926739f10f22325c5f64a471b29e765cd"
+    }
+  },
   "members": {
     "amonet/bin/twrp.img": "09a72dab093e9f4d444733bd4517af09444a0904a9a5243277df0ecd263873d8"
   },

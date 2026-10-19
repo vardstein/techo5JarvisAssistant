@@ -36,10 +36,14 @@ ASSET_KINDS = frozenset({"lineage", "boot", "amonet"})
 # Exact-match identity keys, one per stage the installer sees the unit in. A key nobody has
 # captured from a real unit is left out of the board, not filled with a placeholder.
 IDENTITY_KEYS = frozenset({"fastboot_product", "twrp_device"})
+# The pictures a kaeru wordmark slot is known with besides Amazon's (tools/boot-logo/README.md):
+# boot_logo.py writes the OpenJade one, install-show.py the TECHO5 one.
+WORDMARK_LOGOS = frozenset({"openjade", "techo5"})
 
 _ID = re.compile(r"^[a-z0-9][a-z0-9._-]*$", re.IGNORECASE)
 _BOARD_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_HEX = re.compile(r"^(?:[0-9a-f]{2})+$")
 _MEMBER = re.compile(r"^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$")
 # Product blocks the catalogue carries but does not own the inside of. Nothing in the installer reads
 # them; they are kept here so the product has one file, and checked only for being non-empty objects.
@@ -75,9 +79,38 @@ def _int(where: str, value: Any) -> int:
     return value
 
 
+def _check_wordmark(where: str, w: Any) -> None:
+    """kaeru's wordmark slot: where it is, kaeru's checked length, and kaeru's sha256 as the zip ships it
+    (stock) and with each logo in it. openjade_large is a bigger OpenJade picture together with the four
+    instructions that size its box (tools/boot-logo/README.md)."""
+    _keys(where, w, {"offset", "length", "stock", "logos"}, {"openjade_large"})
+    _int(f"{where}#/offset", w["offset"])
+    _int(f"{where}#/length", w["length"])
+    _str(f"{where}#/stock", w["stock"], _SHA256)
+    if not isinstance(w["logos"], dict) or not w["logos"]:
+        raise CatalogueError(f"{where}#/logos: expected a non-empty logo -> sha256 table")
+    for name, digest in w["logos"].items():
+        if name not in WORDMARK_LOGOS:
+            raise CatalogueError(f"{where}#/logos: {name!r} not in {sorted(WORDMARK_LOGOS)}")
+        _str(f"{where}#/logos/{name}", digest, _SHA256)
+    if "openjade_large" in w:
+        big = w["openjade_large"]
+        _keys(f"{where}#/openjade_large", big, {"file", "sha256", "code_at", "code_stock", "code", "kaeru_sha256"})
+        _str(f"{where}#/openjade_large/file", big["file"], _ID)
+        _str(f"{where}#/openjade_large/sha256", big["sha256"], _SHA256)
+        _int(f"{where}#/openjade_large/code_at", big["code_at"])
+        _str(f"{where}#/openjade_large/code_stock", big["code_stock"], _HEX)
+        _str(f"{where}#/openjade_large/code", big["code"], _HEX)
+        if len(big["code"]) != len(big["code_stock"]):
+            raise CatalogueError(f"{where}#/openjade_large: code and code_stock differ in length")
+        _str(f"{where}#/openjade_large/kaeru_sha256", big["kaeru_sha256"], _SHA256)
+        if "openjade" not in w["logos"]:
+            raise CatalogueError(f"{where}#/openjade_large: needs logos.openjade too")
+
+
 def _check_asset(where: str, a: Any) -> None:
     _keys(where, a, {"id", "kind", "file", "url", "source", "manual"},
-          {"sha256", "size", "kaeru", "members", "notes"})
+          {"sha256", "size", "kaeru", "wordmark", "members", "notes"})
     _str(f"{where}#/id", a["id"], _ID)
     if a["kind"] not in ASSET_KINDS:
         raise CatalogueError(f"{where}#/kind: {a['kind']!r} not in {sorted(ASSET_KINDS)}")
@@ -105,8 +138,10 @@ def _check_asset(where: str, a: Any) -> None:
             for path, digest in a["members"].items():
                 _str(f"{where}#/members key", path, _MEMBER)
                 _str(f"{where}#/members/{path}", digest, _SHA256)
-    elif "kaeru" in a or "members" in a:
-        raise CatalogueError(f"{where}: kaeru and members belong to amonet zips only")
+        if "wordmark" in a:
+            _check_wordmark(f"{where}#/wordmark", a["wordmark"])
+    elif "kaeru" in a or "wordmark" in a or "members" in a:
+        raise CatalogueError(f"{where}: kaeru, wordmark and members belong to amonet zips only")
     if not a["file"].startswith(a["id"]) or a["file"][len(a["id"]):] not in (".zip", ".img"):
         raise CatalogueError(f"{where}: file must be <id>.zip or <id>.img")
 

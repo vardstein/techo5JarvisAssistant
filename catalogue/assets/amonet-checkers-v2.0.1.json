@@ -8,6 +8,14 @@
   "source": "XDA thread 4762900 (R0rt1z2), browser download (XDA's CDN refuses scripts)",
   "manual": true,
   "kaeru": "amonet/bin/checkers-kaeru.bin",
+  "wordmark": {
+    "offset": 335308,
+    "length": 393688,
+    "stock": "8107a24d3a667450a22f8c51ff49fe31b92e214d7c2a26857d33da47d94520bf",
+    "logos": {
+      "openjade": "4f686dcbf906540cb1b0a33842fc425250fa3a423349528227ecc7ceb3139345"
+    }
+  },
   "members": {
     "amonet/bin/twrp.img": "dcc75bb651894c343039d45af73c4d900594762f6f55187c1ebdaf12d0ae59f5"
   },

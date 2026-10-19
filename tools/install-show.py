@@ -52,10 +52,14 @@ import sys
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from jarvis_crown.catalogue import load_or_exit  # noqa: E402
+
+load_or_exit()  # GENBU-173: a broken catalogue stops here, in plain words
 from techo5lib import (CONSOLE_TECHO5, JARVIS_SHOW_BOARDS, JARVIS_SHOW_PRODUCT, Adb, Console, Fastboot, Release, ask_name, ask_wifi,  # noqa: E402
                        check_serial_access, confirm, console_hint, default_dir, fail, fetch_json, md5, need,
                        new_api_key, note, pick_unit, run_main, sha512_crypt, step, valid_api_key, wait_for,
                        wifi_conf, write_private)
+from jarvis_crown import catalogue  # noqa: E402
 from jarvis_crown.show_ssh import pin_host_key  # noqa: E402
 from jarvis_crown.timing import (FASTBOOT_REENUM_TIMEOUT_SECONDS, FIRST_BOOT_TIMEOUT_SECONDS,
                                   RESCUE_CONSOLE_TIMEOUT_SECONDS, TWRP_DATA_REBOOT_TIMEOUT_SECONDS)  # noqa: E402
@@ -201,14 +205,12 @@ LOGO_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'boot-logo'
 LOGO_SHA = '1354914c8a2498a7f69a8ebc4a23782ff3369f9e4f980de04f7b9b77734c3403'
 LOGO_SIZE = 6105
 # Per board: where the slot is in kaeru, kaeru's length, and kaeru's sha256 without and with the logo.
-LOGO_KAERU = {
-    'cronos': dict(offset=335736, length=399440,  # amonet-cronos v2.0.1
-                   stock='a9fb5acb08ee99ab5562da612b329249157f96dabc5702fad6e14ec6cf5a415b',
-                   logo='8f062790f7d150928bfcf4967039e38926739f10f22325c5f64a471b29e765cd'),
-    'crown': dict(offset=288716, length=481792,  # amonet-crown
-                  stock='6a717f0f8bd3502df2e2a811f1a90a2ec83e58f151874e11c2920a9a63dc4fa1',
-                  logo='926bc8449b1a9e0ce894c0df1bc66f549c2b294247bc73da9e8998b5e9344f64'),
-}
+# From the catalogue's amonet assets (GENBU-175), where boot_logo.py reads the OpenJade logo's from.
+LOGO_KAERU = {}
+for _board in catalogue.supported_boards():
+    _w = catalogue.default().resolve(_board)['assets']['amonet'].get('wordmark')
+    if _w and 'techo5' in _w['logos']:
+        LOGO_KAERU[_board] = dict(offset=_w['offset'], length=_w['length'], stock=_w['stock'], logo=_w['logos']['techo5'])
 
 
 def lineage_board(zip_path):

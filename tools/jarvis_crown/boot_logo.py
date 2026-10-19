@@ -27,6 +27,7 @@ import shlex
 import subprocess
 from typing import Callable, Protocol
 
+from jarvis_crown import catalogue
 from jarvis_crown.show_ssh import ssh_options
 
 SLOT_SIZE = 6105
@@ -55,24 +56,18 @@ class Kaeru:
     large: Large | None = None  # the board's OpenJade logo is this one instead
 
 
-KAERU = {
-    "checkers": Kaeru(335308, 393688,
-                      "8107a24d3a667450a22f8c51ff49fe31b92e214d7c2a26857d33da47d94520bf",
-                      "4f686dcbf906540cb1b0a33842fc425250fa3a423349528227ecc7ceb3139345"),
-    # The Show 5 2nd gen: the same 960x480 panel size as Checkers, so the same 315x170 picture.
-    "cronos": Kaeru(335736, 399440,
-                    "a9fb5acb08ee99ab5562da612b329249157f96dabc5702fad6e14ec6cf5a415b",
-                    "b1431ecd6d54f89a1dd87782422e65e9d1d8a5c9938ea0a074fb38dd3256b981"),
-    "crown": Kaeru(288716, 481792,
-                   "6a717f0f8bd3502df2e2a811f1a90a2ec83e58f151874e11c2920a9a63dc4fa1",
-                   "e8d1fe05273ff74c0224ad98240df5319c46fa4459ebeeb2a24b5a365d50aa10",
-                   # 477x255: mvn r3,#476 / subs r0,#255 / addw r2,r4,#477 / add.w r5,r1,#255 at 0x4bd0f600
-                   Large(LOGO_FILE.with_name("openjade-wordmark-crown.bin"),
-                         "a29902b3ab2977c13a7253da62c1b5f13a9355b679e19b4a825c1ff3fc818dc3", 63488,
-                         bytes.fromhex("6ff49d73184444080ef0aefaaa380df1180c4108029404f23b12114c01f1aa05"),
-                         bytes.fromhex("6ff4ee73184444080ef0aefaff380df1180c4108029404f2dd12114c01f1ff05"),
-                         "32aa461d8a5d3bacb3b3d0a374293e7cd6348ece30ac09bde2ba5364693d4e44")),
-}
+def _kaeru(w: dict) -> Kaeru:
+    big = w.get("openjade_large")
+    return Kaeru(w["offset"], w["length"], w["stock"], w["logos"]["openjade"],
+                 Large(LOGO_FILE.with_name(big["file"]), big["sha256"], big["code_at"],
+                       bytes.fromhex(big["code_stock"]), bytes.fromhex(big["code"]), big["kaeru_sha256"])
+                 if big else None)
+
+
+# From the catalogue: each board's amonet asset has its kaeru's wordmark slot (GENBU-175), the same block
+# install-show.py reads for the TECHO5 logo. A board without an OpenJade hash there gets no logo.
+KAERU = {board: _kaeru(w) for board in catalogue.supported_boards()
+         if "openjade" in (w := catalogue.default().resolve(board)["assets"]["amonet"].get("wordmark", {"logos": {}}))["logos"]}
 
 
 class BootLogoError(RuntimeError):

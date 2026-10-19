@@ -116,6 +116,12 @@ The checker refuses an identity value that two boards share.
   "source": "XDA thread 4762900 (R0rt1z2), needs an XDA login",
   "manual": true,
   "kaeru": "amonet/bin/crown-kaeru.bin",
+  "wordmark": {
+    "offset": 288716, "length": 481792, "stock": "6a717f0f...",
+    "logos": { "openjade": "e8d1fe05...", "techo5": "926bc844..." },
+    "openjade_large": { "file": "openjade-wordmark-crown.bin", "sha256": "a29902b3...", "code_at": 63488,
+                        "code_stock": "6ff49d73...", "code": "6ff4ee73...", "kaeru_sha256": "32aa461d..." }
+  },
   "members": { "amonet/bin/twrp.img": "b6b14464...", "amonet/fastbrick.sh": "aa93be2a...", "...": "..." }
 }
 ```
@@ -125,8 +131,14 @@ The checker refuses an identity value that two boards share.
   how `amonet-cronos-v2.0.1` looks today.
 - `members` (amonet zips only) pins files inside the zip by their path in the zip. A member only gets its
   own entity if something uses it outside that zip. Member pins need the zip itself pinned.
-- `kaeru` names the kaeru file in the zip. It's a path, not a pin; the kaeru hashes still live in
-  `boot_logo.py` and `install-show.py` (see "Next owners to fold in").
+- `kaeru` names the kaeru file in the zip. It's a path, not a pin.
+- `wordmark` (amonet zips only) is kaeru's boot logo slot: where it is (`offset`), how much of kaeru is
+  checked (`length`), and kaeru's sha256 as the zip ships it (`stock`) and with each logo written in
+  (`logos`, `openjade` or `techo5`). `openjade_large` is crown's bigger OpenJade picture: its slot file
+  in `tools/boot-logo/`, the 32 code bytes at `code_at` before and after, and kaeru's sha256 with both
+  ([boot logos](../tools/boot-logo/README.md)). `boot_logo.py` writes the OpenJade logo,
+  `install-show.py` the TECHO5 one; before GENBU-175 each had its own table. A kaeru carrying one tool's
+  logo is one the other tool doesn't know, so it refuses to write over it.
 - Not there yet: `version` and `licence`. oddc's asset entities have both. Nobody has written down the
   licence of the Amonet zips or the LineageOS builds, and making one up would be worse than leaving it
   out. Jade's call whether a destructive step should refuse an asset without a licence.
@@ -217,12 +229,14 @@ Every change that reads a new field adds its row here in the same change.
 | `recovery.py` | `assets.amonet.members["amonet/bin/twrp.img"]`; `identity.twrp_device` is checked equal to the board name by the test, the code still compares with the name |
 | `unlock.py` | crown's `assets.amonet.members` for the six unlock files; refuses to import if crown loses one |
 | `assets.py` | every board's `assets.*`: `file`, `url`, `source`, `manual`, `sha256`, `size` |
+| `boot_logo.py` (`KAERU`) | `assets.amonet.wordmark`: `offset`, `length`, `stock`, `logos.openjade`, `openjade_large` |
+| `install-show.py` (`LOGO_KAERU`) | `assets.amonet.wordmark`: `offset`, `length`, `stock`, `logos.techo5` |
 | `preflight.py`, `amonet_upgrade.py`, `flow.py`, `jarvis-show.py`, `fetch-show-assets.py` | profiles and `supported_boards()` through `catalogue.py` |
 | `validate-jarvis-show.sh` | runs `catalogue.py check` |
 | `tests/test_board_catalogue.py` | everything (parity against the d448873e baseline) |
 
 The catalogue loads once per process, on first use. A broken catalogue stops the installer before any
-device is touched. `jarvis-show.py`, `jarvis-crown.py` and `fetch-show-assets.py` load it first thing
+device is touched. `jarvis-show.py`, `jarvis-crown.py`, `fetch-show-assets.py` and `install-show.py` load it first thing
 (`catalogue.load_or_exit()`), so every command, read-only ones too, stops with one line naming the file
 and what is wrong, not a traceback (GENBU-173). All or nothing on purpose: one rule, no half-loaded
 board list.
@@ -310,9 +324,6 @@ the installer does today (see the destructive-step rule above and open question 
 Stage b moved the installer (`tools/jarvis_crown/` and the two CLIs that use it). These still own a
 board fact of their own:
 
-- `boot_logo.py` `KAERU` and `install-show.py` `LOGO_KAERU`: kaeru offsets, lengths and hashes. The two
-  disagree on crown's "with logo" hash, and `install-show.py` pins a stock cronos kaeru hash that the
-  catalogue doesn't hold yet: the cronos Amonet zip is pinned, its kaeru member isn't.
 - `amonet_upgrade.py` `TARGETS`: the partition map, checkers only ("Only Checkers has been mapped on a
   real unit"). Partition layout is a board fact.
 - `dashcast/serve.go` geometry, `manifest.go` board list, `install-show.py` `BOARDS`.
