@@ -79,6 +79,27 @@ func TestUntranslatedStaysEnglish(t *testing.T) {
 	}
 }
 
+// GENBU-201: a name that happens to be a UI word is drawn as it is. A Wi-Fi network called "Office"
+// stayed "Büro" on a German screen.
+func TestVerbatimTextIsNotTranslated(t *testing.T) {
+	speak(t, "de")
+	if got := T("Office"); got != "Büro" {
+		t.Fatalf("T(Office) = %q, the test needs a key that is translated", got)
+	}
+	for _, s := range []string{"Office", "Connected", "Office Party"} {
+		if got := T(Verbatim(s)); got != s {
+			t.Errorf("T(Verbatim(%q)) = %q", s, got)
+		}
+	}
+	// Text made from a marked name by joining it to others keeps it untranslated and loses every mark.
+	if got := T("Home" + " · " + Verbatim("Office")); got != "Home · Office" {
+		t.Errorf("joined = %q", got)
+	}
+	if Verbatim("") != "" || Verbatim(Verbatim("x")) != Verbatim("x") {
+		t.Error("an empty name stays empty and a marked one isn't marked twice")
+	}
+}
+
 func TestTemplatesPutValuesWhereTheLanguageWants(t *testing.T) {
 	speak(t, "de")
 	got := F("{time} left", "time", "4:59")

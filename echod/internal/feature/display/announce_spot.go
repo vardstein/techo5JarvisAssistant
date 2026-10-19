@@ -2,7 +2,11 @@
 
 package display
 
-import "math"
+import (
+	"math"
+
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
+)
 
 // An announcement on the round face: one arriving, and this device taking one.
 //
@@ -13,7 +17,7 @@ import "math"
 // announceFace is an announcement that arrived.
 func (r *roundRenderer) announceFace(s roundScene) {
 	m := s.announcement
-	who := m.From
+	who := i18n.Verbatim(m.From) // a room's name
 	if who == "" {
 		who = "Another room"
 	}
@@ -28,7 +32,7 @@ func (r *roundRenderer) announceFace(s roundScene) {
 	}
 	// Two lines at most: the voice carries it, and a circle has no room for a paragraph.
 	y := 258
-	for i, line := range r.wrap(r.body, m.Text, 330) {
+	for i, line := range r.wrap(r.body, i18n.Verbatim(m.Text), 330) {
 		if i == 2 {
 			break
 		}

@@ -69,8 +69,11 @@ func base(code string) string {
 	return code
 }
 
-// T is s in the screen's language.
+// T is s in the screen's language. Text marked by Verbatim is not looked up, only unmarked.
 func T(s string) string {
+	if strings.Contains(s, mark) {
+		return strings.ReplaceAll(s, mark, "")
+	}
 	if l := current(); l != nil {
 		if t := l.text[s]; t != "" {
 			return t
@@ -78,6 +81,20 @@ func T(s string) string {
 	}
 	return s
 }
+
+// Verbatim is s marked to be drawn as it is: T takes the mark out and translates nothing. Names from
+// outside (a network, a speaker, a song, a calendar entry, a Show) go through it where they are drawn,
+// so a Wi-Fi network called "Office" stays "Office" on a German screen and isn't drawn as "Büro". The
+// mark is for the screen only; text that is spoken, saved or sent on must not carry it.
+func Verbatim(s string) string {
+	if s == "" || strings.HasPrefix(s, mark) {
+		return s
+	}
+	return mark + s
+}
+
+// mark is a private-use character no font draws, so text that missed T shows that it did.
+const mark = "\ue000"
 
 // F is T(template) with each {name} filled in from the name, value pairs that follow it:
 //

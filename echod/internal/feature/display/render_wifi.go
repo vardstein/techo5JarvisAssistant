@@ -129,7 +129,7 @@ func (r *renderer) wifiList(s scene) int {
 				right = r.carChevron(x1, cy) - r.cz(16)
 			}
 			r.mdiIcon(wifiIcon(n), x0, cy-icon/2, zb(48), ink)
-			r.text(cf.label, r.fit(cf.label, n.SSID, right-tx), tx, mid(cf.label, cy), ink)
+			r.text(cf.label, r.fit(cf.label, i18n.Verbatim(n.SSID), right-tx), tx, mid(cf.label, cy), ink)
 			r.addZone(zone{r: image.Rect(0, y, r.w, y+rowH), kind: zoneRow, id: n.SSID})
 		}
 		y += rowH
@@ -183,10 +183,10 @@ func (r *renderer) savedRow(w wifiState, now time.Time, ssid string, x0, x1, y, 
 	tx := x0 + size + r.cz(32)
 	room := left - r.cz(24) - tx
 	if sub == "" {
-		r.text(cf.label, r.fit(cf.label, ssid, room), tx, mid(cf.label, cy), ink)
+		r.text(cf.label, r.fit(cf.label, i18n.Verbatim(ssid), room), tx, mid(cf.label, cy), ink)
 		return
 	}
-	r.text(cf.label, r.fit(cf.label, ssid, room), tx, mid(cf.label, cy-r.cz(18)), ink)
+	r.text(cf.label, r.fit(cf.label, i18n.Verbatim(ssid), room), tx, mid(cf.label, cy-r.cz(18)), ink)
 	r.text(cf.small, r.fit(cf.small, sub, room), tx, mid(cf.small, cy+r.cz(22)), subColor)
 }
 
@@ -224,7 +224,7 @@ func (r *renderer) keyboardPage(w wifiState) {
 	in, arrow := r.cz(40), r.cz(48)
 	r.mdiIcon("arrow-left", in, band/2-arrow/2, zb(48), cream)
 	tx := in + arrow + r.cz(24)
-	title := r.fit(cf.label, i18n.Sprintf("Password for %s", w.pick.SSID), r.w-r.cz(carIn)-tx)
+	title := r.fit(cf.label, i18n.Sprintf("Password for %s", i18n.Verbatim(w.pick.SSID)), r.w-r.cz(carIn)-tx)
 	r.text(cf.label, title, tx, mid(cf.label, band/2), cream)
 	r.addZone(zone{r: image.Rect(0, 0, min(tx+r.width(cf.label, title)+r.cz(32), r.w), band), kind: zoneBack})
 
@@ -242,9 +242,10 @@ func (r *renderer) keyboardPage(w wifiState) {
 		shown, ink = r.fit(cf.value, w.err, room), danger
 	default:
 		// The end of a long passphrase, where the typing is.
-		for len(shown) > 0 && r.width(cf.value, shown) > room-r.cz(8) {
+		for len(shown) > 0 && r.width(cf.value, i18n.Verbatim(shown)) > room-r.cz(8) {
 			shown = shown[1:]
 		}
+		shown = i18n.Verbatim(shown) // what was typed is drawn as it is
 	}
 	cy := band + fh/2
 	r.text(cf.value, shown, field.Min.X+pad, mid(cf.value, cy), ink)

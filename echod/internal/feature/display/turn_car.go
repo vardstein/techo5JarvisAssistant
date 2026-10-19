@@ -12,6 +12,8 @@ import (
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
+
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 )
 
 // The Classic turn page, laid out like the Car Thing's voice screen: the theme's ground, three rings in
@@ -97,7 +99,7 @@ func (r *renderer) carTurn(s scene) {
 	if answer {
 		bottom = int(boxTop) - r.s(8) // the small rings leave the answer more of the page
 	}
-	heard := sentenceCase(s.heard)
+	heard := i18n.Verbatim(sentenceCase(s.heard)) // what was said and answered is drawn as it is
 	if !answer {
 		// The question, as big as three lines allow.
 		if heard != "" {
@@ -112,7 +114,7 @@ func (r *renderer) carTurn(s scene) {
 		top += r.s(48) + r.s(16)
 	}
 	if s.reply != "" {
-		r.turnWords(s.reply, top, bottom, maxW, 0, cream,
+		r.turnWords(i18n.Verbatim(s.reply), top, bottom, maxW, 0, cream,
 			turnStep{tf.big, r.s(60)}, turnStep{tf.mid, r.s(49)}, turnStep{tf.body, r.s(48)}, turnStep{tf.small, r.s(40)})
 	}
 }

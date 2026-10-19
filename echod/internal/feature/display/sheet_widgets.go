@@ -124,10 +124,10 @@ func (r *paint) text(face font.Face, s string, x, baseline int, c color.Color) {
 	// Nothing runs off the panel. A line that would, centred wider than the panel or set too far
 	// right, starts inside the edge and is cut there with an ellipsis.
 	if r.w > 0 && s != "" && !r.sliding {
-		if w := r.width(face, s); x < 0 || x+w > r.w {
+		if w := r.width(face, i18n.Verbatim(s)); x < 0 || x+w > r.w {
 			edge := r.s(textEdge)
 			x = max(x, edge)
-			s = r.fit(face, s, r.w-edge-x)
+			s = i18n.T(r.fit(face, i18n.Verbatim(s), r.w-edge-x))
 		}
 	}
 	if r.over.record {
@@ -175,7 +175,8 @@ func (r *paint) width(face font.Face, s string) int {
 }
 
 // wrap breaks text into lines no wider than maxW, on spaces; a single word wider than the line is
-// left to overflow rather than split.
+// left to overflow rather than split. The text is translated once, as a whole: the lines come back
+// marked i18n.Verbatim, as a line of a German sentence can be an English key on its own.
 func (r *paint) wrap(face font.Face, s string, maxW int) []string {
 	var lines []string
 	var line string
@@ -184,15 +185,15 @@ func (r *paint) wrap(face font.Face, s string, maxW int) []string {
 		if line != "" {
 			try = line + " " + word
 		}
-		if line != "" && r.width(face, try) > maxW {
-			lines = append(lines, line)
+		if line != "" && r.width(face, i18n.Verbatim(try)) > maxW {
+			lines = append(lines, i18n.Verbatim(line))
 			line = word
 			continue
 		}
 		line = try
 	}
 	if line != "" {
-		lines = append(lines, line)
+		lines = append(lines, i18n.Verbatim(line))
 	}
 	return lines
 }
@@ -632,9 +633,10 @@ func (r *paint) fill(b image.Rectangle, c color.RGBA) {
 	draw.Draw(r.dst, b, image.NewUniform(c), image.Point{}, draw.Src)
 }
 
-// fit shortens text to room pixels, with an ellipsis where it was cut.
+// fit shortens text to room pixels, with an ellipsis where it was cut. It comes back translated and
+// marked i18n.Verbatim, so it is drawn as it is.
 func (r *paint) fit(face font.Face, text string, room int) string {
-	text = inFont(face, i18n.T(text))
+	text = i18n.Verbatim(inFont(face, i18n.T(text)))
 	if text == "" || r.width(face, text) <= room {
 		return text
 	}

@@ -363,7 +363,7 @@ func drawerRows(s scene) ([]settingRow, string) {
 				// A camera's name can say whose room it looks into.
 				name = demoCameras[i%len(demoCameras)]
 			}
-			rows = append(rows, settingRow{id: "cam:" + strconv.Itoa(i), label: name,
+			rows = append(rows, settingRow{id: "cam:" + strconv.Itoa(i), label: i18n.Verbatim(name),
 				sub: i18n.F("Or say \"show {name}\"", "name", strings.ToLower(name)), kind: ctlButton, rowTap: true})
 		}
 		return rows, ""
@@ -417,7 +417,7 @@ func drawerRows(s scene) ([]settingRow, string) {
 			// Call letters and local station names say where the owner lives.
 			label = "Station " + strconv.Itoa(i+1)
 		}
-		row := settingRow{id: id, label: label, kind: ctlButton, rowTap: true, pic: s.logos[name]}
+		row := settingRow{id: id, label: i18n.Verbatim(label), kind: ctlButton, rowTap: true, pic: s.logos[name]}
 		switch {
 		case name == rd.Now && rd.Playing, name == rd.Listed:
 			row.bold, row.sub = true, "Playing now"
@@ -449,7 +449,7 @@ func callRows(s scene) ([]settingRow, string) {
 				name = "Contact " + strconv.Itoa(i+1)
 			}
 		}
-		rows = append(rows, settingRow{id: "call:" + strconv.Itoa(i), label: name, sub: sub,
+		rows = append(rows, settingRow{id: "call:" + strconv.Itoa(i), label: i18n.Verbatim(name), sub: sub,
 			kind: ctlButton, rowTap: true})
 	}
 	return rows, ""

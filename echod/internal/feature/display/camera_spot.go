@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/HuskerMinion/techo5/echod/internal/feature/home"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 )
 
 // Cameras on the round screen: the Spot's own (Camera on the dial, "show this spot") and Home
@@ -63,9 +64,10 @@ func (r *roundRenderer) cameraView(s roundScene) {
 	}
 	// The name on a dark band near the top, readable over any picture.
 	if v.Name != "" {
-		w := r.width(r.label, v.Name)
+		name := i18n.Verbatim(v.Name)
+		w := r.width(r.label, name)
 		r.line(float64(center-w/2-10), 62, float64(center+w/2+10), 62, 32, color.RGBA{0, 0, 0, 150})
-		r.centered(r.label, v.Name, 69, colText)
+		r.centered(r.label, name, 69, colText)
 	}
 	// The sound's control at the bottom of the face, where a circle is widest and nothing else is
 	// drawn. A circle has no corner to put one in, so it is the same bar of words as the name above it:

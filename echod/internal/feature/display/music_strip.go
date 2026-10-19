@@ -92,18 +92,19 @@ func (r *renderer) musicStrip(s scene) {
 	}
 
 	// Two lines: the song, then who and from where. Paused says so in place of the source.
-	station := rd.Now
+	// Names, drawn as they are; only "Paused" is the Show's own word.
+	station := i18n.Verbatim(rd.Now)
 	if station == "" {
-		station = rd.Chosen
+		station = i18n.Verbatim(rd.Chosen)
 	}
-	headline, sub := rd.Title, rd.Artist
+	headline, sub := i18n.Verbatim(rd.Title), i18n.Verbatim(rd.Artist)
 	if headline == "" {
 		headline, sub = station, ""
 	} else if station != "" {
 		sub = joinDot(sub, station)
 	}
 	if s.paused {
-		sub = joinDot("Paused", sub)
+		sub = joinDot(i18n.T("Paused"), sub)
 	}
 	back, play, next, closeX := r.stripButtons()
 	tx := art.Max.X + r.s(14)
@@ -165,9 +166,9 @@ func stripPicture(rd home.Radio) image.Image {
 	return nil
 }
 
-// clipTo shortens s to fit w with an ellipsis.
+// clipTo shortens s to fit w with an ellipsis, translated and marked i18n.Verbatim like fit's.
 func (r *renderer) clipTo(face font.Face, s string, w int) string {
-	s = inFont(face, i18n.T(s))
+	s = i18n.Verbatim(inFont(face, i18n.T(s)))
 	if r.width(face, s) <= w {
 		return s
 	}

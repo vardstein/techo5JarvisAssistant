@@ -247,7 +247,7 @@ func (r *roundRenderer) radioList(s roundScene) {
 		if rows[i] == stopRow {
 			return "Stop the music"
 		}
-		return rows[i]
+		return i18n.Verbatim(rows[i]) // a station
 	}
 	cur := currentStation(rd)
 	r.centered(r.small, i18n.Sprintf("%d of %d", sel+1, len(rows)), 150, colDim)
@@ -344,8 +344,9 @@ func shortSource(src string) string {
 	return "Favorites"
 }
 
-// clip shortens a line to fit width pixels in face.
+// clip shortens a line to fit width pixels in face, translated and marked i18n.Verbatim like fit's.
 func clip(face font.Face, r *roundRenderer, s string, width int) string {
+	s = i18n.Verbatim(i18n.T(s))
 	if r.width(face, s) <= width {
 		return s
 	}

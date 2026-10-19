@@ -7,6 +7,7 @@ import (
 
 	"github.com/HuskerMinion/techo5/echod/internal/feature/remind"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/touch"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 )
 
 // A reminder on the round face. It takes the whole face, as an announcement does, since a circle has
@@ -23,12 +24,12 @@ func (r *roundRenderer) reminderFace(s roundScene) {
 	r.centered(r.label, "REMINDER", 150, colAccent)
 	top := 210
 	if s.reminderFrom != "" {
-		r.centered(r.small, clip(r.small, r, s.reminderFrom, 300), 196, colDim)
+		r.centered(r.small, clip(r.small, r, i18n.Verbatim(s.reminderFrom), 300), 196, colDim)
 		top = 220
 	}
 	// A little over two lines, so a third that fades out at the foot says there is more.
 	box := image.Rect(70, top, side-70, top+104)
-	lines := r.wrap(r.title, s.reminder.Label, box.Dx())
+	lines := r.wrap(r.title, i18n.Verbatim(s.reminder.Label), box.Dx())
 	maxScroll := max(len(lines)*reminderLineH-box.Dy(), 0)
 	scroll := min(max(s.reminderScroll, 0), maxScroll)
 

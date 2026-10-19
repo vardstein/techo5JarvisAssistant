@@ -298,7 +298,7 @@ func (r *renderer) calendarDetail(v calendarView, e hass.Event) {
 	r.fillRect(image.Rect(card.Min.X+r.s(18), card.Min.Y+r.s(22), card.Min.X+r.s(24), card.Min.Y+r.s(74)), c)
 	x, textW := card.Min.X+r.s(40), card.Dx()-r.s(64)
 	y := card.Min.Y + r.s(58)
-	for i, line := range r.wrap(r.title, e.Summary, textW) {
+	for i, line := range r.wrap(r.title, i18n.Verbatim(e.Summary), textW) {
 		if i == 2 {
 			break
 		}
@@ -313,12 +313,12 @@ func (r *renderer) calendarDetail(v calendarView, e hass.Event) {
 	r.text(r.tiny, clipText(r, r.tiny, v.name(e.Calendar), textW), x, y, c)
 	y += r.s(38)
 	if e.Location != "" {
-		r.text(r.small, clipText(r, r.small, e.Location, textW), x, y, dim)
+		r.text(r.small, clipText(r, r.small, i18n.Verbatim(e.Location), textW), x, y, dim)
 		y += r.s(42)
 	}
 	closeB := image.Rect(card.Max.X-r.s(150), card.Max.Y-r.s(66), card.Max.X-r.s(22), card.Max.Y-r.s(18))
 	if e.Description != "" {
-		lines := r.wrap(r.tiny, e.Description, textW)
+		lines := r.wrap(r.tiny, i18n.Verbatim(e.Description), textW)
 		for _, line := range lines {
 			if y+r.s(32) > closeB.Min.Y-r.s(6) {
 				break

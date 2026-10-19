@@ -114,13 +114,14 @@ func (r *renderer) modalCard(eyebrow, message string, most int, body, hint strin
 // tapToClose is the way out of a modal that only needs putting away.
 const tapToClose = "Tap to close"
 
-// eyebrow joins what a modal is and whose it is, in capitals: "ANNOUNCEMENT · KITCHEN".
+// eyebrow joins what a modal is and whose it is, in capitals: "ANNOUNCEMENT · KITCHEN". whose is a
+// name (who sent it, a calendar's), so only what is translated.
 func eyebrow(what, whose string) string {
 	e := strings.ToUpper(i18n.T(what))
 	if whose != "" {
-		e += " · " + strings.ToUpper(i18n.T(whose))
+		e += " · " + strings.ToUpper(i18n.T(i18n.Verbatim(whose)))
 	}
-	return e
+	return i18n.Verbatim(e)
 }
 
 // announcementModal is an announcement arriving: who it came from, and the words when it had any. The
@@ -128,7 +129,7 @@ func eyebrow(what, whose string) string {
 // and somebody who missed the first second can read the rest.
 func (r *renderer) announcementModal(s scene) {
 	m := s.announcement
-	who := m.From
+	who := i18n.Verbatim(m.From) // a room's name
 	if who == "" {
 		who = "Another room"
 	}
@@ -136,7 +137,7 @@ func (r *renderer) announcementModal(s scene) {
 		r.modalCard(eyebrow("ANNOUNCEMENT", ""), who, 2, "", tapToClose)
 		return
 	}
-	r.modalCard(eyebrow("ANNOUNCEMENT", who), firstUp(m.Text), 3, "", tapToClose)
+	r.modalCard(eyebrow("ANNOUNCEMENT", who), i18n.Verbatim(firstUp(m.Text)), 3, "", tapToClose)
 }
 
 // firstUp is s starting with a capital: what Home Assistant heard comes in lower case, and as the one
@@ -166,10 +167,10 @@ const reminderLines = 3
 // reminderModal is a reminder going off. It stays until somebody taps it, since a reminder nobody saw
 // has not reminded anybody.
 func (r *renderer) reminderModal(s scene) {
-	r.modalCard(eyebrow("REMINDER", s.reminderFrom), s.reminder.Label, reminderLines, "", tapToClose)
+	r.modalCard(eyebrow("REMINDER", s.reminderFrom), i18n.Verbatim(s.reminder.Label), reminderLines, "", tapToClose)
 }
 
 // popupModal is an event coming up: how soon and its calendar, its title, and its time.
 func (r *renderer) popupModal(s scene, e hass.Event) {
-	r.modalCard(eyebrow(popupSoon(e, s.now), popupCalendarName(e.Calendar)), e.Summary, 2, eventWhen(e, s.now), tapToClose)
+	r.modalCard(eyebrow(popupSoon(e, s.now), popupCalendarName(e.Calendar)), i18n.Verbatim(e.Summary), 2, eventWhen(e, s.now), tapToClose)
 }

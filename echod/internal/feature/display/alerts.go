@@ -128,7 +128,7 @@ func (r *renderer) alertPage(s scene) {
 		sub += "  ·  " + a.Sender
 	}
 	r.text(r.small, r.clipTo(r.small, sub, r.w-x-r.margin), x, r.s(112), amber)
-	r.text(r.tiny, r.clipTo(r.tiny, a.Area, r.w-x-r.margin), x, r.s(148), dim)
+	r.text(r.tiny, r.clipTo(r.tiny, i18n.Verbatim(a.Area), r.w-x-r.margin), x, r.s(148), dim)
 
 	type line struct {
 		s string

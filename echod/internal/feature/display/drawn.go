@@ -74,7 +74,8 @@ func (r *paint) iconFace(size int) font.Face {
 	return fc
 }
 
-// wrapLines breaks text into lines no wider than w.
+// wrapLines breaks text into lines no wider than w, translated once as a whole and marked
+// i18n.Verbatim like wrap's.
 func (r *paint) wrapLines(face font.Face, text string, w int) []string {
 	var lines []string
 	line := ""
@@ -83,8 +84,8 @@ func (r *paint) wrapLines(face font.Face, text string, w int) []string {
 		if line != "" {
 			try = line + " " + word
 		}
-		if line != "" && r.width(face, try) > w {
-			lines = append(lines, line)
+		if line != "" && r.width(face, i18n.Verbatim(try)) > w {
+			lines = append(lines, i18n.Verbatim(line))
 			line = word
 			continue
 		}

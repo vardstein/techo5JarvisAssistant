@@ -93,7 +93,7 @@ func (r *renderer) pairingPage(s scene) {
 				glyph = "bluetooth-audio"
 			}
 			r.mdiIcon(glyph, x0, cy-icon/2, zb(48), ink)
-			r.text(cf.label, r.fit(cf.label, d.Name, x1-tx), tx, mid(cf.label, cy-r.cz(17)), ink)
+			r.text(cf.label, r.fit(cf.label, i18n.Verbatim(d.Name), x1-tx), tx, mid(cf.label, cy-r.cz(17)), ink)
 			r.text(cf.small, r.fit(cf.small, btSub(d), x1-tx), tx, mid(cf.small, cy+r.cz(22)), subC)
 			r.addZone(zone{r: image.Rect(0, y, r.w, y+rowH), kind: zoneRow, id: d.Address})
 		}

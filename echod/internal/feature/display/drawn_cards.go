@@ -11,6 +11,7 @@ import (
 	xdraw "golang.org/x/image/draw"
 
 	"github.com/HuskerMinion/techo5/echod/internal/feature/dashboard"
+	"github.com/HuskerMinion/techo5/echod/internal/i18n"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/mdi"
 )
 
@@ -134,7 +135,7 @@ func (r *paint) block(b dashboard.Block, x, y, w int, pal dashPal, adj dashAdjus
 		h := r.s(headingH)
 		if r.visible(y, y+h) {
 			base := y + h - r.s(12)
-			name := b.Heading
+			name := i18n.Verbatim(b.Heading)
 			room := w
 			if b.Right != "" {
 				rw := r.width(fc.value, b.Right)
@@ -178,7 +179,7 @@ func (r *paint) block(b dashboard.Block, x, y, w int, pal dashPal, adj dashAdjus
 		r.roundFill(card, pal.rad, pal.card, pal.card)
 		ry := y + pad
 		if b.Title != "" {
-			r.text(fc.labelBold, r.fit(fc.labelBold, b.Title, w-2*pad), x+pad+r.s(4), ry+r.s(28), pal.text)
+			r.text(fc.labelBold, r.fit(fc.labelBold, i18n.Verbatim(b.Title), w-2*pad), x+pad+r.s(4), ry+r.s(28), pal.text)
 			ry += r.s(cardTitleH)
 		}
 		for _, t := range b.Rows {
@@ -207,7 +208,7 @@ func (r *paint) block(b dashboard.Block, x, y, w int, pal dashPal, adj dashAdjus
 		r.roundFill(image.Rect(x, y, x+w, y+h), pal.rad, pal.card, pal.card)
 		ty := y + pad
 		if b.Title != "" {
-			r.text(fc.labelBold, r.fit(fc.labelBold, b.Title, w-2*pad), x+pad, ty+r.s(26), pal.text)
+			r.text(fc.labelBold, r.fit(fc.labelBold, i18n.Verbatim(b.Title), w-2*pad), x+pad, ty+r.s(26), pal.text)
 			ty += r.s(cardTitleH)
 		}
 		for _, line := range lines {
@@ -311,7 +312,7 @@ func (r *paint) tile(b image.Rectangle, t dashboard.Tile, pal dashPal, adj dashA
 
 	x := bx + badge + r.s(12)
 	room := b.Max.X - pad - x
-	r.text(fc.label, r.fit(fc.label, t.Name, room), x, b.Min.Y+b.Dy()/2-r.s(3), pal.text)
+	r.text(fc.label, r.fit(fc.label, i18n.Verbatim(t.Name), room), x, b.Min.Y+b.Dy()/2-r.s(3), pal.text)
 	r.text(fc.sub, r.fit(fc.sub, t.Value, room), x, b.Min.Y+b.Dy()/2+r.s(24), pal.sub)
 }
 
@@ -361,7 +362,7 @@ func (r *paint) row(b image.Rectangle, t dashboard.Tile, pal dashPal, adj dashAd
 		r.text(fc.value, r.fit(fc.value, value, vw), right-vw, b.Min.Y+b.Dy()/2+r.s(10), pal.sub)
 		right -= vw + r.s(12)
 	}
-	r.text(fc.label, r.fit(fc.label, t.Name, right-x), x, b.Min.Y+b.Dy()/2+r.s(10), pal.text)
+	r.text(fc.label, r.fit(fc.label, i18n.Verbatim(t.Name), right-x), x, b.Min.Y+b.Dy()/2+r.s(10), pal.text)
 }
 
 // graphCard draws a sensor card: its icon, name and reading, and its recent history as a line with
@@ -371,7 +372,7 @@ func (r *paint) graphCard(b image.Rectangle, g dashboard.Graph, pal dashPal) {
 	r.roundFill(b, pal.rad, pal.card, pal.card)
 	pad := r.s(cardPad) + r.s(4)
 	r.mdiIcon(g.Icon, b.Min.X+pad, b.Min.Y+pad, 26, pal.sub)
-	r.text(fc.label, r.fit(fc.label, g.Name, b.Dx()-2*pad-r.s(40)), b.Min.X+pad+r.s(38), b.Min.Y+pad+r.s(22), pal.sub)
+	r.text(fc.label, r.fit(fc.label, i18n.Verbatim(g.Name), b.Dx()-2*pad-r.s(40)), b.Min.X+pad+r.s(38), b.Min.Y+pad+r.s(22), pal.sub)
 	r.text(fc.header, g.Value, b.Min.X+pad, b.Min.Y+pad+r.s(66), pal.text)
 
 	area := image.Rect(b.Min.X+r.s(6), b.Min.Y+pad+r.s(78), b.Max.X-r.s(6), b.Max.Y-r.s(10))
@@ -462,7 +463,7 @@ func (r *paint) gaugeCard(b image.Rectangle, g dashboard.Gauge, pal dashPal) {
 	}
 	vw := r.width(fc.header, g.Value)
 	r.text(fc.header, g.Value, int(cx)-vw/2, int(cy)-r.s(4), pal.text)
-	name := r.fit(fc.label, g.Name, b.Dx()-2*r.s(cardPad))
+	name := r.fit(fc.label, i18n.Verbatim(g.Name), b.Dx()-2*r.s(cardPad))
 	r.text(fc.label, name, int(cx)-r.width(fc.label, name)/2, b.Max.Y-r.s(18), pal.sub)
 }
 
@@ -483,6 +484,6 @@ func (r *paint) pictureCard(b image.Rectangle, p dashboard.Picture, pal dashPal)
 	if p.Name != "" {
 		band := image.Rect(b.Min.X, b.Max.Y-r.s(40), b.Max.X, b.Max.Y)
 		draw.Draw(r.dst, band, image.NewUniform(color.RGBA{0, 0, 0, 140}), image.Point{}, draw.Over)
-		r.text(fc.label, r.fit(fc.label, p.Name, b.Dx()-2*r.s(cardPad)), b.Min.X+r.s(cardPad), b.Max.Y-r.s(12), color.RGBA{255, 255, 255, 255})
+		r.text(fc.label, r.fit(fc.label, i18n.Verbatim(p.Name), b.Dx()-2*r.s(cardPad)), b.Min.X+r.s(cardPad), b.Max.Y-r.s(12), color.RGBA{255, 255, 255, 255})
 	}
 }
