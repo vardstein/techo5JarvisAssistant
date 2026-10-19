@@ -2,6 +2,7 @@
   "domain": "genbu",
   "name": "Genbu Assistant",
   "after_dependencies": [
+    "conversation",
     "esphome",
     "music_assistant"
   ],
@@ -17,5 +18,5 @@
   "iot_class": "local_push",
   "requirements": [],
   "single_config_entry": true,
-  "version": "1.4.10"
+  "version": "1.4.11"
 }

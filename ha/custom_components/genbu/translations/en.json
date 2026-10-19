@@ -17,15 +17,18 @@
         "title": "Genbu Assistant",
         "description": "The house's update card, its release channel and the night install are on the Genbu Assistant device.",
         "data": {
-          "searxng_url": "Recipe search"
+          "searxng_url": "Recipe search",
+          "conversation_agent": "Voice agent"
         },
         "data_description": {
-          "searxng_url": "The address of your SearXNG, like http://10.0.0.5:8080. With it, a Genbu Show can look up a recipe and put it on its screen when asked (its Recipes switch). Empty: no recipes."
+          "searxng_url": "The address of your SearXNG, like http://10.0.0.5:8080. With it, a Genbu Show can look up a recipe and put it on its screen when asked (its Recipes switch). Empty: no recipes.",
+          "conversation_agent": "The agent that answers on a Show, like an Ollama or OpenAI one. Genbu Assistant then is a conversation agent too: picked in an Assist pipeline instead of that agent, it answers a lone word the speech-to-text made of the TV with \"I didn't catch that.\" and hands everything else on to it. Empty: no agent of Genbu's own."
         }
       }
     },
     "error": {
-      "searxng": "That is no http or https address."
+      "searxng": "That is no http or https address.",
+      "own_agent": "That is Genbu Assistant's own agent; pick the one it should hand on to."
     }
   },
   "entity": {

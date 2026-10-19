@@ -17,15 +17,18 @@
         "title": "Genbu Assistant",
         "description": "Die Update-Karte des Hauses, sein Release-Kanal und die Installation in der Nacht sind am Gerät Genbu Assistant.",
         "data": {
-          "searxng_url": "Rezeptsuche"
+          "searxng_url": "Rezeptsuche",
+          "conversation_agent": "Sprachagent"
         },
         "data_description": {
-          "searxng_url": "Die Adresse deines SearXNG, z. B. http://10.0.0.5:8080. Damit kann eine Genbu Show auf Zuruf ein Rezept suchen und auf ihrem Bildschirm zeigen (ihr Schalter Rezepte). Leer: keine Rezepte."
+          "searxng_url": "Die Adresse deines SearXNG, z. B. http://10.0.0.5:8080. Damit kann eine Genbu Show auf Zuruf ein Rezept suchen und auf ihrem Bildschirm zeigen (ihr Schalter Rezepte). Leer: keine Rezepte.",
+          "conversation_agent": "Der Agent, der auf einer Show antwortet, etwa ein Ollama- oder OpenAI-Agent. Genbu Assistant ist dann selbst ein Gesprächsagent: In einer Assist-Pipeline statt dieses Agenten gewählt, beantwortet er ein einzelnes Wort, das die Spracherkennung aus dem Fernseher gemacht hat, mit „Das habe ich nicht verstanden.“ und gibt alles andere an ihn weiter. Leer: kein eigener Agent."
         }
       }
     },
     "error": {
-      "searxng": "Das ist keine http- oder https-Adresse."
+      "searxng": "Das ist keine http- oder https-Adresse.",
+      "own_agent": "Das ist der eigene Agent von Genbu Assistant; wähl den, an den er weitergeben soll."
     }
   },
   "entity": {

@@ -372,11 +372,11 @@ async def test_the_setup_form_asks_nothing(hass: HomeAssistant):
     assert hass.states.get("sensor.genbu_house_version").state == "v1.0.3"
 
 
-async def test_options_only_the_recipe_search(hass: HomeAssistant):
+async def test_options_the_recipe_search_and_the_agent(hass: HomeAssistant):
     entry = await setup(hass)
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert (result["type"], result["step_id"]) == ("form", "init")
-    assert [str(k) for k in result["data_schema"].schema] == ["searxng_url"]
+    assert [str(k) for k in result["data_schema"].schema] == ["searxng_url", "conversation_agent"]
 
 
 

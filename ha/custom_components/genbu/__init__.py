@@ -27,7 +27,7 @@ except ImportError:
     import voluptuous as vol
 
 from . import claims
-from .const import (CARDS, CONF_SEARXNG, DOMAIN, FRESH, MANUFACTURERS, NAME, OLD_NAME, OLD_RECIPES, PANEL, PANEL_FILES,
+from .const import (CARDS, CONF_AGENT, CONF_SEARXNG, DOMAIN, FRESH, MANUFACTURERS, NAME, OLD_NAME, OLD_RECIPES, PANEL, PANEL_FILES,
                     PANEL_TITLE, SERVICE_FORGET, SERVICE_INSTALL, SERVICE_MUSIC_ROUTE, SERVICE_SHOW_KEY, STORE_KEY,
                     STORE_VERSION)
 from .coordinator import GenbuHouse, unhide
@@ -48,12 +48,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _drop_copies(hass, entry)
     hub = GenbuHouse(hass, entry)
     hub.had_search = bool(entry.options.get(CONF_SEARXNG))
+    hub.had_agent = entry.options.get(CONF_AGENT) or ""
     await hub.async_start()
     entry.runtime_data = hub
     entry.async_on_unload(hub.async_stop)
     entry.async_on_unload(entry.add_update_listener(_options_changed))
     entry.async_on_unload(claims.async_watch(hass))
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await hass.config_entries.async_forward_entry_setups(entry, _platforms(hub.had_agent))
     if not hass.services.has_service(DOMAIN, SERVICE_FORGET):
         async def forget(call: ServiceCall) -> ServiceResponse:
             return await _forget_show(hass, call)
@@ -84,7 +85,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_remove(DOMAIN, SERVICE_INSTALL)
     hass.services.async_remove(DOMAIN, SERVICE_MUSIC_ROUTE)
     hass.services.async_remove(DOMAIN, SERVICE_SHOW_KEY)
-    if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+    if not await hass.config_entries.async_unload_platforms(entry, _platforms(entry.runtime_data.had_agent)):
         return False
     frontend.async_remove_panel(hass, PANEL, warn_if_unknown=False)
     for url in hass.data.pop(f"{DOMAIN}_cards", []):
@@ -262,9 +263,19 @@ REFUSALS = {
 }
 
 
+def _platforms(agent: str) -> list[Platform]:
+    # The conversation agent only while one is picked to hand on to; it also keeps Assist's conversation
+    # component from being set up for a house that doesn't use it. Unloading goes by the agent the entry
+    # was set up with, as the options have changed by then.
+    return [Platform.CONVERSATION, *PLATFORMS] if agent else PLATFORMS
+
+
 async def _options_changed(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    # A recipe search set up or taken away adds or drops the recipe sensor and the Recipes switches.
-    if bool(entry.options.get(CONF_SEARXNG)) != entry.runtime_data.had_search:
+    # A recipe search set up or taken away adds or drops the recipe sensor and the Recipes switches; an
+    # agent picked or changed, Genbu's own conversation agent.
+    hub = entry.runtime_data
+    if bool(entry.options.get(CONF_SEARXNG)) != hub.had_search \
+            or (entry.options.get(CONF_AGENT) or "") != hub.had_agent:
         await hass.config_entries.async_reload(entry.entry_id)
         return
     await entry.runtime_data.async_refresh()

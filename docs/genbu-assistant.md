@@ -334,6 +334,20 @@ turns double quotes into single ones so the quote can't be closed, and keeps at 
 The event coming back with the connection after a restart is not taken for a new cut. See
 `docs/voice-setup.md`, Cutting an answer off.
 
+### Half sentences (GENBU-253)
+
+A lone word that Whisper made of the TV ("Fiktisch.", "Deckel.") should get "Das habe ich nicht
+verstanden.", and the prompt alone got that about half the time. Home Assistant gives an integration no
+hook in front of the model: custom sentences only run with **Prefer handling commands locally** on, and a
+sentence trigger can't say "not mine" once it matches. So Genbu brings its own conversation agent,
+**Genbu Assistant** (`conversation.genbu_assistant`), which exists only while an agent is picked under
+**Voice agent** in Genbu's options. Picked in a pipeline, it answers those words in code and hands every
+other turn to that agent through `conversation.async_converse`, with the same conversation id. Home
+Assistant then reuses the chat log the pipeline opened, so the user's words go in once, the reply
+streams to the Show as before, and the pipeline sees the other agent's features, CONTROL included.
+What counts as a fragment, and why it errs towards passing on, is in `docs/voice-setup.md`, Half
+sentences.
+
 ## 5. A Show's key (GENBU-196)
 
 A Show signs in to Home Assistant with a long-lived token of a user of its own: not an admin, and only

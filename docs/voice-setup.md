@@ -434,6 +434,45 @@ a thermostat added later counts without running the installer again; a new room 
 rerun. The prompt line "erst Raumklima ausführen" makes the model use it. The installer exposes the
 script only when it makes or replaces it, so if you take it away from Assist, it stays away.
 
+## Half sentences: Genbu's own agent
+
+Whisper turns the TV, or the end of a sentence nobody meant for the Show, into one word: "Nein?",
+"Fiktisch.", "Deckel.". The prompt line above asks the model to say "Das habe ich nicht verstanden."
+to those. qwen3.5:4b does about half the time; the other half it argues with the word or does
+something with it. Since 1.4.11 the Genbu integration can answer them in code, before the model ever
+sees them (GENBU-253). The installer asks "Should Genbu Assistant catch half sentences?" (or take
+`--half-sentences`). It saves the pipeline, then does both steps below for the pipeline the Show talks
+to. By hand:
+
+1. **Settings → Devices & services → Genbu Assistant → Configure**, and pick the agent under
+   **Voice agent**, for example the Ollama entry named Jarvis.
+2. In the pipeline, set **Conversation agent** to **Genbu Assistant**.
+
+Genbu's agent then answers a lone word itself with "Das habe ich nicht verstanden." ("I didn't catch
+that." in English) and hands everything else on to the agent you picked, unchanged and in the same
+conversation. The answer still streams, the tools still run, and **Prefer handling commands
+locally** works as before, because Genbu's agent tells the pipeline whatever the agent behind it can
+do. Clear the option and the agent goes away again; switch the pipeline back first.
+
+It errs on the side of passing things on. These always reach the model:
+
+- two words or more;
+- one word right after the assistant asked a question, since "Ja", "Nein" and "Zwei" are answers then;
+- one word that asks for something by itself, like "Stopp", "Wetter", "Danke" or "Timer" (the list is
+  `REQUESTS` in [fragment.py](../ha/custom_components/genbu/fragment.py));
+- the name of a room;
+- anything typed, since only a voice device's speech-to-text makes these fragments, and anything in a
+  language other than German or English.
+
+Which single words people really say to a Show is a guess until the conversation traces show it. A
+word that should have gone through belongs in `REQUESTS`.
+
+**Security.** Getting it wrong means the Show is deaf to one word, nothing more: Genbu's agent never
+runs anything itself. What it passes on goes to the other agent exactly as the pipeline gave it,
+with the same user, device and extra prompt, so it can't widen what that agent may do. It refuses to
+hand on to itself, so a wrong pick can't loop. A word it answers is logged only at debug level, so a
+normal log doesn't fill with what the Show overheard.
+
 ## Listening after the answer
 
 The Show can keep listening for a few seconds after every answer, so you can go on without the wake

@@ -544,6 +544,81 @@ class DeployTests(unittest.TestCase):
         run_deploy(fake, host="10.0.0.9", choose=lambda label, *_: asked.append(label), keep_replaced=lambda *_: "x")
         self.assertNotIn("assistant name", asked)
 
+    def with_genbu(self, fake, *, version="1.4.11", appears=True):
+        """Genbu set up in fake, with a recipe search; from 1.4.11 its options take a voice agent."""
+        fields = [{"name": "searxng_url", "type": "string",
+                   "description": {"suggested_value": "http://search.example.org"}}]
+        if version >= "1.4.11":
+            fields.append({"name": "conversation_agent", "selector": {"entity": {"domain": "conversation"}}})
+        request = fake.request
+
+        def genbu(method, path, body=None):
+            if path == "/api/config/config_entries/entry?domain=genbu":
+                fake.calls.append((method, path, body))
+                return [{"entry_id": "G1", "domain": "genbu", "title": "Genbu Assistant"}]
+            if path == "/api/config/config_entries/options/flow" and body == {"handler": "G1"}:
+                fake.calls.append((method, path, body))
+                return {"type": "form", "flow_id": "O2", "data_schema": fields}
+            if path == "/api/config/config_entries/options/flow/O2" and method == "POST":
+                fake.calls.append((method, path, body))
+                if appears:
+                    fake.states["conversation.genbu_assistant"] = {"state": "unknown"}
+                return {"type": "create_entry"}
+            return request(method, path, body)
+        fake.request = genbu
+        return fake
+
+    def test_half_sentences_put_genbu_in_front_of_the_model(self):
+        fake, jarvis = self.two_assistants()
+        self.with_genbu(fake)
+        kept = {}
+
+        def keep(what, config):
+            kept[what] = config
+            return "/backups/" + what
+        _, log = run_deploy(fake, host="10.0.0.9", half_sentences=True, keep_replaced=keep)
+        # The search Genbu has stays; the agent is the one the pipeline had.
+        self.assertEqual(fake.posted("/api/config/config_entries/options/flow/O2")[0][1],
+                         {"searxng_url": "http://search.example.org", "conversation_agent": "conversation.jarvis"})
+        update = [m for m in fake.ws_calls if m["type"] == "assist_pipeline/pipeline/update"]
+        self.assertEqual(update, [{"type": "assist_pipeline/pipeline/update", "pipeline_id": "p1",
+                                   **{k: v for k, v in jarvis.items() if k != "id"},
+                                   "conversation_engine": "conversation.genbu_assistant"}])
+        self.assertEqual(kept["assist-pipeline-Jarvis"]["pipeline"]["conversation_engine"], "conversation.jarvis")
+        self.assertTrue(any("hands the rest to conversation.jarvis" in line and "/backups/" in line
+                            for line in log), log)
+
+    def test_half_sentences_stay_with_the_model_unless_asked_and_able(self):
+        def pipeline_updates(fake):
+            return [m for m in fake.ws_calls if m["type"] == "assist_pipeline/pipeline/update"]
+        cases = (({"keep_replaced": lambda *_: "x"}, {}, "go to conversation.jarvis as before"),  # Enter
+                 ({"half_sentences": True}, {}, "nowhere to save the pipeline first"),
+                 ({"half_sentences": True, "keep_replaced": lambda *_: "x"}, {"version": "1.4.10"},
+                  "needs 1.4.11 or newer"),
+                 ({"half_sentences": True, "keep_replaced": lambda *_: "x"}, {"appears": False},
+                  "did not appear within a minute"))
+        for kw, genbu, said in cases:
+            fake, _ = self.two_assistants()
+            self.with_genbu(fake, **genbu)
+            choose = (lambda *_: None) if "half_sentences" not in kw else None
+            _, log = run_deploy(fake, host="10.0.0.9", choose=choose, **kw)
+            self.assertFalse(pipeline_updates(fake), kw)
+            self.assertTrue(any(said in line for line in log), (kw, log))
+            if genbu.get("version"):
+                self.assertIn(("DELETE", "/api/config/config_entries/options/flow/O2", None), fake.calls)
+        # Already in front, or Home Assistant's own agent behind it: not even asked.
+        for engine in ("conversation.genbu_assistant", "conversation.home_assistant"):
+            fake, _ = self.two_assistants()
+            fake.pipelines["pipelines"][0]["conversation_engine"] = engine
+            self.with_genbu(fake)
+            asked = []
+            run_deploy(fake, host="10.0.0.9", choose=lambda label, *_: asked.append(label),
+                       keep_replaced=lambda *_: "x")
+            self.assertNotIn("half sentences", asked)
+            self.assertFalse(pipeline_updates(fake))
+        with mock.patch.object(sys, "argv", ["jarvis-show.py", "home-assistant", "--name", "x", "--half-sentences"]):
+            self.assertIs(show_cli.parse_args().half_sentences, True)
+
     def test_enter_keeps_the_assistant_name(self):
         args = argparse.Namespace(assistant=None, wake_word=None, room=None, room_dashboard=None, voice_extras=None,
                                   calendars=None, no_questions=False, genbu_assistant=None)

@@ -19,6 +19,7 @@ NAME = "Genbu Assistant"  # the integration, and its one config entry (GENBU-120
 OLD_NAME = "Genbu"  # the entry's title before 1.4.0
 PANEL_TITLE = "Genbu Control Center"  # the sidebar page's title (GENBU-121)
 CONF_SEARXNG = "searxng_url"  # the recipe search; without it nobody gets genbu__recipe (GENBU-120 §4)
+CONF_AGENT = "conversation_agent"  # the agent Genbu's own answers through; without it there is none (GENBU-253)
 RECIPE_ENTITY = "sensor.genbu_recipe"  # the recipe last found, which the recipe page shows
 NEW_RECIPE = f"{DOMAIN}_recipe"  # dispatcher signal: a recipe was found
 SHOW_RECIPE = "recipe_show"  # the Show's ESPHome action that puts the recipe page up

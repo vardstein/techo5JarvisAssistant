@@ -449,7 +449,15 @@ What happens with the answers:
      of them, other satellites too, to the new name right after. The pipeline as it was, and the
      list of devices on it, are saved first in `backups/home-assistant/`. Nothing is asked when it
      already has that name or another pipeline does. `--genbu-assistant` and
-     `--no-genbu-assistant` answer ahead of time;
+     `--no-genbu-assistant` answer ahead of time.
+     Then it asks whether Genbu Assistant should catch half sentences (Enter is no): a lone word
+     Whisper made of the TV gets "Das habe ich nicht verstanden." from Genbu, and everything else
+     goes to the pipeline's agent as before. With a yes it saves the pipeline in
+     `backups/home-assistant/`, picks the pipeline's agent as Genbu's **Voice agent** and makes
+     Genbu Assistant the pipeline's conversation agent. Nothing is asked when the pipeline already
+     uses it, uses Home Assistant's own agent, or Genbu is older than 1.4.11. See
+     [voice-setup.md](voice-setup.md#half-sentences-genbus-own-agent). `--half-sentences` and
+     `--no-half-sentences` answer ahead of time;
   4. asks which room (Home Assistant area) it stands in and puts its device there, over the
      websocket API since REST has no device registry. The room is how the Show finds the Music
      Assistant speaker whose music it shows, when it is the only one in that area. `--room` answers
@@ -785,6 +793,7 @@ uses the Home Assistant, DashCast, Music Assistant and choice switches.
 | `--music-assistant-token-file FILE` | A file holding a Music Assistant admin's long-lived token, used instead of signing in, once for the Show's own user there (lyrics) and the switches above. |
 | `--assistant NAME` | The Assist pipeline it talks to, or `preferred`. `''` leaves it alone. |
 | `--genbu-assistant`, `--no-genbu-assistant` | Call the Show's assistant "Genbu Assistant" in Home Assistant, and keep every device that was on it there, or leave the name alone. Asked otherwise, Enter is no. |
+| `--half-sentences`, `--no-half-sentences` | Let Genbu Assistant answer a lone misheard word itself and hand everything else to the pipeline's agent, or leave the pipeline alone. Asked otherwise, Enter is no. |
 | `--wake-word NAME` | One of the wake words the Show offers. `''` leaves it alone. |
 | `--room NAME` | The Home Assistant area it stands in, by name or id. `''` leaves it alone. |
 | `--room-dashboard`, `--no-room-dashboard` | Make a small dashboard for its room when the room has none, or never. Asked otherwise. |

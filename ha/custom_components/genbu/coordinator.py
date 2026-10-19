@@ -196,6 +196,7 @@ class GenbuHouse:
         self.told: dict[tuple[str, str], datetime] = {}
         self.cooking: set[str] = set()  # the Shows looking a recipe up right now, by device id
         self.had_search = False  # whether a recipe search was set up when the entry was
+        self.had_agent = ""  # the agent Genbu's own hands on to, when the entry was set up (GENBU-253)
         self.release: dict = {}  # the channel's newest manifest, {} until it was read
         self.installed_at: datetime | None = None  # the last install, for how far the Shows are
         self.keycare = KeyCare(hass, self.house, self._save)

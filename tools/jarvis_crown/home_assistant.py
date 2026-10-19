@@ -671,25 +671,31 @@ def _pipeline_selects(ha: HomeAssistant) -> dict[str, str]:
     return found
 
 
+def _show_pipeline(ha: HomeAssistant, entities: list[str]) -> tuple[dict | None, list[dict], str]:
+    """The Assist pipeline the Show talks to, every pipeline, and why there is none when there isn't."""
+    matches = [e for e in entities if e.startswith("select.") and e.endswith("_assistant")]
+    if not matches:
+        return None, [], "there is no assistant select on this Show"
+    current = str((ha.request("GET", f"/api/states/{min(matches, key=len)}") or {}).get("state") or "")
+    try:
+        listed = ha.ws({"type": "assist_pipeline/pipeline/list"}) or {}
+    except HomeAssistantError as exc:
+        return None, [], f"Home Assistant did not list its pipelines ({exc})"
+    pipelines = [p for p in listed.get("pipelines") or [] if isinstance(p, dict)]
+    want_id = listed.get("preferred_pipeline") if current == "preferred" else None
+    pipeline = next((p for p in pipelines if (p.get("id") == want_id if want_id else p.get("name") == current)), None)
+    return pipeline, pipelines, "" if pipeline else f"no pipeline {current!r} in Home Assistant"
+
+
 def _name_assistant(ha: HomeAssistant, entities: list[str], wanted: bool | None, choose: Chooser | None,
                     keep: Callable[[str, Any], str] | None) -> str:
     """Calls the Assist pipeline the Show talks to ASSISTANT_NAME, when wanted or choose says so. Devices
     pick a pipeline by its name, and Home Assistant turns a select whose name went away back to
     "preferred"; so every select that was on the old name is put on the new one, and none of them ends up
     talking to another assistant. The pipeline and those selects are saved first. Returns what happened."""
-    matches = [e for e in entities if e.startswith("select.") and e.endswith("_assistant")]
-    if not matches:
-        return "no assistant select on this Show, so its assistant keeps its name"
-    current = str((ha.request("GET", f"/api/states/{min(matches, key=len)}") or {}).get("state") or "")
-    try:
-        listed = ha.ws({"type": "assist_pipeline/pipeline/list"}) or {}
-    except HomeAssistantError as exc:
-        return f"the assistant keeps its name: Home Assistant did not list its pipelines ({exc})"
-    pipelines = [p for p in listed.get("pipelines") or [] if isinstance(p, dict)]
-    want_id = listed.get("preferred_pipeline") if current == "preferred" else None
-    pipeline = next((p for p in pipelines if (p.get("id") == want_id if want_id else p.get("name") == current)), None)
+    pipeline, pipelines, why = _show_pipeline(ha, entities)
     if pipeline is None:
-        return f"the assistant keeps its name: no pipeline {current!r} in Home Assistant"
+        return f"the assistant keeps its name: {why}"
     old = str(pipeline.get("name") or "")
     if old == ASSISTANT_NAME:
         return f"the assistant is already called {ASSISTANT_NAME}"
@@ -710,6 +716,72 @@ def _name_assistant(ha: HomeAssistant, entities: list[str], wanted: bool | None,
         ha.request("POST", "/api/services/select/select_option", {"entity_id": entity, "option": ASSISTANT_NAME})
     on = f"; {', '.join(sorted(selects))} follow{'s' if len(selects) == 1 else ''} it" if selects else ""
     return f"the assistant {old} is now called {ASSISTANT_NAME}{on}; the old one is in {saved}"
+
+
+# Genbu's own conversation agent (Genbu 1.4.11, GENBU-253): it answers a lone word the speech-to-text made of
+# the TV with "Das habe ich nicht verstanden." and hands every other turn to the agent it stands in front of.
+GENBU_AGENT = "conversation.genbu_assistant"
+
+
+def _half_sentences(ha: HomeAssistant, entities: list[str], wanted: bool | None, choose: Chooser | None,
+                    keep: Callable[[str, Any], str] | None, sleep: Callable[[float], None],
+                    clock: Callable[[], float]) -> str:
+    """Puts GENBU_AGENT in front of the agent the Show's pipeline talks to, when wanted or choose says so:
+    Genbu's options get that agent, and the pipeline gets Genbu's. The pipeline is saved first, and the
+    search Genbu already has stays. Returns what happened."""
+    pipeline, _, why = _show_pipeline(ha, entities)
+    if pipeline is None:
+        return f"half sentences go to the model as before: {why}"
+    name, engine = str(pipeline.get("name") or ""), str(pipeline.get("conversation_engine") or "")
+    if engine == GENBU_AGENT:
+        return f"Genbu Assistant already answers half sentences for {name}"
+    if engine in ("", "conversation.home_assistant", "homeassistant"):
+        return f"{name} answers with Home Assistant's own agent, which has no half sentences to keep from a model"
+    try:
+        entries = ha.request("GET", "/api/config/config_entries/entry?domain=genbu") or []
+    except HomeAssistantError:
+        entries = []
+    entry_id = next((str(e.get("entry_id") or "") for e in entries if isinstance(e, dict)
+                     and e.get("domain", "genbu") == "genbu"), "")
+    if not _ENTRY_ID_RE.fullmatch(entry_id):
+        return "half sentences go to the model as before: the Genbu Assistant integration is not set up"
+    if wanted is None and choose:
+        wanted = choose("half sentences", "", ["yes", "no"],
+                        {"yes": f"yes, Genbu Assistant answers them and hands the rest to {engine}",
+                         "no": "no, the model hears them"}) == "yes"
+    if not wanted:
+        return f"half sentences go to {engine} as before"
+    if keep is None:
+        return "half sentences go to the model as before: there is nowhere to save the pipeline first"
+    form = ha.request("POST", "/api/config/config_entries/options/flow", {"handler": entry_id})
+    flow_id = form.get("flow_id") if isinstance(form, dict) else None
+    fields = [f for f in (form.get("data_schema") or []) if isinstance(f, dict)] if flow_id else []
+    if not any(f.get("name") == "conversation_agent" for f in fields):
+        if flow_id:
+            ha.request("DELETE", f"/api/config/config_entries/options/flow/{flow_id}")
+        return "half sentences go to the model as before: Genbu Assistant needs 1.4.11 or newer for them"
+    answer = {}
+    for field in fields:  # what is set today comes back as the field's suggested value
+        was = (field.get("description") or {}).get("suggested_value", field.get("default"))
+        if field.get("name") and was not in (None, ""):
+            answer[field["name"]] = was
+    answer["conversation_agent"] = engine
+    saved = keep(f"assist-pipeline-{name}", {"pipeline": pipeline})
+    done = ha.request("POST", f"/api/config/config_entries/options/flow/{flow_id}", answer)
+    if not isinstance(done, dict) or done.get("type") != "create_entry":
+        errors = done.get("errors") if isinstance(done, dict) else done
+        return f"half sentences go to the model as before: Genbu Assistant did not take {engine} ({errors})"
+    deadline = clock() + 60
+    while (ha.request("GET", f"/api/states/{GENBU_AGENT}") or {}).get("state") is None:
+        if clock() >= deadline:
+            return (f"Genbu Assistant has {engine} as its voice agent, but {GENBU_AGENT} did not appear within a "
+                    f"minute; {name} still talks to {engine}. Pick Genbu Assistant as its conversation agent "
+                    "in Settings -> Voice assistants")
+        sleep(2)
+    ha.ws({"type": "assist_pipeline/pipeline/update", "pipeline_id": pipeline["id"],
+           **{k: pipeline[k] for k in _PIPELINE_FIELDS if k in pipeline}, "conversation_engine": GENBU_AGENT})
+    return (f"{name} now talks to Genbu Assistant, which answers half sentences and hands the rest to {engine}; "
+            f"the old pipeline is in {saved}")
 
 
 def _switch_on(ha: HomeAssistant, entities: list[str], suffix: str) -> str:
@@ -1551,6 +1623,7 @@ class DeployOptions:
     voice_extras: bool | None = None    # the house's answers and music sentences (voice_kit); None: ask
     music_genres: dict[str, str] | None = None  # Music Assistant's genres for the random music, URI -> name
     assistant_name: bool | None = None  # call the Show's pipeline ASSISTANT_NAME; None: ask
+    half_sentences: bool | None = None  # put GENBU_AGENT in front of the pipeline's agent; None: ask
     calendars: str | None = None   # the calendar entities the Show shows, "a, b"; '': leave them; None: ask
     caldav: CalDAVAccount | None = None  # a calendar account to add to Home Assistant, without asking
     ask_caldav: Callable[[], CalDAVAccount | None] | None = None  # asks for one, once choose says yes
@@ -1666,6 +1739,8 @@ def deploy(ha: HomeAssistant, opts: DeployOptions, *, progress: Callable[[str], 
         progress(_select(ha, entities, "_assistant", opts.assistant, choose))
     if opts.assistant_name or (opts.assistant_name is None and choose):
         progress(_name_assistant(ha, entities, opts.assistant_name, choose, opts.keep_replaced))
+    if opts.half_sentences or (opts.half_sentences is None and choose):
+        progress(_half_sentences(ha, entities, opts.half_sentences, choose, opts.keep_replaced, sleep, clock))
     if opts.wake_word or choose:
         progress(_select(ha, entities, "_wake_word", opts.wake_word, choose))
     from . import labels

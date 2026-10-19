@@ -136,6 +136,9 @@ def parse_args() -> argparse.Namespace:
     setup.add_argument("--genbu-assistant", action=argparse.BooleanOptionalAction, default=None,
                        help="call the Assist pipeline the Show talks to 'Genbu Assistant'; every device on it "
                             "follows the new name, and the pipeline is saved first (default: ask; Enter is no)")
+    setup.add_argument("--half-sentences", action=argparse.BooleanOptionalAction, default=None,
+                       help="let Genbu Assistant answer a lone misheard word itself and hand everything else to "
+                            "the pipeline's agent; the pipeline is saved first (default: ask; Enter is no)")
     setup.add_argument("--rename-entities", action=argparse.BooleanOptionalAction, default=None,
                        help="for a Show renamed since it was installed: give its entities the new name too, "
                             "and the automations and dashboards that use them (each saved first) "
@@ -407,6 +410,10 @@ QUESTIONS = {  # label: (question, help, names for the options, the answers Ente
                        "Renames the Assist pipeline the Show talks to. Every device that uses it, Shows and "
                        "voice satellites, follows the new name and keeps answering the same way. The pipeline "
                        "is saved first.", {}, ("no",)),
+    "half sentences": ("Should Genbu Assistant catch half sentences?",
+                       "Whisper sometimes makes one word out of the TV, like \"Deckel.\". Genbu Assistant then "
+                       "says \"Das habe ich nicht verstanden.\" itself, and everything else goes to the model "
+                       "as before. The pipeline is saved first.", {}, ("no",)),
     "voice extras": ("Set up the voice extras?",
                      "The room's music goes quiet while the Show listens. With a German assistant it also "
                      "answers about the room, the temperature, the weather and the volume, and plays music by "
@@ -443,6 +450,7 @@ def _chooser(args):
              "jarvis dashboard": getattr(args, "jarvis_dashboard", None), "voice extras": args.voice_extras,
              "calendars": args.calendars, "new name": getattr(args, "rename_entities", None),
              "assistant name": getattr(args, "genbu_assistant", None),
+             "half sentences": getattr(args, "half_sentences", None),
              "recipes": getattr(args, "recipes", None), "voice updates": getattr(args, "voice_updates", None)}
 
     def choose(label: str, current: str, options: list[str], shown: dict[str, str] | None = None) -> str | None:
@@ -524,7 +532,8 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
         room=args.room or None, room_dashboard=args.room_dashboard,
         jarvis_dashboard=getattr(args, "jarvis_dashboard", None), voice_extras=args.voice_extras,
         music_genres=_music_genres(settings) if args.voice_extras is not False else None,
-        assistant_name=getattr(args, "genbu_assistant", None), keep_replaced=_keeper(backups), calendars=args.calendars, caldav=caldav,
+        assistant_name=getattr(args, "genbu_assistant", None), half_sentences=getattr(args, "half_sentences", None),
+        keep_replaced=_keeper(backups), calendars=args.calendars, caldav=caldav,
         ask_caldav=_caldav_asker(args), rename_entities=getattr(args, "rename_entities", None), renamed=renamed,
         settings=ha_api.DeviceSettings(dashcast=settings.dashcast, dashcast_key=settings.dashcast_key,
                                        ha_url=settings.ha_url, ha_token=settings.ha_token,
