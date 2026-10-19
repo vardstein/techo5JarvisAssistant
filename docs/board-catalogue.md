@@ -192,11 +192,13 @@ A destructive step may run on a unit only when all three hold:
    (see Evidence). This part is new and not built yet: adding it would change what the installer does
    today, and stage b had to change nothing. Until it exists, `unlock.py` keeps its crown-only check in
    code, so pinning more members in the catalogue does not by itself open unlock on another board.
+   Since GENBU-212 every unlock run writes the log this part needs (see Evidence).
 
 So whether a board may be unlocked is computed, not written down. Policy says *how* (all three boards say
-`amonet-kaeru`), the pins and evidence say *whether*. Checkers and cronos fail (2) today, because only
-their TWRP is pinned in their zips (cronos's zip was reviewed and pinned on 2026-10-14). That matches what
-`unlock.py` refuses today without a hash manifest.
+`amonet-kaeru`), the pins and evidence say *whether*. Checkers fails (2) today, because only its TWRP is
+pinned in its zip. Cronos passes (2) since GENBU-212, which pinned the six unlock files of its zip (reviewed
+on 2026-10-14) on 2026-10-20, but has no evidence yet, so it fails (3). Both match what `unlock.py`
+refuses today without a hash manifest.
 
 Units that already carry Amonet 1.x (`amonet-upgrade`) aren't a quirk and don't get a policy field. The
 unlock step reads the installed Amonet version, matches it exactly against a pinned list of upgradable
@@ -336,6 +338,13 @@ Per step, per board: `catalogue/evidence/<board>/<step>.json`. Shape, following 
 Nothing reads evidence yet. The format is settled; the check is deferred because it would change what
 the installer does today (see the destructive-step rule above and open question Q9).
 
+Where the logs come from: since GENBU-212 every unlock that gets as far as Amonet writes one, under
+`~/.local/state/jarvis-show/unlock/` (the unlock log in
+[jarvis-crown-installer.md](jarvis-crown-installer.md), J19). The serial is already blanked, so after a read
+through it can be copied to `catalogue/evidence/<board>/` and the record written next to it. The next
+logged unlock on each board makes its first record; then the check gets built and cronos opens through
+it, as Jade decided on 2026-10-20.
+
 ## Next owners to fold in
 
 Stage b moved the installer (`tools/jarvis_crown/` and the two CLIs that use it). These still own a
@@ -376,6 +385,8 @@ For Jade. None of them is decided in code; the code keeps what it did before.
   (`Crown` and ` CHECKERS ` work), as `boards.py` did. The rule says exact. Changing it changes what the
   installer accepts, so it's left as is, marked in `catalogue.py`, and pinned by the parity test.
 - **Q9, evidence check.** Designed above, not built. Unlock stays crown-only in code until it exists.
+  Decided 2026-10-20 (GENBU-212): pin and log first, then build the check once each board has a logged
+  run; cronos opens through the check, not before.
 - **Asset licences.** Unknown for all nine assets.
 - **The remaining owners** above, especially `mkrootfs.sh`'s marker and `PROFILE_ID`, which several
   scripts and echod spell out themselves.

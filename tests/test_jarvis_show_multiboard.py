@@ -177,7 +177,7 @@ class MultiBoardTests(unittest.TestCase):
             td = pathlib.Path(td_s)
             amonet, hashes = make_amonet(td, "checkers")
             run = mock.Mock(return_value=unlock.FastbrickResult(0, "Exploit most likely successful!\n"))
-            with self.assertRaisesRegex(unlock.UnlockError, "not been cryptographically pinned"):
+            with self.assertRaisesRegex(unlock.UnlockError, "isn't open without a hash manifest"):
                 unlock.unlock_show(identity, amonet, confirmation="UNLOCK", run=run)
             run.assert_not_called()
             with self.assertRaisesRegex(unlock.UnlockError, "exact confirmation"):
@@ -302,7 +302,7 @@ class MultiBoardTests(unittest.TestCase):
             td = pathlib.Path(td_s)
             amonet, _ = make_amonet(td, "cronos")
             run = mock.Mock(return_value=cp(["bash", "fastbrick.sh"]))
-            with self.assertRaisesRegex(unlock.UnlockError, "not been cryptographically pinned"):
+            with self.assertRaisesRegex(unlock.UnlockError, "isn't open without a hash manifest"):
                 unlock.unlock_show(identity, amonet, confirmation="UNLOCK", run=run)
             run.assert_not_called()
             twrp = td / "bundle" / "amonet" / "bin" / "twrp.img"

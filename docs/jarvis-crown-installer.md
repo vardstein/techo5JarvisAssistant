@@ -66,6 +66,9 @@ list. The crown and checkers 2.0.1 zips went through this on 2026-10-09 and are 
 cronos (Echo Show 5 2nd gen) zip on 2026-10-14, together with its TWRP. The unlock payload hashes are
 only built in for crown, the board they were proven on. A checkers or cronos `unlock` refuses until
 you pass the hashes of the unpacked files with `--amonet-hashes`, and that first run is the proof.
+Cronos's six unlock files are pinned in the catalogue since 2026-10-20 (GENBU-212), but that alone
+doesn't open its unlock: it still wants `--amonet-hashes` until the evidence check exists, which needs
+a logged run first (see the unlock log under J19, and Q9 in [board-catalogue.md](board-catalogue.md)).
 The JSON names exactly the six files fastbrick runs: `fastbrick.sh`, `profile.sh`, `device.prop`,
 `bin/fastbrick.img`, `bin/fastboot` and `bin/fastboot32`. A file left out or one more is refused, and so is
 the switch on crown, whose hashes are built in (GENBU-172).
@@ -174,6 +177,17 @@ keep the Show powered, and requires re-identification before any retry.
 J19 itself does not flash TWRP (the Amonet payload installs the TWRP from its bundle), write TECHO5
 partitions, or start the rootfs installer. Those operations are
 separate later gates.
+
+**The unlock log.** From the moment Amonet starts, everything the run says goes to a file as well as
+the screen, one timestamped line at a time, so a run that dies half way still leaves it:
+`$XDG_STATE_HOME/jarvis-show/unlock/<board>-unlock-<UTC time>.log`, which is
+`~/.local/state/jarvis-show/unlock/` by default. The tool names the file when it starts and again if the
+run fails. A refusal before Amonet (wrong phrase, a hash that doesn't match) writes nothing. The log
+starts with the board, the bootloader build, the six hashes that were checked and the typed phrase, and
+ends with the result. The unit's serial is written as `<serial>`. That's the record the evidence check
+will read (GENBU-212, Q9 in [board-catalogue.md](board-catalogue.md)), so keep it. Before committing one,
+still read it through: a line naming another unit, say a TWRP that came up with a different serial,
+isn't blanked.
 
 ## J20 — TWRP handoff and recovery backup gate
 

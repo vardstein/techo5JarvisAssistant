@@ -6,10 +6,19 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
 from jarvis_crown.catalogue import profile_for_board, supported_boards  # noqa: E402
-from jarvis_crown.device_gate import KNOWN_UNSUPPORTED_PRODUCTS  # noqa: E402
+from jarvis_crown.device_gate import KNOWN_UNSUPPORTED_PRODUCTS, DeviceIdentity  # noqa: E402
 from jarvis_crown.install import BOOT_SHA256_BY_BOARD, make_install_plan  # noqa: E402,F401
 from jarvis_crown.recovery import TWRP_SHA256_BY_BOARD  # noqa: E402
-from jarvis_crown.unlock import AMONET_UNLOCK_SHA256  # noqa: E402
+from jarvis_crown.unlock import AMONET_UNLOCK_SHA256, UnlockError, unlock_show  # noqa: E402
+
+
+def unlock_refused(test, board):
+    """A locked board other than crown, given no hash manifest, is turned away before Amonet runs,
+    however much of its zip the catalogue pins (cronos: all of it since GENBU-212)."""
+    run = test.fail  # Amonet must never start
+    identity = DeviceIdentity("X1", board.upper(), False, "lk")
+    with test.assertRaisesRegex(UnlockError, "isn't open without a hash manifest"):
+        unlock_show(identity, ROOT / "missing", confirmation="UNLOCK", run=run)
 
 
 class AntiBrickContractTests(unittest.TestCase):
@@ -37,8 +46,7 @@ class AntiBrickContractTests(unittest.TestCase):
         self.assertEqual(amonet[0].sha256, "07a49c8fb2b244330297810b261333ba23976eca5ab3e0d9032f45f4c9847621")
         self.assertEqual(amonet[0].size, 44403627)
         self.assertTrue(amonet[0].manual)
-        unlock_source = (ROOT / "tools/jarvis_crown/unlock.py").read_text(encoding="utf-8")
-        self.assertIn("Amonet bundle has not been cryptographically pinned", unlock_source)
+        unlock_refused(self, "cronos")
 
     def test_checkers_boot_and_twrp_are_pinned_but_unlock_stays_blocked(self):
         self.assertEqual(
@@ -49,8 +57,7 @@ class AntiBrickContractTests(unittest.TestCase):
             TWRP_SHA256_BY_BOARD["checkers"],
             "dcc75bb651894c343039d45af73c4d900594762f6f55187c1ebdaf12d0ae59f5",
         )
-        unlock_source = (ROOT / "tools/jarvis_crown/unlock.py").read_text(encoding="utf-8")
-        self.assertIn("Amonet bundle has not been cryptographically pinned", unlock_source)
+        unlock_refused(self, "checkers")
 
     def test_crown_destructive_assets_are_cryptographically_pinned(self):
         self.assertEqual(len(AMONET_UNLOCK_SHA256), 6)

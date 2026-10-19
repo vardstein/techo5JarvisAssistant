@@ -45,7 +45,8 @@ from jarvis_crown.recovery import RecoveryError, adb_recovery_serials, identify_
 from jarvis_crown.to_fastboot import ToFastbootError, bring_to_fastboot  # noqa: E402
 from jarvis_crown.releases import CHANNELS, DEFAULT_CHANNEL, ReleaseError, fetch_rootfs  # noqa: E402
 from jarvis_crown.unlock import (  # noqa: E402
-    CONFIRM_PHRASE as UNLOCK_PHRASE, UnlockError, check_unlock_manifest, unlock_show, unlock_warnings,
+    CONFIRM_PHRASE as UNLOCK_PHRASE, UnlockError, check_unlock_manifest, default_log_dir, unlock_show,
+    unlock_warnings,
 )
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -1328,12 +1329,15 @@ def _main(args=None) -> int:
                     inputs,
                     confirm_unlock=confirm_unlock,
                     confirm_install=confirm_install,
-                    deps=FlowDeps(unlock=functools.partial(unlock_show, say=ui.out.note)),
+                    deps=FlowDeps(unlock=functools.partial(unlock_show, say=ui.out.note,
+                                                           log_dir=default_log_dir())),
                     progress=lambda stage: ui.out.step(STAGES.get(stage, stage)),
                     initial_identity=identity if identity_source == "recovery" else None,
                 )
             except (FlowError, DeviceGateError, UnlockError, RuntimeError) as exc:
                 ui.out.fail(f"install stopped: {exc}")
+                if getattr(exc, "log", None):
+                    ui.out.note(f"the unlock's log: {exc.log}")
                 return 4
         ui.out.done(f"{result.profile.product_id} is installed")
         music_assistant_metadata(settings)
@@ -1394,9 +1398,12 @@ def _main(args=None) -> int:
             confirmation=confirmation,
             expected_hashes=amonet_hashes,
             say=ui.out.note,
+            log_dir=default_log_dir(),
         )
     except UnlockError as exc:
         ui.out.fail(f"{profile.board} unlock: {exc}")
+        if exc.log:
+            ui.out.note(f"the unlock's log: {exc.log}")
         return 3
     if not result.identity.unlocked:
         ui.out.fail("unlock result was not proven")

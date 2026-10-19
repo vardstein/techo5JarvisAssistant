@@ -198,14 +198,18 @@ class CatalogueFactsTest(unittest.TestCase):
         self.assertEqual(product["boards"], list(catalogue.supported_boards()))
         self.assertEqual(sorted(product["boards"]), self.cat.boards())
 
-    def test_unlock_pins_only_complete_on_crown(self):
-        # unlock.py refuses every board but crown in code; the catalogue agrees that only crown's
-        # zip pins every file the unlock needs. Opening another board takes the evidence gate first.
+    def test_unlock_pins_complete_on_crown_and_cronos(self):
+        # Crown's zip pins every file the unlock needs, and cronos's does since GENBU-212; checkers's
+        # doesn't. unlock.py still refuses every board but crown without a manifest (test_antibrick_contract):
+        # opening cronos takes the evidence gate first.
         for name in self.cat.boards():
             members = self.cat.resolve(name)["assets"]["amonet"].get("members", {})
             pinned = {rel: members.get("amonet/" + rel) for rel in unlock.UNLOCK_FILES}
             if name == "crown":
                 self.assertEqual(pinned, unlock.AMONET_UNLOCK_SHA256)
+            elif name == "cronos":
+                self.assertNotIn(None, pinned.values())
+                self.assertNotEqual(pinned, unlock.AMONET_UNLOCK_SHA256)
             else:
                 self.assertIn(None, pinned.values(), name)
 

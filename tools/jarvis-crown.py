@@ -17,7 +17,9 @@ load_or_exit()  # GENBU-173: a broken catalogue stops here, in plain words
 from jarvis_crown.device_gate import DeviceGateError, identify_crown  # noqa: E402
 from jarvis_crown.preflight import preflight_ok, print_checks, run_preflight  # noqa: E402
 from jarvis_crown.catalogue import profile_for_board  # noqa: E402
-from jarvis_crown.unlock import CONFIRM_PHRASE, UnlockError, unlock_crown, unlock_warnings  # noqa: E402
+from jarvis_crown.unlock import (  # noqa: E402
+    CONFIRM_PHRASE, UnlockError, default_log_dir, unlock_crown, unlock_warnings,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -83,9 +85,12 @@ def main() -> int:
             identity,
             (args.amonet_dir or (project / "third_party" / "amonet-crown-v2.0.1")).resolve(),
             confirmation=confirmation,
+            log_dir=default_log_dir(),
         )
     except UnlockError as exc:
         print(f"FAIL: Crown unlock: {exc}", file=sys.stderr)
+        if exc.log:
+            print(f"INFO: the unlock's log: {exc.log}", file=sys.stderr)
         return 3
     if result.identity.unlocked:
         print("PASS: bootloader unlocked; the same Show came up in TWRP")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import hashlib
 import os
 from pathlib import Path
@@ -47,9 +48,10 @@ def _unlock_pins(board: str) -> dict[str, str] | None:
     return None if None in pins.values() else pins
 
 
-# Only crown's zip pins every unlock file today. Unlock still runs on crown alone without a hash
-# manifest from the caller (see unlock_show): pinning more members in the catalogue does not open
-# unlock on another board. That waits for the evidence gate (docs/board-catalogue.md, open questions).
+# Crown's and cronos's zips pin every unlock file (cronos since GENBU-212). Unlock still runs on crown
+# alone without a hash manifest from the caller (see unlock_show): pinning more members in the catalogue
+# does not open unlock on another board. That waits for the evidence gate (docs/board-catalogue.md, Q9),
+# which needs a logged run per board; UnlockLog writes those logs.
 _crown_pins = _unlock_pins("crown")
 if _crown_pins is None:
     raise catalogue.CatalogueError("crown's amonet zip no longer pins every unlock file; refusing to load")
@@ -57,7 +59,39 @@ AMONET_UNLOCK_SHA256: dict[str, str] = _crown_pins
 
 
 class UnlockError(RuntimeError):
-    """Raised when unlock cannot be proven safe/successful."""
+    """Raised when unlock cannot be proven safe/successful. log is the run's log, once Amonet ran."""
+
+    log: Path | None = None
+
+
+def default_log_dir() -> Path:
+    """$XDG_STATE_HOME/jarvis-show/unlock, else ~/.local/state/jarvis-show/unlock."""
+    base = os.environ.get("XDG_STATE_HOME") or os.path.join(os.path.expanduser("~"), ".local", "state")
+    return Path(base) / "jarvis-show" / "unlock"
+
+
+class UnlockLog:
+    """Everything one unlock run says from the moment Amonet starts, written line by line as it happens,
+    so a run that dies half way still leaves its log. It's the record the evidence gate will need
+    (GENBU-212). The unit's serial is blanked before anything is written, so the file can go into the
+    public repo as it is; a line with another unit's identifier would still need checking first."""
+
+    def __init__(self, directory: Path, identity: DeviceIdentity, board: str) -> None:
+        directory.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        self.path = directory / f"{board}-unlock-{stamp}.log"
+        self._serial = identity.serial
+        self._file = self.path.open("x", encoding="utf-8")
+
+    def line(self, text: str) -> None:
+        if self._serial:
+            text = text.replace(self._serial, "<serial>")
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self._file.write(f"{now} {text}\n")
+        self._file.flush()
+
+    def close(self) -> None:
+        self._file.close()
 
 
 def check_unlock_manifest(names) -> None:
@@ -77,6 +111,7 @@ def check_unlock_manifest(names) -> None:
 class UnlockResult:
     identity: DeviceIdentity
     amonet_invoked: bool
+    log: Path | None = None
 
 
 def _sha256(path: Path) -> str:
@@ -333,8 +368,10 @@ def unlock_show(
     sleep: Callable[[float], None] = time.sleep,
     expected_hashes: Mapping[str, str] | None = None,
     say: Callable[[str], None] = print,
+    log_dir: Path | None = None,
 ) -> UnlockResult:
-    """Unlock one proven supported Show, or safely skip an already-unlocked one."""
+    """Unlock one proven supported Show, or safely skip an already-unlocked one. With log_dir, a run
+    that gets as far as Amonet leaves its log there (UnlockLog)."""
     try:
         profile = profile_for_product(identity.product)
     except ValueError as exc:
@@ -358,8 +395,9 @@ def unlock_show(
         expected_hashes = AMONET_UNLOCK_SHA256
     elif expected_hashes is None:
         raise UnlockError(
-            f"{profile.board} Amonet bundle has not been cryptographically pinned in this checkout; "
-            "supply a trusted board-specific hash manifest before unlock"
+            f"{profile.board} unlock isn't open without a hash manifest yet: only crown's Amonet files are "
+            "built in until each board has a logged unlock that proves them; supply a trusted "
+            "board-specific hash manifest before unlock"
         )
     verify_amonet_unlock_assets(amonet_dir, expected_hashes=expected_hashes)
 
@@ -368,13 +406,42 @@ def unlock_show(
             f"locked {profile.board} requires exact confirmation phrase {CONFIRM_PHRASE!r}"
         )
 
-    _invoke_fastbrick(amonet_dir, run=run, say=say)
     if identify is None:
         identify = lambda: identify_show(expected_board=profile.board)
-    unlocked = _wait_for_twrp(
-        identity, profile.board, adb_run=adb_run, identify=identify, sleep=sleep, say=say,
-    )
-    return UnlockResult(identity=unlocked, amonet_invoked=True)
+    if log_dir is None:
+        _invoke_fastbrick(amonet_dir, run=run, say=say)
+        unlocked = _wait_for_twrp(
+            identity, profile.board, adb_run=adb_run, identify=identify, sleep=sleep, say=say,
+        )
+        return UnlockResult(identity=unlocked, amonet_invoked=True)
+
+    log = UnlockLog(log_dir, identity, profile.board)
+    say(f"this run's log: {log.path}")
+
+    def logged(text: str) -> None:
+        log.line(text)
+        say(text)
+
+    try:
+        log.line(f"unlock of a {profile.model} ({profile.board}, fastboot product {identity.product})")
+        log.line(f"bootloader build: {identity.lk_build_desc.strip()}")
+        for name in UNLOCK_FILES:
+            log.line(f"checked amonet/{name} sha256 {expected_hashes[name].lower()}")
+        log.line(f"confirmed with {CONFIRM_PHRASE}; Amonet starts")
+        _invoke_fastbrick(amonet_dir, run=run, say=logged)
+        unlocked = _wait_for_twrp(
+            identity, profile.board, adb_run=adb_run, identify=identify, sleep=sleep, say=logged,
+        )
+        log.line("result: unlocked; the same Show came up in a checked TWRP"
+                 if unlocked.unlocked else "result: not proven unlocked")
+    except BaseException as exc:
+        log.line(f"result: failed: {exc}" if str(exc) else f"result: failed: {type(exc).__name__}")
+        if isinstance(exc, UnlockError):
+            exc.log = log.path
+        raise
+    finally:
+        log.close()
+    return UnlockResult(identity=unlocked, amonet_invoked=True, log=log.path)
 
 
 def unlock_crown(
@@ -388,6 +455,7 @@ def unlock_crown(
     sleep: Callable[[float], None] = time.sleep,
     expected_hashes: Mapping[str, str] = AMONET_UNLOCK_SHA256,
     say: Callable[[str], None] = print,
+    log_dir: Path | None = None,
 ) -> UnlockResult:
     """Compatibility wrapper for Crown callers/tests."""
     if identity.product != "CROWN":
@@ -404,4 +472,5 @@ def unlock_crown(
         sleep=sleep,
         expected_hashes=expected_hashes,
         say=say,
+        log_dir=log_dir,
     )
