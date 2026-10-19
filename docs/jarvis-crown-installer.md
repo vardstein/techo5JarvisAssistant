@@ -441,6 +441,16 @@ What happens with the answers:
   writes `/data/misc/techo5/hass.json` (address and token) and a small first `state.json` with only
   the DashCast server and key and the Music Assistant address (Sendspin on). The daemon fills in
   every other default itself. A `state.json` that is already there is kept as it is.
+- **What the Show can reach, right after first boot.** Before the Home Assistant step the tool logs
+  in to the Show with its own SSH key and tries, from the Show, everything it dials itself: Home
+  Assistant, DashCast, Music Assistant (8095), GitHub (443, for updates), whether its clock got set
+  over NTP, and whether this computer finds it by its `.local` name. For each one that is blocked it
+  says which rule the router is missing, with the Show's address and MAC, the destination, port and
+  protocol filled in, and what doesn't work without it. When Music Assistant's address is known it
+  also prints the line for the install guide's `genbu_rules` helper on OpenWrt. It never changes the
+  router. Add the rules, answer yes to "Check again?", and it tries once more; no goes on without
+  them. [iot-firewall-policy.md](iot-firewall-policy.md) lists every rule. With `--no-ssh` this is
+  skipped.
 - **In Home Assistant, right after.** With an admin signed in (or an admin token) and Wi-Fi, the
   tool waits up to five minutes for the Show to come up, then over Home Assistant's REST API:
   1. adds it as an ESPHome device with its encryption key, by its address or else by its `.local`

@@ -28,6 +28,7 @@ from jarvis_crown import home_assistant as ha_api  # noqa: E402
 from jarvis_crown import ui  # noqa: E402
 from jarvis_crown import music_assistant as ma_api  # noqa: E402
 from jarvis_crown import remove as gone  # noqa: E402
+from jarvis_crown import reach  # noqa: E402
 from jarvis_crown import show_reset  # noqa: E402
 from jarvis_crown.shows import known_shows, rename_show, show_named, update_show  # noqa: E402
 from jarvis_crown.show_ssh import ShowKeyError, identity_for, key_path, make_key, owner_of, public_key  # noqa: E402
@@ -505,6 +506,11 @@ def _keeper(backups: Path):
 def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: Path, host: str | None,
                              wait_seconds: float, backups: Path) -> int:
     """Adds the Show to Home Assistant and hands it its settings through its own actions."""
+    if not host:
+        saved = key_file.parent / "address"
+        if saved.is_file():
+            host = saved.read_text(encoding="utf-8").strip() or None
+    check_reach(settings, args, name=name, host=host)
     if not settings.ha_admin:
         ui.out.heading("Home Assistant")
         ui.out.same("no admin signed in, so the Show is added by hand:")
@@ -517,10 +523,6 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
     except OSError as exc:
         ui.out.fail(f"cannot read the Show's encryption key: {exc.strerror}")
         return 1
-    if not host:
-        saved = key_file.parent / "address"
-        if saved.is_file():
-            host = saved.read_text(encoding="utf-8").strip() or None
     try:
         caldav = _caldav_account(args)
     except (SettingsError, ValueError) as exc:
@@ -571,6 +573,44 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
         ui.out.note(f"{genbu.PAGE}.")
     ui.out.finish(f"{now_called[0]} is in Home Assistant and set up")
     return 0
+
+
+def check_reach(settings: Settings, args, *, name: str, host: str | None) -> None:
+    """Tries from the Show everything it dials itself and names each router rule that is missing, with
+    the values filled in (GENBU-219). Only reads: the router is never changed from here."""
+    if getattr(args, "no_ssh", False):
+        return
+    ui.out.heading("What the Show can reach")
+    host = host or _find_host(name)()
+    if not host:
+        ui.out.same("its address isn't known, so this wasn't checked")
+        return
+    want = reach.targets(settings.ha_url, settings.dashcast, settings.music_assistant)
+    identity = identity_for(name, getattr(args, "ssh_identity", None))
+    find = _find_host(name) if shutil.which("avahi-resolve-host-name") else None
+    asker = _asker(args)
+    while True:
+        found = reach.probe(host, want, identity=identity, name=name, find_by_name=find)
+        if found.trouble:
+            ui.out.warn(f"couldn't check what the Show reaches: {found.trouble}")
+            return
+        missing = reach.missing_rules(found)
+        if not missing:
+            ui.out.done(f"it reaches {', '.join(t.what for t in want)}, and its clock is set")
+            if find is None:
+                ui.out.note("Whether it is found by name wasn't checked: avahi-resolve-host-name isn't on this computer.")
+            return
+        for line in missing:
+            ui.out.caution(line)
+        ui.out.note("docs/iot-firewall-policy.md lists every rule a Show needs. Nothing on the router was changed.",
+                    indent=2)
+        line = reach.openwrt_line(found, name=name, music_assistant=settings.music_assistant)
+        if line:
+            ui.out.note("On OpenWrt, the install guide's genbu_rules helper adds them:", indent=2)
+            ui.out.command(line)
+        if not asker.yes("Check again?", help="Add the rules on the router first. No goes on without them."):
+            ui.out.warn(f"{len(missing)} router rule{'s' if len(missing) > 1 else ''} still missing, see above")
+            return
 
 
 def _caldav_account(args) -> ha_api.CalDAVAccount | None:

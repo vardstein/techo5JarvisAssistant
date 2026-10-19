@@ -14,9 +14,12 @@ installation. Do not broaden a host-specific rule to an entire trusted subnet me
 | HA -> Jarvis Show | TCP 6053 | individual Show | yes | ESPHome/native API. Permit only the Home Assistant host. The provisioned encryption key is still mandatory. |
 | Music Assistant -> Jarvis Show | TCP 8928 | individual Show | when Music Assistant is used | Sendspin. Permit only the paired Music Assistant server. `echod` independently rejects every other source IP. |
 | Jarvis Show -> Dashcast | TCP 9555 | Dashcast host | when streamed dashboard is used | Authenticated/encrypted Dashcast transport. Never port-forward 9555. |
-| Jarvis Show -> HA | TCP 8123 or configured HA port | Home Assistant host | yes for HA REST/media/helper paths | Permit only the configured HA endpoint. Prefer HTTPS when HA is exposed that way internally. |
+| Jarvis Show -> HA | TCP, the port in the Show's HA address (443 for HTTPS, often 8123 for plain HTTP) | Home Assistant host | yes | Permit only the configured HA endpoint. Without it the installer's Home Assistant step waits for the Show and gives up, and the dashboard can't log in. |
+| Jarvis Show -> Music Assistant | TCP 8095 | Music Assistant host | when Music Assistant is used | Lyrics. Permit only the paired Music Assistant server. |
+| Jarvis Show -> Internet | TCP 443 | GitHub (github.com and its release downloads) | yes, until updates come through Home Assistant | Updates. Without it an update fails with "connection refused". Manifests are signed and files hashed, but narrow the rule where the firewall can. |
+| Jarvis Show -> mDNS | UDP 5353 | 224.0.0.251, reflected to the HA network | when HA is on another VLAN | Without it Home Assistant and the installer don't find the Show by its `.local` name. |
 | Jarvis Show -> router | UDP/TCP 53 | IoT gateway/DNS resolver | yes | DNS. Do not allow arbitrary external DNS when local policy intends to enforce the resolver. |
-| Jarvis Show -> router | UDP 123 | IoT gateway/NTP | yes | NTP. The existing OpenWrt NTP redirect may enforce this for devices that try another NTP target. |
+| Jarvis Show -> router | UDP 123 | IoT gateway/NTP | yes | NTP. The Show asks the servers DHCP names, then pool.ntp.org, then the gateway. A redirect to the router's own NTP covers all three. Without it the clock stays wrong and updates wait. |
 | Jarvis Show <-> router | UDP 67/68 | IoT gateway | yes | DHCP. |
 
 ## Same-IoT-subnet peer traffic
@@ -41,7 +44,6 @@ Cross-VLAN TCP 8181 is not required for normal operation. The setup/camera/scree
 | Jarvis Show -> SIP provider | TCP 5061 | configured SIP provider | deny unless configured | SIP signaling is TLS-only. Allow established/related return traffic. |
 | Jarvis Show <-> SIP provider | UDP provider-negotiated SRTP | configured SIP provider | deny unless configured | Media is SRTP-only. Prefer provider/IP-specific rules where practical; do not expose a static inbound RTP range from the Internet. |
 | Jarvis Show -> Ollama / SearXNG / Wyoming | configured TCP ports | explicitly configured Direct Brain hosts | deny unless Direct Brain is configured | Permit only the configured server IPs and ports. Do not grant general IoT -> server-LAN access. |
-| Jarvis Show -> Internet | TCP 443 | GitHub release endpoints / explicitly required services | policy-dependent | OTA manifests/assets are signed and hashed, but egress should still be narrowed where the firewall/DNS stack can maintain reliable endpoint policy. |
 
 Bluetooth pairing is not a routed firewall flow. Jarvis Show keeps pairing in its explicit, temporary
 pairing window; it should not be treated as a permanently discoverable management path.
@@ -67,8 +69,11 @@ illustrative; use the real zone names and server addresses):
 HA host             -> Jarvis Shows       tcp/6053        ACCEPT
 Music Assistant     -> Jarvis Shows       tcp/8928        ACCEPT
 Admin workstation   -> Jarvis Shows       tcp/22,8181     OPTIONAL ACCEPT
-Jarvis Shows        -> Home Assistant     tcp/8123        ACCEPT
+Jarvis Shows        -> Home Assistant     tcp/443 (HA's port) ACCEPT
 Jarvis Shows        -> Dashcast           tcp/9555        ACCEPT
+Jarvis Shows        -> Music Assistant    tcp/8095        ACCEPT
+Jarvis Shows        -> WAN (GitHub)       tcp/443         ACCEPT
+Jarvis Shows        -> mDNS reflector     udp/5353        ACCEPT
 Jarvis Shows        -> router             dns,ntp,dhcp    ACCEPT
 Jarvis Shows        -> configured brain   exact ports     OPTIONAL ACCEPT
 Jarvis Shows        -> SIP provider       tcp/5061 + EST  OPTIONAL ACCEPT
@@ -80,6 +85,15 @@ For installations where the Shows are on their own IoT subnet (say `10.0.9.0/24`
 on the LAN (say `10.0.0.0/24`), write destination-IP-specific exceptions **above** the general IoT-to-LAN reject.
 The precise Music Assistant and optional SIP/Direct-Brain endpoints must be filled from the deployment;
 do not guess them in firmware or broaden the rule because they are unknown.
+
+## Checking it
+
+The installer checks the outbound rules itself right after first boot: it logs in to the Show and
+tries Home Assistant, DashCast, Music Assistant and GitHub from there, looks at whether the clock got
+set, and whether it finds the Show by name. For each one that is blocked it prints the rule that is
+missing with the Show's address and MAC, the destination, port and protocol filled in. It only reads;
+the router is never changed by the installer. The inbound ones (6053, 8928) aren't checked this way,
+since the Show doesn't dial them.
 
 ## Secure-default acceptance checklist
 
