@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/HuskerMinion/techo5/echod/internal/board"
 )
 
 // The command lines are the bootloaders' own, cut down to what matters, from a 2nd gen Show 5
@@ -42,6 +44,22 @@ func TestTheShowNamesDoNotContainEachOther(t *testing.T) {
 			if a != b && strings.Contains(a, b) {
 				t.Errorf("%q contains %q", a, b)
 			}
+		}
+	}
+}
+
+// The catalogue's boards (internal/board) are the ones the guess picks from, with the same hardware.
+func TestBoardsAreTheCatalogues(t *testing.T) {
+	known, err := board.Known()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(known) != len(hardware) {
+		t.Errorf("catalogue %d boards, echod %d", len(known), len(hardware))
+	}
+	for id, b := range known {
+		if hardware[id] != b.Hardware() {
+			t.Errorf("%s: echod says %q, the catalogue %q", id, hardware[id], b.Hardware())
 		}
 	}
 }

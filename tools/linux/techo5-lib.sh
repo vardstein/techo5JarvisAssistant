@@ -155,8 +155,9 @@ T5_RESET_KEEPS=wifi
 # t5_factory_reset [root]: when the mark is there, erases what this device was set up with before
 # anything that could write it back has started: the daemon's state and settings, its name, the Home
 # Assistant key, the root password, Bluetooth pairings, the Wi-Fi it knew (Android's saved networks
-# too, or t5_wifi_conf would bring them back), ssh host keys and the logs. The profile stays: it is
-# what the image was installed as, not a setting. Android's other data on userdata stays as well.
+# too, or t5_wifi_conf would bring them back), ssh host keys and the logs. The profile and board.json
+# stay: they are what the image was installed as and on, not settings. Android's other data on
+# userdata stays as well.
 # The Home Assistant key is replaced with a random one nobody holds, not removed: a missing key is an
 # open device, and adding it again goes through the setup page's adoption window. setup-mode says so to
 # echod, which keeps the device off mDNS until that window is open (layout.SetupPath). A mark with a line
@@ -170,7 +171,7 @@ t5_factory_reset() {
 	log "factory reset: erasing"
 	for f in "$st"/* "$st"/.[!.]*; do
 		[ -e "$f" ] || [ -L "$f" ] || continue
-		case ${f##*/} in profile|factory_reset) continue ;; esac
+		case ${f##*/} in profile|board.json|factory_reset) continue ;; esac
 		rm -rf "$f"
 	done
 	(umask 077; head -c 32 /dev/urandom | base64 > "$st/psk.new") && mv -f "$st/psk.new" "$st/psk"

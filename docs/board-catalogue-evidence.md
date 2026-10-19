@@ -142,7 +142,7 @@ Installer-unchanged facts (section 1): 12 proven.
 The short version: every identity key the installer uses today (C1, C2, K1, K2, R1, R2) is only claimed.
 Every board's device-tree compatible is captured now, and checkers and cronos share one
 (`mediatek,mt8163`), so it can't be the key stage c matches on. `androidboot.product` on the kernel
-command line differs on all three. All three screen sizes have a capture; the panel check by eye (J38)
+command line differs on all three, and is in the catalogue as `identity.android_product`. All three screen sizes have a capture; the panel check by eye (J38)
 is still open. Of the boot pins only cronos's is seen booting; the crown in use runs v0.8.0, which the
 catalogue doesn't pin.
 

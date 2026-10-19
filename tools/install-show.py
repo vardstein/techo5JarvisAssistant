@@ -184,6 +184,18 @@ def describe_settings(ssh, settings):
     return out
 
 
+BOARD_PATH = '/data/misc/techo5/board.json'
+
+
+def board_json_cmd(board, path=BOARD_PATH):
+    """A shell command that writes the board's board.json (catalogue.on_show) and says BOARD-OK. Its own
+    command, like the root password's: the line is over two hundred characters. Written new on every
+    install, through a temporary file, so a cut leaves the old one or none, never half of one."""
+    text = catalogue.on_show_text(catalogue.default(), board).rstrip('\n')
+    return ("printf '%%s\\n' %s > %s.new && mv -f %s.new %s && sync && echo BOARD-OK"
+            % (quote(text), path, path, path))
+
+
 def write_once_cmd(path, text):
     """A shell command that writes text to path, private, unless the file is there already."""
     return ("if [ -e %s ]; then echo WRITE-KEPT; else (umask 077; printf '%%s\\n' %s > %s) && echo WRITE-OK; fi"
@@ -894,6 +906,12 @@ def main():
         if 'PW-OK' not in o:
             fail('the root password was not written:\n%s' % o)
         note('root password written (its hash)')
+    # What board this is, from the catalogue, for echod to read beside its own guess (GENBU-163 stage c).
+    # Factory reset keeps it, like the profile: it says what the unit is, not how it was set up.
+    o = console.run(board_json_cmd(dev), 15) or ''
+    if 'BOARD-OK' not in o:
+        fail('board.json was not written:\n%s' % o)
+    note('board.json written for %s' % dev)
     # The daemon's settings, each its own short command: a line typed into the console's shell has a
     # length limit, and the token alone is a couple of hundred characters.
     first = initial_state(bool(pub), settings)

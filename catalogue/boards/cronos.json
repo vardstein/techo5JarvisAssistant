@@ -4,7 +4,8 @@
   "profile_id": "genbu-cronos-v1",
   "identity": {
     "fastboot_product": "CRONOS",
-    "twrp_device": "cronos"
+    "twrp_device": "cronos",
+    "android_product": "cronos"
   },
   "display": {
     "width": 960,

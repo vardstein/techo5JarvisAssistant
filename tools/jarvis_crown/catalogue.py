@@ -15,6 +15,8 @@ asks profile_for_board() and profile_for_product() below, or resolve() for pins.
     python3 tools/jarvis_crown/catalogue.py resolve crown
     python3 tools/jarvis_crown/catalogue.py explain crown assets.boot.sha256
     python3 tools/jarvis_crown/catalogue.py check-files DIR...   # hash local copies against the pins
+    python3 tools/jarvis_crown/catalogue.py on-show crown        # the Show's board.json
+    python3 tools/jarvis_crown/catalogue.py write-on-show        # echod's copies of every board.json
 """
 from __future__ import annotations
 
@@ -33,9 +35,15 @@ ROOT = Path(__file__).resolve().parents[2] / "catalogue"
 # Closed sets. Adding a value is a reviewed change to this file, made when a real board needs it.
 UNLOCK_METHODS = frozenset({"amonet-kaeru"})
 ASSET_KINDS = frozenset({"lineage", "boot", "amonet"})
-# Exact-match identity keys, one per stage the installer sees the unit in. A key nobody has
-# captured from a real unit is left out of the board, not filled with a placeholder.
-IDENTITY_KEYS = frozenset({"fastboot_product", "twrp_device"})
+# Exact-match identity keys, one per stage the unit is seen in: fastboot, TWRP, and running
+# (android_product, androidboot.product on the kernel command line, what echod and board.json
+# go by). A key nobody has captured from a real unit is left out of the board, not filled with a
+# placeholder.
+IDENTITY_KEYS = frozenset({"fastboot_product", "twrp_device", "android_product"})
+# What board.json on a Show holds of its board (Catalogue.on_show), and where echod keeps a copy of
+# each board's, which a test holds equal to it: echod refuses a key it does not know.
+ON_SHOW_KEYS = ("id", "model", "profile_id", "identity", "display")
+ON_SHOW_DIR = ROOT.parent / "echod" / "internal" / "board" / "boards"
 # The pictures a kaeru wordmark slot is known with besides Amazon's (tools/boot-logo/README.md):
 # boot_logo.py writes the OpenJade one, install-show.py the TECHO5 one.
 WORDMARK_LOGOS = frozenset({"openjade", "techo5"})
@@ -310,6 +318,12 @@ class Catalogue:
         out["assets"] = {kind: json.loads(json.dumps(self._assets[ref][1])) for kind, ref in b["assets"].items()}
         return out
 
+    def on_show(self, board: str) -> dict:
+        """board.json: what the Show itself keeps of its board, written at install next to its profile.
+        Only what the Show reads, so no assets and no install policy (docs/board-catalogue.md)."""
+        r = self.resolve(board)
+        return {key: r[key] for key in ON_SHOW_KEYS}
+
     def explain(self, board: str, path: str) -> tuple[Any, str]:
         """The resolved value at a dotted path and the file + JSON pointer that owns it."""
         value: Any = self.resolve(board)
@@ -410,6 +424,11 @@ def profile_for_product(product: str) -> BoardProfile:
     return default().profile(board)
 
 
+def on_show_text(cat: Catalogue, board: str) -> str:
+    """board.json as the installer writes it: one line, so it fits one console command."""
+    return json.dumps(cat.on_show(board), separators=(",", ":")) + "\n"
+
+
 def check_files(cat: Catalogue, dirs: list[Path]) -> list[str]:
     """Hash every pinned asset (and pinned zip member) found in dirs. Read-only; reports, never fixes."""
     lines = []
@@ -451,11 +470,18 @@ def main(argv: list[str]) -> int:
             return 1 if any("MISMATCH" in l or "MISSING" in l for l in lines) else 0
         elif len(argv) == 2 and argv[0] == "resolve":
             print(json.dumps(cat.resolve(argv[1]), indent=2))
+        elif len(argv) == 2 and argv[0] == "on-show":
+            print(on_show_text(cat, argv[1]), end="")
+        elif argv == ["write-on-show"]:
+            for board in cat.boards():
+                (ON_SHOW_DIR / f"{board}.json").write_text(on_show_text(cat, board))
+            print(f"wrote {len(cat.boards())} boards to {ON_SHOW_DIR.relative_to(ROOT.parent)}")
         elif len(argv) == 3 and argv[0] == "explain":
             value, owner = cat.explain(argv[1], argv[2])
             print(f"{json.dumps(value)}  <- {owner}")
         else:
-            print("usage: check | resolve <board> | explain <board> <path> | check-files <dir>...",
+            print("usage: check | resolve <board> | explain <board> <path> | check-files <dir>... | on-show <board>"
+                  " | write-on-show",
                   file=sys.stderr)
             return 2
     except CatalogueError as exc:
