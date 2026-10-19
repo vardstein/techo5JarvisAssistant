@@ -283,6 +283,21 @@ actions:
       {%- set t = now() -%}Es ist {{ t.hour }} Uhr{% if t.minute %} {{ t.minute }}{% endif %}.
 ```
 
+### Timers and delayed commands
+
+"Mach das Licht aus in 10 Minuten" is a delayed command: Home Assistant starts a timer that runs
+"Mach das Licht aus" when it ends, and the Show shows no timer and rings no bell for it. Its
+sentence takes any words in front of "in 10 Minuten" as the command. Whisper once heard a timer as
+"Ich stelle einen Deckel für in 10 Minuten.", Home Assistant answered "Anweisung wird in 10
+Minuten ausgeführt", and nothing rang (GENBU-254).
+
+Home Assistant checks the command against its own sentences first and refuses what it can't run,
+but only when its own agent runs the pipeline. With a model as the agent and local sentences
+preferred, the check is skipped. Genbu 1.4.12 and newer turn it back on for every agent, so the
+misheard timer gets "Entschuldigung, das habe ich nicht verstanden" and you can say it again.
+Nothing to set up; it comes with the integration. What you lose: a delayed command only the model
+understands is refused too. It would have run with nobody hearing the answer anyway.
+
 ### Greetings
 
 It goes the other way for "Hallo", "Hi", "Hey", "Servus" and "Moin". Home Assistant has its own

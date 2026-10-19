@@ -348,6 +348,16 @@ streams to the Show as before, and the pipeline sees the other agent's features,
 What counts as a fragment, and why it errs towards passing on, is in `docs/voice-setup.md`, Half
 sentences.
 
+### Delayed commands (GENBU-254)
+
+Home Assistant refuses a delayed command it can't run ("Ich stelle einen Deckel für in 10 Minuten.")
+only when its own agent runs the pipeline; with a model agent and local sentences preferred, the timer
+sentence is handled locally under the model's name and the check is skipped. Genbu puts in Home
+Assistant's own timer handler with that one check changed to use Home Assistant's agent every time
+(`delayed.py`), and puts the original back when it is unloaded. If another integration has already
+replaced the handler, Genbu leaves it alone. Home Assistant logs a warning that `HassStartTimer` is
+being overwritten; that is this.
+
 ## 5. A Show's key (GENBU-196)
 
 A Show signs in to Home Assistant with a long-lived token of a user of its own: not an admin, and only

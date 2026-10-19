@@ -26,7 +26,7 @@ try:  # Home Assistant 2026.10 and later
 except ImportError:
     import voluptuous as vol
 
-from . import claims
+from . import claims, delayed
 from .const import (CARDS, CONF_AGENT, CONF_SEARXNG, DOMAIN, FRESH, MANUFACTURERS, NAME, OLD_NAME, OLD_RECIPES, PANEL, PANEL_FILES,
                     PANEL_TITLE, SERVICE_FORGET, SERVICE_INSTALL, SERVICE_MUSIC_ROUTE, SERVICE_SHOW_KEY, STORE_KEY,
                     STORE_VERSION)
@@ -54,6 +54,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(hub.async_stop)
     entry.async_on_unload(entry.add_update_listener(_options_changed))
     entry.async_on_unload(claims.async_watch(hass))
+    entry.async_on_unload(delayed.async_check(hass))
     await hass.config_entries.async_forward_entry_setups(entry, _platforms(hub.had_agent))
     if not hass.services.has_service(DOMAIN, SERVICE_FORGET):
         async def forget(call: ServiceCall) -> ServiceResponse:
