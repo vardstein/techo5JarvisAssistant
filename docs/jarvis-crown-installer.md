@@ -583,8 +583,10 @@ What happens with the answers:
      With the Genbu integration copied to Home Assistant but not set up yet, it sets it up; the form
      asks nothing. When Home Assistant doesn't have Genbu, it says how to copy it and asks to check
      again or skip; skipped, the Show looks for updates on its own channel. When the house already has
-     a version, the Show follows it, and the tool waits up to 15 minutes for it to get there. Updates
-     then come on one card in Home Assistant, **Genbu Show firmware**.
+     a version, the Show follows it, and the tool waits up to 15 minutes for it to get there. Press
+     Enter once the update is done, or to go on without waiting; the Show carries on by itself. The
+     wait also ends as soon as the Show says it follows the house. Updates then come on one card in
+     Home Assistant, **Genbu Show firmware**.
   11. asks about this Show's optional features in Genbu: **Recipes** ("Recipes on this Show?", only
      when a recipe search is set up in Genbu Assistant) and **Updates by voice** ("Ask this Show about
      updates by voice?"). Enter is yes for both. `--recipes`/`--no-recipes` and

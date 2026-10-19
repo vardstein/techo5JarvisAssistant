@@ -1,6 +1,9 @@
+import importlib.util
+import os
 import pathlib
 import sys
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -58,7 +61,7 @@ class Clock:
         self.now += s
 
 
-def run(fake, *, answers=None, wait=900.0):
+def run(fake, *, answers=None, wait=900.0, enter=None):
     lines, asked, clock = [], [], Clock()
 
     def choose(label, current, options, names):
@@ -66,8 +69,22 @@ def run(fake, *, answers=None, wait=900.0):
         return (answers or {}).get(label)
 
     result = genbu.set_up(fake, "E1", NODE, choose=choose if answers is not None else None,
-                          progress=lines.append, sleep=clock.sleep, clock=clock, wait=wait)
+                          progress=lines.append, sleep=clock.sleep, clock=clock, wait=wait,
+                          enter=enter and enter(clock))
     return result, lines, asked
+
+
+def enter_after(looks):
+    """A user who presses Enter during the given look at the status, or never with None."""
+    def make(clock):
+        seen = []
+
+        def enter(seconds):
+            seen.append(seconds)
+            clock.sleep(seconds)
+            return looks is not None and len(seen) >= looks
+        return enter
+    return make
 
 
 class NoIntegrationTest(unittest.TestCase):
@@ -148,6 +165,28 @@ class HouseTest(unittest.TestCase):
         _, lines, _ = run(fake, wait=60)
         self.assertIn("carries on by itself", lines[-1])
 
+    def test_enter_ends_the_wait_and_leaves_it_to_the_show(self):
+        fake = FakeHouse(entry=True, statuses=["Waiting for this version to settle before moving to v1.0.3"])
+        _, lines, _ = run(fake, enter=enter_after(2))
+        self.assertIn("Press Enter once the update is done, or to go on without waiting", lines[1])
+        self.assertEqual(lines[-1], "going on; it carries on by itself (Waiting for this version to settle before "
+                         "moving to v1.0.3); its update card in Home Assistant shows how far it is")
+        self.assertEqual(sum(1 for c in fake.calls if c[1].endswith("_update_status")), 2)
+
+    def test_following_goes_on_without_enter(self):
+        fake = FakeHouse(entry=True, statuses=["Downloading v1.0.3", "Following the house · version v1.0.3"])
+        _, lines, _ = run(fake, enter=enter_after(None))
+        self.assertEqual(lines[-1], "Following the house · version v1.0.3")
+
+    def test_never_pressed_it_still_ends_at_the_time(self):
+        fake = FakeHouse(entry=True, statuses=["Moving to v1.0.3 once nobody is using this Show"])
+        _, lines, _ = run(fake, wait=60, enter=enter_after(None))
+        self.assertTrue(lines[-1].startswith("it carries on by itself"), lines[-1])
+
+    def test_nobody_at_the_terminal_is_not_told_to_press_enter(self):
+        _, lines, _ = run(FakeHouse(entry=True, statuses=["Following the house · version v1.0.3"]))
+        self.assertFalse(any("Enter" in line for line in lines), lines)
+
     def test_the_house_reads_only_its_version(self):
         self.assertEqual(genbu.house(FakeHouse(entry=True)), genbu.House("v1.0.3"))
         self.assertEqual(genbu.house(FakeHouse(entry=True, version="")), genbu.House(""))
@@ -219,6 +258,33 @@ class FeaturesTest(unittest.TestCase):
         self.assertEqual((asked, fake.switched()), ([], []))
         self.assertTrue(any("Genbu Control Center" in line for line in lines), lines)
 
+
+
+class EnterAtTheTerminalTest(unittest.TestCase):
+    """The installer's side of GENBU-222: what ends the wait at a real terminal."""
+
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("jarvis_show_cli_enter", ROOT / "tools" / "jarvis-show.py")
+        self.cli = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.cli)
+
+    def enter(self, interactive):
+        asker = mock.Mock(interactive=interactive)
+        with mock.patch.object(self.cli, "_asker", return_value=asker):
+            return self.cli._enter(mock.Mock())
+
+    def test_nobody_at_the_terminal_gets_none(self):
+        self.assertIsNone(self.enter(False))
+
+    def test_a_line_ends_the_wait_and_is_read(self):
+        r, w = os.pipe()
+        with os.fdopen(r) as stdin, os.fdopen(w, "w") as out, mock.patch.object(self.cli.sys, "stdin", stdin):
+            pressed = self.enter(True)
+            self.assertFalse(pressed(0.01))
+            out.write("\n")
+            out.flush()
+            self.assertTrue(pressed(5))
+            self.assertFalse(pressed(0.01))  # the line was used up
 
 if __name__ == "__main__":
     unittest.main()

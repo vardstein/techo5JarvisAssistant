@@ -9,11 +9,13 @@ import functools
 import os
 from pathlib import Path
 import re
+import select
 import shlex
 import shutil
 import signal
 import subprocess
 import sys
+import termios
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -447,6 +449,28 @@ QUESTIONS = {  # label: (question, help, names for the options, the answers Ente
 }
 
 
+def _enter(args):
+    """Waits up to so many seconds for Enter at the terminal and says whether it came; None with nobody
+    there to press it (GENBU-222). An Enter typed earlier in the run doesn't count."""
+    if not _asker(args).interactive:
+        return None
+    fresh = [True]
+
+    def pressed(seconds: float) -> bool:
+        if fresh[0]:
+            fresh[0] = False
+            try:
+                termios.tcflush(sys.stdin, termios.TCIFLUSH)
+            except (termios.error, OSError, ValueError):  # no tty to flush, so nothing typed ahead
+                pass
+        ready, _, _ = select.select([sys.stdin], [], [], seconds)
+        if not ready:
+            return False
+        sys.stdin.readline()
+        return True
+    return pressed
+
+
 def _chooser(args):
     """Asks for the assistant, wake word and room the switches left open; '' on a switch means do not touch it."""
     asker = _asker(args)
@@ -559,7 +583,7 @@ def deploy_to_home_assistant(settings: Settings, args, *, name: str, key_file: P
     ui.out.heading("Updates")
     try:
         joined = genbu.set_up(hc, entry_id, ha_api.node_name(hc, entry_id) or ha_api.node_slug(now_called[0]),
-                              choose=choose, progress=ui.out.progress)
+                              choose=choose, progress=ui.out.progress, enter=_enter(args))
     except ha_api.HomeAssistantError as exc:
         joined = None
         ui.out.progress(f"WARN: the update setup stopped part way: {exc}")

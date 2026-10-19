@@ -70,13 +70,17 @@ def _status_entity(ha: HomeAssistant, entry_id: str) -> str | None:
 
 
 def _wait_aligned(ha: HomeAssistant, entry_id: str, version: str, progress: Callable[[str], None],
-                  sleep: Callable[[float], None], clock: Callable[[], float], wait: float) -> None:
+                  sleep: Callable[[float], None], clock: Callable[[], float], wait: float,
+                  enter: Callable[[float], bool] | None = None) -> None:
     """Watches the Show's update status until it follows the house version, cannot, or wait runs out.
-    A freshly installed Show first lets its own version settle (5 minutes), then moves."""
+    A freshly installed Show first lets its own version settle (5 minutes), then moves. With enter
+    (waits up to so many seconds, True when Enter was pressed) the user can go on at any time
+    (GENBU-222); without it, nobody is at the terminal and it waits as before."""
     status = _status_entity(ha, entry_id)
     if not status or wait <= 0:
         return
-    progress(f"waiting for it to move to version {version}; up to {int(wait // 60)} min")
+    start = f"waiting for it to move to version {version}; up to {int(wait // 60)} min"
+    progress(start + (". Press Enter once the update is done, or to go on without waiting" if enter else ""))
     deadline = clock() + wait
     last = ""
     while True:
@@ -93,20 +97,27 @@ def _wait_aligned(ha: HomeAssistant, entry_id: str, version: str, progress: Call
             progress(line)
             return
         shown = NO_STATUS if line in GONE else line
+        carries_on = f"it carries on by itself ({shown}); its update card in Home Assistant shows how far it is"
         if clock() >= deadline:
-            progress(f"it carries on by itself ({shown}); its update card in Home Assistant shows how far it is")
+            progress(carries_on)
             return
         if shown != last:
             progress(shown)
             last = shown
-        sleep(15)
+        if enter is None:
+            sleep(15)
+        elif enter(15):
+            progress(f"going on; {carries_on}")
+            return
 
 
 def set_up(ha: HomeAssistant, entry_id: str, node: str, *, choose: Chooser | None = None,
            progress: Callable[[str], None] = print, sleep: Callable[[float], None] = time.sleep,
-           clock: Callable[[], float] = time.monotonic, wait: float = 900.0) -> str:
+           clock: Callable[[], float] = time.monotonic, wait: float = 900.0,
+           enter: Callable[[float], bool] | None = None) -> str:
     """Puts the Show (its ESPHome entry_id, its node name) in the house's updates. Returns FOLLOW, or
-    SKIPPED when Genbu is not in Home Assistant."""
+    SKIPPED when Genbu is not in Home Assistant. enter lets the user end the wait for the house version
+    (see _wait_aligned)."""
     if _entry(ha) is None and not _first(ha, choose, progress):
         return SKIPPED
     found = house(ha)
@@ -116,7 +127,7 @@ def set_up(ha: HomeAssistant, entry_id: str, node: str, *, choose: Chooser | Non
         return FOLLOW
     progress(f"the house is on version {found.version}; {node} follows it, and updates come on the {UPDATE} "
              "card")
-    _wait_aligned(ha, entry_id, found.version, progress, sleep, clock, wait)
+    _wait_aligned(ha, entry_id, found.version, progress, sleep, clock, wait, enter)
     return FOLLOW
 
 

@@ -201,8 +201,10 @@ After the HA sign-in (job 40):
    version once it has settled, and that updates come on the `update.genbu_show_firmware` card.
 3. **The house has a version:** say that the Show follows it. The Show aligns on its own (the first row of
    the table above). The installer waits until the versions match or a failure is reported, and shows the
-   result. It waits up to 15 minutes; a fresh Show lets its own version settle for 5 of them first. After
-   that the Show carries on by itself and its update card shows how far it is. A Show that asked and was
+   result. It waits up to 15 minutes; a fresh Show lets its own version settle for 5 of them first.
+   Somebody at the terminal can press Enter at any time to go on without waiting; with `--no-questions`
+   it waits the full time. After that the Show carries on by itself and its update card shows how far it
+   is. A Show that asked and was
    told no ("install it from the update card") moves only when someone installs it, so that ends the
    wait at once. So does a Show that is newer than the house: its own card offers nothing older, so its
    line says it steps back on a yes to its question, or all Shows move up with an update on the
