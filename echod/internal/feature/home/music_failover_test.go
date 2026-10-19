@@ -31,9 +31,9 @@ type musicHAFake struct {
 	mu     sync.Mutex
 	states map[string]hass.State
 	calls  []musicServiceCall
-	queue  map[string]any // what get_queue answers for the player, when a test sets it
-	render string         // what every template renders to over the websocket
-	fail   map[string]int // "domain.service" answered with this status in place of {}
+	queue  map[string]any    // what get_queue answers for the player, when a test sets it
+	render string            // what every template renders to over the websocket
+	fail   map[string]int    // "domain.service" answered with this status in place of {}
 	images map[string][]byte // a player's picture, by the path its entity_picture names
 }
 
