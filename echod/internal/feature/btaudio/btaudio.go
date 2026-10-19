@@ -40,7 +40,7 @@ func init() {
 	if layout.OnAndroid() {
 		return // Android's own stack owns the radio there
 	}
-	component.Register(component.Device, Get(), component.Order(70),
+	component.Register(component.Device, Get, component.Order(70),
 		component.Supervise(service.Restart(2*time.Second, 30*time.Second)))
 }
 

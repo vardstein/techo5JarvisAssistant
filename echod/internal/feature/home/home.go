@@ -34,7 +34,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Device, Get(), component.Order(36))
+	component.Register(component.Device, Get, component.Order(36))
 }
 
 // Weather is what the clock shows.

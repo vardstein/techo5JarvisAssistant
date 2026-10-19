@@ -32,12 +32,15 @@ func Run(ctx context.Context) error {
 	slog.Info("echod starting", "version", layout.Version,
 		"pid", os.Getpid(), "uid", os.Getuid(), "context", selinuxContext())
 
+	// The whole device is made before anything else happens, as when it was made in init (GENBU-203).
+	component.Default().Build()
+
 	_ = prop.Set(layout.StartedProp, fmt.Sprintf("%.2f", metrics.Uptime()))
 	_ = prop.Set(layout.StateProp, "starting")
 
 	// What this process was told, put where everything else reads its settings from, so nothing has to
 	// be handed a struct to find out what the device is called or where it listens. Before anything
-	// else: the components were built during init and read this the moment they are asked to restore.
+	// else: the components were built just above and read this the moment they are asked to restore.
 	config.Started(config.Device{
 		Name: name(),
 		Addr: listenAddr(),

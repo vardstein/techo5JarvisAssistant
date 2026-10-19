@@ -5,6 +5,7 @@ package btaudio
 import (
 	"time"
 
+	"github.com/HuskerMinion/techo5/echod/internal/component"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/buttons"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/led"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/speaker"
@@ -25,49 +26,51 @@ const pairedFlash = 1500 * time.Millisecond
 // On the Echo Dot, holding the action button (buttons.LongHold) turns pairing mode on, or off if it
 // is on, and the ring pulses blue for as long as it is on, however it was turned on.
 func init() {
-	if layout.OnAndroid() {
-		return
-	}
-	buttons.Get().Events.Listen(func(e buttons.Event) {
-		if e.Name != buttons.Action || e.Kind != buttons.LongHold {
+	component.Wire(func() {
+		if layout.OnAndroid() {
 			return
 		}
-		safe.Go("bluetooth pairing button", func() {
-			f := Get()
-			on := !f.Pairing()
-			time.Sleep(afterCancel)
-			f.SetPairing(on)
-			switch {
-			case on && !f.Pairing():
-				// Bluetooth is not up (yet): it comes up a minute or more after the rest.
-				speaker.Sound().Chime(speaker.ToneTrouble)
-			case on:
-				speaker.Sound().Chime(speaker.TonePairing)
-			default:
-				speaker.Sound().Chime(speaker.TonePairingOff)
+		buttons.Get().Events.Listen(func(e buttons.Event) {
+			if e.Name != buttons.Action || e.Kind != buttons.LongHold {
+				return
+			}
+			safe.Go("bluetooth pairing button", func() {
+				f := Get()
+				on := !f.Pairing()
+				time.Sleep(afterCancel)
+				f.SetPairing(on)
+				switch {
+				case on && !f.Pairing():
+					// Bluetooth is not up (yet): it comes up a minute or more after the rest.
+					speaker.Sound().Chime(speaker.ToneTrouble)
+				case on:
+					speaker.Sound().Chime(speaker.TonePairing)
+				default:
+					speaker.Sound().Chime(speaker.TonePairingOff)
+				}
+			})
+		})
+
+		// Pairing done: a chime and the ring solid blue a moment, so it is known without looking at the
+		// phone. Above the pairing pulse, which ends at the same moment.
+		flash := led.Get().Claim(led.PriorityNotice)
+		onPaired = func() {
+			flash.PaintFor(led.Solid(pairingColor), pairedFlash)
+			speaker.Sound().Chime(speaker.TonePaired)
+		}
+
+		ring := led.Get().Claim(led.PriorityBusy)
+		showing := false
+		Get().Changed.Listen(func(s State) {
+			if s.Pairing == showing {
+				return
+			}
+			showing = s.Pairing
+			if showing {
+				ring.Play(led.EffectPulse, pairingColor)
+			} else {
+				ring.Clear()
 			}
 		})
-	})
-
-	// Pairing done: a chime and the ring solid blue a moment, so it is known without looking at the
-	// phone. Above the pairing pulse, which ends at the same moment.
-	flash := led.Get().Claim(led.PriorityNotice)
-	onPaired = func() {
-		flash.PaintFor(led.Solid(pairingColor), pairedFlash)
-		speaker.Sound().Chime(speaker.TonePaired)
-	}
-
-	ring := led.Get().Claim(led.PriorityBusy)
-	showing := false
-	Get().Changed.Listen(func(s State) {
-		if s.Pairing == showing {
-			return
-		}
-		showing = s.Pairing
-		if showing {
-			ring.Play(led.EffectPulse, pairingColor)
-		} else {
-			ring.Clear()
-		}
 	})
 }

@@ -25,7 +25,7 @@ const Period = 5 * time.Minute
 const flushPeriod = 5 * time.Second
 
 func init() {
-	component.Register(component.Device, Get(), component.Order(80))
+	component.Register(component.Device, Get, component.Order(80))
 }
 
 var (

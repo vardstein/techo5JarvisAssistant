@@ -32,7 +32,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Device, Get(), component.Order(31))
+	component.Register(component.Device, Get, component.Order(31))
 
 	// Only a silence, and no snooze: a timer cannot be put off, so an offer accepted beside a
 	// ringing alarm stops the timer and snoozes the alarm, which is what somebody means.

@@ -30,7 +30,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Device, Get(), component.Order(11))
+	component.Register(component.Device, Get, component.Order(11))
 }
 
 // Where the zone lives. /etc/localtime and /etc/timezone in the image link to these.

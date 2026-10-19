@@ -45,7 +45,7 @@ func wantsList(mode config.DashboardMode, known []config.DashboardChoice) bool {
 }
 
 func init() {
-	component.Register(component.Device, Get(), component.Order(37))
+	component.Register(component.Device, Get, component.Order(37))
 }
 
 // Feature is the dashboard's settings and, while it is up, its stream.

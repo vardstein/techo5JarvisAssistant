@@ -23,7 +23,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Hardware, Get(), component.Order(20),
+	component.Register(component.Hardware, Get, component.Order(20),
 		component.Supervise(service.Restart(time.Second, 30*time.Second)))
 }
 

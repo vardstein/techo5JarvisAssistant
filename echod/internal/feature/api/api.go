@@ -39,7 +39,7 @@ func init() {
 	// that cannot be made to work therefore takes the process down and inittab brings it straight
 	// back, which is a boot that tries again rather than a device that has written the API off until
 	// somebody pulls the power. See loadPSK for the error this is really about.
-	component.Register(component.Network, Get(), component.Order(99))
+	component.Register(component.Network, Get, component.Order(99))
 }
 
 // One of Home Assistant's keepalive intervals; it gives up on us at 4.5 of them.

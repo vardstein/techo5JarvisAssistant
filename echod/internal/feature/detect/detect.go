@@ -26,7 +26,7 @@ import (
 func init() {
 	// Before the API, so Home Assistant cannot read the wake words while they are still loading and be
 	// told about one that then fails.
-	component.Register(component.Device, Get(), component.Order(40),
+	component.Register(component.Device, Get, component.Order(40),
 		component.Supervise(service.Restart(time.Second, 30*time.Second)))
 }
 

@@ -23,7 +23,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Device, Get(), component.Order(30))
+	component.Register(component.Device, Get, component.Order(30))
 }
 
 // The two levels the mute LED has. Neither way of reaching it offers anything between them.

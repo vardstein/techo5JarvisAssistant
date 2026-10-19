@@ -153,7 +153,7 @@ var (
 func init() {
 	// After the speaker: both are held for the life of the process, and the playback path is the one
 	// the vendor's own services fight over.
-	component.Register(component.Hardware, Get(), component.Order(7),
+	component.Register(component.Hardware, Get, component.Order(7),
 		component.Supervise(service.Restart(time.Second, 30*time.Second)))
 }
 

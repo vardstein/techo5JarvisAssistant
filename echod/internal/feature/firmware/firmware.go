@@ -27,7 +27,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Network, Get(), component.Order(10))
+	component.Register(component.Network, Get, component.Order(10))
 }
 
 // Event types for the ways an attempt ends.

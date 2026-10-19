@@ -64,7 +64,7 @@ func (missedFeature) Entities() []esphome.Entity { return []esphome.Entity{misse
 
 func init() {
 	missed.now = time.Now
-	component.Register(component.Device, missedFeature{}, component.Order(33))
+	component.Register(component.Device, func() missedFeature { return missedFeature{} }, component.Order(33))
 }
 
 // Missed writes down a ring that fell due at due and never sounded.

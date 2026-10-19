@@ -101,7 +101,9 @@ func Apply() { apply("boot setup", Actions) }
 // size, and the vendor services it stops are the ones that fight over the hardware.
 type Setup struct{}
 
-func init() { component.Register(component.Hardware, Setup{}, component.Order(1)) }
+func init() {
+	component.Register(component.Hardware, func() Setup { return Setup{} }, component.Order(1))
+}
 
 func (Setup) Name() string { return "platform setup" }
 

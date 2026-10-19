@@ -34,7 +34,7 @@ import (
 const Slots = 2
 
 func init() {
-	component.Register(component.Device, Get(), component.Order(20))
+	component.Register(component.Device, Get, component.Order(20))
 }
 
 // Page is how many raw bytes go in one answer. The transport caps a message at 65515 bytes and base64

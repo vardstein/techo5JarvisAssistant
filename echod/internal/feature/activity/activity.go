@@ -14,7 +14,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Device, Get())
+	component.Register(component.Device, Get)
 }
 
 // Log is the three sensors. It has no hardware and no loop: something else has a turn, and tells it.

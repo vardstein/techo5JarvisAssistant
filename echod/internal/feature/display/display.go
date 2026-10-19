@@ -61,7 +61,7 @@ import (
 func init() {
 	// A panel that cannot be opened is retried rather than given up on: the device answers without
 	// it, and a boot where the node was late should still end with a screen.
-	component.Register(component.Device, Get(), component.Order(60),
+	component.Register(component.Device, Get, component.Order(60),
 		component.Supervise(service.Restart(time.Second, 30*time.Second)))
 }
 

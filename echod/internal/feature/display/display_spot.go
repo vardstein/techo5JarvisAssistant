@@ -61,7 +61,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Device, Get(), component.Order(60),
+	component.Register(component.Device, Get, component.Order(60),
 		component.Supervise(service.Restart(time.Second, 30*time.Second)))
 }
 

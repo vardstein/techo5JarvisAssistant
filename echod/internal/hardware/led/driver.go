@@ -127,7 +127,7 @@ var (
 func init() {
 	// First of the hardware: the boot animation is the only thing the device can say before anything
 	// else works.
-	component.Register(component.Hardware, Get(), component.Order(5),
+	component.Register(component.Hardware, Get, component.Order(5),
 		component.Supervise(service.Restart(time.Second, 30*time.Second)))
 }
 

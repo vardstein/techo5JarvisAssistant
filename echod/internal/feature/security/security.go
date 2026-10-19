@@ -29,7 +29,7 @@ import (
 )
 
 func init() {
-	component.Register(component.Device, Get(), component.Order(12))
+	component.Register(component.Device, Get, component.Order(12))
 }
 
 // recheck is how often a server that should be running is looked for, so one that died comes back.

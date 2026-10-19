@@ -203,7 +203,7 @@ func init() {
 	//
 	// The speaker also feeds silence while idle, because the amplifier hisses when nothing drives the
 	// DAC and toggling it pops.
-	component.Register(component.Hardware, Get(), component.Order(6),
+	component.Register(component.Hardware, Get, component.Order(6),
 		component.Supervise(service.Restart(time.Second, 30*time.Second)))
 }
 

@@ -3,6 +3,7 @@
 package home
 
 import (
+	"github.com/HuskerMinion/techo5/echod/internal/component"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/voice"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/buttons"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/safe"
@@ -16,13 +17,15 @@ import (
 // another tap is coming feels broken — so this cancels that turn on its way, the way the long hold
 // already does for the turn its hold began.
 func init() {
-	buttons.Get().Events.Listen(func(e buttons.Event) {
-		if e.Name != buttons.Action || e.Kind != buttons.DoubleTap {
-			return
-		}
-		safe.Go("radio button", func() {
-			voice.Get().Cancel()
-			Get().OwnToggle()
+	component.Wire(func() {
+		buttons.Get().Events.Listen(func(e buttons.Event) {
+			if e.Name != buttons.Action || e.Kind != buttons.DoubleTap {
+				return
+			}
+			safe.Go("radio button", func() {
+				voice.Get().Cancel()
+				Get().OwnToggle()
+			})
 		})
 	})
 }
