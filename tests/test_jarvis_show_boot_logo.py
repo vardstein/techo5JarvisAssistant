@@ -128,7 +128,8 @@ class BootLogoTests(unittest.TestCase):
     def test_the_real_boards_are_pinned(self):
         self.assertEqual(bl.KAERU["checkers"].offset, 335308)
         self.assertEqual(bl.KAERU["crown"].offset, 288716)
-        for k in (bl.KAERU["checkers"], bl.KAERU["crown"]):
+        self.assertEqual(bl.KAERU["cronos"].offset, 335736)
+        for k in (bl.KAERU["checkers"], bl.KAERU["crown"], bl.KAERU["cronos"]):
             self.assertRegex(k.amazon, r"^[0-9a-f]{64}$")
             self.assertRegex(k.openjade, r"^[0-9a-f]{64}$")
             self.assertGreater(k.length, k.offset + bl.SLOT_SIZE)

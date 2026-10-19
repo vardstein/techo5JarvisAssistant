@@ -447,9 +447,9 @@ whose kaeru is amonet-cronos v2.0.1's (checked by hash), then reads expdb back (
 (crown) carries the same Amazon wordmark slot, byte for byte, at file offset 288716 of amonet-crown's
 kaeru, and runs the same file there; its `lk` must stay stock too (patched, it relocked the unit). A cold
 boot is the real test: `fastboot continue` resumes the kaeru already in RAM and proves nothing. Jarvis
-Shows (Crown and Checkers on amonet 2.0.1) take the OpenJade lockup into the same slot, after the install
+Shows (Crown, Checkers and Cronos on amonet 2.0.1) take the OpenJade lockup into the same slot, after the install
 and only when asked: `tools/jarvis-show.py boot-logo --name <name>` writes it in place over SSH, only over
-the pinned kaeru (Checkers' slot is at offset 335308), reads kaeru back from the flash and puts the old
+the pinned kaeru (Checkers' slot is at offset 335308, Cronos' at 335736), reads kaeru back from the flash and puts the old
 slot back if it reads wrong (`tools/boot-logo/README.md`). On Crown it writes a 477×255 picture instead,
 along with the box kaeru draws it in, which is four instruction immediates in the drawing function
 (`0x4bd0f5f8`, file offsets 63490–63518): kaeru unpacks into the third 2 MB page of its video memory and
