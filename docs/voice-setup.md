@@ -488,6 +488,18 @@ with the same user, device and extra prompt, so it can't widen what that agent m
 hand on to itself, so a wrong pick can't loop. A word it answers is logged only at debug level, so a
 normal log doesn't fill with what the Show overheard.
 
+### Switched, it says, but nothing ran
+
+Sometimes the model says it did something and calls no tool: "Bett einschalten." got "Ich habe das
+Licht in deinem Schlafzimmer eingeschaltet." and the light stayed off. Since 1.4.13 Genbu's agent
+catches that (GENBU-255). When you asked for something to be switched, the reply says it was, and no
+tool ran, the Show says "Ich habe nichts geschaltet." ("I didn't switch anything.") instead, and the model
+finds that in its history. Say it again, or say it as a local sentence. A reply over 60 characters has
+already been read out by then, so you hear it first and the correction after it.
+
+Left alone: questions like "Ist das Licht an?", replies that ask back or say they couldn't, and anything
+where a tool ran, even a wrong one. Each catch also fires `genbu_unbacked_claim` with `corrected: true`.
+
 ## Listening after the answer
 
 The Show can keep listening for a few seconds after every answer, so you can go on without the wake

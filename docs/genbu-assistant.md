@@ -312,10 +312,10 @@ prompt already says to report only what a tool reported, so that alone does not 
   room, which Home Assistant's own pause misses when the player has no room.
 - Genbu Assistant reads every finished turn of a language model (`claims.py`). When the reply says
   something was switched, paused or set and no tool ran in that turn, it logs a warning and fires
-  `genbu_unbacked_claim` with `agent_id`, `asked` and `said`. It can't take the reply back; it shows how
-  often this happens and with which sentences, so they can become local ones or prompt lines. An
-  automation on the event can send a notification. Home Assistant's own and the local sentences are left
-  out.
+  `genbu_unbacked_claim` with `agent_id`, `asked`, `said` and `corrected`. It shows how often this
+  happens and with which sentences, so they can become local ones or prompt lines. An automation on the
+  event can send a notification. Home Assistant's own and the local sentences are left out. When Genbu
+  Assistant runs the pipeline, it also takes the claim back (GENBU-255, below), and `corrected` is true.
 
 ### A reply cut off (GENBU-250)
 
@@ -357,6 +357,19 @@ Assistant's own timer handler with that one check changed to use Home Assistant'
 (`delayed.py`), and puts the original back when it is unloaded. If another integration has already
 replaced the handler, Genbu leaves it alone. Home Assistant logs a warning that `HassStartTimer` is
 being overwritten; that is this.
+
+### Claims taken back (GENBU-255)
+
+"Bett einschalten." got "Ich habe das Licht in deinem Schlafzimmer eingeschaltet." with no tool call,
+and the light stayed as it was. Genbu Assistant now reads the turn when the agent behind it returns.
+When the user's words asked for something to be switched, the reply says it was, no tool ran, and the
+reply neither asks back nor says it couldn't, Genbu adds "Ich habe nichts geschaltet." ("I didn't switch
+anything.") to the conversation. The model sees it in its history next turn. A reply of 60 characters or
+less is not read out until the turn ends, so the correction is said instead of it. A longer one has been
+read out while the model wrote it; the correction is said after it, and the Show's text shows both.
+What counts as asking and as claiming is `COMMAND` and `CLAIM` in `claims.py`. Questions ("Ist das Licht
+an?") are left alone, since the model may know the answer without a tool. It only works with Genbu
+Assistant set as the pipeline's agent; without it the event still fires.
 
 ## 5. A Show's key (GENBU-196)
 

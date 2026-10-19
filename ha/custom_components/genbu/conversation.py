@@ -3,11 +3,17 @@ options and answers what fragment.py calls a fragment itself, with "Das habe ich
 didn't catch that.". Everything else goes on to that agent unchanged, in the same conversation, so its
 reply still streams and its tools still run.
 
+When that agent's reply says it switched something it was asked to and no tool ran in the turn, Genbu says
+"Ich habe nichts geschaltet." or "I didn't switch anything." after it (GENBU-255, claims.py). A short reply
+isn't spoken until the turn ends, so the correction is said in its place. A longer one has already been read
+out while the model was writing it; the correction is then said after it.
+
 It is there only while an agent is picked, and does something only when an Assist pipeline uses it. Typed
 words are never a fragment: only a voice device's speech-to-text makes them."""
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 import logging
 from typing import Literal
 
@@ -20,11 +26,15 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import intent
 
-from . import fragment
+from . import claims, fragment
 from .const import CONF_AGENT, DOMAIN, NAME
 from .coordinator import house_device
 
 _LOGGER = logging.getLogger(__name__)
+
+# The pipeline reads a reply out while it is written once it is longer than this (STREAM_RESPONSE_CHARS
+# in assist_pipeline), and otherwise says the turn's speech at the end.
+STREAMED = 60
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add) -> None:
@@ -84,7 +94,29 @@ class GenbuAgent(conversation.ConversationEntity):
         if is_genbu(self.hass, self.agent) or conversation.async_get_agent_info(self.hass, self.agent) is None:
             raise HomeAssistantError(f"Genbu Assistant can't hand on to {self.agent}; pick another agent in "
                                      "its options")
-        return await conversation.async_converse(
+        result = await conversation.async_converse(
             self.hass, user_input.text, chat_log.conversation_id, user_input.context,
             language=user_input.language, agent_id=self.agent, device_id=user_input.device_id,
             satellite_id=user_input.satellite_id, extra_system_prompt=user_input.extra_system_prompt)
+        asked = max((i for i, c in enumerate(chat_log.content) if c.role == "user"), default=-1)
+        said = claims.to_correct(user_input.text, chat_log.content[asked + 1:])
+        if lang and said:
+            await self._correct(chat_log, result, said.content, claims.CORRECTION[lang])
+        return result
+
+    async def _correct(self, chat_log: conversation.ChatLog, result: conversation.ConversationResult,
+                       said: str, reply: str) -> None:
+        _LOGGER.debug("took back %r", said)
+        if self.supports_streaming and len(said) > STREAMED:
+            # Already being read out: the correction goes the same way, after it.
+            async def stream() -> AsyncIterator[conversation.AssistantContentDeltaDict]:
+                yield {"role": "assistant"}
+                yield {"content": reply}
+
+            async for _ in chat_log.async_add_delta_content_stream(self.entity_id, stream()):
+                pass
+            result.response.async_set_speech(f"{said} {reply}")
+        else:
+            chat_log.async_add_assistant_content_without_tools(
+                conversation.AssistantContent(agent_id=self.entity_id, content=reply))
+            result.response.async_set_speech(reply)
