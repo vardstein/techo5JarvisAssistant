@@ -7,5 +7,5 @@
   "size": 13553664,
   "source": "HuskerMinion/techo5 v0.7.16 (signed manifest)",
   "manual": false,
-  "notes": "Upstream TECHO5 v0.7.16 techo5-boot-v0.7.16.img, the last release with a cronos boot image (its 11 DTBs are all cronos) and the one upstream's own install-show.py picks for cronos. Upstream stopped shipping a cronos boot image after it. Same kernel 4.9.337-g8d928c5176cc as checkers v1.0.1, and the same init; only four ramdisk tools differ."
+  "notes": "Upstream TECHO5 v0.7.16 techo5-boot-v0.7.16.img, the last release with a cronos boot image (its 11 DTBs are all cronos) and the one upstream's own install-show.py picks for cronos. Upstream stopped shipping a cronos boot image after it. Same kernel 4.9.337-g8d928c5176cc as checkers v1.0.1, and the same init; only four ramdisk tools differ. Checked 2026-10-19 (GENBU-187): the sha256 equals GitHub's asset digest, the SHA256SUMS line and the manifest.json entry at https://github.com/HuskerMinion/techo5/releases/tag/v0.7.16, and manifest.json.sig verifies against the releaseKey in upstream's echod/internal/update/trust.go at v0.7.16; see docs/dumps/upstream-pins-2026-10-19.txt."
 }

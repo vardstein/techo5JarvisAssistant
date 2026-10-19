@@ -7,5 +7,5 @@
   "size": 13156352,
   "source": "HuskerMinion/techo5 v1.0.1 (signed manifest)",
   "manual": false,
-  "notes": "Upstream TECHO5 v1.0.1 techo5-boot-crown-v1.0.1.img, pinned for the same reasons as the checkers v1.0.1 image (signed v1.0.1 manifest, kernel 4.9.337-g8d928c5176cc). Its ramdisk is v0.8.0's byte for byte; the kernel only adds the quick-tap unmute fix (upstream #17)."
+  "notes": "Upstream TECHO5 v1.0.1 techo5-boot-crown-v1.0.1.img, pinned for the same reasons as the checkers v1.0.1 image (signed v1.0.1 manifest, kernel 4.9.337-g8d928c5176cc). Its ramdisk is v0.8.0's byte for byte; the kernel only adds the quick-tap unmute fix (upstream #17). Checked 2026-10-19 (GENBU-187): the sha256 equals GitHub's asset digest, the SHA256SUMS line and the manifest.json entry at https://github.com/HuskerMinion/techo5/releases/tag/v1.0.1, and manifest.json.sig verifies against the releaseKey in upstream's echod/internal/update/trust.go at v1.0.1; see docs/dumps/upstream-pins-2026-10-19.txt."
 }

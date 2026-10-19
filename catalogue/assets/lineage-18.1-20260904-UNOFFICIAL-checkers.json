@@ -7,5 +7,5 @@
   "size": 485795474,
   "source": "amazon-oss/releases lineage-18.1-checkers-v0.7",
   "manual": false,
-  "notes": "Each sha256 is the one the release notes publish and the one GitHub reports as the asset digest. 20260904 is the first build whose kernel is 4.9.337-g8d928c5176cc, the ABI the Jarvis boot images and the vendor-module gate require."
+  "notes": "20260904 is the first build whose kernel is 4.9.337-g8d928c5176cc, the ABI the Jarvis boot images and the vendor-module gate require. Checked 2026-10-19 (GENBU-187): the sha256 equals the sha256sum in the release notes and GitHub's asset digest at https://github.com/amazon-oss/releases/releases/tag/lineage-18.1-checkers-v0.7. Upstream signs nothing, so this rests on that GitHub account; see docs/dumps/upstream-pins-2026-10-19.txt."
 }

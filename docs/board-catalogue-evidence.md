@@ -115,16 +115,16 @@ board they were about. A comment moved into `notes` is still only a claim.
 
 | # | Fact | State |
 |---|---|---|
-| A1 | the Lineage and boot pins equal what upstream publishes | claimed (`assets.py` comments) |
+| A1 | the Lineage and boot pins equal what upstream publishes | proven 2026-10-19 (GENBU-187): `docs/dumps/upstream-pins-2026-10-19.txt`. Lineage: GitHub asset digest and the release-notes sha256sum (amazon-oss signs nothing). Boot: asset digest, `SHA256SUMS`, and `manifest.json`, whose signature verifies against upstream's own release key |
 | A2 | licence of each asset | unknown (all 9) |
 
 ## 3. Counts
 
-Board and asset facts (section 2): **22 proven, 18 claimed, 4 unknown** (GENBU-180/181 added C4, C5, C6,
-K4, K5, K6, R5 on 2026-10-19).
+Board and asset facts (section 2): **23 proven, 17 claimed, 4 unknown** (GENBU-180/181 added C4, C5, C6,
+K4, K5, K6, R5 and GENBU-187 added A1 on 2026-10-19).
 
-- proven: C4, C5, C6, C7, C8, C10, C11, C12, K4, K5, K6, K7, K8, K10, K11, K12, K13, R3, R4, R5, R6, R7
-- claimed: C1, C2, C3, C9, C13, C14, K1, K2, K3, K9, K15, R1, R2, R8, R9, R10, R12, A1
+- proven: C4, C5, C6, C7, C8, C10, C11, C12, K4, K5, K6, K7, K8, K10, K11, K12, K13, R3, R4, R5, R6, R7, A1
+- claimed: C1, C2, C3, C9, C13, C14, K1, K2, K3, K9, K15, R1, R2, R8, R9, R10, R12
 - unknown: K14, R11, R13, A2
 
 Installer-unchanged facts (section 1): 12 proven.

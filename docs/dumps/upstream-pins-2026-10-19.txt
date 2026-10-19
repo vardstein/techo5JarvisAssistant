@@ -1,0 +1,42 @@
+GENBU-187, 2026-10-19: catalogue pins against what upstream publishes.
+Read with: gh api repos/<owner>/<repo>/releases/tags/<tag> (asset digest, release body),
+and SHA256SUMS, manifest.json, manifest.json.sig downloaded from the same release.
+Signature: ed25519 over manifest.json, public key = releaseKey in upstream
+echod/internal/update/trust.go at the same tag (KVUuQUbhyKwPBbIneqFEvXYSI+3Hkfu/heCTy5YNVMk=).
+
+== https://github.com/amazon-oss/releases/releases/tag/lineage-18.1-checkers-v0.7
+  lineage-18.1-20260904-UNOFFICIAL-checkers.zip
+    pin            785fa643fd68b2e6f6f02d96a2da58373c6a577b92a27cf6cec69603bb94068e
+    github digest  785fa643fd68b2e6f6f02d96a2da58373c6a577b92a27cf6cec69603bb94068e  same
+    release notes  same (sha256sum line)
+== https://github.com/amazon-oss/releases/releases/tag/lineage-18.1-cronos-v0.4
+  lineage-18.1-20260904-UNOFFICIAL-cronos.zip
+    pin            4c355998061a454792128d4b730932b47ed05a3d2a6d2628599218f44cc84678
+    github digest  4c355998061a454792128d4b730932b47ed05a3d2a6d2628599218f44cc84678  same
+    release notes  same (sha256sum line)
+== https://github.com/amazon-oss/releases/releases/tag/lineage-18.1-crown-v0.5
+  lineage-18.1-20260904-UNOFFICIAL-crown.zip
+    pin            a01359a5e13dad8ac24c5507e8a747163b992012410b14d2ca9a8711ec4a1491
+    github digest  a01359a5e13dad8ac24c5507e8a747163b992012410b14d2ca9a8711ec4a1491  same
+    release notes  same (sha256sum line)
+== https://github.com/HuskerMinion/techo5/releases/tag/v1.0.1
+  techo5-boot-checkers-v1.0.1.img
+    pin            6fd696dce2592d2237a432e23ed7c032f1643bd1fe475d3094eccd9f7d2079b2
+    github digest  6fd696dce2592d2237a432e23ed7c032f1643bd1fe475d3094eccd9f7d2079b2  same
+    SHA256SUMS     6fd696dce2592d2237a432e23ed7c032f1643bd1fe475d3094eccd9f7d2079b2  same
+    manifest.json  6fd696dce2592d2237a432e23ed7c032f1643bd1fe475d3094eccd9f7d2079b2  same
+  techo5-boot-crown-v1.0.1.img
+    pin            e00bed964d9b2ce31df152d183d2aeb45a7839cc5f7460a93dd97d70715ad1b7
+    github digest  e00bed964d9b2ce31df152d183d2aeb45a7839cc5f7460a93dd97d70715ad1b7  same
+    SHA256SUMS     e00bed964d9b2ce31df152d183d2aeb45a7839cc5f7460a93dd97d70715ad1b7  same
+    manifest.json  e00bed964d9b2ce31df152d183d2aeb45a7839cc5f7460a93dd97d70715ad1b7  same
+  manifest.json.sig verifies: true
+== https://github.com/HuskerMinion/techo5/releases/tag/v0.7.16
+  techo5-boot-v0.7.16.img
+    pin            7e9ce93a54fc613cbfab5d15929aa06bfd6f63c2c432d6f8261b3599fc3cd791
+    github digest  7e9ce93a54fc613cbfab5d15929aa06bfd6f63c2c432d6f8261b3599fc3cd791  same
+    SHA256SUMS     7e9ce93a54fc613cbfab5d15929aa06bfd6f63c2c432d6f8261b3599fc3cd791  same
+    manifest.json  7e9ce93a54fc613cbfab5d15929aa06bfd6f63c2c432d6f8261b3599fc3cd791  same
+  manifest.json.sig verifies: true
+
+Control: the v1.0.1 signature over the v0.7.16 manifest verifies: false
