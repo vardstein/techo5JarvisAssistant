@@ -3,6 +3,7 @@
 package dashboard
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
@@ -29,5 +30,27 @@ func TestHelloSendsTheTokenOnlyWhenAsked(t *testing.T) {
 	}
 	if h := helloFor(cfg, 960, 480, false, "", ""); h["token"] != nil {
 		t.Errorf("no token to send, yet %v was", h["token"])
+	}
+}
+
+// A Show set to its own user hears from dashcast whose page it got, and warns when that is not its
+// own: a dashcast too old to say, or one that would not take the token (GENBU-251).
+func TestWhoseNoteWarnsWhenTheOwnUserWasNotUsed(t *testing.T) {
+	for _, c := range []struct {
+		sent  bool
+		whose string
+		warn  bool
+		says  string
+	}{
+		{true, "own", false, "own Home Assistant user"},
+		{true, "", true, "older than own users"},
+		{true, "dashcast", true, "would not use"},
+		{false, "dashcast", false, "dashcast's user"},
+		{false, "", false, ""},
+	} {
+		note, warn := whoseNote(c.sent, c.whose)
+		if warn != c.warn || !strings.Contains(note, c.says) || (c.says == "") != (note == "") {
+			t.Errorf("sent %v, whose %q: %q, warn %v", c.sent, c.whose, note, warn)
+		}
 	}
 }

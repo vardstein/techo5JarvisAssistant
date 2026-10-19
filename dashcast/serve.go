@@ -33,6 +33,8 @@ import (
 //	kindPicture  2-byte x, 2-byte y, then a JPEG to draw with its top left there
 //	kindProblem  a sentence for the screen to show: the key was wrong, the page would not load
 //	kindHalf     2-byte x, 2-byte y, then a JPEG at half size, to draw doubled with its top left there
+//	kindWhose    whose Home Assistant user the page is signed in as, before the first picture: "own"
+//	             (the Show's, from its token) or "dashcast"; a device that knows no kindWhose skips it
 //
 // The first picture is the whole screen; after it, only what changed. While most of the screen is
 // changing - a page scrolling - the pictures go at half size, a quarter of the work for a device to
@@ -41,6 +43,7 @@ const (
 	kindPicture = 1
 	kindProblem = 2
 	kindHalf    = 3
+	kindWhose   = 4
 )
 
 // soft is how much of the screen has to change in one frame before it goes at half size, and
@@ -253,6 +256,9 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 	defer sessions.Add(-1)
 	slog.Info("device connected", "name", h.Name, "from", c.RemoteAddr(), "size", [2]int{h.W, h.H}, "path", h.Path, "user", user)
 	defer slog.Info("device gone", "name", h.Name)
+	// The Show's log says whose page it got, so one that sent its token can tell it was not used
+	// (GENBU-251): a dashcast too old for own users signs every screen in as its own user.
+	_ = out.send(kindWhose, []byte(whose(token)))
 
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -395,6 +401,14 @@ func (s *sender) send(kind byte, payload ...[]byte) error {
 	_ = s.c.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	_, err := s.c.Write(msg)
 	return err
+}
+
+// whose is what kindWhose says for a page signed in with token: "" is dashcast's own.
+func whose(token string) string {
+	if token != "" {
+		return "own"
+	}
+	return "dashcast"
 }
 
 func (s *sender) problem(text string) { _ = s.send(kindProblem, []byte(text)) }

@@ -96,6 +96,9 @@ touch. So treat the token and the key with care:
   profile of its own, rather than as dashcast's. dashcast asks Home Assistant whose the token is
   each time the Show connects. An administrator's token, or one Home Assistant refuses, is not used:
   the Show gets dashcast's own user and the log says why. The token is never written to the log.
+  The Show is told whose page it got, and its own log warns when that is not its own: a dashcast
+  from before own users says nothing and signs every screen in as its own user, so a timer card
+  there lists every Show's timers.
 - **Up to 8 screens at once.** Each is a browser tab of a couple of hundred megabytes; a ninth is
   told the server is full.
 

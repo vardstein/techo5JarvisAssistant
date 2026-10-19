@@ -220,3 +220,10 @@ func TestATouchWakesAStillPage(t *testing.T) {
 		t.Errorf("a wait after an earlier touch took %v", took)
 	}
 }
+
+// The device is told whose page it got: its own user's only when its token was taken (GENBU-251).
+func TestWhose(t *testing.T) {
+	if whose("a-token") != "own" || whose("") != "dashcast" {
+		t.Errorf("whose: %q, %q", whose("a-token"), whose(""))
+	}
+}
