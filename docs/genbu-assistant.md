@@ -83,6 +83,13 @@ updating and so on". The card uses the same parts Core's card uses, so it looks 
   ("update_stage" in the firmware tool's status). Each Show's own screen already says its own part:
   "Update waits for the music to stop", "Downloading v · N%", "Installing v…". A list of the whole house on
   every Show screen would need new firmware and is not built.
+- **Each step, and what failed** (GENBU-215). While a Show installs, its `update_status` says the step:
+  "Checking v", "Downloading v", "Installing v", "Restarting into v", and the list follows it (checking,
+  downloading 40%, installing, restarting). A Show whose install failed is marked "⚠ failed" with the reason in
+  plain words: can't reach the update server, the release isn't made for this Show, isn't signed with Genbu's
+  key, not enough space on the Show, the download was damaged, the clock isn't set yet, or it didn't come back
+  after the restart (the slot trial put the old version back). The full error stays in the Show's
+  `update_status` and on its setup page. The reasons are the Show's own words, so they stay in English.
 - **What the dialog cannot do.** Home Assistant's update dialog has no version picker. It only sends
   `entity_id` and `backup` (checked in the 2026.10 frontend). Picking an older version is therefore on the
   Genbu page and in the `update.install` action, not in the dialog.

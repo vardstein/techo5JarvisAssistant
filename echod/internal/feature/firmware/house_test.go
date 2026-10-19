@@ -102,7 +102,11 @@ func TestHouseLine(t *testing.T) {
 	if got := houseLine(f, "hall_show", "", now); got != "Version v1.0.3 did not install here; staying on v1.0.2" {
 		t.Errorf("failed: %q", got)
 	}
-	f.failed = ""
+	f.why = "not enough space on the Show"
+	if got := houseLine(f, "hall_show", "", now); got != "Version v1.0.3 did not install here (not enough space on the Show); staying on v1.0.2" {
+		t.Errorf("failed, with the reason: %q", got)
+	}
+	f.failed, f.why = "", ""
 	if got := houseLine(f, "hall_show", "", now); !strings.HasSuffix(got, "install it from the update card") {
 		t.Errorf("behind the house: %q", got)
 	}

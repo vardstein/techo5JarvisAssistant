@@ -27,7 +27,22 @@ var step atomic.Int32
 // CurrentStep is where the running install is, StepNone when none is running.
 func CurrentStep() Step { return Step(step.Load()) }
 
-func setStep(s Step) { step.Store(int32(s)) }
+// stepHook is told every change of step, so Home Assistant can follow an install it cannot see the
+// screen of.
+var stepHook atomic.Pointer[func(Step)]
+
+// OnStep has f told each change of step, from the goroutine that makes it. One at a time: a second call
+// replaces the first.
+func OnStep(f func(Step)) { stepHook.Store(&f) }
+
+func setStep(s Step) {
+	if Step(step.Swap(int32(s))) == s {
+		return
+	}
+	if f := stepHook.Load(); f != nil {
+		(*f)(s)
+	}
+}
 
 // The kinds of failure Reason can put in plain words. They are marked on the errors that already say
 // what happened, so a log line reads the same as before.

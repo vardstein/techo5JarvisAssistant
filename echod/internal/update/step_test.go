@@ -80,3 +80,18 @@ func TestTheStepFollowsTheInstall(t *testing.T) {
 		t.Errorf("step after a failed install = %d, want none", CurrentStep())
 	}
 }
+
+// Home Assistant hears each step once, as it changes.
+func TestOnStepHearsEachChangeOnce(t *testing.T) {
+	setStep(StepNone)
+	var heard []Step
+	OnStep(func(s Step) { heard = append(heard, s) })
+	defer OnStep(func(Step) {})
+	setStep(StepChecking)
+	setStep(StepChecking)
+	setStep(StepDownloading)
+	setStep(StepNone)
+	if fmt.Sprint(heard) != fmt.Sprint([]Step{StepChecking, StepDownloading, StepNone}) {
+		t.Errorf("heard %v", heard)
+	}
+}

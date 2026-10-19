@@ -126,6 +126,12 @@ class HouseTest(unittest.TestCase):
         _, lines, _ = run(fake)
         self.assertEqual(lines[-1], "WARN: Version v1.0.3 did not install here; staying on v1.0.2")
 
+    def test_a_failed_install_is_said_with_its_reason(self):
+        line = "Update to v1.0.3 failed: not enough space on the Show (update: 3 bytes free on /data, need 9)"
+        fake = FakeHouse(entry=True, statuses=["Downloading v1.0.3", line])
+        _, lines, _ = run(fake)
+        self.assertEqual(lines[-1], "WARN: " + line)
+
     def test_a_show_that_said_no_is_not_waited_for(self):
         fake = FakeHouse(entry=True, statuses=["Your other Shows are on v1.0.3; install it from the update card"])
         _, lines, _ = run(fake)

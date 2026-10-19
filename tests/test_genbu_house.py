@@ -178,6 +178,40 @@ class OverviewTests(unittest.TestCase):
         self.assertTrue(house.overview(self.moving(), "v1.5.0", "de").startswith("**1 von 5 Shows auf v1.5.0**\n"))
         self.assertIn("Kitchen** · v1.4.0 · lädt 40 %", house.overview(self.moving(), "v1.5.0", "de"))
 
+    def test_each_step_and_failure(self):
+        """GENBU-215: the step each Show is at, and a failed one with its reason."""
+        def at(status, updating=False, at=None, lang="en"):
+            s = house.Show(node="x", name="X", installed="v1.4.0", online=True, updating=updating, at=at,
+                           status=status)
+            return house.stage(s, "v1.5.0", lang)
+
+        self.assertEqual(at("Checking v1.5.0", True, 0), "checking")
+        self.assertEqual(at("Downloading v1.5.0", True, 40), "downloading 40%")
+        self.assertEqual(at("Installing v1.5.0", True, 100), "installing")
+        self.assertEqual(at("Restarting into v1.5.0", True, 100), "restarting")
+        self.assertEqual(at("Restarting into v1.5.0", True, 100, "de"), "startet neu")
+        self.assertEqual(at("Update to v1.5.0 failed: can't reach the update server (update: dial tcp: refused)"),
+                         "⚠ failed: can't reach the update server")
+        self.assertEqual(at("Update to v1.5.0 failed: update: something new"), "⚠ failed: update: something new")
+        self.assertEqual(at("Version v1.5.0 did not install here (not enough space on the Show); staying on v1.4.0"),
+                         "⚠ failed: not enough space on the Show")
+        self.assertEqual(at("Version v1.5.0 did not install here; staying on v1.4.0"), "⚠ failed")
+        self.assertEqual(at("Version v1.5.0 could not be fetched: can't reach the update server (dial tcp)"),
+                         "⚠ failed: can't reach the update server")
+        self.assertEqual(at("rolled back from v1.5.0"), "⚠ failed: didn't come back after the restart")
+        self.assertEqual(at("rolled back from v1.5.0", lang="de"),
+                         "⚠ fehlgeschlagen: kam nach dem Neustart nicht wieder")
+
+    def test_the_show_writes_the_lines_the_card_reads(self):
+        """The lines above are echod's: a change there has to be a change here."""
+        firmware = (ROOT / "echod" / "internal" / "feature" / "firmware" / "firmware.go").read_text()
+        house_go = (ROOT / "echod" / "internal" / "feature" / "firmware" / "house.go").read_text()
+        for line in ('"Checking " + v', '"Downloading " + v', '"Installing " + v', '"Restarting into " + v',
+                     '"Update to "+found.Version+" failed: "', '"rolled back from "'):
+            self.assertIn(line, firmware)
+        for line in ('" did not install here (" + f.why + "); staying on "', '" could not be fetched: "'):
+            self.assertIn(line, house_go)
+
     def test_no_shows_no_list(self):
         self.assertEqual(house.overview([], "v1.5.0"), "")
 

@@ -130,13 +130,36 @@ class Show:
 
 
 # GENBU-249: the list of Shows under the house's update card, in Home Assistant's language. Why a Show
-# waits is its own update_status line, which the Show writes in English.
+# waits, or why its install failed, is its own update_status line, which the Show writes in English.
 STAGES = {
     "de": {"head": "{done} von {online} Shows auf {house}", "current": "aktuell", "downloading": "lädt {at} %",
-           "installing": "installiert", "waiting": "wartet", "offline": "offline"},
+           "checking": "prüft", "installing": "installiert", "restarting": "startet neu", "waiting": "wartet",
+           "offline": "offline", "failed": "⚠ fehlgeschlagen", "back": "kam nach dem Neustart nicht wieder"},
     "en": {"head": "{done} of {online} Shows on {house}", "current": "up to date", "downloading": "downloading {at}%",
-           "installing": "installing", "waiting": "waiting", "offline": "offline"},
+           "checking": "checking", "installing": "installing", "restarting": "restarting", "waiting": "waiting",
+           "offline": "offline", "failed": "⚠ failed", "back": "didn't come back after the restart"},
 }
+
+# GENBU-215: the lines echod's firmware writes to update_status while an install runs, and when one fails.
+_STEPS = (("Checking ", "checking"), ("Restarting into ", "restarting"), ("Installing ", "installing"))
+_FAILED = re.compile(r"^Update to \S+ failed: (?P<why>.+)$"
+                     r"|^Version \S+ did not install here(?: \((?P<here>.+)\))?; staying on \S+$"
+                     r"|^Version \S+ could not be fetched: (?P<fetch>.+)$"
+                     r"|^rolled back from (?P<back>\S+)$")
+# A plain reason with the error behind it: the card shows the reason, the Show's sensor has the error.
+_ERROR = re.compile(r"^(?P<why>.+?) \(.+\)$")
+
+
+def failure(status: str, lang: str = "en") -> str | None:
+    """Why the Show's last install failed, from its update_status line; None when the line is no failure."""
+    m = _FAILED.match(status)
+    if not m:
+        return None
+    if m["back"]:
+        return STAGES.get(lang, STAGES["en"])["back"]
+    why = m["why"] or m["here"] or m["fetch"] or ""
+    plain = _ERROR.match(why)
+    return plain["why"] if plain else why
 
 
 def stage(show: Show, house: str, lang: str = "en") -> str:
@@ -145,11 +168,17 @@ def stage(show: Show, house: str, lang: str = "en") -> str:
     if not show.online:
         return words["offline"]
     if show.updating:
+        for prefix, step in _STEPS:
+            if show.status.startswith(prefix):
+                return words[step]
         if show.at is not None and show.at < 100:
             return words["downloading"].format(at=show.at)
         return words["installing"]
     if show.installed == house:
         return words["current"]
+    why = failure(show.status, lang)
+    if why is not None:
+        return f"{words['failed']}: {why}" if why else words["failed"]
     # The Show's line names the house version once it has seen it; before that it still says what it
     # followed, which is no reason.
     if house and house in show.status:

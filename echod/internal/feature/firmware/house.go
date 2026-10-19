@@ -115,8 +115,8 @@ type following struct {
 	// retrying is a move whose fetch failed: the next try moves too. The version counts as seen by then,
 	// and bathroomShow5, shut out of GitHub on its first move, asked instead.
 	retrying bool
-	// failed is a house version that would not install here.
-	failed string
+	// failed is a house version that would not install here, and why why, "" when this process didn't see it.
+	failed, why string
 	// askedThisBoot, asked and askedAt are the last "should I move?" question.
 	askedThisBoot bool
 	asked         string
@@ -400,11 +400,12 @@ func (u *Firmware) houseStep(ctx context.Context, now time.Time) {
 	}
 	u.publishHouse(v)
 
+	why := u.whyFailed(c.HouseFailed)
 	h := &u.house
 	h.mu.Lock()
 	f := following{
 		running: layout.Version, house: v, seen: c.HouseSeen, movedWhileUp: h.movedWhileUp, retrying: h.fetchMisses > 0,
-		failed: c.HouseFailed, askedThisBoot: h.askedThisBoot, asked: c.HouseAsked, askedAt: c.HouseAskedAt,
+		failed: c.HouseFailed, why: why, askedThisBoot: h.askedThisBoot, asked: c.HouseAsked, askedAt: c.HouseAskedAt,
 		quiet: quiet(), committed: committed(), held: update.Installing() || now.Before(h.retryAt), now: now,
 	}
 	h.mu.Unlock()
@@ -425,7 +426,10 @@ func (u *Firmware) houseStep(ctx context.Context, now time.Time) {
 			u.tellHouse(s.waiting, now)
 		}
 	}
-	u.houseStatus(houseLine(f, u.mainName(), u.mainMissing(), now))
+	// An install's own steps are the line while it runs (GENBU-215).
+	if running, _ := u.Installing(); !running {
+		u.houseStatus(houseLine(f, u.mainName(), u.mainMissing(), now))
+	}
 	h.mu.Lock()
 	h.wait = waitShown(f)
 	h.mu.Unlock()
@@ -468,6 +472,8 @@ func houseLine(f following, main, missing string, now time.Time) string {
 	switch {
 	case f.house == f.running:
 		return "Following " + main + " · version " + f.house
+	case f.house == f.failed && f.why != "":
+		return "Version " + f.house + " did not install here (" + f.why + "); staying on " + f.running
 	case f.house == f.failed:
 		return "Version " + f.house + " did not install here; staying on " + f.running
 	case !f.committed:
@@ -551,7 +557,7 @@ func (u *Firmware) alignTo(ctx context.Context, v string, asked bool) {
 		}
 		u.house.retryAt = time.Now().Add(wait)
 		u.house.mu.Unlock()
-		u.houseStatus("Version " + v + " could not be fetched: " + err.Error())
+		u.houseStatus("Version " + v + " could not be fetched: " + explained(err))
 		if asked {
 			u.fail(v, err)
 		}

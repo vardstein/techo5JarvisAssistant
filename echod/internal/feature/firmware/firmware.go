@@ -67,6 +67,8 @@ type Firmware struct {
 	// fell is the last failed install for the screen: the version ("" when not even the release could
 	// be fetched), why in plain words, and when.
 	fell failure
+	// going is the version the running install puts in, for the steps update_status tells.
+	going string
 	// busy counts the Install calls running, which re-read the channel before the download starts.
 	busy atomic.Int32
 }
@@ -89,8 +91,8 @@ func (u *Firmware) Failed() string {
 }
 
 type failure struct {
-	version, why string
-	at           time.Time
+	version, why, err string
+	at                time.Time
 }
 
 // Failure is the last install that did not go in, for the screen: which version ("" when the release
@@ -108,7 +110,7 @@ func (u *Firmware) Failure() (version, why string, at time.Time) {
 func (u *Firmware) fail(version string, err error) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	u.fell = failure{version: version, why: update.Reason(err), at: time.Now()}
+	u.fell = failure{version: version, why: update.Reason(err), err: err.Error(), at: time.Now()}
 	if version != "" {
 		u.failed = version + ": " + err.Error()
 	} else {
@@ -233,6 +235,8 @@ func build() *Firmware {
 	// the property.
 	u.rolledBack = update.RolledBack()
 	u.rolledBackFromHouse()
+
+	update.OnStep(u.stepped)
 
 	u.committed = &esphome.TextSensor{
 		Base: esphome.Base{
@@ -474,6 +478,9 @@ func (u *Firmware) put(ctx context.Context, found update.Manifest, how func(cont
 	working := led.Get().Busy().Start(led.WorkUpdate)
 	defer working.Done()
 
+	u.mu.Lock()
+	u.going = found.Version
+	u.mu.Unlock()
 	u.progress(found, 0)
 	err := how(ctx, found, func(at float32) { u.progress(found, at) })
 
@@ -493,12 +500,67 @@ func (u *Firmware) put(ctx context.Context, found update.Manifest, how func(cont
 		slog.Error("installing an update failed", "version", found.Version, "err", err)
 		u.fail(found.Version, err)
 		u.publish(found)
-		u.Settled(EventFailed, "installing "+found.Version+" failed: "+err.Error())
+		u.Settled(EventFailed, "Update to "+found.Version+" failed: "+explained(err))
 		feedback.Failure()
 		return err
 	}
 	update.Restart("update to " + found.Version)
 	return nil
+}
+
+// stepped puts the running install's step in update_status, so the house's update card can tell a Show
+// that is restarting from one stuck at the download (GENBU-215). The percentage is the update entity's.
+func (u *Firmware) stepped(s update.Step) {
+	u.mu.Lock()
+	v := u.going
+	u.mu.Unlock()
+	if line := stepLine(s, v); line != "" {
+		u.houseStatus(line)
+	}
+}
+
+func stepLine(s update.Step, v string) string {
+	if v == "" {
+		return ""
+	}
+	switch s {
+	case update.StepChecking:
+		return "Checking " + v
+	case update.StepDownloading:
+		return "Downloading " + v
+	case update.StepWriting:
+		return "Installing " + v
+	case update.StepRestarting:
+		return "Restarting into " + v
+	}
+	return ""
+}
+
+// explained is err with its plain reason in front, when update.Reason has one: Home Assistant shows
+// the reason, and the error after it is for whoever looks into it.
+func explained(err error) string {
+	if why := update.Reason(err); why != "" {
+		return why + " (" + err.Error() + ")"
+	}
+	return err.Error()
+}
+
+// whyFailed is why version did not install, as this process saw it: "" after a restart that did not
+// see it fail, unless the restart is the slot trial taking it out.
+func (u *Firmware) whyFailed(version string) string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	switch {
+	case version == "":
+		return ""
+	case u.fell.version == version && u.fell.why != "":
+		return u.fell.why
+	case u.fell.version == version:
+		return u.fell.err
+	case u.rolledBack == version:
+		return "it didn't come back after the restart"
+	}
+	return ""
 }
 
 // progress republishes the state with how far the download has got. The version fields go out with it

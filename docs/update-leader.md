@@ -128,6 +128,9 @@ committed, in the diagnostic text sensor `committed_version`. That is set only a
 `good` (5 minutes up), so it lags `installed_version` on the `firmware` update entity. A new house starts at
 the newest `committed_version`; after that only an install moves it, so a newer Show never pulls the house
 along. A release that breaks a Show rolls back on that Show, which then says so in `update_status`.
+While a Show installs, `update_status` names the step (`Checking v`, `Downloading v`, `Installing v`,
+`Restarting into v`); a failed install says why first, as `Update to v failed: <reason> (<error>)`, and a
+following Show keeps the reason in `Version v did not install here (<reason>); staying on r` (GENBU-215).
 
 **What it never does.** It never downloads anything and never tells a Show *what* to install beyond a tag.
 Each Show fetches that tag's signed manifest from GitHub and checks it itself.

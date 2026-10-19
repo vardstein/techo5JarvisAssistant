@@ -84,7 +84,8 @@ def _wait_aligned(ha: HomeAssistant, entry_id: str, version: str, progress: Call
         if line.startswith("Following "):
             progress(line)
             return
-        if "did not install here" in line or "could not be fetched" in line or "not reachable since" in line:
+        failed = line.startswith("Update to ") and " failed: " in line
+        if failed or "did not install here" in line or "could not be fetched" in line or "not reachable since" in line:
             progress(f"WARN: {line}")
             return
         if "install it from the update card" in line or "with an update on the Genbu Show card" in line:
