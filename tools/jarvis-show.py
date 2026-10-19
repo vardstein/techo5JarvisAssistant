@@ -873,6 +873,11 @@ def remove_show_command(args, backups: Path) -> int:
         if any(p.get("available") for p in found.players):
             ui.out.note("Music Assistant had its player connected; while the Show is on the network it makes it "
                         "again")
+    # What neither side can take back: a reset wipes the Show, not a copy someone already made of it
+    # (docs/security-threat-model.md, Zone 1 on an unlocked Show).
+    ui.out.note("if it's going to someone else: the house word is the same on every Show, so change it on the "
+                "others' setup pages, and change the Wi-Fi password if it knew your own network. A reset doesn't "
+                "undo a copy of its storage made before")
     return 0
 
 def amonet_upgrade(args, backups: Path) -> int:

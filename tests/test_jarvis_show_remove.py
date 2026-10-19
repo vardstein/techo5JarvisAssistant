@@ -457,6 +457,8 @@ class RemoveShowCommandTests(unittest.TestCase):
         self.assertTrue(reset_done.call_args.kwargs["keep_wifi"])
         removed.assert_called_once()
         self.assertIn("genbuShow5 is reset and removed", self.out)
+        self.assertIn("change it on the others' setup pages", self.out)
+        self.assertIn("doesn't undo a copy", self.out)
 
     def test_a_show_out_of_reach_is_removed_only(self):
         code, removed, _, reset_done = self.run_it(probe=show_reset.ResetError("SSH: Connection timed out"))
@@ -481,6 +483,7 @@ class RemoveShowCommandTests(unittest.TestCase):
         removed.assert_called_once()
         self.assertIn("removed only", self.out)
         self.assertIn("makes it again", self.out)
+        self.assertIn("the house word is the same on every Show", self.out)
 
     def test_a_reset_that_does_not_go_through_still_removes(self):
         code, removed, _, _ = self.run_it(reset=show_reset.ResetError("the mark was not left (Permission denied)"))

@@ -12,6 +12,52 @@ The security boundary is therefore the device/service credential, not merely "sa
 5. **Untrusted IoT LAN** — arbitrary peers must not gain camera/screen reads, root SSH, media injection, configuration writes or update authority.
 6. **Internet** — outbound update/model/web/LLM requests only; no router port forwards are part of the supported design.
 
+### Zone 1 on an unlocked Show: holding it is owning it
+
+The unlock that makes a Show run Jarvis also takes away anything that could guard its storage. With the
+unit and a USB cable for a minute, anyone can read `/data/misc/techo5` (see
+[secrets-and-privileges.md](secrets-and-privileges.md)) four ways:
+
+1. **Hacked fastboot** (Volume Down at power-on): boots or flashes whatever it's given.
+2. **TWRP** (Volume Up at power-on): root over adb, no password.
+3. **Preloader USBDL** (Mute + Volume Down at power-on, USB connected): reads and writes the whole eMMC
+   with mtkclient.
+4. **Our rescue serial shell**: passwordless on purpose, because it's the way back when a system won't
+   start.
+
+There's no hardware root of trust left to tie disk encryption to, so none of these can be closed in
+software. USBDL stays open on purpose: on cronos it's the only way back from a brick, and closing it
+would mean a custom TEE1 on a board with no BROM, the one thing never to flash there
+([hardware.md](hardware.md#never-flash-these)).
+
+What's there to take: the Home Assistant token, the ESPHome encryption key, the SIP account, the house
+word, the Wi-Fi passwords the Show knows, its SSH host key and the household settings in `state.json`.
+The likeliest person to do this is whoever gets the Show when it's sold, given away or thrown out, not a
+burglar.
+
+What follows from that:
+
+- **A factory reset doesn't help against someone who already copied the flash.** It wipes the Show, not
+  the copy. Removing the Show from the house is what makes the copy worthless, so everything it held
+  has to be dead on the house side: `--remove-show` deletes its Home Assistant user, which ends its
+  token.
+- **The house word is the same on every Show** (typed on each one's setup page). Whoever has a copy can
+  sign announcements and reminders, and call into every Show with intercom, until the word is changed on
+  all the others. `--remove-show` says so at the end; nothing can change it remotely yet.
+- **The Wi-Fi password is the house's, not the Show's.** Change it on the router if the Show knew it,
+  or use a separate IoT network whose password only Shows and similar devices have.
+- **A stolen Home Assistant token is smaller than an admin's, not harmless.** The Show's user is in
+  `system-users` (not admin) and `local_only`, so it only works from inside the home network. Home
+  Assistant has no per-service rights, though: a non-admin user can still call `lock.unlock` or disarm an
+  alarm. Taking the token off the Show (GENBU-211 step 1, with GENBU-226) is what removes that.
+
+The plan for the rest (GENBU-211): no Home Assistant token on the Show, only a per-Show key the Genbu
+integration can revoke; secrets on the Show encrypted with a key Home Assistant hands over at boot and
+that lives in RAM only; a per-Show Wi-Fi key on the router; a "lost or stolen" button that does what
+remove does without the Show; a per-Show house key, so one stolen Show can't speak for the others; and a
+warning in Home Assistant when the boot partitions change. The only full fix is hardware with real
+secure boot (GENBU-230).
+
 ## Security invariants
 
 - No unauthenticated LAN peer may obtain camera frames or screenshots.
