@@ -69,6 +69,11 @@ class HouseUpdate(UpdateEntity):
         # The Shows' own order, so a dev build's run number counts as on the Show.
         return newer(latest_version, installed_version)
 
+    async def async_update(self) -> None:
+        # Settings → Updates → Check for updates (homeassistant.update_entity): read the channel now,
+        # not on the next hourly read.
+        await self.hub.async_read_release()
+
     async def async_release_notes(self) -> str | None:
         if not self.hub.offered:
             return None

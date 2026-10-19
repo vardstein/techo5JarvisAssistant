@@ -130,6 +130,23 @@ async def test_the_card_offers_the_channel_release(hass: HomeAssistant, hass_ws_
     assert hass.states.get(UPDATE).state == "off"
 
 
+async def test_a_new_release_shows_within_the_hour_or_on_check(hass: HomeAssistant, freezer):
+    """GENBU-258: the channel is read every hour, and Check for updates reads it at once."""
+    add_show(hass, "hall", "v1.0.3")
+    await setup(hass)
+    release("v1.0.4")
+    freezer.tick(timedelta(minutes=61))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert hass.states.get(UPDATE).attributes["latest_version"] == "v1.0.4"
+
+    release("v1.0.5")
+    await async_setup_component(hass, "homeassistant", {})
+    await hass.services.async_call("homeassistant", "update_entity", {"entity_id": UPDATE}, blocking=True)
+    await hass.async_block_till_done()
+    assert hass.states.get(UPDATE).attributes["latest_version"] == "v1.0.5"
+
+
 async def test_install_moves_the_house_and_the_shows_follow(hass: HomeAssistant):
     up = add_show(hass, "hall", "v1.0.3")
     add_show(hass, "kitchen", "v1.0.3")

@@ -44,7 +44,8 @@ Show (job 51, [update-leader.md](update-leader.md)). That choice can move into H
 
 ### Proposal
 
-- **Genbu Assistant checks the release channel once for the whole house**, every 6 hours, instead of every
+- **Genbu Assistant checks the release channel once for the whole house**, every hour (6 hours until
+  GENBU-258) and on Check for updates, instead of every
   Show checking every 10 minutes.
 - **One update card for all Shows**, "Genbu Show firmware", on a new "Genbu Assistant" service device that also
   carries the house-wide sensor and settings (today they sit on no device). Its progress counts how many

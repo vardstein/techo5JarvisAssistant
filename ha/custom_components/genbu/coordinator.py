@@ -1,7 +1,7 @@
 """GenbuHouse: looks at the Genbu Shows every minute and whenever one of them changes, feeds that to
 house.House, and keeps the house version: the one every Show follows, which only an install on the house's
 update card (update.py), the night install or the voice moves (GENBU-119). It reads the release channel's
-manifest every few hours for what that card offers.
+manifest every hour, and on Check for updates, for what that card offers.
 
 Each look also works out where each Show's music plays (music.py), so a Show moved to another room
 plays there without anything being set up again, and asks a Show turned away by Home Assistant why
@@ -44,7 +44,7 @@ from .recipe import show_action
 
 LOGGER = logging.getLogger(__name__)
 LOOK_EVERY = timedelta(minutes=1)
-READ_EVERY = timedelta(hours=6)  # the channel's manifest
+READ_EVERY = timedelta(hours=1)  # the channel's manifest; 6 hours kept a new release off the card for half a day (GENBU-258)
 SETTLE = timedelta(minutes=30)  # how long after an install the card shows how far the Shows are
 TELL_EVERY = timedelta(hours=1)  # how often a Show mentions a speaker that is off (GENBU-161)
 
