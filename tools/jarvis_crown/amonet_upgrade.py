@@ -30,9 +30,10 @@ from typing import Callable
 import zipfile
 
 from jarvis_crown.assets import assets_for
-from jarvis_crown.catalogue import profile_for_board
+from jarvis_crown.catalogue import amonet_upgrade_boards, amonet_upgrade_writes, profile_for_board
 from jarvis_crown.device_gate import DeviceIdentity
 from jarvis_crown.recovery import (
+    SMALL_PARTITIONS,
     RecoveryError,
     SubprocessRecoveryClient,
     _sha256,
@@ -53,19 +54,9 @@ BY_NAME_DIRS = (
     "/dev/block/platform/*/*/by-name",
 )
 
-# What the update-binary writes: (names it looks up, the partition that must be, zip binary or None
-# for the misc wipe). Only Checkers has been mapped on a real unit.
-TARGETS = {
-    "checkers": (
-        (("lk_real",), "mmcblk0p3", "lk.bin"),
-        (("tee2_real",), "mmcblk0p6", "tz.img"),
-        (("tee1_real",), "mmcblk0p4", "tee-payload.bin"),
-        (("expdb",), "mmcblk0p7", "checkers-kaeru.bin"),
-        (("recovery",), "mmcblk0p10", "twrp.img"),
-        (("swdl_real", "swdl"), "mmcblk0p11", "twrp.img"),
-        (("MISC", "misc"), "mmcblk0p8", None),
-    ),
-}
+# What the update-binary writes comes from the board's amonet_upgrade block in the catalogue
+# (GENBU-184): (names it looks up, the partition that must be, zip binary or None for the misc wipe).
+# Only boards whose partitions were read off a real unit have one.
 BOOT_PARTITION = "mmcblk0p9"
 UPDATE_BINARY = "META-INF/com/google/android/update-binary"
 DEVICE_ZIP = "/tmp/jarvis-amonet.zip"
@@ -108,7 +99,7 @@ def check_amonet_zip(board: str, path: Path) -> dict[str, bytes]:
         prop = z.read("amonet/device.prop").decode("utf-8", "replace")
         if not re.search(rf"^DEVICE={re.escape(board)}\s*$", prop, re.M):
             raise UpgradeError(f"{asset.name} device.prop does not name {board}")
-        wanted = {"preloader.img"} | {b for _, _, b in TARGETS[board] if b}
+        wanted = {"preloader.img"} | {b for _, _, b in amonet_upgrade_writes(board) if b}
         binaries = {}
         for name in sorted(wanted):
             member = f"amonet/bin/{name}"
@@ -134,7 +125,7 @@ def lineage_boot_image(board: str, path: Path) -> bytes:
 def resolve_targets(client, board: str) -> None:
     """Prove every name the update-binary looks up lands on the partition the backup covers."""
     dirs = " ".join(BY_NAME_DIRS)
-    for names, expected, _ in TARGETS[board]:
+    for names, expected, _ in amonet_upgrade_writes(board):
         script = (
             f"for n in {' '.join(names)}; do for d in {dirs}; do "
             'if [ -b "$d/$n" ]; then readlink -f "$d/$n"; exit 0; fi; done; done; echo MISSING'
@@ -152,7 +143,7 @@ def resolve_targets(client, board: str) -> None:
 def check_fit(client, board: str, binaries: dict[str, bytes], boot: bytes) -> None:
     """The update-binary dd's without looking at sizes; a short write to lk or tee would break the chain."""
     writes = [("mmcblk0boot0", "preloader.img", len(binaries["preloader.img"])), (BOOT_PARTITION, "boot.img", len(boot))]
-    writes += [(part, binary, len(binaries[binary])) for _, part, binary in TARGETS[board] if binary]
+    writes += [(part, binary, len(binaries[binary])) for _, part, binary in amonet_upgrade_writes(board) if binary]
     for part, label, length in writes:
         raw = client.shell(f"cat /sys/class/block/{part}/size").strip()
         if not raw.isdigit() or int(raw) * 512 < length:
@@ -168,7 +159,7 @@ def _prefix_hash(client, block: str, length: int) -> str:
 
 def verify_written(client, board: str, binaries: dict[str, bytes]) -> None:
     checks = [("/dev/block/mmcblk0boot0", binaries["preloader.img"])]
-    for _, part, binary in TARGETS[board]:
+    for _, part, binary in amonet_upgrade_writes(board):
         checks.append((f"/dev/block/{part}", binaries[binary] if binary else b"\0" * 4096))
     for block, data in checks:
         if _prefix_hash(client, block, len(data)) != hashlib.sha256(data).hexdigest():
@@ -235,8 +226,15 @@ def upgrade_amonet(
     wait: Callable = wait_for_reboot,
 ) -> UpgradeResult:
     profile = profile_for_board(board)
-    if board not in TARGETS:
-        raise UpgradeError(f"the Amonet upgrade has only been mapped for {', '.join(TARGETS)}")
+    writes = amonet_upgrade_writes(board)
+    if not writes:
+        mapped = ", ".join(amonet_upgrade_boards()) or "no board"
+        raise UpgradeError(f"the Amonet upgrade has only been mapped for {mapped}")
+    # The map is catalogue data now; a write the backup doesn't cover is refused before the Show is touched.
+    missed = [part for _, part, _ in writes if int(part.removeprefix("mmcblk0p")) not in SMALL_PARTITIONS]
+    if missed:
+        raise UpgradeError(f"the catalogue's Amonet upgrade map for {board} writes {', '.join(missed)}, "
+                           "which the backup doesn't cover; nothing was touched")
     binaries = check_amonet_zip(board, amonet_zip)
     boot = lineage_boot_image(board, lineage_zip)
 

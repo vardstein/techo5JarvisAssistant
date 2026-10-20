@@ -16,6 +16,17 @@
       "unlock": "amonet-kaeru"
     }
   },
+  "amonet_upgrade": {
+    "writes": [
+      {"names": ["lk_real"], "partition": "mmcblk0p3", "binary": "lk.bin"},
+      {"names": ["tee2_real"], "partition": "mmcblk0p6", "binary": "tz.img"},
+      {"names": ["tee1_real"], "partition": "mmcblk0p4", "binary": "tee-payload.bin"},
+      {"names": ["expdb"], "partition": "mmcblk0p7", "binary": "checkers-kaeru.bin"},
+      {"names": ["recovery"], "partition": "mmcblk0p10", "binary": "twrp.img"},
+      {"names": ["swdl_real", "swdl"], "partition": "mmcblk0p11", "binary": "twrp.img"},
+      {"names": ["MISC", "misc"], "partition": "mmcblk0p8", "binary": null}
+    ]
+  },
   "assets": {
     "lineage": "lineage-18.1-20260904-UNOFFICIAL-checkers",
     "boot": "techo5-boot-checkers-v1.0.1",

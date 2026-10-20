@@ -282,6 +282,36 @@ class CatalogueValidatorTest(unittest.TestCase):
     def test_missing_key(self):
         self.assertIn("missing", self.broken("boards/crown.json", lambda d: d.pop("display")))
 
+    def test_amonet_upgrade_map(self):
+        # GENBU-184: checkers's amonet_upgrade block, broken one way at a time.
+        def writes(change):
+            return lambda d: change(d["amonet_upgrade"]["writes"])
+
+        def bad(change, words):
+            with self.subTest(words=words):
+                self.assertIn(words, self.broken("boards/checkers.json", change))
+
+        bad(lambda d: d["amonet_upgrade"].update(writes=[]), "non-empty list")
+        bad(lambda d: d["amonet_upgrade"].update(reads=[]), "unknown")
+        bad(writes(lambda w: w[0].update(names=[])), "non-empty list of different names")
+        bad(writes(lambda w: w[0].update(names=["lk", "lk"])), "non-empty list of different names")
+        bad(writes(lambda w: w[0].update(names=["lk/real"])), "names/0")
+        bad(writes(lambda w: w[0].update(partition="/dev/block/mmcblk0p3")), "partition")
+        bad(writes(lambda w: w[0].update(partition="mmcblk0p0")), "partition")
+        bad(writes(lambda w: w[1].update(partition="mmcblk0p3")), "mmcblk0p3 is written twice")
+        bad(writes(lambda w: w[0].update(binary="../lk.bin")), "binary")
+        bad(writes(lambda w: w[0].pop("binary")), "missing")
+        bad(lambda d: d.update(amonet_upgrade={}), "missing")
+
+    def test_amonet_upgrade_is_optional(self):
+        root = self.copy()
+        path = root / "boards" / "checkers.json"
+        data = json.loads(path.read_text())
+        data.pop("amonet_upgrade")
+        path.write_text(json.dumps(data))
+        self.assertNotIn("amonet_upgrade", Catalogue(root).resolve("checkers"))
+        self.assertEqual(catalogue.amonet_upgrade_boards(), ("checkers",))
+
     def test_unlock_outside_closed_set(self):
         self.broken("boards/crown.json", lambda d: d["policy"]["install"].update(unlock="none"))
 

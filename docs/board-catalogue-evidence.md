@@ -53,7 +53,7 @@ P11 is out of date: since GENBU-178 `twrp_device` is read from the catalogue whe
 `TwrpDeviceComesFromTheCatalogueTest` replaced the test that it equals the board name.
 
 Still not read from the catalogue, so not covered: echod's board list and detection, dashcast's geometry,
-`install-show.py` `BOARDS` and `LOGO_KAERU`, `boot_logo.py` `KAERU`, `amonet_upgrade.py` `TARGETS`,
+`install-show.py` `BOARDS` and `LOGO_KAERU`, `boot_logo.py` `KAERU`,
 `techo5lib.py` board lists, `live-acceptance.py`, `release-jarvis-show.sh`, `mkrootfs.sh`'s marker.
 
 ## 2. Board facts against real hardware
@@ -101,7 +101,8 @@ board they were about. A comment moved into `notes` is still only a claim.
 | K12 | the zip contains `amonet/bin/checkers-kaeru.bin` | proven | `check-files` |
 | K13 | in the checkers zip, `fastbrick.sh`, `bin/fastboot` and `bin/fastboot32` are byte-identical to crown's pins; `profile.sh`, `device.prop` and `bin/fastbrick.img` are not; `device.prop` says `DEVICE=checkers` | proven | one-off hash of the local zips, section 5. So crown's unlock pins can't simply be reused for checkers |
 | K14 | unlock from stock on a checkers | unknown | not pinned, no evidence; `profiles/checkers-v1.json` says it's refused |
-| K15 | the `amonet-upgrade` partition map is right for a real checkers | claimed | `amonet_upgrade.py:56` "mapped on a real unit", no log |
+| K15 | the partitions in checkers's `amonet_upgrade` map (lk p3, tee1 p4, tee2 p6, expdb p7, MISC p8, recovery p10, swdl p11, and boot p9) are those partitions on a real checkers | proven 2026-10-20 (GENBU-184) | `docs/dumps/checkers-partitions-2026-10-20.txt:11-26`, the GPT names of a running unit, row by row at `:29-35` |
+| K16 | on a checkers still on Amonet 1.x, the update-binary's names `lk_real`, `tee1_real`, `tee2_real` and `swdl_real` point at those partitions | unknown | they aren't in the GPT of the unit read for K15 (`:37-40`); `resolve_targets` checks each one in TWRP before anything is written and refuses on a mismatch, so a wrong guess stops the upgrade, it doesn't brick |
 
 ### cronos (Echo Show 5 2nd gen)
 
@@ -130,12 +131,13 @@ board they were about. A comment moved into `notes` is still only a claim.
 
 ## 3. Counts
 
-Board and asset facts (section 2): **26 proven, 15 claimed, 4 unknown** (GENBU-180/181 added C4, C5, C6,
-K4, K5, K6, R5 and GENBU-187 added A1 on 2026-10-19; GENBU-182 added C15 and proved R10 and K9 on 2026-10-20).
+Board and asset facts (section 2): **27 proven, 14 claimed, 5 unknown** (GENBU-180/181 added C4, C5, C6,
+K4, K5, K6, R5 and GENBU-187 added A1 on 2026-10-19; GENBU-182 added C15 and proved R10 and K9 on 2026-10-20;
+GENBU-184 proved K15 and added K16 on 2026-10-20).
 
-- proven: C4, C5, C6, C7, C8, C10, C11, C12, C15, K4, K5, K6, K7, K8, K9, K10, K11, K12, K13, R3, R4, R5, R6, R7, R10, A1
-- claimed: C1, C2, C3, C9, C13, C14, K1, K2, K3, K15, R1, R2, R8, R9, R12
-- unknown: K14, R11, R13, A2
+- proven: C4, C5, C6, C7, C8, C10, C11, C12, C15, K4, K5, K6, K7, K8, K9, K10, K11, K12, K13, K15, R3, R4, R5, R6, R7, R10, A1
+- claimed: C1, C2, C3, C9, C13, C14, K1, K2, K3, R1, R2, R8, R9, R12
+- unknown: K14, K16, R11, R13, A2
 
 Installer-unchanged facts (section 1): 12 proven.
 
@@ -162,6 +164,7 @@ the unit.
 | H6 | on a running Show: `/proc/version` (`uname -r` is the same on every image) plus the sha256 of the first *size* bytes of the boot partition, compared with the pin | C9, K9, R10 | no, **done 2026-10-20** on cronos (R10 proven) and crown (runs v0.8.0, C15); checkers (K9 proven). C9 needs a crown installed from the v1.0.1 pin |
 | H7 | the first `amonet-kaeru` unlock of a stock unit, step by step, log saved | C13, K14 | **yes**, Jade's call per board |
 | H8 | a full `tools/hwdump.sh` probe on crown and checkers, after hwdump learns to strip identifiers | fixtures for both | no |
+| H9 | in TWRP on a checkers still on Amonet 1.x: `ls -l` of each by-name folder `amonet_upgrade.py` `BY_NAME_DIRS` lists | K16 | no (only if such a unit turns up; the one checkers read so far is on 2.x) |
 
 For R9, R11, R13 (cronos zip, Amonet and TWRP pins) there's no hardware test: someone has to download,
 review and pin the files first, then `check-files` proves the pin.
