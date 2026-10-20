@@ -237,6 +237,56 @@ class UpgradeTests(unittest.TestCase):
                 self.run_upgrade(device)
             self.assertEqual(device.writes, [])
 
+    def with_map(self, change):
+        """The real catalogue, with checkers's amonet_upgrade block changed by change (GENBU-184)."""
+        real = catalogue.Catalogue()
+
+        class Changed:
+            def resolve(self, board):
+                out = real.resolve(board)
+                if board == "checkers":
+                    change(out)
+                return out
+
+            def __getattr__(self, name):
+                return getattr(real, name)
+
+        return mock.patch.object(catalogue, "default", Changed)
+
+    def test_the_map_is_read_from_the_catalogue(self):
+        # GENBU-184: the partition map is checkers.json's amonet_upgrade block, read on every call.
+        writes = catalogue.Catalogue().resolve("checkers")["amonet_upgrade"]["writes"]
+        self.assertEqual(up.amonet_upgrade_writes("checkers"),
+                         tuple((tuple(w["names"]), w["partition"], w["binary"]) for w in writes))
+        device = FakeTwrp()
+
+        def expdb_on_logo(board):
+            board["amonet_upgrade"]["writes"][3]["partition"] = "mmcblk0p5"
+
+        with self.with_map(expdb_on_logo):
+            with self.assertRaisesRegex(up.UpgradeError,
+                                        "expdb resolves to /dev/block/mmcblk0p7, expected /dev/block/mmcblk0p5"):
+                self.run_upgrade(device)
+        self.assertEqual(device.writes, [])
+        self.assertFalse((self.dir / "backups").exists())
+
+    def test_a_board_without_a_map_is_refused_before_the_show(self):
+        device = mock.Mock(side_effect=AssertionError("the Show must not be touched"))
+        with self.with_map(lambda board: board.pop("amonet_upgrade")):
+            with self.assertRaisesRegex(up.UpgradeError, "only been mapped for no board"):
+                self.run_upgrade(device)
+        self.assertEqual(device.mock_calls, [])
+
+    def test_a_write_the_backup_misses_is_refused_before_the_show(self):
+        def onto_userdata(board):
+            board["amonet_upgrade"]["writes"][4]["partition"] = "mmcblk0p16"
+
+        device = mock.Mock(side_effect=AssertionError("the Show must not be touched"))
+        with self.with_map(onto_userdata):
+            with self.assertRaisesRegex(up.UpgradeError, "writes mmcblk0p16, which the backup doesn't cover"):
+                self.run_upgrade(device)
+        self.assertEqual(device.mock_calls, [])
+
     def test_a_target_on_an_unexpected_partition_stops_everything(self):
         device = FakeTwrp(links={**LINKS, "lk_real": 5})
         with self.assertRaisesRegex(up.UpgradeError, "lk_real resolves to /dev/block/mmcblk0p5"):

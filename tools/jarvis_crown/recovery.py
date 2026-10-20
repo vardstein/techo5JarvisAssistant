@@ -169,10 +169,7 @@ def verify_twrp_board(serial: str, board: str, *, run: Callable = subprocess.run
 def amonet1_upgrade_hint(board: str) -> str:
     """Where a unit still on Amonet 1.x goes next. amonet-upgrade only knows the boards whose
     partitions were mapped on a real unit (GENBU-206); pointing anything else at it is a dead end."""
-    # Imported here: amonet_upgrade imports this module.
-    from jarvis_crown.amonet_upgrade import TARGETS
-
-    if board in TARGETS:
+    if board in catalogue.amonet_upgrade_boards():
         return (
             f"Upgrade it first with: jarvis-show.py amonet-upgrade --board {board} "
             "(tools/fetch-show-assets.py picks up and checks the Amonet zip)"

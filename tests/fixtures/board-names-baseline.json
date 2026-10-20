@@ -48,7 +48,6 @@
  "tools/install-show.py": 14,
  "tools/jarvis-crown.py": 10,
  "tools/jarvis-show.py": 4,
- "tools/jarvis_crown/amonet_upgrade.py": 2,
  "tools/jarvis_crown/boot_logo.py": 1,
  "tools/jarvis_crown/catalogue.py": 5,
  "tools/jarvis_crown/device_gate.py": 9,

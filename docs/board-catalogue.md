@@ -96,7 +96,7 @@ product needs a decision about how the installer picks, not a silent first-one-w
 }
 ```
 
-Every key is required. `identity` takes only keys from a closed set, one per stage the unit is seen in
+Every key shown is required. Two are optional: `notes`, and `amonet_upgrade` (below). `identity` takes only keys from a closed set, one per stage the unit is seen in
 (fastboot, TWRP, running), and a key that nobody captured from a real unit is left out. It's never filled with "unknown".
 
 | Identity key | Stage | Read today by | In the catalogue |
@@ -108,6 +108,26 @@ Every key is required. `identity` takes only keys from a closed set, one per sta
 | `lcm_panel` | running Show (kernel `lcm=`) | echod, by substring | **no**: the panel is a component and two boards may share one. It becomes a board key only once a test shows each captured value maps to exactly one board |
 
 The checker refuses an identity value that two boards share.
+
+`amonet_upgrade` is the partition map `jarvis-show.py amonet-upgrade` needs to move a unit from Amonet
+1.x to 2.x: what the Amonet 2.x update-binary writes, one entry per write.
+
+```json
+"amonet_upgrade": {
+  "writes": [
+    { "names": ["swdl_real", "swdl"], "partition": "mmcblk0p11", "binary": "twrp.img" },
+    { "names": ["MISC", "misc"], "partition": "mmcblk0p8", "binary": null }
+  ]
+}
+```
+
+`names` are the by-name entries the update-binary looks up, first found wins; `partition` is where they
+must point; `binary` is the file under the zip's `amonet/bin/` it writes there, or `null` for the misc
+wipe. The checker wants at least one write, no partition twice, and `mmcblk0p<n>` partitions. Only
+checkers has one: its partition numbers were read off a running unit
+(`docs/dumps/checkers-partitions-2026-10-20.txt`, GENBU-184). A board without it is refused by
+`amonet-upgrade` and its 1.x hint doesn't send anyone there. Like `identity`, it's added only from a
+real unit, never guessed.
 
 ### Asset entity
 
@@ -238,7 +258,8 @@ Every change that reads a new field adds its row here in the same change.
 | `catalogue.py` `profile_for_board`, `profile_for_product`, `supported_boards` | product `boards`; board `id`, `model`, `profile_id`, `identity.fastboot_product`, `display`; `assets.amonet` `file` and `kaeru` (for the folder and kaeru names) |
 | `device_gate.py` | the profiles above: `SUPPORTED_PRODUCTS`, `SUPPORTED_SUMMARY`, the unsupported-product message |
 | `install.py` | product `id` (`PROFILE_ID`), product `boards`, `assets.boot.sha256` |
-| `recovery.py` | `assets.amonet.members["amonet/bin/twrp.img"]`; `identity.twrp_device` (`twrp_device()`, also used by `amonet_upgrade.py`), so a TWRP that calls itself something other than the board needs no code change; a board without one is refused before adb runs |
+| `recovery.py` | `assets.amonet.members["amonet/bin/twrp.img"]`; `identity.twrp_device` (`twrp_device()`, also used by `amonet_upgrade.py`), so a TWRP that calls itself something other than the board needs no code change; a board without one is refused before adb runs; which boards have `amonet_upgrade` (`amonet1_upgrade_hint`) |
+| `amonet_upgrade.py` | board `amonet_upgrade.writes`, on every call (`catalogue.amonet_upgrade_writes`): the zip binaries it wants, the names it resolves in TWRP, the sizes it checks, what it compares after the flash |
 | `unlock.py` | crown's `assets.amonet.members` for the six unlock files; refuses to import if crown loses one |
 | `assets.py` | every board's `assets.*`: `file`, `url`, `source`, `manual`, `sha256`, `size`; `assets.amonet.upstream` (`AMONET_SOURCE`, for the fetcher's file-by-file compare) |
 | `boot_logo.py` (`KAERU`) | `assets.amonet.wordmark`: `offset`, `length`, `stock`, `logos.openjade`, `openjade_large` |
@@ -376,8 +397,6 @@ it, as Jade decided on 2026-10-20.
 Stage b moved the installer (`tools/jarvis_crown/` and the two CLIs that use it). These still own a
 board fact of their own:
 
-- `amonet_upgrade.py` `TARGETS`: the partition map, checkers only ("Only Checkers has been mapped on a
-  real unit"). Partition layout is a board fact.
 - `live-acceptance.py` J38: the display gate asks for crown and checkers only (GENBU-176, open).
 
 These can't read the catalogue, so they keep their own copy and a test fails when it disagrees

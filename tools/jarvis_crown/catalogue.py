@@ -54,6 +54,9 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _HEX = re.compile(r"^(?:[0-9a-f]{2})+$")
 _REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _MEMBER = re.compile(r"^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$")
+_PARTITION = re.compile(r"^mmcblk0p[1-9][0-9]*$")
+_PARTNAME = re.compile(r"^[A-Za-z0-9_]+$")
+_BINARY = re.compile(r"^[A-Za-z0-9._-]+$")
 # Product blocks the catalogue carries but does not own the inside of. Nothing in the installer reads
 # them; they are kept here so the product has one file, and checked only for being non-empty objects.
 PRODUCT_BLOCKS = frozenset({"assistant", "display", "security", "music"})
@@ -163,8 +166,33 @@ def _check_asset(where: str, a: Any) -> None:
         raise CatalogueError(f"{where}: file must be <id>.zip or <id>.img")
 
 
+def _check_amonet_upgrade(where: str, u: Any) -> None:
+    """What the Amonet 2.x update-binary writes on a board still on 1.x: for each write, the by-name entries
+    it looks up (first found wins), the partition they must be, and the zip's amonet/bin/ binary, or null
+    for the misc wipe. Only on a board whose partitions were read off a real unit."""
+    _keys(where, u, {"writes"})
+    writes = u["writes"]
+    if not isinstance(writes, list) or not writes:
+        raise CatalogueError(f"{where}/writes: expected a non-empty list")
+    seen: set[str] = set()
+    for i, w in enumerate(writes):
+        at = f"{where}/writes/{i}"
+        _keys(at, w, {"names", "partition", "binary"})
+        if not isinstance(w["names"], list) or not w["names"] or len(set(map(str, w["names"]))) != len(w["names"]):
+            raise CatalogueError(f"{at}/names: expected a non-empty list of different names")
+        for j, name in enumerate(w["names"]):
+            _str(f"{at}/names/{j}", name, _PARTNAME)
+        _str(f"{at}/partition", w["partition"], _PARTITION)
+        if w["partition"] in seen:
+            raise CatalogueError(f"{at}/partition: {w['partition']} is written twice")
+        seen.add(w["partition"])
+        if w["binary"] is not None:
+            _str(f"{at}/binary", w["binary"], _BINARY)
+
+
 def _check_board(where: str, b: Any, assets: dict[str, dict]) -> None:
-    _keys(where, b, {"id", "model", "profile_id", "identity", "display", "policy", "assets"}, {"notes"})
+    _keys(where, b, {"id", "model", "profile_id", "identity", "display", "policy", "assets"},
+          {"notes", "amonet_upgrade"})
     _str(f"{where}#/id", b["id"], _BOARD_ID)
     if "notes" in b:
         _str(f"{where}#/notes", b["notes"])
@@ -183,6 +211,8 @@ def _check_board(where: str, b: Any, assets: dict[str, dict]) -> None:
     _keys(f"{where}#/policy/install", b["policy"]["install"], {"unlock"})
     if b["policy"]["install"]["unlock"] not in UNLOCK_METHODS:
         raise CatalogueError(f"{where}#/policy/install/unlock: not in {sorted(UNLOCK_METHODS)}")
+    if "amonet_upgrade" in b:
+        _check_amonet_upgrade(f"{where}#/amonet_upgrade", b["amonet_upgrade"])
     _keys(f"{where}#/assets", b["assets"], set(ASSET_KINDS))
     for kind, ref in b["assets"].items():
         if ref not in assets:
@@ -395,6 +425,18 @@ def later_boards() -> tuple[str, ...]:
     """The product's other boards, in its order: each reads manifest-<board>.json (GENBU-176)."""
     first = first_boards()
     return tuple(b for b in supported_boards() if b not in first)
+
+
+def amonet_upgrade_writes(board: str) -> tuple[tuple[tuple[str, ...], str, str | None], ...]:
+    """The Amonet upgrade's writes on board as (names, partition, binary or None), or () for a board whose
+    partitions nobody has mapped on a real unit."""
+    writes = default().resolve(board).get("amonet_upgrade", {}).get("writes", [])
+    return tuple((tuple(w["names"]), w["partition"], w["binary"]) for w in writes)
+
+
+def amonet_upgrade_boards() -> tuple[str, ...]:
+    """The boards amonet-upgrade knows."""
+    return tuple(b for b in supported_boards() if amonet_upgrade_writes(b))
 
 
 def _or_list(items: tuple[str, ...]) -> str:
