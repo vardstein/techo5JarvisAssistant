@@ -1,291 +1,140 @@
 <p align="center">
-  <img src="logo/TECHO5_logo.png" alt="TECHO5" width="220">
+  <img src="ha/custom_components/genbu/brand/icon@2x.png" alt="Genbu: a tortoise with a snake wound around its shell" width="200">
 </p>
 
-<h3 align="center">Your Echo Show 5, rebuilt. Linux inside, Home Assistant in charge, no Amazon cloud.</h3>
+# Genbu Show
 
-<p align="center">
-  <a href="https://github.com/HuskerMinion/techo5/releases/latest"><img src="https://img.shields.io/github/v/release/HuskerMinion/techo5?label=release&color=e9a23b" alt="Latest release"></a>
-  <img src="https://img.shields.io/badge/Linux-Alpine-0D597F?logo=alpinelinux&logoColor=white" alt="Alpine Linux">
-  <img src="https://img.shields.io/badge/Android-none-3a2c22" alt="No Android">
-  <img src="https://img.shields.io/badge/Alexa-none-3a2c22" alt="No Alexa">
-  <img src="https://img.shields.io/badge/Home%20Assistant-ESPHome%20API-41BDF5?logo=homeassistant&logoColor=white" alt="Home Assistant">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="GPL-3.0 license"></a>
-  <a href="https://buymeacoffee.com/huskerminion"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?logo=buymeacoffee&logoColor=black" alt="Buy Me a Coffee"></a>
-</p>
+Firmware for unlocked Amazon Echo Shows. Android and Alexa go; a small Alpine Linux image and one Go
+daemon (`echod`) take their place, and the Show becomes a Home Assistant voice satellite with a touch
+screen. Home Assistant is in charge of everything: the voice pipeline, the screen, updates.
 
-<p align="center">
-  <a href="#whats-new">What's new</a> ·
-  <a href="#built-on-echolocal">Built on EchoLocal</a> ·
-  <a href="#why-techo5">Why</a> ·
-  <a href="#screenshots">Screenshots</a> ·
-  <a href="#stock-vs-techo5">Stock vs TECHO5</a> ·
-  <a href="#install">Install</a> ·
-  <a href="#under-the-hood">Under the hood</a> ·
-  <a href="#made-possible-by">Credits</a> ·
-  <a href="https://github.com/HuskerMinion/techo5-dot">TECHO5 Dot</a> ·
-  <a href="https://github.com/HuskerMinion/techo5-spot">TECHO5 Spot</a>
-</p>
+Genbu Show is a fork of [TECHO5](https://github.com/HuskerMinion/techo5), which did the hard part of
+getting Linux onto these devices. This fork adds a Home Assistant integration (Genbu Assistant), its own
+installer, a board catalogue and its own signed release channels.
 
----
+The code and many docs still say **Jarvis Show**, the project's first name: `tools/jarvis-show.py`, the
+`/jarvis-display` dashboard route, `/etc/jarvis-show-release.json` on the Show. It is the same thing.
 
-**TECHO5** (Tech Echo 5) is open firmware for the **Amazon Echo Show 5**. It replaces Android and
-Alexa with a small Alpine Linux image and one Go daemon, turning the Show into a fast, private Home
-Assistant voice satellite with a touch screen of its own.
+## Boards
 
-**Every Echo that can be unlocked now runs it.** The bootloader exploit these devices are opened with,
-[amonet](https://github.com/R0rt1z2/amonet), reaches five Amazon Echos. All five run the same daemon:
+All three run the same daemon and the same root filesystem. The boot image, the unlock payload and TWRP
+are per board and are never mixed. Which boards a release covers comes from the board catalogue,
+[`catalogue/products/genbu-show-v1.json`](catalogue/products/genbu-show-v1.json).
 
-| Device | Model | Repository | Status |
+| Board | Device | Model | Where it stands |
 |---|---|---|---|
-| **Echo Show 5, 2nd gen** (2021, `cronos`) | C76N8S | this one | In daily use |
-| **Echo Show 5, 1st gen** (2019, `checkers`) | H23K37 | this one, same binary; hardware notes in [techo5-checkers](https://github.com/HuskerMinion/techo5-checkers) | Working, tested end to end on one unit |
-| **Echo Show 8, 1st gen** (2019, `crown`) | C7H6N3 | this one, same binary | Working on one unit, the newest port |
-| **Echo Spot, 1st gen** (2017, `rook`) | VN94DQ | [TECHO5 Spot](https://github.com/HuskerMinion/techo5-spot) | In daily use |
-| **Echo Dot, 2nd gen** (2016, `biscuit`) | RS03QR | [TECHO5 Dot](https://github.com/HuskerMinion/techo5-dot) | In daily use |
+| `crown` | Echo Show 8, 1st gen (2019) | C7H6N3 | Installs end to end; unlock hashes built in |
+| `checkers` | Echo Show 5, 1st gen (2019) | H23K37 | Installs end to end; the unlock wants its hashes passed in (`--amonet-hashes`) |
+| `cronos` | Echo Show 5, 2nd gen (2021) | C76N8S | In the catalogue; the unlock wants `--amonet-hashes`, and the install needs a release whose root filesystem lists cronos |
 
-Every other device amonet opens is a Fire tablet. No Echo made after 2021 has a public unlock, so this
-is the whole family as it stands, not a roadmap.
-
-<p align="center">
-  <img src="docs/screenshots/sunrise-show.gif" alt="The screen turning into a sunrise over the twenty minutes before an alarm: a dark red sky warming through orange to a pale gold, a sun climbing into it, the time readable throughout" width="560">
-</p>
-
-<p align="center">
-  <em><strong>Waking to light.</strong> For up to half an hour before an alarm the screen becomes a
-  dawn, on a curve that does most of its work near the end. Every frame here is drawn by the code
-  the device draws with.</em>
-</p>
-
-## What's new
-
-The bigger changes of late September 2026. Every release lists the rest.
-
-<table>
-<tr>
-<td width="50%"><a href="docs/screenshots/show8/dashboard-drawn.png"><img src="docs/screenshots/show8/dashboard-drawn.png" alt="A dashboard drawn by the Echo Show 8 itself: tiles for a lamp, a fan, a scene, a porch light, a lock, the heat and the weather"></a></td>
-<td width="50%"><a href="docs/screenshots/show8/dashboard-streamed.png"><img src="docs/screenshots/show8/dashboard-streamed.png" alt="The same dashboard streamed to the Echo Show 8 exactly as Home Assistant draws it, with a five-day forecast"></a></td>
-</tr>
-<tr>
-<td><strong>Drawn on the device</strong>: instant, no server</td>
-<td><strong>Streamed</strong>: exactly as Home Assistant draws it</td>
-</tr>
-</table>
-
-**Home Assistant dashboards on the screen** (v0.9.0). The Echo Show and the Echo Spot can show a
-dashboard as a page you swipe in from the left edge of the clock (on the Spot, from the ring menu),
-or in place of the clock when nothing else is on the screen. There are two ways, picked per device in
-Home Assistant:
-
-- **Drawn on the device.** The device reads the dashboard's cards and draws them itself, in your
-  theme's colors: tiles you can tap or slide for brightness, position and temperature, rows with
-  switches, graphs, gauges, pictures and more. Taps are instant and nothing else is needed. With no
-  dashboard picked, it builds a Rooms dashboard from your Home Assistant areas.
-- **Streamed.** [dashcast](dashcast/README.md), a small server that runs next to Home Assistant
-  (a Docker image for PCs and Raspberry Pis), opens the dashboard in a headless browser and sends the
-  screen only what changes, encrypted with a key of your choosing. It looks exactly as Home Assistant
-  draws it, custom cards included, and it can show built-in pages like Energy and History.
-
-Which to use, how to set it up and what each can do: **[docs/dashboards.md](docs/dashboards.md)**.
-
-<table>
-<tr>
-<td width="50%"><a href="docs/screenshots/now-playing-cover.png"><img src="docs/screenshots/now-playing-cover.png" alt="Now playing from Music Assistant, with the album's cover behind the song"></a></td>
-<td width="50%"><a href="docs/screenshots/spot/now-playing-cover.png"><img src="docs/screenshots/spot/now-playing-cover.png" alt="Now playing on the Echo Spot, with the album cover in a circle" width="300"></a></td>
-</tr>
-<tr>
-<td colspan="2"><strong>Cover art for Music Assistant</strong> (v0.8.13). Music from Music Assistant, your own library included, now shows its album cover on the now-playing screen, the way radio stations already did. Music Assistant sends the picture itself, so there's nothing to set up. On the Spot it sits in a circle over the song.</td>
-</tr>
-</table>
-
-- 🗣️ **It stops listening when you stop talking** (v0.8.14). After the wake word, the device hears
-  you finish and ends the turn itself, instead of waiting for Home Assistant. With a TV or other
-  voices in the room, that used to mean 10 to 15 seconds of listening, or a turn that timed out and
-  did nothing. A switch per device, *End of speech on the device*, puts it back the old way.
-- 🌙 **A night light** (v0.8.12, v0.8.13). Night hours can dim the screen to a faint glow instead of
-  turning it off, and the first touch only brings it up. Music playing at night no longer keeps it
-  bright, and *Night light brightness* (1 to 10) in Home Assistant sets the glow.
-  [Screenshot](docs/screenshots/night-light.png)
-- 🎵 **Music that behaves** (v0.8.9 to v0.8.13). A mini player strip over the clock with its own
-  controls, Done and a favorite star on the now-playing page, pause and play that keep your place
-  with Music Assistant, and answers and announcements that play over the music, ducked, instead of
-  stopping it. Two ways a device could end up saying "Playing" in silence are fixed.
-  [Screenshot](docs/screenshots/now-playing-strip.png)
-- ⏰ **Alarms and reminders** (v0.8.1 onward). An alarm or reminder can ring once on a particular
-  day, each alarm can choose its own wake light, and reminders can be set by voice ("remind me
-  every Wednesday at 8 to take the trash out") with the automation in
-  [docs/actions.md](docs/actions.md#stop-a-ring-and-set-reminders-by-voice).
-  [Screenshot](docs/screenshots/alarm-editor.png)
-- 🔁 **A Restart button** in Home Assistant for every device (v0.8.13): restarts the TECHO5 software
-  the way an update does, for when something is stuck and you'd rather not unplug it.
-- 🌧️ **Sleep sounds** (v0.8.14). "Play the sounds of rain" no longer brings up the forecast, and a
-  sound file served by Home Assistant shows its own name on the now-playing page.
-- 🎙️ **More by voice**, with ready-made Home Assistant automations in
-  [docs/actions.md](docs/actions.md#set-cancel-and-list-alarms-and-change-the-volume-by-voice):
-  set, cancel and list alarms ("cancel the 6 AM alarm", "what alarms do I have"), and change the
-  volume on the speaker you're talking to rather than every speaker in the room.
-- 📺 **The Echo Show 8** (v0.8.0) runs the same software, laid out for its bigger screen.
-  [Screenshots](docs/screenshots/README.md#echo-show-8)
-
-## Built on EchoLocal
-
-TECHO5 started from **[EchoLocal](https://github.com/ygelfand/echolocal)** by Yuri Gelfand (MIT),
-which already turns the Echo Dot 2 (`biscuit`, the same MT8163 family) into an ESPHome-native Home
-Assistant satellite, with a single static Go daemon that drives the hardware directly. TECHO5's
-`echod` is that daemon, vendored and ported to the Show 5's `cronos`, and much of it is still
-EchoLocal's code: the wake word engine, the ALSA client and the service framework almost unchanged,
-and the voice satellite, media player and component registry grown from EchoLocal's own. What TECHO5
-added is the Show's hardware, the screen, the camera, Bluetooth, the update and
-slot system, phone calls, and a minimal Alpine root filesystem in place of Android. See
-[NOTICE](NOTICE) for the full attribution and EchoLocal's license.
-
-## Why TECHO5
-
-|  |  |
-|---|---|
-| 🐧 **Real Linux, no Android** | The Show boots straight into a minimal Alpine Linux root filesystem. No Android framework, no Google services, no app store: one daemon drives the microphones, speaker, screen, camera and radios directly. |
-| 🚫 **No Alexa, no Amazon account, no Amazon cloud** | Your voice goes only to *your* Home Assistant, over its encrypted ESPHome API. The Show reaches the internet just for what you use: update checks against this repo, network time, radio streams with their song and cover lookups, the rain radar map, and in the U.S. the National Weather Service's weather alerts. Voice and control keep working with the internet down, as long as your Home Assistant pipeline is local. |
-| 🎙️ **Wake word on the device** | microWakeWord runs locally: twelve wake words, "Alexa", "Okay Nabu", "Hey Jarvis", "Hey Mycroft", "Computer" and more, chosen on the screen or in Home Assistant. Echo cancellation keeps it listening over music. |
-| 🔐 **Secure by default** | SSH is keys-only and off until you turn it on; keys arrive only through Home Assistant. The camera and screen web pages start closed. No password logins, not even in rescue. |
-| 🔄 **Updates that can't brick it** | Releases install over the air from Home Assistant's update card into the spare of two root filesystem slots, boot on trial, and fall back on their own if the new one doesn't settle. |
-| 📺 **A screen that's actually useful** | Clock and weather, the conversation as it happens, a glance strip of chips from Home Assistant along the foot of the clock, now playing with song and cover art, your Home Assistant dashboards, forecasts, a live rain radar, the National Weather Service's alerts (in the U.S.), live Home Assistant cameras, timers and alarms, Wi-Fi setup, 13 themes. |
-| 📻 **Weather and radio with no setup** | A new Show uses the forecast every Home Assistant has, and lists the radio stations near home from Home Assistant's Radio Browser. Pick another weather entity (your own station, say) on the screen, and keep your own favorite stations too. |
-| ⏰ **Alarms that ring on their own** | Set on the screen, by Home Assistant, or followed from its helpers; they ring from the Show's own clock even when Home Assistant is down. Snooze included, and the screen can wake you with a sunrise before the sound. |
-| 🎧 **Bluetooth, rebuilt** | Earbuds and speakers over A2DP, plus a Home Assistant Bluetooth proxy, on a kernel rebuilt with Bluetooth from the LineageOS source. |
-| 📞 **A speakerphone again** | Calls through your own SIP provider: "call Alex" by voice, calls that ring on the screen, calls between your own devices, and a help call that alerts your phones and dials people in turn. Encrypted end to end to the provider, and off until you sign it in. [docs/phone.md](docs/phone.md) |
-| 📷 **A camera you control** | The front camera becomes a Home Assistant camera entity, off unless something is watching, and physically off while the mute button is engaged. |
-| 🛟 **Always recoverable** | A rescue environment with a USB serial console, and TWRP left in place: LineageOS is one flash away. |
-
-## Screenshots
-
-Straight from the device's own screen. **[All of them](docs/screenshots/README.md)**, including the
-Echo Show 8 and the Echo Spot, are in [docs/screenshots](docs/screenshots/README.md).
-
-| | |
-|---|---|
-| ![Clock with weather over a photo](docs/screenshots/clock.png) | ![An alarm ringing, with Stop and Snooze](docs/screenshots/ringing.png) |
-| **Clock**, weather and your own photos behind it | **Alarm ringing**, big enough to hit half awake |
-| ![Now playing from Music Assistant, with the album's cover](docs/screenshots/now-playing-cover.png) | ![The mini player strip over the clock](docs/screenshots/now-playing-strip.png) |
-| **Now playing**, with the album's cover | **The mini player**, over the clock |
-| ![The clock with a glance strip of chips from Home Assistant along the foot](docs/screenshots/clock-glance.png) | |
-| **The glance strip**: chips from Home Assistant, only while they have news | |
-| ![Settings: Display](docs/screenshots/settings-display.png) | ![Settings: Sound & Voice](docs/screenshots/settings-sound.png) |
-| **Settings** by category: brightness, night hours, theme, clock | **Sound & Voice**: volume, microphone, wake word and its sound |
-| ![Alarm editor](docs/screenshots/alarm-editor.png) | ![Settings: Privacy & Security](docs/screenshots/settings-privacy.png) |
-| **Alarms** set on the device, no app needed | **Privacy**: every open door has a switch |
-| ![Theme list](docs/screenshots/settings-theme.png) | ![Settings: Connections](docs/screenshots/settings-connections.png) |
-| **Themes**: presets or your own colors | **Connections**: Wi-Fi, Bluetooth and the Home Assistant proxy |
-| ![Weather with a five day forecast](docs/screenshots/weather.png) | ![The cameras drawer](docs/screenshots/drawer-cameras.png) |
-| **Weather** now and for the week, with the rain radar a tap away | **Cameras and Radio**, a swipe in from the right |
-
-<p align="center">
-  <img src="docs/screenshots/sunrise-spot.gif" alt="The sunrise before an alarm on the Echo Spot's round face: the circle warming from dark red through orange to gold, a sun climbing from the bottom" width="300">
-</p>
-
-<p align="center">
-  <em>The <strong>Echo Spot</strong> takes the same twenty minutes across its round face.</em>
-</p>
-
-## Stock vs TECHO5
-
-| | Stock Echo Show 5 (Alexa) | TECHO5 |
-|---|---|---|
-| Operating system | Fire OS (Android) | Alpine Linux, one daemon |
-| Voice assistant | Alexa, in Amazon's cloud | Home Assistant Assist, with any pipeline you run |
-| Where your voice goes | Amazon | Your Home Assistant, encrypted |
-| Wake word | "Alexa", processed for Amazon | On the device: Alexa, Okay Nabu, Hey Jarvis, Hey Mycroft and eight more |
-| Screen | Alexa cards and ads | Clock, weather, now playing, Home Assistant dashboards, cameras, timers, alarms, settings |
-| Music | Amazon Music and skills | Home Assistant radio lists with cover art, Music Assistant (Sendspin), Home Assistant media |
-| Timers and alarms | Alexa | Home Assistant timers on screen; alarms that ring without Home Assistant |
-| Camera | Video calls, Drop In | A Home Assistant camera entity, off unless watched |
-| Bluetooth | Speaker and phone audio | Audio to earbuds and speakers; Home Assistant Bluetooth proxy |
-| Smart home | Alexa routines | Everything Home Assistant does |
-| Updates | Amazon, automatic, whenever | From this repo's releases, when you press Install; A/B slots with automatic fallback |
-| Remote access | None | SSH with keys, off by default |
-| Listening on your network | Amazon's services | Home Assistant's encrypted API and the Sendspin player; SSH and web pages only when switched on. A signed-in phone keeps its own connection out to the provider |
-| Calling | Alexa calling and Drop In | Phone calls through your own SIP provider (TLS and SRTP), placed from Home Assistant or by voice, answered on the screen; device to device calls in the house |
-| Shopping, skills | Yes | **No.** Those are Alexa cloud services |
+[docs/board-catalogue.md](docs/board-catalogue.md) explains the catalogue and what is still open per
+board; [docs/board-catalogue-evidence.md](docs/board-catalogue-evidence.md) has what each fact rests on.
 
 ## Install
 
-**New to this? Start with [Getting started](docs/getting-started.md)**: every step from a stock Echo
-Show 5, Dot or Spot, with the unlock guides linked, what to check after each step, and notes for
-Windows, Linux and macOS. Once it's in Home Assistant, **[Setting it up](docs/setup.md)** covers
-photos, weather, cameras, music and the night settings, in order.
+The installer runs on Linux with Python 3.10+, `adb`, `fastboot`, `git`, `bash` and GNU `timeout`, and
+needs the serial console (`dialout` or `uucp`). Connect one Show on mains power, then:
 
-You need a Show 5 **unlocked and running LineageOS 18.1** — 2nd gen with
-[amonet-cronos](https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-show-5-2nd-gen-2021-cronos.4772596/)
-and [this ROM](https://xdaforums.com/t/rom-unofficial-11-cronos-lineageos-18-1-for-the-amazon-echo-show-5-2021.4772598/),
-1st gen with
-[amonet-checkers](https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-show-5-1st-gen-2019-checkers.4762900/)
-and R0rt1z2's `checkers` build of the same LineageOS — a USB cable, a computer (Windows, Linux or macOS) with Python 3, `adb` and `fastboot`, and Home
-Assistant. Each [release](https://github.com/HuskerMinion/techo5/releases/latest) carries everything
-else: the boot image (with Bluetooth) and the root filesystem. Nothing is built.
-
-```
-git clone https://github.com/HuskerMinion/techo5
-cd techo5
-python3 tools/install-show.py
+```sh
+python3 tools/jarvis-show.py preflight
+python3 tools/jarvis-show.py install --name <name>
 ```
 
-It finds the Show, asks what to call it and asks once before erasing anything (or takes
-`--serial`, `--name` and `--force` from a script), downloads and checks the release, flashes the boot image, creates the slot store and installs over
-the USB serial console, and prints where the Home Assistant key is kept. Later updates come from Home
-Assistant. Every step by hand, and the fixes for what can go wrong: **[docs/install.md](docs/install.md)**.
+`preflight` checks the computer and the input files and touches no Show. `install` works out the board,
+fetches the pinned LineageOS zip and boot image, unlocks with Amonet if the Show is still locked, makes a
+recovery backup, and checks the boot image, root filesystem and backup before it erases anything. It asks
+before every write. At the end it adds the Show to Home Assistant as an ESPHome device, lets you pick the
+assistant and wake word, and sets up DashCast and Music Assistant.
 
-> **Status:** in daily use on two Echo Show 5 units. It's a hobby project, not a product: keep your
-> backups, and expect rough edges.
+- [docs/jarvis-show-runbook.md](docs/jarvis-show-runbook.md): the install, step by step.
+- [docs/jarvis-crown-installer.md](docs/jarvis-crown-installer.md): every gate, command and switch,
+  taking a Show out again, and finding Shows.
+- [docs/one-command-installer.md](docs/one-command-installer.md): the order of the safety gates.
 
-**Echo Show 5 1st gen (2019, `checkers`)** installs with the same command: the installer sees which
-generation it is talking to and takes that unit's boot image from the release. Everything works on it —
-screen, touch, speaker, microphones, wake word, camera, the mute button and voice — tested end to end,
-though so far on one unit rather than the two years of daily use behind the 2nd gen. The hardware notes
-are in [techo5-checkers](https://github.com/HuskerMinion/techo5-checkers).
+`tools/install-show.py` is upstream TECHO5's installer and is still here, but `jarvis-show.py` is the one
+this fork's releases are made for.
 
-**Echo Show 8 1st gen (2019, `crown`)** installs with the same command as well. Its screen, touch,
-speaker, four microphones, wake word, camera, lens cover and mute latch all work, and it takes slot
-updates like the others. It is the newest of the three and has been through far less use than either
-Show 5, so treat it as such. Two things worth knowing first: a seller's model number does not tell the
-two Show 8 generations apart, so go by the year when buying second-hand, and cycling the mute latch
-stops the camera until the unit is rebooted.
+## Genbu Assistant
 
-## Under the hood
+A Home Assistant integration, in [`ha/custom_components/genbu`](ha/custom_components/genbu). Copy that
+folder to `/config/custom_components/genbu/` on Home Assistant and restart it; the installer adds the
+integration from there. It gives the house one place for its Shows:
 
-| Layer | What |
+- **Updates.** Genbu Assistant reads the release channel once for the whole house and offers one update
+  card, *Genbu Show firmware*. Every Show follows it, so they stay on the same version and don't each ask
+  about an update.
+- **Genbu Control Center.** A page in the sidebar with a card for the house and one per Show, in groups
+  that fold away, with each Show's own automations and a switch per Show for each optional feature.
+- **The assistant.** The wake word runs on the Show (Okay Nabu by default), the voice pipeline in Home
+  Assistant. When the house's assistant is a language model, Genbu gives it a tool for the Shows'
+  firmware, so "update yourself" works however it is said.
+
+[docs/genbu-assistant.md](docs/genbu-assistant.md) has the design and what was decided;
+[docs/update-leader.md](docs/update-leader.md) has how updates work across the house.
+
+## Updates and channels
+
+Releases are signed with an Ed25519 key, and a Show takes only what that key signed
+([docs/ota-identity.md](docs/ota-identity.md)). A Show installs into the spare of two root filesystem
+slots, boots it on trial and falls back by itself when it doesn't settle.
+
+There are three channels. Genbu Assistant has one channel for the whole house; a Show without it follows
+its own channel setting.
+
+| Channel | Branch | Release names |
+|---|---|---|
+| stable | `stable` | `vX.Y.Z-stable.N` |
+| staging | `staging` | `vX.Y.Z-staging.N` |
+| dev | `dev` | `vX.Y.Z-dev.N` |
+
+A push to one of those branches tests, builds, signs and publishes a release on its channel. Work goes
+dev, then staging, then stable.
+
+- [docs/ota-channels.md](docs/ota-channels.md): how the channels serve updates and how versions rank.
+- [docs/release-pipeline.md](docs/release-pipeline.md): what a release contains and how it is made.
+- [docs/WORKFLOW.md](docs/WORKFLOW.md): branches, from a task to stable.
+
+## What's in the repository
+
+| Path | What |
 |---|---|
-| Boot | Amazon's LK, unlocked with amonet; the LineageOS 4.9 kernel rebuilt with Bluetooth; a rescue initramfs that picks a slot |
-| System | Alpine Linux armv7 in two root filesystem slots, read-only, with a trial-and-commit boot counter |
-| Daemon | `echod`, one Go binary: audio, wake word, echo cancellation, screen renderer, touch, camera ISP, Bluetooth, updates |
-| Home Assistant | The native ESPHome API: voice satellite, media player, camera, update entity, dozens of settings |
+| `echod/` | The daemon: audio, wake word, echo cancellation, screen, touch, camera, Bluetooth, updates, the ESPHome API |
+| `ha/` | Genbu Assistant, with its tests |
+| `dashcast/` | Streams Home Assistant dashboards to the Show's screen ([dashcast/README.md](dashcast/README.md)) |
+| `catalogue/` | Products and boards, and the pins for each board's files |
+| `tools/jarvis-show.py`, `tools/jarvis_crown/` | The installer |
+| `tools/linux/` | The root filesystem and boot image tooling ([tools/linux/README.md](tools/linux/README.md)) |
+| `tools/release-jarvis-show.sh` | Signs and publishes a release |
+| `docs/` | Design notes, runbooks, acceptance lists |
 
-- [docs/overview.md](docs/overview.md): the one-page description of how it all fits.
-- [docs/porting-plan.md](docs/porting-plan.md): how it was built, step by step, dead ends included.
-- [docs/hardware.md](docs/hardware.md): the `cronos` hardware and the unlock path.
-- [docs/camera-research.md](docs/camera-research.md): driving the camera's ISP from userspace.
-- [docs/building.md](docs/building.md): building it yourself: where every input comes from
-  (`tools/fetch-inputs.py`), and the daemon, kernel, boot image and root filesystem builds, for each OS.
-- [tools/linux/README.md](tools/linux/README.md): the image tooling in detail.
+## Tests
 
-## Sister projects
+```sh
+python3 -m unittest discover -s tests -p 'test_*.py'
+(cd echod && go vet ./... && go test ./...)
+python3 tools/board_names.py          # no board names creep back into code
+python3 tools/secret_scan.py --here   # before every push
+```
 
-**[TECHO5 Dot](https://github.com/HuskerMinion/techo5-dot)** does the same for the Echo Dot 2nd
-generation: Linux in place of Fire OS, all seven microphones, Bluetooth speaker mode, signed
-updates. **[TECHO5 Spot](https://github.com/HuskerMinion/techo5-spot)** does it for the Echo Spot
-(1st gen), on its round screen. All three run the same daemon source, built per device.
+`ha/tests` runs under `pytest` with `pytest-homeassistant-custom-component`. CI runs the checks on every
+`feature/`, `task/` and `fix/` branch.
 
-## Made possible by
+## Upstream and credits
 
-TECHO5 exists because of these projects and the people behind them.
+Genbu Show is TECHO5 underneath, and TECHO5 started from
+[EchoLocal](https://github.com/ygelfand/echolocal) by Yuri Gelfand, which turned the Echo Dot 2 into an
+ESPHome satellite with a single Go daemon. Most of what makes a Show run under Linux is their work.
+TECHO5's credits, as upstream lists them:
 
 **The path here**
 - [EchoLocal](https://github.com/ygelfand/echolocal) (MIT, Yuri Gelfand): the daemon TECHO5 is built
-  on (see [Built on EchoLocal](#built-on-echolocal)), and
-  [go-esphome-device](https://github.com/ygelfand/go-esphome-device), the ESPHome device API it speaks.
+  on, and [go-esphome-device](https://github.com/ygelfand/go-esphome-device), the ESPHome device API it
+  speaks.
 - **amonet-cronos and kaeru** (k4y0z, [R0rt1z2](https://github.com/R0rt1z2)): the bootloader unlock
   and recovery that make any of this possible.
 - [@proffalken](https://github.com/proffalken): the
   [step-by-step install from Linux](https://gist.github.com/proffalken/377ae50146affe1886dddaaacb87926b)
-  that [Getting started](docs/getting-started.md) and the cross-platform installers are based on.
+  that TECHO5's [Getting started](docs/getting-started.md) and cross-platform installers are based on.
 - **LineageOS 18.1 for `cronos`** (unofficial, R0rt1z2), built on
   [Amazon's GPL kernel source](https://github.com/amazon-oss/android_kernel_amazon_mt8163): the
   kernel TECHO5 rebuilds and the vendor drivers it keeps. [TWRP](https://twrp.me/) stays as the way back.
@@ -301,7 +150,7 @@ TECHO5 exists because of these projects and the people behind them.
   let the camera run from userspace.
 - [@Empty2k12](https://github.com/Empty2k12): the first hardware findings from an Echo Show 5 1st gen
   (`checkers`), including the recipe that made its speaker play, in
-  [pull request #2](https://github.com/HuskerMinion/techo5/pull/2).
+  [TECHO5 pull request #2](https://github.com/HuskerMinion/techo5/pull/2).
 - [@JonGilmore](https://github.com/JonGilmore): every 1st gen build tested on a real unit, two days of
   it. The microphones, the mute latch cutting their power, the camera and the spoken replies were all
   found or confirmed from what he reported.
@@ -330,43 +179,14 @@ TECHO5 exists because of these projects and the people behind them.
   [sipgo](https://github.com/emiago/sipgo) (Emir Aganovic), [Pion](https://github.com/pion) SRTP and
   RTP, and zaf/g711.
 
-See [NOTICE](NOTICE) for licenses of code carried in this repository.
-
-<details>
-<summary>The older route: the daemon beside LineageOS (Windows, PowerShell)</summary>
-
-Before the Linux image, the daemon ran as an init service on LineageOS 18.1. That still works, on a
-unit with USB debugging and rooted debugging enabled:
-
-```powershell
-cd echod
-$env:GOOS='linux'; $env:GOARCH='arm'; $env:GOARM='7'; $env:CGO_ENABLED='0'
-go build -trimpath -ldflags '-s -w' -o ../bin/echod-arm ./cmd/echod
-cd ..
-.\tools\install-cronos.ps1 -Serial <adb serial> -Name "Kitchen" -KeyFile .\kitchen.psk
-```
-
-The installer puts the daemon in place as an init service, switches Android to its null audio HAL
-(the daemon owns the microphone and speaker), provisions the name, API key and wake word models, and
-reboots. Home Assistant then discovers the device as an ESPHome node; paste the key when asked.
-Android and any app on the screen keep running, silently.
-
-</details>
+[NOTICE](NOTICE) has the licenses of the code carried in this repository.
 
 ## License
 
-GPL-3.0 or later. See [LICENSE](LICENSE). Anyone may use, change, share and sell it, as long as
-what they pass on stays open under the same terms.
+GPL-3.0 or later, see [LICENSE](LICENSE). Anyone may use, change, share and sell it, as long as what
+they pass on stays open under the same terms.
 
-This fork started from [TECHO5](https://github.com/HuskerMinion/techo5) and
-[EchoLocal](https://github.com/ygelfand/echolocal), both MIT. Their code stays under their MIT
-licences, whose notices are in [NOTICE](NOTICE) along with every other part's.
+TECHO5 and EchoLocal are both MIT. Their code stays under their MIT licences, whose notices are in
+[NOTICE](NOTICE) along with every other part's.
 
-TECHO5 isn't affiliated with Amazon. Echo and Alexa are trademarks of Amazon.com, Inc.
-
-
-## Jarvis Show release repository
-
-Official fork/releases: https://github.com/vardstein/techo5JarvisAssistant
-
-Device OTA trusts only the Jarvis Show Ed25519 release key; see `docs/ota-identity.md`.
+Genbu Show isn't affiliated with Amazon. Echo and Alexa are trademarks of Amazon.com, Inc.
