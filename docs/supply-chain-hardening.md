@@ -24,6 +24,8 @@ The updater and host installer both require the expected product and the physica
 
 `cronos` came after the first release, so it reads a signed manifest of its own, `manifest-cronos.json`, with `"boards": ["cronos"]`. The `manifest.json` that older Crown and Checkers Shows read never names it: those Shows were built before `cronos` was a board and would refuse the whole manifest (`supportedBoards` and `ownManifestBoards` in `echod/internal/update/manifest.go`).
 
+Every release also signs `manifest-v2.json`, naming every board the rootfs lists. On the bridge release a Show reads it only once its `board.json` agrees with the board echod finds; after the bridge, echod reads nothing else, and the old names on a release are the bridge's, copied only after their checksums, signature, product, version and boards check out. A v2-reading Show passes over boards it doesn't know instead of refusing the manifest. Duplicate boards and a missing own board still fail closed. See "Manifest names" in `release-pipeline.md`.
+
 This is deliberately separate from CPU architecture. All three boards are MT8163; architecture alone cannot prevent a cross-product/cross-board release mistake.
 
 ## Download integrity and rootfs identity
@@ -57,6 +59,8 @@ The host build therefore does not bootstrap trust from the downloaded `apk.stati
 ## Stable/dev channels
 
 Stable and dev use the same signature and artifact checks. Channel selection changes only which signed manifest URL is fetched.
+
+The URLs below are the first Shows' names. A Show after the bridge release reads `manifest-v2.json` at the same place, and so does Home Assistant first (GENBU-191).
 
 - stable: `https://github.com/vardstein/techo5JarvisAssistant/releases/latest/download/manifest.json`
 - staging: `https://github.com/vardstein/techo5JarvisAssistant/releases/download/channel-staging/manifest.json`

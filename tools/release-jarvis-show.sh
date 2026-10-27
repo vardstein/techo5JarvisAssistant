@@ -27,10 +27,13 @@ usage: $0 --version vX.Y.Z[...prerelease] --notes TEXT --binary FILE --rootfs FI
 Without --publish the script only validates artifacts and writes signed manifest/SHA256SUMS into --out.
 It does not build the rootfs or boot images.
 
-When the rootfs lists cronos (in "more_boards"), the release also gets manifest-cronos.json: cronos
-reads its own signed manifest so crown and checkers Shows, which refuse a manifest naming a board they
-don't know, never see one that does. --cronos-boot is published as techo5-boot-VERSION.img, the name
-install-show.py looks for on cronos.
+This release's echod goes by board.json alone, so it signs one manifest of its own, manifest-v2.json,
+naming every board the rootfs lists and every boot image (GENBU-191). Shows from before read
+manifest.json (crown, checkers) and manifest-cronos.json (cronos); those stay on the bridge release, the
+last one that finds the board itself. The release copies them from the newest bridge pinned in
+tools/ota_bridge.txt that its channel may carry, after checking them against the bridge's SHA256SUMS
+and the release key. With no bridge pinned there is no release. --cronos-boot is published as
+techo5-boot-VERSION.img, the name install-show.py looks for on cronos.
 
 --channel says which update channel the release is for, and must agree with the name: -stable.N or no
 suffix is stable, -staging.N or -rc.N is staging and anything else is dev. Without it the name decides.
@@ -91,9 +94,8 @@ if st.st_mode & 0o077:
     raise SystemExit("signing key permissions are too open; require owner-only access (0600 or stricter)")
 PYKEY
 command -v go >/dev/null || { echo "go not found" >&2; exit 2; }
-if [ -n "$PUBLISH" ]; then
-  command -v gh >/dev/null || { echo "gh not found" >&2; exit 2; }
-fi
+# Even without --publish: the bridge's manifests come from its release (GENBU-191).
+command -v gh >/dev/null || { echo "gh not found" >&2; exit 2; }
 
 mkdir -p "$OUT"
 chmod 700 "$OUT"
@@ -119,13 +121,13 @@ fi
 
 # The product id comes from the board catalogue (catalogue/products/), like the installer's (GENBU-174).
 PRODUCT=$(PYTHONPATH="$ROOT/tools" python3 -c 'from jarvis_crown.catalogue import load_or_exit; print(load_or_exit().product()["id"])')
-# So do the boards the first release named, which share manifest.json (GENBU-176).
+# So do the boards the first release named, which the bridge's manifest.json names (GENBU-176).
 FIRST=$(PYTHONPATH="$ROOT/tools" python3 -c 'from jarvis_crown.catalogue import first_boards; print(*first_boards())')
 
 # Rootfs has one shared product marker and must explicitly support every first-release board; cronos
-# is optional and comes from "more_boards". The last line printed says whether it is there.
+# is optional and comes from "more_boards". The last line printed is every board it lists.
 rootfs_sha=$(sha256sum "$ROOTFS" | awk '{print $1}')
-cronos=$(PYTHONPATH="$ROOT/tools" python3 - "$ROOTFS" "$rootfs_sha" "$VERSION" <<'PY'
+boards=$(PYTHONPATH="$ROOT/tools" python3 - "$ROOTFS" "$rootfs_sha" "$VERSION" <<'PY'
 import pathlib, sys
 from jarvis_crown.catalogue import first_boards
 from jarvis_crown.install import PROFILE_ID, verify_jarvis_rootfs
@@ -138,15 +140,17 @@ for board in first_boards():
     if ident.version != sys.argv[3]:
         raise SystemExit(f"rootfs marker version {ident.version!r} does not match release filename")
 print("PASS: shared Jarvis Show rootfs marker/version", file=sys.stderr)
-print("cronos" if "cronos" in ident.boards else "")
+print(*ident.boards)
 PY
 )
+cronos=
+case " $boards " in *" cronos "*) cronos=cronos;; esac
 if [ -n "$CRONOS_BOOT" ] && [ "$cronos" != cronos ]; then
   echo "--cronos-boot given, but the rootfs does not list cronos" >&2; exit 2
 fi
 
 from="https://github.com/$REPO/releases/download/$VERSION"
-mk=(run ./cmd/mkmanifest
+mkv=(run ./cmd/mkmanifest
   -version "$VERSION"
   -product "$PRODUCT"
   -title "Jarvis Show $VERSION"
@@ -155,34 +159,47 @@ mk=(run ./cmd/mkmanifest
   -from "$from"
   -arm "$OUT/echod-arm"
   -rootfs-arm "$OUT/jarvis-show-rootfs-$VERSION.tar.gz"
-  -out "$OUT/manifest.json"
+  -out "$OUT/manifest-v2.json"
   -sign-key "$SIGN_KEY")
-for board in $FIRST; do mk+=(-board "$board"); done
-for asset in "${assets[@]}"; do mk+=(-asset "$asset"); done
-(cd "$ROOT/echod" && go "${mk[@]}")
-if [ "$cronos" = cronos ]; then
-  mkc=(run ./cmd/mkmanifest
-    -version "$VERSION"
-    -product "$PRODUCT"
-    -board cronos
-    -title "Jarvis Show $VERSION"
-    -notes "$NOTES"
-    -release-url "https://github.com/$REPO/releases/tag/$VERSION"
-    -from "$from"
-    -arm "$OUT/echod-arm"
-    -rootfs-arm "$OUT/jarvis-show-rootfs-$VERSION.tar.gz"
-    -out "$OUT/manifest-cronos.json"
-    -sign-key "$SIGN_KEY")
-  for asset in "${cronos_assets[@]}"; do mkc+=(-asset "$asset"); done
-  (cd "$ROOT/echod" && go "${mkc[@]}")
+for board in $boards; do mkv+=(-board "$board"); done
+for asset in "${assets[@]}" "${cronos_assets[@]}"; do mkv+=(-asset "$asset"); done
+(cd "$ROOT/echod" && go "${mkv[@]}")
+
+# The old names come from the bridge release as it published them (GENBU-191, tools/ota_bridge.py).
+# Each file has to match the bridge's SHA256SUMS, each manifest has to be signed by the release key
+# and be that release, and each has to name the boards that read it, before it goes out again here.
+BRIDGE=$(python3 "$ROOT/tools/ota_bridge.py" --channel "$CHANNEL" --version "$VERSION")
+bridge_dir="$OUT/bridge"
+rm -rf "$bridge_dir"
+mkdir -p "$bridge_dir"
+fetch() { gh release download "$BRIDGE" --repo "$REPO" --dir "$bridge_dir" --pattern "$1"; }
+for name in SHA256SUMS manifest.json manifest.json.sig; do fetch "$name"; done
+old=(manifest.json)
+if awk '$2 == "manifest-cronos.json"' "$bridge_dir/SHA256SUMS" | grep -q .; then
+  fetch manifest-cronos.json
+  fetch manifest-cronos.json.sig
+  old+=(manifest-cronos.json)
 fi
+for name in "${old[@]}"; do
+  for file in "$name" "$name.sig"; do
+    line=$(awk -v f="$file" '$2 == f' "$bridge_dir/SHA256SUMS")
+    [ "$(printf '%s\n' "$line" | grep -c .)" = 1 ] || { echo "bridge $BRIDGE: SHA256SUMS does not list $file once" >&2; exit 1; }
+    (cd "$bridge_dir" && printf '%s\n' "$line" | sha256sum --check --quiet --strict -) || { echo "bridge $BRIDGE: $file does not match its SHA256SUMS" >&2; exit 1; }
+  done
+  want=$FIRST
+  [ "$name" = manifest.json ] || want=cronos
+  got=$(cd "$ROOT/echod" && go run ./cmd/mkmanifest -check "$bridge_dir/$name" -product "$PRODUCT" -version "$BRIDGE")
+  [ "$got" = "$want" ] || { echo "bridge $BRIDGE: $name names boards '$got', not '$want'" >&2; exit 1; }
+  cp "$bridge_dir/$name" "$bridge_dir/$name.sig" "$OUT/"
+done
+echo "PASS: old manifest names copied from bridge $BRIDGE: ${old[*]}"
 
 (
   cd "$OUT"
-  files=(echod-arm "jarvis-show-rootfs-$VERSION.tar.gz" manifest.json manifest.json.sig)
+  files=(echod-arm "jarvis-show-rootfs-$VERSION.tar.gz" manifest.json manifest.json.sig manifest-v2.json manifest-v2.json.sig)
   [ -z "$CROWN_BOOT" ] || files+=("techo5-boot-crown-$VERSION.img")
   [ -z "$CHECKERS_BOOT" ] || files+=("techo5-boot-checkers-$VERSION.img")
-  [ "$cronos" != cronos ] || files+=(manifest-cronos.json manifest-cronos.json.sig)
+  [ "${#old[@]}" = 1 ] || files+=(manifest-cronos.json manifest-cronos.json.sig)
   [ -z "$CRONOS_BOOT" ] || files+=("techo5-boot-$VERSION.img")
   sha256sum "${files[@]}" > SHA256SUMS
 )
@@ -195,7 +212,8 @@ release_args=(release create "$VERSION" --repo "$REPO" --title "Jarvis Show $VER
 # Stable is GitHub's "latest" release; everything else is a prerelease, so a stable device never sees it.
 if [ "$CHANNEL" = stable ]; then release_args+=(--latest); else release_args+=(--prerelease --latest=false); fi
 release_args+=("$OUT/echod-arm" "$OUT/jarvis-show-rootfs-$VERSION.tar.gz" "$OUT/manifest.json" "$OUT/manifest.json.sig" "$OUT/SHA256SUMS")
-[ "$cronos" != cronos ] || release_args+=("$OUT/manifest-cronos.json" "$OUT/manifest-cronos.json.sig")
+release_args+=("$OUT/manifest-v2.json" "$OUT/manifest-v2.json.sig")
+[ "${#old[@]}" = 1 ] || release_args+=("$OUT/manifest-cronos.json" "$OUT/manifest-cronos.json.sig")
 release_args+=("${assets[@]}" "${cronos_assets[@]}")
 gh "${release_args[@]}"
 

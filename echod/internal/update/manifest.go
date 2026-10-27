@@ -87,19 +87,32 @@ var arch = runtime.GOARCH + archSuffix
 // refuse any manifest naming it, which is why newer boards read a manifest of their own (ManifestName).
 var supportedBoards = map[string]bool{"crown": true, "checkers": true, "cronos": true}
 
+// KnownBoard is whether this build knows board as one a Jarvis Show release may name.
+func KnownBoard(board string) bool { return supportedBoards[board] }
+
 // ownManifestBoards came after the first release: each has its own signed manifest-<board>.json, so the
 // manifest.json older crown and checkers Shows read never names a board they don't know. It must be the
 // product's boards minus its first_boards in catalogue/products/ (tests/test_show_board_lists.py).
 var ownManifestBoards = map[string]bool{"cronos": true}
 
-// ManifestName is the signed manifest this board reads in a release: manifest.json, or
-// manifest-<board>.json for a board in ownManifestBoards.
+// ManifestName is the signed manifest a Show from before GENBU-191 reads on board: manifest.json, or
+// manifest-<board>.json for a board in ownManifestBoards. This echod reads V2Manifest instead; releases
+// carry these names copied from the bridge release.
 func ManifestName(board string) string {
 	if ownManifestBoards[board] {
 		return "manifest-" + board + ".json"
 	}
 	return "manifest.json"
 }
+
+// V2Manifest is the signed manifest this echod reads in a release (GENBU-191). Every board reads the same
+// one. It goes by board.json alone, so the names older Shows read (ManifestName) stay on the bridge
+// release, the last one that finds the board itself: a Show that can't be told which board it is stays
+// there instead of taking a release it can't check.
+const V2Manifest = "manifest-v2.json"
+
+// manifestName is the signed manifest this Show reads in a release.
+func manifestName() string { return V2Manifest }
 
 // deviceBoard is the board updates go by: on a Show, board.json's and nothing else, so a Show without
 // one refuses every manifest (GENBU-193). Variable only so tests can stand on any board.
@@ -165,7 +178,7 @@ func fetch(ctx context.Context, url string) (Manifest, error) {
 
 // channelURL is where this board reads the channel's manifest, a variable so a test can serve the
 // channel itself.
-var channelURL = func(c Channel) string { return c.URLFor(deviceBoard) }
+var channelURL = func(c Channel) string { return c.at(manifestName()) }
 
 // get fetches a small file through the updater's own client, refusing anything over max bytes.
 func get(ctx context.Context, url string, max int64) ([]byte, error) {
@@ -193,6 +206,9 @@ func get(ctx context.Context, url string, max int64) ([]byte, error) {
 
 // ValidFor binds a signed manifest to one product and one detected board. A valid signature proves
 // who produced a manifest; these fields prove that what they produced was intended for this appliance.
+// A board this build doesn't know is passed over rather than refused: V2Manifest names every board of
+// its release, newer ones too, and only whether it names this one matters here. mkmanifest refuses an
+// unknown board where a release is made (KnownBoard), so a typo still cannot be published.
 func (m Manifest) ValidFor(product, board string) error {
 	if m.Product != product {
 		return mark(ErrNotForThisShow, fmt.Errorf("update: manifest product %q is not %q", m.Product, product))
@@ -206,9 +222,6 @@ func (m Manifest) ValidFor(product, board string) error {
 	found := false
 	seen := make(map[string]bool, len(m.Boards))
 	for _, candidate := range m.Boards {
-		if !supportedBoards[candidate] {
-			return fmt.Errorf("update: manifest names unsupported board %q", candidate)
-		}
 		if seen[candidate] {
 			return fmt.Errorf("update: manifest names board %q more than once", candidate)
 		}

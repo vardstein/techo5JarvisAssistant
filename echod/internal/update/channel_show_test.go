@@ -24,27 +24,42 @@ func TestJarvisShowReleaseChannels(t *testing.T) {
 	}
 }
 
-// cronos came after the first release, so it reads manifest-cronos.json and crown and checkers Shows,
-// which refuse a manifest naming a board they don't know, never see it.
-func TestCronosReadsItsOwnManifest(t *testing.T) {
-	old, oldBoard := releases, deviceBoard
-	t.Cleanup(func() { releases, deviceBoard = old, oldBoard })
+// Shows from before GENBU-191 read these names; releases still carry them, copied from the bridge
+// release. cronos came after the first release, so it reads manifest-cronos.json and crown and checkers
+// Shows, which refuse a manifest naming a board they don't know, never see it.
+func TestOlderShowsReadTheOldNames(t *testing.T) {
+	old := releases
+	t.Cleanup(func() { releases = old })
 	releases = defaultReleases
 	for board, want := range map[string]string{
 		"crown":    "https://github.com/vardstein/techo5JarvisAssistant/releases/download/channel-dev/manifest.json",
 		"checkers": "https://github.com/vardstein/techo5JarvisAssistant/releases/download/channel-dev/manifest.json",
 		"cronos":   "https://github.com/vardstein/techo5JarvisAssistant/releases/download/channel-dev/manifest-cronos.json",
 	} {
-		deviceBoard = board
-		if got := channelURL(Dev); got != want {
+		if got := Dev.URLFor(board); got != want {
 			t.Fatalf("%s dev URL = %q, want %q", board, got, want)
 		}
 	}
-	deviceBoard = "cronos"
 	if got, want := Stable.URLFor("cronos"), "https://github.com/vardstein/techo5JarvisAssistant/releases/latest/download/manifest-cronos.json"; got != want {
 		t.Fatalf("cronos stable URL = %q, want %q", got, want)
 	}
-	if got, want := tagURL("v1.3.0"), "https://github.com/vardstein/techo5JarvisAssistant/releases/download/v1.3.0/manifest-cronos.json"; got != want {
-		t.Fatalf("cronos tag URL = %q, want %q", got, want)
+}
+
+// This echod reads manifest-v2.json on every board, by channel and by tag (GENBU-191).
+func TestEveryBoardReadsTheV2Manifest(t *testing.T) {
+	old, oldBoard := releases, deviceBoard
+	t.Cleanup(func() { releases, deviceBoard = old, oldBoard })
+	releases = defaultReleases
+	for _, board := range []string{"crown", "checkers", "cronos", ""} {
+		deviceBoard = board
+		if got, want := channelURL(Dev), "https://github.com/vardstein/techo5JarvisAssistant/releases/download/channel-dev/manifest-v2.json"; got != want {
+			t.Fatalf("%q dev URL = %q, want %q", board, got, want)
+		}
+		if got, want := channelURL(Stable), "https://github.com/vardstein/techo5JarvisAssistant/releases/latest/download/manifest-v2.json"; got != want {
+			t.Fatalf("%q stable URL = %q, want %q", board, got, want)
+		}
+		if got, want := tagURL("v1.3.0"), "https://github.com/vardstein/techo5JarvisAssistant/releases/download/v1.3.0/manifest-v2.json"; got != want {
+			t.Fatalf("%q tag URL = %q, want %q", board, got, want)
+		}
 	}
 }
