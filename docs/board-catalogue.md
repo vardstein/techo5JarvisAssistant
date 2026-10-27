@@ -420,10 +420,8 @@ it, as Jade decided on 2026-10-20.
 
 ## Next owners to fold in
 
-Stage b moved the installer (`tools/jarvis_crown/` and the two CLIs that use it). These still own a
-board fact of their own:
-
-- `live-acceptance.py` J38: the display gate asks for crown and checkers only (GENBU-176, open).
+Stage b moved the installer (`tools/jarvis_crown/` and the two CLIs that use it). `live-acceptance.py`
+J38 now asks for every board the product lists (GENBU-176).
 
 These can't read the catalogue, so they keep their own copy and a test fails when it disagrees
 (GENBU-176, GENBU-177): `dashcast/serve.go` geometry and echod's `manifest.go` board lists

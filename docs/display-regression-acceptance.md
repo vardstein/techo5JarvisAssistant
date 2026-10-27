@@ -54,5 +54,6 @@ After each board has been checked physically, record the screenshot/photo and ex
 operator confirmations; it does not inspect an image and cannot invent a visual PASS. The state file
 defaults to `~/.local/state/jarvis-show/live-acceptance.json` with mode `0600`.
 
-Example flags mirror every physical observation above; both `crown` and `checkers` must be recorded
-before `tools/live-acceptance.py verify` can pass.
+Example flags mirror every physical observation above; every board the product lists in the board
+catalogue (`catalogue/products/`), later ones like `cronos` too, must be recorded before
+`tools/live-acceptance.py verify` can pass.
