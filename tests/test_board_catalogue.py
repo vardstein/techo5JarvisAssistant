@@ -356,6 +356,38 @@ class CatalogueValidatorTest(unittest.TestCase):
         self.assertIn("amonet zips only", self.broken("assets/techo5-boot-v0.7.16.json",
                                                        lambda d: d.update(wordmark={})))
 
+    def test_licence(self):
+        # GENBU-186: a pinned asset without a licence record stops the catalogue, and the record is checked.
+        boot = "assets/techo5-boot-v0.7.16.json"
+        self.assertIn("without a licence record", self.broken(boot, lambda d: d.pop("licence")))
+
+        def part(change):
+            return lambda d: change(d["licence"]["parts"][0])
+
+        for spdx in ("MIT AND", "AND MIT", "(MIT OR ISC", "MIT)", "MIT ISC", "LicenseRef-unknown", "", "MIT, ISC"):
+            with self.subTest(spdx=spdx):
+                self.broken(boot, part(lambda p: p.update(spdx=spdx)))
+        self.assertIn("non-empty list", self.broken(boot, lambda d: d["licence"].update(parts=[])))
+        self.assertIn("non-empty list", self.broken(boot, part(lambda p: p.update(sources=[]))))
+        self.assertIn("https address", self.broken(boot, part(lambda p: p.update(sources=["http://example.org"]))))
+        self.assertIn("unknown", self.broken(boot, part(lambda p: p.update(note="x"))))
+        self.assertIn("unknown", self.broken(boot, lambda d: d["licence"].update(by="me")))
+        self.broken(boot, lambda d: d["licence"].update(checked="27.10.2026"))
+
+    def test_licence_record_loads(self):
+        # Nested expressions and both findings parse; an unpinned asset needs no record, nothing uses it.
+        root = self.copy()
+        path = root / "assets/techo5-boot-v0.7.16.json"
+        data = json.loads(path.read_text())
+        data["licence"]["parts"][0]["spdx"] = "MIT AND ((AFL-2.1 OR GPL-2.0-or-later) AND GPL-2.0-only WITH Linux-syscall-note)"
+        data["licence"]["parts"][1]["spdx"] = "LicenseRef-not-stated OR LicenseRef-per-file-notices"
+        path.write_text(json.dumps(data))
+        Catalogue(root)
+        for key in ("sha256", "size", "licence"):
+            del data[key]
+        path.write_text(json.dumps(data))
+        Catalogue(root)
+
     def test_notes_must_be_text(self):
         self.broken("boards/cronos.json", lambda d: d.update(notes=""))
         self.broken("assets/techo5-boot-v0.7.16.json", lambda d: d.update(notes=["a list"]))

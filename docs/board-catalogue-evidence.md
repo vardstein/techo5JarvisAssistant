@@ -127,17 +127,18 @@ board they were about. A comment moved into `notes` is still only a claim.
 | # | Fact | State |
 |---|---|---|
 | A1 | the Lineage and boot pins equal what upstream publishes | proven 2026-10-19 (GENBU-187): `docs/dumps/upstream-pins-2026-10-19.txt`. Lineage: GitHub asset digest and the release-notes sha256sum (amazon-oss signs nothing). Boot: asset digest, `SHA256SUMS`, and `manifest.json`, whose signature verifies against upstream's own release key |
-| A2 | licence of each asset | unknown (all 9) |
+| A2 | each asset's `licence` record says what its sources state | proven 2026-10-27 (GENBU-186): every https source was read at the commit or tag it names and answers 200; the `asset:` ones were read in the files on this PC: the three amonet zips (no licence or notice file in any), the three Lineage system images (one identical `NOTICE.html.gz`, 157 licence texts, 141 of 146 files in `/system/vendor/lib` without an entry), and the checkers v1.0.1 and v0.7.16 ramdisks (`lib/apk/db/installed`). `tests/test_board_catalogue.py` checks the shape and the refusal |
+| A3 | the parts of each file come from the sources its record names | claimed: that `<board>-kaeru.bin` was built from kaeru at the pinned commit, and which of kaeru's files it pulls in; that the zips' `payload.bin` and `pl.bin` were built from amonet's `brom-payload` (its Makefile builds both there); and that the crown v1.0.1 ramdisk is v0.8.0's byte for byte (the asset's notes; v1.0.1 isn't on this PC, v0.8.0 is) |
 
 ## 3. Counts
 
-Board and asset facts (section 2): **27 proven, 14 claimed, 5 unknown** (GENBU-180/181 added C4, C5, C6,
+Board and asset facts (section 2): **28 proven, 15 claimed, 4 unknown** (GENBU-180/181 added C4, C5, C6,
 K4, K5, K6, R5 and GENBU-187 added A1 on 2026-10-19; GENBU-182 added C15 and proved R10 and K9 on 2026-10-20;
-GENBU-184 proved K15 and added K16 on 2026-10-20).
+GENBU-184 proved K15 and added K16 on 2026-10-20; GENBU-186 proved A2 and added A3 on 2026-10-27).
 
-- proven: C4, C5, C6, C7, C8, C10, C11, C12, C15, K4, K5, K6, K7, K8, K9, K10, K11, K12, K13, K15, R3, R4, R5, R6, R7, R10, A1
-- claimed: C1, C2, C3, C9, C13, C14, K1, K2, K3, R1, R2, R8, R9, R12
-- unknown: K14, K16, R11, R13, A2
+- proven: C4, C5, C6, C7, C8, C10, C11, C12, C15, K4, K5, K6, K7, K8, K9, K10, K11, K12, K13, K15, R3, R4, R5, R6, R7, R10, A1, A2
+- claimed: C1, C2, C3, C9, C13, C14, K1, K2, K3, R1, R2, R8, R9, R12, A3
+- unknown: K14, K16, R11, R13
 
 Installer-unchanged facts (section 1): 12 proven.
 

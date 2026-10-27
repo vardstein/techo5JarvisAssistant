@@ -57,6 +57,13 @@ _MEMBER = re.compile(r"^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$")
 _PARTITION = re.compile(r"^mmcblk0p[1-9][0-9]*$")
 _PARTNAME = re.compile(r"^[A-Za-z0-9_]+$")
 _BINARY = re.compile(r"^[A-Za-z0-9._-]+$")
+# A pinned asset's licence record names the terms each part of the file comes under, read from a
+# primary source (GENBU-186). Two LicenseRef values stand for findings, not gaps: not-stated means the
+# part's source states no terms at all, per-file-notices means the file carries its own notice list.
+LICENCE_REFS = frozenset({"LicenseRef-not-stated", "LicenseRef-per-file-notices"})
+_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_SPDX_TOKEN = re.compile(r"\(|\)|[^\s()]+")
+_SPDX_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+-]*$")
 # Product blocks the catalogue carries but does not own the inside of. Nothing in the installer reads
 # them; they are kept here so the product has one file, and checked only for being non-empty objects.
 PRODUCT_BLOCKS = frozenset({"assistant", "display", "security", "music"})
@@ -91,6 +98,48 @@ def _int(where: str, value: Any) -> int:
     return value
 
 
+def _check_spdx(where: str, value: Any) -> None:
+    """An SPDX licence expression: ids joined by AND, OR and WITH, with parentheses. Ids are not looked up
+    in the SPDX list; a LicenseRef must be one of LICENCE_REFS."""
+    tokens = _SPDX_TOKEN.findall(_str(where, value))
+    depth, want_id = 0, True
+    for t in tokens:
+        if want_id and t == "(":
+            depth += 1
+        elif want_id and t not in ("(", ")", "AND", "OR", "WITH") and _SPDX_ID.match(t):
+            if t.startswith("LicenseRef-") and t not in LICENCE_REFS:
+                raise CatalogueError(f"{where}: {t!r} not in {sorted(LICENCE_REFS)}")
+            want_id = False
+        elif not want_id and t == ")" and depth:
+            depth -= 1
+        elif not want_id and t in ("AND", "OR", "WITH"):
+            want_id = True
+        else:
+            raise CatalogueError(f"{where}: {value!r} is not an SPDX expression")
+    if want_id or depth:
+        raise CatalogueError(f"{where}: {value!r} is not an SPDX expression")
+
+
+def _check_licence(where: str, lic: Any) -> None:
+    """When the record was checked, and for each part of the file: what it is, its SPDX expression and
+    where that was read. A source is an https address, pinned to a commit or tag where there is one, or
+    asset:<where inside the file itself>."""
+    _keys(where, lic, {"checked", "parts"})
+    _str(f"{where}/checked", lic["checked"], _DATE)
+    if not isinstance(lic["parts"], list) or not lic["parts"]:
+        raise CatalogueError(f"{where}/parts: expected a non-empty list")
+    for i, part in enumerate(lic["parts"]):
+        at = f"{where}/parts/{i}"
+        _keys(at, part, {"part", "spdx", "sources"})
+        _str(f"{at}/part", part["part"])
+        _check_spdx(f"{at}/spdx", part["spdx"])
+        if not isinstance(part["sources"], list) or not part["sources"]:
+            raise CatalogueError(f"{at}/sources: expected a non-empty list")
+        for j, source in enumerate(part["sources"]):
+            if not _str(f"{at}/sources/{j}", source).startswith(("https://", "asset:")):
+                raise CatalogueError(f"{at}/sources/{j}: an https address or asset:<path inside the file>")
+
+
 def _check_wordmark(where: str, w: Any) -> None:
     """kaeru's wordmark slot: where it is, kaeru's checked length, and kaeru's sha256 as the zip ships it
     (stock) and with each logo in it. openjade_large is a bigger OpenJade picture together with the four
@@ -122,7 +171,7 @@ def _check_wordmark(where: str, w: Any) -> None:
 
 def _check_asset(where: str, a: Any) -> None:
     _keys(where, a, {"id", "kind", "file", "url", "source", "manual"},
-          {"sha256", "size", "kaeru", "wordmark", "members", "upstream", "notes"})
+          {"sha256", "size", "kaeru", "wordmark", "members", "upstream", "licence", "notes"})
     _str(f"{where}#/id", a["id"], _ID)
     if a["kind"] not in ASSET_KINDS:
         raise CatalogueError(f"{where}#/kind: {a['kind']!r} not in {sorted(ASSET_KINDS)}")
@@ -140,6 +189,12 @@ def _check_asset(where: str, a: Any) -> None:
     if "sha256" in a:
         _str(f"{where}#/sha256", a["sha256"], _SHA256)
         _int(f"{where}#/size", a["size"])
+    # A pin is what lets a step use the file, so a pin without a licence record is refused, and with it
+    # every command that loads the catalogue (GENBU-186).
+    if "licence" in a:
+        _check_licence(f"{where}#/licence", a["licence"])
+    elif "sha256" in a:
+        raise CatalogueError(f"{where}: pinned without a licence record; refusing")
     if a["kind"] == "amonet":
         _str(f"{where}#/kaeru", a.get("kaeru"), _MEMBER)
         # Where its open-source parts live, so the fetcher can compare a new zip file by file.
