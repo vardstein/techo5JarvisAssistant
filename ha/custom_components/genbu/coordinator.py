@@ -37,7 +37,7 @@ from . import picture, race, reply_cut
 from .const import (CHANGED, CONF_SEARXNG, DOMAIN, MANUFACTURERS, NAME, NIGHT_AT, PANEL, RECIPES, SHOW_RECIPE,
                     RACED, WAKE_EVENT, WAKE_RACE, WAKE_VERDICT,
                     STORE_KEY, STORE_VERSION, UPDATE_ENTITY, VOICE_UPDATES)
-from .house import House, Show, manifest_url, newer, tag_url, valid
+from .house import MANIFESTS, House, Show, manifest_url, newer, tag_url, valid
 from .keycare import ISSUE, KeyCare
 from .music import Player, falls_back_to, own_player, plays_on, room_player, route
 from .recipe import show_action
@@ -49,6 +49,10 @@ READ_EVERY = timedelta(hours=1)  # the channel's manifest; 6 hours kept a new re
 ASKED_GAP = timedelta(minutes=1)  # a Show's Check for updates reads the channel at most this often (GENBU-157)
 SETTLE = timedelta(minutes=30)  # how long after an install the card shows how far the Shows are
 TELL_EVERY = timedelta(hours=1)  # how often a Show mentions a speaker that is off (GENBU-161)
+
+
+class NoRelease(HomeAssistantError):
+    """GitHub answered that the file isn't there, as against not answering at all."""
 
 
 def find_shows(hass: HomeAssistant) -> list[Show]:
@@ -373,17 +377,28 @@ class GenbuHouse:
     async def async_read_release(self) -> None:
         """Reads the channel's newest manifest; what was read before stays when GitHub doesn't answer."""
         try:
-            self.release = await self._manifest(manifest_url(self.house.channel))
+            self.release = await self._first_manifest(lambda name: manifest_url(self.house.channel, name))
         except HomeAssistantError as err:
             LOGGER.info("Could not read the %s channel: %s", self.house.channel, err)
         async_dispatcher_send(self.hass, CHANGED)
+
+    async def _first_manifest(self, url_of) -> dict:
+        """The release's manifest-v2.json, or its manifest.json when it has none: a release from before
+        GENBU-191. Only a missing manifest-v2.json moves on to the old name; GitHub not answering is the
+        answer, so a hiccup never shows the bridge's version in place of the release's."""
+        for name in MANIFESTS[:-1]:
+            try:
+                return await self._manifest(url_of(name))
+            except NoRelease:
+                continue
+        return await self._manifest(url_of(MANIFESTS[-1]))
 
     async def _manifest(self, url: str) -> dict:
         try:
             async with asyncio.timeout(30):
                 resp = await async_get_clientsession(self.hass).get(url)
                 if resp.status == 404:
-                    raise HomeAssistantError(f"no release there ({url})")
+                    raise NoRelease(f"no release there ({url})")
                 resp.raise_for_status()
                 data = await resp.json(content_type=None)
         except (aiohttp.ClientError, TimeoutError, ValueError) as err:
@@ -403,7 +418,7 @@ class GenbuHouse:
         if not target:
             return ""
         if target != str(self.release.get("version") or ""):
-            await self._manifest(tag_url(target))
+            await self._first_manifest(lambda name: tag_url(target, name))
         if backup:
             await self.store.async_save(self.house.data)
             if self.hass.services.has_service("backup", "create_automatic"):

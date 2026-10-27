@@ -1,0 +1,3 @@
+# Bridge releases (GENBU-191), one tag per line; see ota_bridge.py. A tag goes here by hand once that
+# release is out and its Shows have been seen to go by board.json. Until one is here, no release
+# can be published.

@@ -216,16 +216,22 @@ def channel_of(version: str) -> str:
     return name if name in CHANNELS else "stable"
 
 
-def manifest_url(channel: str) -> str:
+# The manifests a release may have, the one to read first first. Releases sign manifest-v2.json since
+# GENBU-191; from the release after the bridge on, their manifest.json is the bridge's, so it names the
+# bridge's version, not theirs. Releases before the bridge have only manifest.json.
+MANIFESTS = ("manifest-v2.json", "manifest.json")
+
+
+def manifest_url(channel: str, name: str = "manifest.json") -> str:
     """Where a channel's newest manifest is."""
     if channel == "stable":
-        return f"{RELEASES}/latest/download/manifest.json"
-    return f"{RELEASES}/download/channel-{channel}/manifest.json"
+        return f"{RELEASES}/latest/download/{name}"
+    return f"{RELEASES}/download/channel-{channel}/{name}"
 
 
-def tag_url(version: str) -> str:
+def tag_url(version: str, name: str = "manifest.json") -> str:
     """Where one version's own manifest is, for going back to it."""
-    return f"{RELEASES}/download/{version}/manifest.json"
+    return f"{RELEASES}/download/{version}/{name}"
 
 
 def _iso(t: datetime | None) -> str:

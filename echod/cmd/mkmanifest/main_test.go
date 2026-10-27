@@ -290,3 +290,51 @@ func TestJarvisShowIdentityMustBeExactBeforeManifestIsWritten(t *testing.T) {
 		t.Fatalf("valid Jarvis Show identity refused: %v", err)
 	}
 }
+
+// A release copying the bridge's manifests (GENBU-191) publishes them only when the release key signed
+// them and they are the product and version it asked for.
+func TestAPublishedManifestIsCheckedBeforeItIsCopied(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "manifest.json")
+	body, err := json.Marshal(update.Manifest{Product: update.JarvisShowProduct, Boards: []string{"crown", "checkers"}, Version: "v1.2.3-dev.7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	signed := func(m, sig []byte) error {
+		if string(sig) != "good" || string(m) != string(body) {
+			return os.ErrInvalid
+		}
+		return nil
+	}
+	if _, err := checkPublished(path, update.JarvisShowProduct, "v1.2.3-dev.7", signed); err == nil {
+		t.Fatal("a manifest without its .sig was accepted")
+	}
+	if err := os.WriteFile(path+".sig", []byte("bad"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := checkPublished(path, update.JarvisShowProduct, "v1.2.3-dev.7", signed); err == nil {
+		t.Fatal("a manifest with a bad signature was accepted")
+	}
+	if err := os.WriteFile(path+".sig", []byte("good"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string][2]string{
+		"other version": {update.JarvisShowProduct, "v1.2.3-dev.8"},
+		"other product": {"jarvis-show-vl", "v1.2.3-dev.7"},
+		"no version":    {update.JarvisShowProduct, ""},
+	} {
+		if _, err := checkPublished(path, want[0], want[1], signed); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	m, err := checkPublished(path, update.JarvisShowProduct, "v1.2.3-dev.7", signed)
+	if err != nil {
+		t.Fatalf("a good manifest was refused: %v", err)
+	}
+	if strings.Join(m.Boards, " ") != "crown checkers" {
+		t.Fatalf("boards = %v", m.Boards)
+	}
+}

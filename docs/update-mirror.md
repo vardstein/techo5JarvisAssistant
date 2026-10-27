@@ -9,7 +9,7 @@ GitHub one by one.
 
 ## What happens today
 
-- Home Assistant reads the channel's `manifest.json` every hour and offers the update on its card
+- Home Assistant reads the channel's `manifest-v2.json` (or `manifest.json` on a release from before GENBU-191) every hour and offers the update on its card
   (GENBU-258).
 - Every following Show then reads `/<version>/manifest-<board>.json` and its `.sig` from GitHub itself
   (`update.FetchTag`), checks the signature, and downloads its root filesystem from GitHub: 35.8 MB for

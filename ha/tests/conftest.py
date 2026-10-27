@@ -22,13 +22,11 @@ RELEASES: dict[str, dict] = {}
 
 @pytest.fixture(autouse=True)
 def releases(monkeypatch):
-    from homeassistant.exceptions import HomeAssistantError
-
-    from custom_components.genbu.coordinator import GenbuHouse
+    from custom_components.genbu.coordinator import GenbuHouse, NoRelease
 
     async def manifest(self, url: str) -> dict:
         if url not in RELEASES:
-            raise HomeAssistantError(f"no release there ({url})")
+            raise NoRelease(f"no release there ({url})")
         return dict(RELEASES[url])
 
     RELEASES.clear()

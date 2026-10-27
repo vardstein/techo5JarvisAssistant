@@ -66,7 +66,8 @@ an error. `boards` order is the order the installer offers them in. `first_board
 first release named. Shows from then refuse a manifest or rootfs marker naming any other board, so every
 later board reads a signed `manifest-<board>.json` of its own and sits in the marker's `more_boards`
 (`catalogue.first_boards()`, `later_boards()`, GENBU-176). Moving a board into `first_boards` would hand
-older Shows a manifest they refuse, so it never happens for a board that shipped after them. The four blocks are the product
+older Shows a manifest they refuse, so it never happens for a board that shipped after them. Since GENBU-191 a
+release signs only `manifest-v2.json`, naming every board; the per-board names come from the bridge release. The four blocks are the product
 settings that `profiles/genbu-show-v1.json` held; the checker only makes sure each is a non-empty object.
 The id is also what the rootfs marker calls "product" (`install.PROFILE_ID`). `release-jarvis-show.sh`
 reads it from the catalogue, and `install-show.py` uses `techo5lib.JARVIS_SHOW_PRODUCT`. Three places

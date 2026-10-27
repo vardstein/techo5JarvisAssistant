@@ -141,6 +141,24 @@ async def test_the_card_offers_the_channel_release(hass: HomeAssistant, hass_ws_
     assert hass.states.get(UPDATE).state == "off"
 
 
+async def test_the_house_reads_the_v2_manifest_first(hass: HomeAssistant):
+    """GENBU-191: from the bridge on, a release's manifest.json is the bridge's; manifest-v2.json names the
+    release itself. A release from before has only manifest.json, and is read as before."""
+    add_show(hass, "hall", "v1.0.3")
+    entry = await setup(hass)
+    release("v1.0.4")
+    RELEASES[manifest_url("stable", "manifest-v2.json")] = {"version": "v1.1.0", "title": "Genbu v1.1.0"}
+    await read(hass, entry)
+    assert hass.states.get(UPDATE).attributes["latest_version"] == "v1.1.0"
+
+    # Going to a version checks that release by its v2 manifest too; the old name alone is the other tests.
+    RELEASES[tag_url("v1.0.9", "manifest-v2.json")] = {"version": "v1.0.9"}
+    await hass.services.async_call("update", "install", {"entity_id": UPDATE, "version": "v1.0.9"},
+                                   blocking=True)
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.genbu_house_version").state == "v1.0.9"
+
+
 async def test_a_new_release_shows_within_the_hour_or_on_check(hass: HomeAssistant, freezer):
     """GENBU-258: the channel is read every hour, and Check for updates reads it at once."""
     add_show(hass, "hall", "v1.0.3")

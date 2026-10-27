@@ -44,7 +44,9 @@ func main() {
 		// (internal/update/trust.go), so a release without one offers nothing.
 		signKey = flag.String("sign-key", "", "the release signing key file; writes <out>.sig next to the manifest")
 		product = flag.String("product", "", "signed product identity for this release")
-		boards  boardNames
+		// A release that copies the bridge release's manifests (GENBU-191) checks each one first.
+		check  = flag.String("check", "", "check a published manifest and its .sig instead of writing one: signed by the release key, of -product and -version; prints its boards")
+		boards boardNames
 	)
 	flag.Var(&assets, "asset", "another file this release publishes, hashed and measured under its own name; repeat for each")
 	flag.Var(&boards, "board", "supported board; repeat for each board")
@@ -53,6 +55,15 @@ func main() {
 	flag.StringVar(&m.Notes, "notes", "", "release notes, shown on the card")
 	flag.StringVar(&m.ReleaseURL, "release-url", "", "what the card's link points at")
 	flag.Parse()
+	if *check != "" {
+		published, err := checkPublished(*check, *product, m.Version, update.VerifyReleaseSignature)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Println(strings.Join(published.Boards, " "))
+		return
+	}
 	m.Product = *product
 	m.Boards = append([]string(nil), boards...)
 	if m.Product == update.JarvisShowProduct {
@@ -122,6 +133,35 @@ func sign(out, keyFile string) error {
 		return fmt.Errorf("mkmanifest: signing key does not match the Jarvis Show trust root: %w", err)
 	}
 	return os.WriteFile(out+".sig", []byte(sig), 0o644)
+}
+
+// checkPublished reads a manifest another release published, with the .sig beside it, and refuses it
+// unless the release key signed it and it is product's release version. Releases from GENBU-191 on
+// publish the bridge release's manifests under the old names as they are, so these are checked before
+// they go out again: a device would refuse a bad one too, but only after it was on the channel.
+func checkPublished(path, product, version string, verify func(manifest, sig []byte) error) (update.Manifest, error) {
+	var m update.Manifest
+	if product == "" || version == "" {
+		return m, fmt.Errorf("mkmanifest: -check needs -product and -version")
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return m, err
+	}
+	sig, err := os.ReadFile(path + ".sig")
+	if err != nil {
+		return m, err
+	}
+	if err := verify(body, sig); err != nil {
+		return m, fmt.Errorf("mkmanifest: %s: %w", path, err)
+	}
+	if err := json.Unmarshal(body, &m); err != nil {
+		return m, fmt.Errorf("mkmanifest: %s: %w", path, err)
+	}
+	if m.Product != product || m.Version != version {
+		return m, fmt.Errorf("mkmanifest: %s is %q %q, not %q %q", path, m.Product, m.Version, product, version)
+	}
+	return m, nil
 }
 
 // tagName is the mistake this guard exists for. A device's tag says which device the build is for

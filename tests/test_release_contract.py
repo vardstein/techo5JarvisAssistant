@@ -100,22 +100,26 @@ class SupplyChainReleaseContractTests(unittest.TestCase):
         source = (ROOT / "tools/release-jarvis-show.sh").read_text(encoding="utf-8")
         self.assertIn('-product "$PRODUCT"', source)
         self.assertIn('print(load_or_exit().product()["id"])', source)
-        # The first-release boards share manifest.json, read from the catalogue (GENBU-176).
+        # The first-release boards come from the catalogue (GENBU-176), and are what the bridge's
+        # manifest.json has to name before this release carries it.
         self.assertIn("print(*first_boards())", source)
-        self.assertIn('for board in $FIRST; do mk+=(-board "$board"); done', source)
         self.assertIn("for board in first_boards():", source)
         self.assertNotRegex(source, r"-board (%s)\b" % "|".join(first_boards()))
-        # Each later board has a manifest of its own, and this script has to know how to make it.
-        for board in later_boards():
-            self.assertIn(f"-board {board}", source)
-            self.assertIn(f"manifest-{board}.json", source)
-        # And every release carries manifest-v2.json for every board the rootfs lists, with every boot
-        # image: the name Shows with a checked board.json read (GENBU-191).
+        # This echod reads manifest-v2.json alone: the release signs that one, for every board the rootfs
+        # lists, with every boot image (GENBU-191).
         self.assertIn('-out "$OUT/manifest-v2.json"', source)
         self.assertIn('for board in $boards; do mkv+=(-board "$board"); done', source)
         self.assertIn('for asset in "${assets[@]}" "${cronos_assets[@]}"; do mkv+=(-asset "$asset"); done', source)
         self.assertIn('"$OUT/manifest-v2.json" "$OUT/manifest-v2.json.sig"', source)
         self.assertIn("manifest-v2.json manifest-v2.json.sig)", source)
+        self.assertNotIn('-out "$OUT/manifest.json"', source)
+        # The old names are the bridge release's, copied only once they check out, and never without one.
+        self.assertIn('BRIDGE=$(python3 "$ROOT/tools/ota_bridge.py" --channel "$CHANNEL" --version "$VERSION")', source)
+        self.assertIn("sha256sum --check --quiet --strict -", source)
+        self.assertIn('go run ./cmd/mkmanifest -check "$bridge_dir/$name" -product "$PRODUCT" -version "$BRIDGE"', source)
+        self.assertIn('[ "$got" = "$want" ]', source)
+        for board in later_boards():
+            self.assertIn(f"manifest-{board}.json", source)
         self.assertIn('ident.version != sys.argv[3]', source)
         self.assertIn("signing key permissions are too open", source)
         self.assertIn("signing key must not be a symlink", source)

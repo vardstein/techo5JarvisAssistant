@@ -137,6 +137,18 @@ class ChannelTests(unittest.TestCase):
         self.assertTrue(house.manifest_url("stable").endswith("/releases/latest/download/manifest.json"))
         self.assertTrue(house.manifest_url("dev").endswith("/releases/download/channel-dev/manifest.json"))
         self.assertTrue(house.tag_url("v1.4.0").endswith("/releases/download/v1.4.0/manifest.json"))
+        # GENBU-191: manifest-v2.json first; from the bridge on, a release's manifest.json is the bridge's.
+        self.assertEqual(house.MANIFESTS, ("manifest-v2.json", "manifest.json"))
+        self.assertTrue(house.manifest_url("stable", "manifest-v2.json").endswith(
+            "/releases/latest/download/manifest-v2.json"))
+        self.assertTrue(house.manifest_url("staging", "manifest-v2.json").endswith(
+            "/releases/download/channel-staging/manifest-v2.json"))
+        self.assertTrue(house.tag_url("v1.4.0", "manifest-v2.json").endswith(
+            "/releases/download/v1.4.0/manifest-v2.json"))
+
+    def test_the_house_and_echod_read_the_same_manifest(self):
+        go = (ROOT / "echod" / "internal" / "update" / "manifest.go").read_text()
+        self.assertIn(f'const V2Manifest = "{house.MANIFESTS[0]}"', go)
 
     def test_the_addresses_are_echods(self):
         show = (ROOT / "echod" / "internal" / "update" / "releases_cronos.go").read_text()
