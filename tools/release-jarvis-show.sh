@@ -32,6 +32,10 @@ reads its own signed manifest so crown and checkers Shows, which refuse a manife
 don't know, never see one that does. --cronos-boot is published as techo5-boot-VERSION.img, the name
 install-show.py looks for on cronos.
 
+Every release also gets manifest-v2.json, naming every board the rootfs lists and every boot image. A
+Show reads it once its board.json agrees with the board it found itself (GENBU-191); releases whose
+echod goes by board.json alone are published under that name only.
+
 --channel says which update channel the release is for, and must agree with the name: -stable.N or no
 suffix is stable, -staging.N or -rc.N is staging and anything else is dev. Without it the name decides.
 A release moves its own channel and every less stable one forward (stable: stable, staging, dev;
@@ -123,9 +127,9 @@ PRODUCT=$(PYTHONPATH="$ROOT/tools" python3 -c 'from jarvis_crown.catalogue impor
 FIRST=$(PYTHONPATH="$ROOT/tools" python3 -c 'from jarvis_crown.catalogue import first_boards; print(*first_boards())')
 
 # Rootfs has one shared product marker and must explicitly support every first-release board; cronos
-# is optional and comes from "more_boards". The last line printed says whether it is there.
+# is optional and comes from "more_boards". The last line printed is every board it lists.
 rootfs_sha=$(sha256sum "$ROOTFS" | awk '{print $1}')
-cronos=$(PYTHONPATH="$ROOT/tools" python3 - "$ROOTFS" "$rootfs_sha" "$VERSION" <<'PY'
+boards=$(PYTHONPATH="$ROOT/tools" python3 - "$ROOTFS" "$rootfs_sha" "$VERSION" <<'PY'
 import pathlib, sys
 from jarvis_crown.catalogue import first_boards
 from jarvis_crown.install import PROFILE_ID, verify_jarvis_rootfs
@@ -138,9 +142,11 @@ for board in first_boards():
     if ident.version != sys.argv[3]:
         raise SystemExit(f"rootfs marker version {ident.version!r} does not match release filename")
 print("PASS: shared Jarvis Show rootfs marker/version", file=sys.stderr)
-print("cronos" if "cronos" in ident.boards else "")
+print(*ident.boards)
 PY
 )
+cronos=
+case " $boards " in *" cronos "*) cronos=cronos;; esac
 if [ -n "$CRONOS_BOOT" ] && [ "$cronos" != cronos ]; then
   echo "--cronos-boot given, but the rootfs does not list cronos" >&2; exit 2
 fi
@@ -176,10 +182,24 @@ if [ "$cronos" = cronos ]; then
   for asset in "${cronos_assets[@]}"; do mkc+=(-asset "$asset"); done
   (cd "$ROOT/echod" && go "${mkc[@]}")
 fi
+mkv=(run ./cmd/mkmanifest
+  -version "$VERSION"
+  -product "$PRODUCT"
+  -title "Jarvis Show $VERSION"
+  -notes "$NOTES"
+  -release-url "https://github.com/$REPO/releases/tag/$VERSION"
+  -from "$from"
+  -arm "$OUT/echod-arm"
+  -rootfs-arm "$OUT/jarvis-show-rootfs-$VERSION.tar.gz"
+  -out "$OUT/manifest-v2.json"
+  -sign-key "$SIGN_KEY")
+for board in $boards; do mkv+=(-board "$board"); done
+for asset in "${assets[@]}" "${cronos_assets[@]}"; do mkv+=(-asset "$asset"); done
+(cd "$ROOT/echod" && go "${mkv[@]}")
 
 (
   cd "$OUT"
-  files=(echod-arm "jarvis-show-rootfs-$VERSION.tar.gz" manifest.json manifest.json.sig)
+  files=(echod-arm "jarvis-show-rootfs-$VERSION.tar.gz" manifest.json manifest.json.sig manifest-v2.json manifest-v2.json.sig)
   [ -z "$CROWN_BOOT" ] || files+=("techo5-boot-crown-$VERSION.img")
   [ -z "$CHECKERS_BOOT" ] || files+=("techo5-boot-checkers-$VERSION.img")
   [ "$cronos" != cronos ] || files+=(manifest-cronos.json manifest-cronos.json.sig)
@@ -195,6 +215,7 @@ release_args=(release create "$VERSION" --repo "$REPO" --title "Jarvis Show $VER
 # Stable is GitHub's "latest" release; everything else is a prerelease, so a stable device never sees it.
 if [ "$CHANNEL" = stable ]; then release_args+=(--latest); else release_args+=(--prerelease --latest=false); fi
 release_args+=("$OUT/echod-arm" "$OUT/jarvis-show-rootfs-$VERSION.tar.gz" "$OUT/manifest.json" "$OUT/manifest.json.sig" "$OUT/SHA256SUMS")
+release_args+=("$OUT/manifest-v2.json" "$OUT/manifest-v2.json.sig")
 [ "$cronos" != cronos ] || release_args+=("$OUT/manifest-cronos.json" "$OUT/manifest-cronos.json.sig")
 release_args+=("${assets[@]}" "${cronos_assets[@]}")
 gh "${release_args[@]}"

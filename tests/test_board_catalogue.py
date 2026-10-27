@@ -600,7 +600,8 @@ class BoardListsReadTheCatalogueTest(unittest.TestCase):
 
     def test_release_channels_carry_each_later_board(self):
         import release_channels
-        self.assertEqual(release_channels.EXTRA, ("manifest-cronos.json", "manifest-cronos.json.sig"))
+        self.assertEqual(release_channels.EXTRA, ("manifest-cronos.json", "manifest-cronos.json.sig",
+                                                  "manifest-v2.json", "manifest-v2.json.sig"))
 
     def test_amonet_source(self):
         repo, branches = assets.AMONET_SOURCE

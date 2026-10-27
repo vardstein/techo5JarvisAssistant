@@ -126,6 +126,19 @@ class ChannelMoveTests(unittest.TestCase):
         with self.assertRaisesRegex(rc.ChannelError, "missing its signed manifest"):
             move(gh, "dev")
 
+    def test_carries_the_v2_manifest_when_the_release_has_it(self):
+        v2 = {"manifest-v2.json": b"v2 manifest of dev.50", "manifest-v2.json.sig": b"v2 sig of dev.50"}
+        gh = FakeGitHub("v1.0.2-dev.46", "v1.0.2-dev.50", channels={"channel-dev": pair("v1.0.2-dev.46")})
+        gh.files["v1.0.2-dev.50"].update(v2)
+        self.assertEqual(move(gh, "dev"), "v1.0.2-dev.50")
+        self.assertEqual(gh.files["channel-dev"], {**pair("v1.0.2-dev.50"), **v2})
+
+    def test_half_a_v2_pair_is_refused(self):
+        gh = FakeGitHub("v1.0.2-dev.46")
+        gh.files["v1.0.2-dev.46"]["manifest-v2.json"] = b"no signature"
+        with self.assertRaisesRegex(rc.ChannelError, "missing its signed manifest"):
+            move(gh, "dev")
+
     def test_creates_a_missing_channel(self):
         gh = FakeGitHub("v1.0.2-staging.47")
         move(gh, "staging")

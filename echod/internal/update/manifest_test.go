@@ -144,12 +144,12 @@ func TestValidForBindsProductAndBoard(t *testing.T) {
 	}
 
 	for name, mutate := range map[string]func(*Manifest){
-		"wrong product":      func(m *Manifest) { m.Product = "techo5" },
-		"no boards":          func(m *Manifest) { m.Boards = nil },
-		"wrong board":        func(m *Manifest) { m.Boards = []string{"checkers"} },
-		"unknown board":      func(m *Manifest) { m.Boards = []string{"crown", "rooks"} },
-		"duplicate board":    func(m *Manifest) { m.Boards = []string{"crown", "crown"} },
-		"empty device board": func(m *Manifest) {},
+		"wrong product":       func(m *Manifest) { m.Product = "techo5" },
+		"no boards":           func(m *Manifest) { m.Boards = nil },
+		"wrong board":         func(m *Manifest) { m.Boards = []string{"checkers"} },
+		"only unknown boards": func(m *Manifest) { m.Boards = []string{"rooks"} },
+		"duplicate board":     func(m *Manifest) { m.Boards = []string{"crown", "crown"} },
+		"empty device board":  func(m *Manifest) {},
 	} {
 		m := base
 		m.Boards = append([]string(nil), base.Boards...)
@@ -161,6 +161,18 @@ func TestValidForBindsProductAndBoard(t *testing.T) {
 		if err := m.ValidFor(JarvisShowProduct, board); err == nil {
 			t.Errorf("%s: invalid identity accepted", name)
 		}
+	}
+}
+
+// manifest-v2.json names every board of its release, newer ones too (GENBU-191), so a board this build
+// doesn't know is passed over: what matters is whether the manifest names this Show's own board.
+func TestValidForPassesOverBoardsItDoesNotKnow(t *testing.T) {
+	m := Manifest{Product: JarvisShowProduct, Boards: []string{"rooks", "crown"}, Version: "v1.2.3"}
+	if err := m.ValidFor(JarvisShowProduct, "crown"); err != nil {
+		t.Fatalf("a manifest naming crown and a newer board was refused on crown: %v", err)
+	}
+	if err := m.ValidFor(JarvisShowProduct, "checkers"); err == nil {
+		t.Fatal("a manifest not naming checkers was taken on checkers")
 	}
 }
 
