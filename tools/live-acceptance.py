@@ -12,9 +12,18 @@ import argparse
 import hashlib
 import json
 import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from jarvis_crown.catalogue import load_or_exit  # noqa: E402
+from techo5lib import JARVIS_SHOW_PRODUCT  # noqa: E402
+
+# Every board the product lists needs its own display evidence, a later one like cronos as much as the
+# first release's (GENBU-176).
+BOARDS = tuple(load_or_exit().product(JARVIS_SHOW_PRODUCT)["boards"])
 
 SCHEMA = 1
 DEFAULT_STATE = Path(
@@ -130,7 +139,7 @@ def cmd_j39(args: argparse.Namespace) -> int:
 def gate_status(data: dict[str, Any]) -> tuple[bool, list[str]]:
     lines: list[str] = []
     ok = True
-    for board in ("crown", "checkers"):
+    for board in BOARDS:
         accepted = bool(data.get("j38", {}).get(board, {}).get("accepted"))
         lines.append(f"{'PASS' if accepted else 'FAIL'}: J38 {board} physical display acceptance")
         ok = ok and accepted
@@ -171,7 +180,7 @@ def main() -> int:
 
     j38 = sub.add_parser("j38", help="record one board's physical display acceptance")
     add_state_arg(j38)
-    j38.add_argument("--board", required=True, choices=("crown", "checkers"))
+    j38.add_argument("--board", required=True, choices=BOARDS)
     j38.add_argument("--evidence", required=True, help="screenshot/photo evidence file")
     for name in J38_CHECKS:
         j38.add_argument("--" + name.replace("_", "-"), action="store_true")
@@ -189,7 +198,7 @@ def main() -> int:
     add_state_arg(status)
     status.set_defaults(func=cmd_status)
 
-    verify = sub.add_parser("verify", help="fail unless both J38 boards and J39 are accepted")
+    verify = sub.add_parser("verify", help="fail unless every J38 board and J39 are accepted")
     add_state_arg(verify)
     verify.set_defaults(func=cmd_verify)
 

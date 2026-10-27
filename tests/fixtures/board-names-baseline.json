@@ -65,7 +65,7 @@
  "tools/linux/patch-lk-logo.py": 4,
  "tools/linux/patches/checkers-0001-mic-enable-on-capture.patch": 1,
  "tools/linux/techo5-lib.sh": 9,
- "tools/live-acceptance.py": 4,
+ "tools/live-acceptance.py": 1,
  "tools/privacyprobe.sh": 1,
  "tools/release-jarvis-show.sh": 40,
  "tools/release.ps1": 8,
