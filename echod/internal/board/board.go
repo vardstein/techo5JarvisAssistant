@@ -3,14 +3,12 @@
 // factory reset. boards/ holds every board's as the catalogue makes it; a Python test holds the two
 // equal (tests/test_board_json.py), so regenerate them rather than edit them.
 //
-// Nothing decides anything by it yet (GENBU-163 stage c, step 1): echod reads it beside its own guess
-// (layout.Board) and logs whether the two agree. Only once that has been seen on units in use do the
-// guess and the constants go.
+// echod goes by it (GENBU-193): layout.Board is the board it names, and updates go by nothing else.
 //
 // A unit installed before board.json existed gets one from Migrate (GENBU-191), but only when the
 // kernel command line names exactly one board by a key proven on running units. Anything less is
-// logged and left alone, so the worst a unit can come to is "no board.json", which today changes
-// nothing.
+// logged and left alone, so the worst a unit can come to is "no board.json": it keeps running and
+// doesn't update.
 package board
 
 import (
@@ -127,32 +125,50 @@ func Known() (map[string]Board, error) {
 	return out, nil
 }
 
+// Where echod took its board from (layout.BoardFrom).
+const (
+	FromFile    = "board.json"
+	FromCmdline = "androidboot.product"
+)
+
 // What Note found.
 const (
 	Match      = "match"
 	Differs    = "differs"
 	None       = "none"
 	Unreadable = "unreadable"
+	Unknown    = "unknown"
 )
 
-// Note reads board.json at p, logs how it stands against echod's own guess of the board and what the
-// guess calls the hardware, and returns which of the four it was. It changes nothing.
-func Note(p, guess, hardware string) string {
-	b, err := Load(p)
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		slog.Info("board.json", "state", None, "guess", guess)
-		return None
-	case err != nil:
-		slog.Warn("board.json", "state", Unreadable, "guess", guess, "err", err)
-		return Unreadable
-	case b.ID != guess || b.Hardware() != hardware:
-		slog.Warn("board.json", "state", Differs, "board", b.ID, "guess", guess,
-			"hardware", b.Hardware(), "guess_hardware", hardware)
-		return Differs
+// Note logs which board echod goes by, id, and where it took it from, from: FromFile for the file at
+// p, FromCmdline for the kernel command line cmdline, "" for nowhere. It returns how the
+// file stood: match (the file, and the command line names the same board or none), differs (the
+// file, while the command line names another board: the file wins, a person should look), none or
+// unreadable (the command line, because the file is missing or no use), or unknown (no board). It
+// changes nothing.
+func Note(p, cmdline, id, from string) string {
+	product := Product(cmdline)
+	switch from {
+	case "":
+		slog.Error("board", "state", Unknown, "android_product", product,
+			"note", "no board.json and no board this build carries on the kernel command line: running on base values, no updates")
+		return Unknown
+	case FromFile:
+		known, _ := Known()
+		if b, ok := ByProduct(known, product); ok && b.ID != id {
+			slog.Warn("board", "state", Differs, "board", id, "android_product", product)
+			return Differs
+		}
+		slog.Info("board", "state", Match, "board", id)
+		return Match
 	}
-	slog.Info("board.json", "state", Match, "board", b.ID)
-	return Match
+	state, err := None, error(nil)
+	if _, err = Load(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		state = Unreadable
+	}
+	slog.Warn("board", "state", state, "board", id, "from", from, "err", err,
+		"note", "no usable board.json: no updates until there is one")
+	return state
 }
 
 // Product is androidboot.product on the kernel command line cmdline, or "" when it is missing, empty,

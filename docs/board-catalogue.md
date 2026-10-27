@@ -110,9 +110,9 @@ Every key shown is required. Two are optional: `notes`, and `amonet_upgrade` (be
 |---|---|---|---|
 | `fastboot_product` | fastboot, before unlock | `device_gate.identify_show` | yes, all three |
 | `twrp_device` | TWRP (`ro.product.device`) | `recovery.verify_twrp_board`, `amonet_upgrade.py`, `install-show.py` | yes, all three, each the board's own name |
-| `android_product` | running Show (`androidboot.product` on the kernel command line) | echod, through board.json, logged only (stage c) | yes, all three, each the board's own name; proven on a running unit of each (evidence ledger C5, K5, R7), and `tests/test_board_json.py` reads it out of that capture |
+| `android_product` | running Show (`androidboot.product` on the kernel command line) | echod: `board.Migrate` writes board.json by it, and echod goes by it where board.json is missing or no use (GENBU-193) | yes, all three, each the board's own name; proven on a running unit of each (evidence ledger C5, K5, R7), and `tests/test_board_json.py` reads it out of that capture |
 | `dt_compatible` | running Show | nobody | **no**: captured 2026-10-19, but checkers and cronos both say `mediatek,mt8163`, and the checker refuses a shared value. `android_product` took its place |
-| `lcm_panel` | running Show (kernel `lcm=`) | echod, by substring | **no**: the panel is a component and two boards may share one. It becomes a board key only once a test shows each captured value maps to exactly one board |
+| `lcm_panel` | running Show (kernel `lcm=`) | nobody since GENBU-193 (echod matched it by substring before) | **no**: the panel is a component and two boards may share one. It becomes a board key only once a test shows each captured value maps to exactly one board |
 
 The checker refuses an identity value that two boards share.
 
@@ -319,21 +319,32 @@ them. So the three can't drift.
 
 Stage c goes in two steps:
 
-1. **Read and compare (done).** At start echod reads board.json and logs `match`, `differs`, `none` or
-   `unreadable` against its own guess (`layout.Board`) and hardware name. Nothing goes by it: a unit
-   without one, or with a wrong one, runs as it did. This is what shows, on units in use, that the file
-   and the guess agree before anything depends on it.
-2. **Go by it (not started).** The guess and echod's per-board constants go, and echod takes the board
-   from board.json. That makes board.json required, so it waits until units in use have one (below:
-   the migration is in, the OTA gate isn't), and whether to ship that at all is still open (GENBU-193).
+1. **Read and compare (done).** At start echod read board.json and logged `match`, `differs`, `none` or
+   `unreadable` against its own guess and hardware name. Nothing went by it.
+2. **Go by it (done, GENBU-193, decided 2026-10-27).** The guess and echod's hardware names and panel
+   sizes are gone. `layout.Board` is board.json's board, when the file reads and names a board this
+   build carries. Where it doesn't, it's the one board whose `android_product` the kernel command line
+   names, the same rule `board.Migrate` writes by, so the next start reads the same from the file.
+   Nothing else is gone by: not the panel name, not the mute driver. Names and the panel size come from
+   the board's own file in `internal/board/boards/`. Updates go by board.json alone
+   (`layout.OTABoard`): a unit that knows its board only from the command line refuses every manifest
+   until it has the file. A unit that gives neither has no board (`""`). It's called "Echo Show
+   (unknown board)", runs on the values the board checks fall back to (the 2nd gen Show 5's, as
+   before for a unit with no panel name and no `amazon-gating`), logs `board state=unknown` and
+   doesn't update. At start echod logs which board it goes by and where from (`board.Note`):
+   `match`, `differs` (board.json and the command line name two boards; the file wins), `none` or
+   `unreadable` (the command line, because the file is missing or no use) or `unknown`.
 
 ### Units already in the field
 
 They have no board.json. Shipping an echod that refuses without one would take them down, so:
 
 1. The OTA step checks for board.json before it installs an echod that needs it. No file, no update.
-   **Not built**: how an older echod, which ignores manifest fields it doesn't know, is kept off such a
-   release is a release decision, and it only matters if the guess goes (GENBU-191, GENBU-193).
+   The echod side is done (GENBU-193): an echod without board.json refuses every manifest. Keeping an
+   older echod, which ignores manifest fields it doesn't know, off such a release is decided but **not
+   built** (GENBU-191): releases that go by board.json are published under a new manifest name, and the
+   old name stays on the last release that writes board.json by itself, so an older Show takes that
+   first. Until that bridge exists, an echod that goes by board.json must not be published.
 2. A one-time migration writes board.json only when the unit matches exactly one board through a key that
    is already proven exact on real units. **Done** (`board.Migrate`, GENBU-191): at start, an echod that
    finds no board.json reads `androidboot.product` off the kernel command line and, when exactly one board
@@ -345,13 +356,12 @@ They have no board.json. Shipping an echod that refuses without one would take t
 
 Failing closed here means "this unit doesn't update", never "this unit stops working".
 
-### Must go: echod's guess
+### Gone: echod's guess
 
-`echod/internal/layout/device_cronos.go:94-111` (`showBoard`) matches the `lcm=` panel name, and when
-there's no panel name it guesses: `amazon-gating` present means checkers, absent means cronos. A crown
-without a panel name would come out as checkers. That's exactly the kind of fallback the catalogue
-removes. It must not be copied into the catalogue, and it goes when echod goes by board.json (step c,
-second step).
+`showBoard` in `echod/internal/layout/device_cronos.go` used to match the `lcm=` panel name, and when
+there was no panel name it guessed: `amazon-gating` present meant checkers, absent meant cronos. A crown
+without a panel name would have come out as checkers. Both went with GENBU-193 (stage c, second step).
+They must not come back, in echod or in the catalogue.
 
 ## A board nobody has tested (Echo Show 8 2nd gen and later)
 
@@ -431,10 +441,10 @@ b. **Installer reads the catalogue.** Done. `boards.py`, `profiles/` and the pin
    planned for b were held back because they'd change behaviour: the evidence check (Q9) and exact-match
    lookups (Q8). Exact-match lookups came in with GENBU-170.
 c. board.json written at flash time. echod reads it next to its constants with a test that they match,
-   then the constants go, the guess with them. The first half is done: the key is `android_product`
-   (the DT compatibles don't tell checkers from cronos), and echod reads and logs board.json. The second
-   half waits on the OTA gate (GENBU-191) and on whether the guess goes at all (GENBU-193). Units in use
-   write their own board.json once they run an echod with the migration.
+   then the constants go, the guess with them. Done in code: the key is `android_product`
+   (the DT compatibles don't tell checkers from cronos), units in use write their own board.json once
+   they run an echod with the migration, and echod goes by board.json (GENBU-193). Shipping it waits on
+   the bridge release (GENBU-191).
 d. Product mains (`cmd/echod-show`, `-dot`, `-spot`) replace the build tags. Shell scripts get resolved
    values as arguments.
 e. CI grep for board names and build tags outside the catalogue and the mains, with a baseline count that
@@ -461,6 +471,9 @@ For Jade. None of them is decided in code; the code keeps what it did before.
   without one is refused. Many parts state no terms at all (see `licence` above); those are recorded as
   not stated. Nothing is redistributed: the zips and images are fetched from where upstream publishes
   them.
+- **echod's guess.** Decided 2026-10-27 (GENBU-193): dropped, units without board.json don't update. What
+  a unit with no board at all runs on (the 2nd gen Show 5's values) is an assumption made in code, not a
+  decision; see stage c above.
 - **Picking a product.** Decided 2026-10-27 (GENBU-192): from the unit's board, asked when two products
   list it, and `--product` overrides. See the product entity above.
 - **The remaining owners** above, especially `mkrootfs.sh`'s marker and `PROFILE_ID`, which several

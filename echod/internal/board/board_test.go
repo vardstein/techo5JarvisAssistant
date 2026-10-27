@@ -65,22 +65,25 @@ func TestParseRefuses(t *testing.T) {
 func TestNote(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "board.json")
-	if got := Note(p, "cronos", "Echo Show 5 2nd gen"); got != None {
+	if got := Note(p, "console=tty0", "", ""); got != Unknown {
+		t.Errorf("no board: %s", got)
+	}
+	if got := Note(p, cmdline("cronos"), "cronos", FromCmdline); got != None {
 		t.Errorf("missing: %s", got)
 	}
+	write(t, p, good[:40])
+	if got := Note(p, cmdline("cronos"), "cronos", FromCmdline); got != Unreadable {
+		t.Errorf("half written: %s", got)
+	}
 	write(t, p, good+"\n")
-	if got := Note(p, "cronos", "Echo Show 5 2nd gen"); got != Match {
+	if got := Note(p, cmdline("cronos"), "cronos", FromFile); got != Match {
 		t.Errorf("same: %s", got)
 	}
-	if got := Note(p, "checkers", "Echo Show 5 1st gen"); got != Differs {
-		t.Errorf("other board: %s", got)
+	if got := Note(p, "console=tty0", "cronos", FromFile); got != Match {
+		t.Errorf("no product to hold it to: %s", got)
 	}
-	if got := Note(p, "cronos", "Echo Show 5 1st gen"); got != Differs {
-		t.Errorf("other hardware: %s", got)
-	}
-	write(t, p, good[:40])
-	if got := Note(p, "cronos", "Echo Show 5 2nd gen"); got != Unreadable {
-		t.Errorf("half written: %s", got)
+	if got := Note(p, cmdline("checkers"), "cronos", FromFile); got != Differs {
+		t.Errorf("the command line names another board: %s", got)
 	}
 }
 
@@ -142,7 +145,7 @@ func TestMigrateWritesTheInstallersFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for id, b := range known {
+	for id := range known {
 		p := filepath.Join(t.TempDir(), "board.json")
 		if got := Migrate(p, cmdline(id)); got != Written {
 			t.Fatalf("%s: %s", id, got)
@@ -158,7 +161,7 @@ func TestMigrateWritesTheInstallersFile(t *testing.T) {
 		if _, err := os.Stat(p + ".new"); !os.IsNotExist(err) {
 			t.Errorf("%s: .new left behind", id)
 		}
-		if got := Note(p, id, b.Hardware()); got != Match {
+		if got := Note(p, cmdline(id), id, FromFile); got != Match {
 			t.Errorf("%s: then %s", id, got)
 		}
 		// Once is enough: the next start keeps it.

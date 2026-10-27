@@ -38,12 +38,8 @@ func coverSide() int {
 	return min(h-2*m, w-3*m-440*w/960)
 }
 
-func panelSize() (w, h int) {
-	if layout.Crown() {
-		return 1280, 800
-	}
-	return 960, 480
-}
+// panelSize is the board's display from its board.json (GENBU-193).
+func panelSize() (w, h int) { return layout.Display() }
 
 // localCameraName is the device's own camera on the list, and what "show …" matches.
 const localCameraName = "This device"

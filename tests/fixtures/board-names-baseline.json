@@ -29,7 +29,7 @@
  "echod/internal/hardware/speaker/paths_spot.go": 1,
  "echod/internal/hardware/speaker/speaker.go": 4,
  "echod/internal/hardware/touch/device_cronos.go": 1,
- "echod/internal/layout/device_cronos.go": 12,
+ "echod/internal/layout/device_cronos.go": 8,
  "echod/internal/layout/layout.go": 1,
  "echod/internal/lib/asp/asp.go": 1,
  "echod/internal/update/arch_cronos.go": 1,
