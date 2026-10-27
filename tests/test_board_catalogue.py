@@ -442,6 +442,93 @@ class CatalogueValidatorTest(unittest.TestCase):
             Catalogue(root).product()
 
 
+def second_product(root: pathlib.Path, boards=("crown", "cronos", "checkers"), product_id="genbu-show-v2") -> None:
+    """Add a copy of genbu-show-v1 to the catalogue at root, under product_id and listing boards."""
+    data = json.loads((root / "products" / "genbu-show-v1.json").read_text())
+    data.update(id=product_id, boards=list(boards), first_boards=[boards[0]])
+    (root / "products" / f"{product_id}.json").write_text(json.dumps(data))
+
+
+class ProductPickTest(unittest.TestCase):
+    """GENBU-192: an install takes the product that lists the unit's board, asks when two do, and --product
+    overrides. Run on copies of the real catalogue with a second product added."""
+
+    def catalogue(self, boards=None) -> Catalogue:
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp)
+        shutil.copytree(ROOT / "catalogue", tmp / "catalogue")
+        if boards:
+            second_product(tmp / "catalogue", boards)
+        return Catalogue(tmp / "catalogue")
+
+    def never(self, ids):
+        self.fail(f"asked about {ids}")
+
+    def test_one_product_is_taken_without_asking(self):
+        cat = self.catalogue()
+        for board in ("crown", "cronos", "checkers"):
+            with self.subTest(board=board):
+                self.assertEqual(cat.pick_product(board, ask=self.never)["id"], "genbu-show-v1")
+
+    def test_two_products_for_a_board_are_asked(self):
+        cat = self.catalogue(("crown", "cronos", "checkers"))
+        asked = []
+        picked = cat.pick_product("crown", ask=lambda ids: asked.append(ids) or "genbu-show-v2")
+        self.assertEqual((picked["id"], asked), ("genbu-show-v2", [["genbu-show-v1", "genbu-show-v2"]]))
+
+    def test_nobody_to_ask_refuses(self):
+        cat = self.catalogue(("crown", "cronos", "checkers"))
+        for ask in (None, lambda ids: None):
+            with self.subTest(ask=ask):
+                with self.assertRaisesRegex(CatalogueError, "genbu-show-v1 or genbu-show-v2 all list board "
+                                                            "'crown': say which with --product; refusing"):
+                    cat.pick_product("crown", ask=ask)
+
+    def test_an_answer_off_the_list_refuses(self):
+        cat = self.catalogue(("crown", "cronos", "checkers"))
+        with self.assertRaisesRegex(CatalogueError, "'genbu-show-v9' is not one of"):
+            cat.pick_product("crown", ask=lambda ids: "genbu-show-v9")
+
+    def test_only_the_shared_board_asks(self):
+        cat = self.catalogue(("cronos",))
+        self.assertEqual(cat.pick_product("crown", ask=self.never)["id"], "genbu-show-v1")
+        self.assertEqual(cat.products_for("cronos"), ["genbu-show-v1", "genbu-show-v2"])
+        self.assertEqual(cat.pick_product("cronos", ask=lambda ids: ids[-1])["id"], "genbu-show-v2")
+
+    def test_override_wins_but_must_list_the_board(self):
+        cat = self.catalogue(("cronos",))
+        self.assertEqual(cat.pick_product("cronos", "genbu-show-v2", ask=self.never)["id"], "genbu-show-v2")
+        with self.assertRaisesRegex(CatalogueError, "product 'genbu-show-v2' lists cronos, not 'crown'; refusing"):
+            cat.pick_product("crown", "genbu-show-v2", ask=self.never)
+
+    def test_override_is_spelled_exactly(self):
+        cat = self.catalogue(("cronos",))
+        with self.assertRaisesRegex(CatalogueError, "no catalogue product 'genbu-show-V2'.*genbu-show-v2"):
+            cat.pick_product("cronos", "genbu-show-V2", ask=self.never)
+
+    def test_no_product_named_with_two_says_how(self):
+        cat = self.catalogue(("cronos",))
+        with self.assertRaisesRegex(CatalogueError, "exactly one product.*--product"):
+            cat.product()
+        self.assertEqual(cat.product("genbu-show-v2")["boards"], ["cronos"])
+
+    def test_tools_start_with_two_products(self):
+        # Nothing the installer imports picks a product on load, so a second one stops no command.
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp)
+        for part in ("tools", "catalogue"):
+            shutil.copytree(ROOT / part, tmp / part, ignore=shutil.ignore_patterns("__pycache__"))
+        second_product(tmp / "catalogue", ("cronos",))
+        for tool in ("jarvis-show.py", "jarvis-crown.py", "fetch-show-assets.py", "install-show.py",
+                     "release_channels.py"):
+            with self.subTest(tool=tool):
+                run = subprocess.run([sys.executable, str(tmp / "tools" / tool), "--help"], cwd=tmp,
+                                     capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+                self.assertEqual(run.returncode, 0, run.stderr)
+                if tool == "jarvis-show.py":
+                    self.assertIn("{genbu-show-v1,genbu-show-v2}", run.stdout)
+
+
 class BrokenCatalogueStopsPlainlyTest(unittest.TestCase):
     """GENBU-173: one bad board file stops every command, --help and preflight too, with one plain message
     naming the file, never a traceback. Run on a copy of tools/ and catalogue/, with no device."""

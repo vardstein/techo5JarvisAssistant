@@ -30,7 +30,10 @@ CHECKERS_BOOT_SHA256 = BOOT_SHA256_BY_BOARD["checkers"]
 CROWN_BOOT_SHA256 = BOOT_SHA256_BY_BOARD["crown"]
 CRONOS_BOOT_SHA256 = BOOT_SHA256_BY_BOARD["cronos"]
 ROOTFS_MARKER = "etc/jarvis-show-release.json"
-PROFILE_ID = catalogue.default().product()["id"]  # the rootfs marker's "product"
+# The rootfs marker's "product" while the catalogue has one product. With more, an install names the one
+# it puts on the unit (catalogue.pick_product, GENBU-192) and this is None.
+_PRODUCTS = catalogue.default().products()
+PROFILE_ID = _PRODUCTS[0] if len(_PRODUCTS) == 1 else None
 UPDATE_CHANNELS = ("stable", "staging", "dev")  # echod/internal/update/channel.go
 # What the person types before the install formats userdata. The same on every board, so the step owns it.
 FINAL_CONFIRM_PHRASE = "ERASE"
@@ -108,9 +111,15 @@ def _read_marker(archive: tarfile.TarFile, marker_name: str) -> bytes | None:
     return None
 
 
-def verify_jarvis_rootfs(path: Path, expected_sha256: str, *, board: str = "crown") -> RootfsIdentity:
-    """Require caller-pinned bytes plus a Jarvis Show product marker allowing board."""
+def verify_jarvis_rootfs(path: Path, expected_sha256: str, *, board: str = "crown",
+                         product: str | None = None) -> RootfsIdentity:
+    """Require caller-pinned bytes plus a marker naming product (default: the catalogue's only one) and
+    allowing board."""
     profile = profile_for_board(board)
+    try:
+        want = catalogue.default().product(product)
+    except catalogue.CatalogueError as exc:
+        raise InstallError(str(exc)) from None
     expected = expected_sha256.strip().lower()
     if not SHA256_RE.fullmatch(expected):
         raise InstallError("rootfs SHA-256 must be exactly 64 lowercase hex characters")
@@ -137,9 +146,9 @@ def verify_jarvis_rootfs(path: Path, expected_sha256: str, *, board: str = "crow
 
     product = payload.get("product")
     raw_boards = payload.get("boards")
-    if product != PROFILE_ID or not isinstance(raw_boards, list):
+    if product != want["id"] or not isinstance(raw_boards, list):
         raise InstallError(
-            f"rootfs marker is not {PROFILE_ID!r} with an explicit boards list"
+            f"rootfs marker is not {want['id']!r} with an explicit boards list"
         )
     # Boards newer than the first release go in "more_boards", which Shows from before them
     # ignore: they refuse a marker whose "boards" names a board they don't know.
@@ -147,7 +156,7 @@ def verify_jarvis_rootfs(path: Path, expected_sha256: str, *, board: str = "crow
     if not isinstance(more_boards, list):
         raise InstallError("rootfs marker has an invalid more_boards list")
     boards = tuple(str(value).lower() for value in raw_boards + more_boards)
-    if not boards or any(value not in SUPPORTED_BOARDS for value in boards):
+    if not boards or any(value not in want["boards"] for value in boards):
         raise InstallError(f"rootfs marker has invalid supported boards: {boards!r}")
     if len(set(boards)) != len(boards):
         raise InstallError("rootfs marker contains duplicate board entries")
@@ -199,6 +208,7 @@ def make_install_plan(
     rootfs_sha256: str,
     confirmation: str,
     board: str = "crown",
+    product: str | None = None,
     boot_sha256: str | None = None,
     wifi: str | None = None,
     wifi_passphrase_file: Path | None = None,
@@ -223,7 +233,7 @@ def make_install_plan(
         raise InstallError("device name must be 1-64 printable characters")
 
     verify_boot(boot_image, profile.board, expected_sha256=boot_sha256)
-    rootfs_identity = verify_jarvis_rootfs(rootfs, rootfs_sha256, board=profile.board)
+    rootfs_identity = verify_jarvis_rootfs(rootfs, rootfs_sha256, board=profile.board, product=product)
     backup = verify_install_backup(backup_root, adb_serial=adb_serial, board=profile.board)
 
     installer = repo_root / "tools" / "install-show.py"

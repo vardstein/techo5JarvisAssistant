@@ -75,8 +75,15 @@ echod's `manifest.go` (compiled in) and `techo5lib.py` (copied to the other TECH
 be renamed in the catalogue alone, but `ProductIdSpelledOnceTest` fails if any of the three disagrees with
 the catalogue or the id turns up anywhere else (GENBU-174).
 
-Exactly one product exists today. `Catalogue.product()` refuses if there are none or several, so a second
-product needs a decision about how the installer picks, not a silent first-one-wins.
+Exactly one product exists today. When there are more, the install picks one per unit (GENBU-192):
+`--product` if it was passed, which has to list the unit's board; otherwise the one product that lists
+the board. When two or more do, the installer asks which, and with nobody to ask (`--no-questions`, no
+terminal) it stops before downloading anything. `Catalogue.pick_product()` does this, and the id it
+returns is what the release's manifest and the rootfs marker are held to. Nothing on the Show changes:
+the marker already says which product it is. `Catalogue.product()` with no id still refuses when there
+are several, so nothing picks the first one silently. `install.PROFILE_ID` is only set while there's
+one product. `release_channels.py` names the product its releases belong to (`JARVIS_SHOW_PRODUCT`),
+since another product would publish its own releases. `install-show.py` stays single-product.
 
 ### Board entity
 
@@ -454,6 +461,8 @@ For Jade. None of them is decided in code; the code keeps what it did before.
   without one is refused. Many parts state no terms at all (see `licence` above); those are recorded as
   not stated. Nothing is redistributed: the zips and images are fetched from where upstream publishes
   them.
+- **Picking a product.** Decided 2026-10-27 (GENBU-192): from the unit's board, asked when two products
+  list it, and `--product` overrides. See the product entity above.
 - **The remaining owners** above, especially `mkrootfs.sh`'s marker and `PROFILE_ID`, which several
   scripts and echod spell out themselves.
 

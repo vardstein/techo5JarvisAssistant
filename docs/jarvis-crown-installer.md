@@ -738,6 +738,7 @@ has the default given here.
 | `--lineage-zip ZIP` | install, amonet-upgrade, preflight | LineageOS 18.1 for this board. Default the cached one, which `install` downloads and checks when it isn't there yet. |
 | `--boot-image FILE` | install | The board's boot image. Default fetched and checked the same way. |
 | `--boot-sha256 HASH` | install | Its SHA-256, only for a boot image the installer has no pin for. |
+| `--product ID` | install | The product the Show gets. Normally the one product in the catalogue that lists its board; when two do, `install` asks, and this picks one without asking. It has to list the board. |
 | `--channel stable\|staging\|dev` | install | The release channel the root filesystem comes from, and the one the Show follows for updates. Default `stable`. |
 | `--rootfs FILE` | install | A Jarvis root filesystem of your own instead of the channel's. Needs `--rootfs-sha256`. |
 | `--rootfs-sha256 HASH` | install | Its SHA-256. |

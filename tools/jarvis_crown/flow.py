@@ -59,6 +59,7 @@ class InstallInputs:
     expected_fastboot_serial: str | None = None
     root_password_file: Path | None = None
     update_channel: str | None = None
+    product: str | None = None  # catalogue product id (GENBU-192); None: the catalogue's only one
 
 
 @dataclass(frozen=True)
@@ -203,6 +204,7 @@ def run_install_flow(
         rootfs_sha256=inputs.rootfs_sha256,
         confirmation=FINAL_CONFIRM_PHRASE,
         board=profile.board,
+        product=inputs.product,
         wifi=inputs.wifi,
         wifi_passphrase_file=inputs.wifi_passphrase_file,
         ssh_key=inputs.ssh_key,

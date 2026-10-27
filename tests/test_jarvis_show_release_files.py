@@ -68,6 +68,13 @@ class FetchRootfsTests(unittest.TestCase):
                                         r"no usable stable release for checkers: .*404.*--channel staging or --channel dev"):
                 releases.fetch_rootfs("stable", "checkers", pathlib.Path(td), release=MissingRelease)
 
+    def test_an_unknown_product_is_refused_before_any_download(self):
+        with tempfile.TemporaryDirectory() as td:
+            FakeRelease.calls = []
+            with self.assertRaisesRegex(releases.ReleaseError, "no catalogue product 'genbu-show-v9'"):
+                releases.fetch_rootfs("dev", "crown", pathlib.Path(td), product="genbu-show-v9", release=FakeRelease)
+            self.assertEqual(FakeRelease.calls, [])
+
     def test_unknown_channel_is_refused(self):
         with self.assertRaisesRegex(releases.ReleaseError, "no release channel 'nightly'"):
             releases.channel_tag("nightly")
@@ -96,13 +103,24 @@ def args(**kw):
 
 
 class InstallFilesTests(unittest.TestCase):
-    def rootfs_from(self, channel, board, work):
+    def rootfs_from(self, channel, board, work, product=None):
         self.asked.append((channel, board))
+        self.products.append(product)
         return releases.ReleaseRootfs(path=work / "r.tar.gz", sha256="a" * 64, version="v1.0.1-dev.41",
                                       channel=channel)
 
     def setUp(self):
         self.asked = []
+        self.products = []
+
+    def test_the_picked_product_reaches_the_release(self):
+        # GENBU-192: the product the install picked is the one whose release is fetched.
+        with tempfile.TemporaryDirectory() as td:
+            td = pathlib.Path(td)
+            with contextlib.redirect_stdout(io.StringIO()):
+                cli._install_files(args(), "crown", td / "missing-amonet", td, product="genbu-show-v1",
+                                   fetcher=lambda: FakeFetcher(td), rootfs_from=self.rootfs_from)
+            self.assertEqual(self.products, ["genbu-show-v1"])
 
     def test_nothing_passed_fetches_the_detected_boards_files_and_the_channels_rootfs(self):
         for board in BOARDS:
