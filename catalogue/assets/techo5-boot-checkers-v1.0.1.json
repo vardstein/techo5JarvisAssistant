@@ -1,0 +1,20 @@
+{
+  "id": "techo5-boot-checkers-v1.0.1",
+  "kind": "boot",
+  "file": "techo5-boot-checkers-v1.0.1.img",
+  "url": "https://github.com/HuskerMinion/techo5/releases/download/v1.0.1/techo5-boot-checkers-v1.0.1.img",
+  "sha256": "6fd696dce2592d2237a432e23ed7c032f1643bd1fe475d3094eccd9f7d2079b2",
+  "size": 13172736,
+  "source": "HuskerMinion/techo5 v1.0.1 (signed manifest)",
+  "manual": false,
+  "licence": {
+    "checked": "2026-10-27",
+    "parts": [
+      {"part": "kernel and DTBs: the LineageOS 4.9 kernel rebuilt with Bluetooth, 4.9.337-g8d928c5176cc", "spdx": "GPL-2.0-only WITH Linux-syscall-note", "sources": ["https://github.com/amazon-oss/android_kernel_amazon_mt8163/blob/8d928c5176cc1ced93a564dd8a949a6cda3b8231/COPYING", "https://github.com/HuskerMinion/techo5/blob/4deef135b976abd4fe3655c47e42207f4d49ada7/README.md#L302"]},
+      {"part": "TECHO5's own ramdisk code: init, lib/techo5-lib.sh, usr/local/sbin/slotctl, usr/local/bin/fbprobe, audioprobe, rebootto, btbridge", "spdx": "MIT", "sources": ["https://github.com/HuskerMinion/techo5/blob/4deef135b976abd4fe3655c47e42207f4d49ada7/LICENSE"]},
+      {"part": "the 16 Alpine base packages in the ramdisk's apk database", "spdx": "GPL-2.0-only AND GPL-2.0-or-later AND MIT AND BSD-2-Clause AND Apache-2.0 AND MPL-2.0 AND Zlib", "sources": ["asset:ramdisk /lib/apk/db/installed"]},
+      {"part": "the 21 Alpine packages unpacked from upstream's tools/linux/packages.txt, licences from Alpine's index", "spdx": "MIT AND Zlib AND ISC AND GPL-2.0-only AND BSD-3-Clause AND OpenSSL AND LGPL-2.1-or-later AND GPL-2.0-or-later AND LGPL-2.0-or-later AND BSD-2-Clause AND (AFL-2.1 OR GPL-2.0-or-later)", "sources": ["https://github.com/HuskerMinion/techo5/blob/4deef135b976abd4fe3655c47e42207f4d49ada7/tools/linux/packages.txt", "https://dl-cdn.alpinelinux.org/alpine/v3.24/main/armv7/APKINDEX.tar.gz", "https://dl-cdn.alpinelinux.org/alpine/v3.12/main/armv7/APKINDEX.tar.gz"]}
+    ]
+  },
+  "notes": "Upstream TECHO5 v1.0.1 techo5-boot-checkers-v1.0.1.img: listed in the v1.0.1 manifest signed by the upstream release key, kernel 4.9.337-g8d928c5176cc (the Jarvis vendor-module ABI). Checked 2026-10-19 (GENBU-187): the sha256 equals GitHub's asset digest, the SHA256SUMS line and the manifest.json entry at https://github.com/HuskerMinion/techo5/releases/tag/v1.0.1, and manifest.json.sig verifies against the releaseKey in upstream's echod/internal/update/trust.go at v1.0.1; see docs/dumps/upstream-pins-2026-10-19.txt."
+}

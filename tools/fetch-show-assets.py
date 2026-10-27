@@ -32,7 +32,11 @@ import webbrowser
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from jarvis_crown.catalogue import load_or_exit  # noqa: E402
+
+load_or_exit()  # GENBU-173: a broken catalogue stops here, in plain words
 from jarvis_crown.assets import AMONET_SOURCE, amonet_bundle_dir, asset_path, assets_for, default_cache_dir  # noqa: E402
+from jarvis_crown.catalogue import supported_boards  # noqa: E402
 from jarvis_crown.recovery import TWRP_SHA256_BY_BOARD  # noqa: E402
 from jarvis_crown.unlock import AMONET_UNLOCK_SHA256  # noqa: E402
 from techo5lib import download_checked, fail, hash_file, note, repo_root, run_main, step  # noqa: E402
@@ -268,7 +272,7 @@ def fetch_board(board: str, cache: Path, *, check_only: bool = False, downloads:
 
 def main():
     p = argparse.ArgumentParser(prog='fetch-show-assets')
-    p.add_argument('--board', required=True, choices=('crown', 'checkers', 'cronos'))
+    p.add_argument('--board', required=True, choices=supported_boards())
     p.add_argument('--cache', type=Path, default=None, help='default: $JARVIS_SHOW_ASSETS or ~/.cache/jarvis-show')
     p.add_argument('--from', dest='downloads', type=Path, default=None,
                    help='where browser downloads (Amonet) go; default ~/Downloads')

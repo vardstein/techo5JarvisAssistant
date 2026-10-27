@@ -10,7 +10,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
 from jarvis_crown.device_gate import DeviceIdentity  # noqa: E402
-from jarvis_crown import recovery  # noqa: E402
+from jarvis_crown import catalogue, recovery  # noqa: E402
 
 
 def cp(argv, stdout="", stderr="", code=0):
@@ -153,11 +153,11 @@ class RecoveryTests(unittest.TestCase):
             )
 
     def test_amonet1_hint_only_sends_mapped_boards_to_amonet_upgrade(self):
-        from jarvis_crown.amonet_upgrade import TARGETS
-
+        mapped = catalogue.amonet_upgrade_boards()
+        self.assertEqual(mapped, ("checkers",))
         for board in ("crown", "checkers", "cronos"):
             hint = recovery.amonet1_upgrade_hint(board)
-            if board in TARGETS:
+            if board in mapped:
                 self.assertIn(f"amonet-upgrade --board {board}", hint)
             else:
                 self.assertNotIn("jarvis-show.py amonet-upgrade", hint)

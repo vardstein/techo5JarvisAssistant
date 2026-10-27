@@ -13,18 +13,20 @@ import subprocess
 import time
 from typing import Callable, Protocol
 
-from jarvis_crown.boards import profile_for_board, profile_for_product
+from jarvis_crown import catalogue
+from jarvis_crown.catalogue import profile_for_board, profile_for_product
 from jarvis_crown.device_gate import DeviceIdentity, SUPPORTED_PRODUCTS, identify_crown, identify_show
 from jarvis_crown.timing import (COMMAND_TIMEOUT_SECONDS, POLL_SECONDS, TWRP_REENUM_TIMEOUT_SECONDS)
 
-TWRP_SHA256 = "b6b1446436de27cf860ebc170d4e3dffe3068ab90396ec915a123589d0d6f7d8"
+# The TWRP image _pinned_twrp boots, as a member of the board's amonet zip (<amonet-dir>/amonet/bin/twrp.img).
+TWRP_MEMBER = "amonet/bin/twrp.img"
+# Pins come from the zip's member table in the catalogue. A board whose zip has no TWRP pin (cronos
+# until its zip is reviewed) gets None, and recovery refuses to boot any TWRP on it.
 TWRP_SHA256_BY_BOARD: dict[str, str | None] = {
-    "crown": TWRP_SHA256,
-    # bin/twrp.img of the pinned amonet-checkers-v2.0.1.zip (jarvis_crown/assets.py), 16.1.0-20260812
-    "checkers": "dcc75bb651894c343039d45af73c4d900594762f6f55187c1ebdaf12d0ae59f5",
-    # bin/twrp.img of the pinned amonet-cronos-v2.0.1.zip, 16.1.0-20260812
-    "cronos": "09a72dab093e9f4d444733bd4517af09444a0904a9a5243277df0ecd263873d8",
+    board: catalogue.default().resolve(board)["assets"]["amonet"].get("members", {}).get(TWRP_MEMBER)
+    for board in catalogue.supported_boards()
 }
+TWRP_SHA256 = TWRP_SHA256_BY_BOARD["crown"]  # crown's, kept by name: tests swap it out
 SMALL_PARTITIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 14, 15)
 BOOT_AREAS = ("boot0", "boot1")
 TWRP_WAIT_INTERVAL_SECONDS = POLL_SECONDS
@@ -120,11 +122,22 @@ def boot_layout(shell: Callable[[str], str]) -> str:
     return shell(BOOT_LAYOUT_PROBE).strip()
 
 
+def twrp_device(board: str) -> str:
+    """The ro.product.device the board's TWRP reports, from the catalogue. A board without one is refused:
+    nothing else says which TWRP belongs to it."""
+    name = catalogue.default().resolve(board)["identity"].get("twrp_device")
+    if not name:
+        raise RecoveryError(f"the catalogue names no TWRP device for {board}; refusing to use TWRP on it")
+    return name.lower()
+
+
 def verify_twrp_board(serial: str, board: str, *, run: Callable = subprocess.run) -> None:
+    expected = twrp_device(board)
     product = _adb_shell(serial, "getprop ro.product.device", run=run).strip().lower()
-    if product != board:
+    if product != expected:
         raise RecoveryError(
-            f"TWRP device reports ro.product.device={product or 'unknown'}, not {board}"
+            f"TWRP device reports ro.product.device={product or 'unknown'}, not {expected}"
+            + ("" if expected == board else f" (the catalogue's TWRP device for {board})")
         )
     ident = _adb_shell(serial, "id", run=run)
     if "uid=0" not in ident:
@@ -156,21 +169,18 @@ def verify_twrp_board(serial: str, board: str, *, run: Callable = subprocess.run
 def amonet1_upgrade_hint(board: str) -> str:
     """Where a unit still on Amonet 1.x goes next. amonet-upgrade only knows the boards whose
     partitions were mapped on a real unit (GENBU-206); pointing anything else at it is a dead end."""
-    # Imported here: amonet_upgrade imports this module.
-    from jarvis_crown.amonet_upgrade import TARGETS
-    from jarvis_crown.assets import XDA_CRONOS_THREAD
-
-    if board in TARGETS:
+    if board in catalogue.amonet_upgrade_boards():
         return (
             f"Upgrade it first with: jarvis-show.py amonet-upgrade --board {board} "
             "(tools/fetch-show-assets.py picks up and checks the Amonet zip)"
         )
     if board == "cronos":
+        thread = catalogue.default().resolve(board)["assets"]["amonet"]["url"]
         return (
             "amonet-upgrade has no map for cronos. The XDA thread updates an unlocked cronos by "
             "flashing the new amonet-cronos zip in TWRP (tools/fetch-show-assets.py picks up and "
             "checks it). Nobody here has done that from 1.x, and the zip rewrites the bootloader on a "
-            f"board with no BROM, so read the thread first: {XDA_CRONOS_THREAD} Then run this again; "
+            f"board with no BROM, so read the thread first: {thread} Then run this again; "
             "this check runs before anything is written."
         )
     return (

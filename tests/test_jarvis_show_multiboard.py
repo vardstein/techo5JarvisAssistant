@@ -13,7 +13,7 @@ import zipfile
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
-from jarvis_crown.boards import profile_for_board, profile_for_product  # noqa: E402
+from jarvis_crown.catalogue import profile_for_board, profile_for_product  # noqa: E402
 from jarvis_crown.device_gate import DeviceGateError, DeviceIdentity, identify_show  # noqa: E402
 from jarvis_crown import preflight, recovery, unlock  # noqa: E402
 from jarvis_crown.install import InstallError, make_install_plan, verify_boot, verify_jarvis_rootfs  # noqa: E402
@@ -127,8 +127,9 @@ class MultiBoardTests(unittest.TestCase):
         self.assertEqual((crown.fastboot_product, crown.display_width, crown.display_height), ("CROWN", 1280, 800))
         self.assertEqual((checkers.fastboot_product, checkers.display_width, checkers.display_height), ("CHECKERS", 960, 480))
         self.assertEqual(profile_for_product("CHECKERS"), checkers)
-        self.assertEqual((crown.install_confirmation, checkers.install_confirmation), ("ERASE", "ERASE"))
-        self.assertEqual((crown.unlock_confirmation, checkers.unlock_confirmation), ("UNLOCK", "UNLOCK"))
+        # The phrases are owned by the steps now, one for every board (GENBU-163).
+        from jarvis_crown.install import FINAL_CONFIRM_PHRASE
+        self.assertEqual((FINAL_CONFIRM_PHRASE, unlock.CONFIRM_PHRASE), ("ERASE", "UNLOCK"))
 
     def test_generic_identity_accepts_both_and_cross_target_fails(self):
         self.assertEqual(identify_show(run=self.runner("CROWN")).product, "CROWN")
@@ -176,7 +177,7 @@ class MultiBoardTests(unittest.TestCase):
             td = pathlib.Path(td_s)
             amonet, hashes = make_amonet(td, "checkers")
             run = mock.Mock(return_value=unlock.FastbrickResult(0, "Exploit most likely successful!\n"))
-            with self.assertRaisesRegex(unlock.UnlockError, "not been cryptographically pinned"):
+            with self.assertRaisesRegex(unlock.UnlockError, "isn't open without a hash manifest"):
                 unlock.unlock_show(identity, amonet, confirmation="UNLOCK", run=run)
             run.assert_not_called()
             with self.assertRaisesRegex(unlock.UnlockError, "exact confirmation"):
@@ -301,7 +302,7 @@ class MultiBoardTests(unittest.TestCase):
             td = pathlib.Path(td_s)
             amonet, _ = make_amonet(td, "cronos")
             run = mock.Mock(return_value=cp(["bash", "fastbrick.sh"]))
-            with self.assertRaisesRegex(unlock.UnlockError, "not been cryptographically pinned"):
+            with self.assertRaisesRegex(unlock.UnlockError, "isn't open without a hash manifest"):
                 unlock.unlock_show(identity, amonet, confirmation="UNLOCK", run=run)
             run.assert_not_called()
             twrp = td / "bundle" / "amonet" / "bin" / "twrp.img"

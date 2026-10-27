@@ -27,10 +27,20 @@ import time
 from functools import cmp_to_key
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from jarvis_crown.catalogue import later_boards, load_or_exit  # noqa: E402
+from techo5lib import JARVIS_SHOW_PRODUCT  # noqa: E402
+
+load_or_exit()  # GENBU-173: a broken catalogue stops here, in plain words
 PAIR = ("manifest.json", "manifest.json.sig")
 # Boards older Shows' echod doesn't know read their own manifest (echod ManifestName); a release carries
-# it once its rootfs lists the board. A channel copies it along when its release has it.
-EXTRA = ("manifest-cronos.json", "manifest-cronos.json.sig")
+# it once its rootfs lists the board. A channel copies it along when its release has it. Which boards
+# those are comes from the board catalogue's first_boards (GENBU-176), of the product these releases are
+# (GENBU-192: another product would have its own releases).
+EXTRA_PAIRS = tuple((f"manifest-{b}.json", f"manifest-{b}.json.sig") for b in later_boards(JARVIS_SHOW_PRODUCT))
+# And Shows whose board.json is checked read manifest-v2.json, every board alike (GENBU-191).
+EXTRA_PAIRS += (("manifest-v2.json", "manifest-v2.json.sig"),)
+EXTRA = tuple(name for two in EXTRA_PAIRS for name in two)
 RANK = {"dev": 0, "staging": 1, "stable": 2}
 # Which releases a channel may carry.
 CARRIES = {"dev": {"dev", "staging", "stable"}, "staging": {"staging", "stable"}}
@@ -185,7 +195,7 @@ def move(gh, channel: str, *, own: str | None = None, commit: str | None = None,
             if want is None:
                 raise ChannelError(f"no release with a signed manifest for the {channel} channel")
             pair = gh.download(want, work)
-            if not set(PAIR) <= set(pair) or len(set(pair) & set(EXTRA)) not in (0, len(EXTRA)):
+            if not set(PAIR) <= set(pair) or any(len(set(pair) & set(two)) == 1 for two in EXTRA_PAIRS):
                 raise ChannelError(f"{want} is missing its signed manifest")
             # A board manifest an older release lacks stays on the channel as it was: that board's Shows
             # keep the last release that listed it, which is the one they could take anyway.

@@ -57,13 +57,20 @@ var (
 	Board = showBoard(kernelCmdline(), gatingDir)
 	// Hardware is the Echo for people, Model the same with the board's codename for whoever reads a
 	// diagnostics bundle.
-	Hardware = map[string]string{
+	Hardware = hardware[Board]
+	Model    = Hardware + " (" + Board + ")"
+
+	// A test holds these to the catalogue's models (internal/board).
+	hardware = map[string]string{
 		boardCronos:   "Echo Show 5 2nd gen",
 		boardCheckers: "Echo Show 5 1st gen",
 		boardCrown:    "Echo Show 8 1st gen",
-	}[Board]
-	Model = Hardware + " (" + Board + ")"
+	}
 )
+
+// BoardFile is board.json, what the installer wrote of this unit's board from the catalogue. Read
+// beside Board and logged (board.Note); nothing goes by it yet (GENBU-163 stage c).
+const BoardFile = StateDir + "/board.json"
 
 const (
 	boardCronos   = "cronos"

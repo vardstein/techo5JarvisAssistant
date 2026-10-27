@@ -44,8 +44,10 @@ func (c Channel) Label() string {
 func (c Channel) URL() string { return c.URLFor("") }
 
 // URLFor is where that channel keeps the manifest a board reads (ManifestName).
-func (c Channel) URLFor(board string) string {
-	name := ManifestName(board)
+func (c Channel) URLFor(board string) string { return c.at(ManifestName(board)) }
+
+// at is where that channel keeps the manifest called name.
+func (c Channel) at(name string) string {
 	switch c {
 	case Staging:
 		return releases + "/download/" + stagingTag + "/" + name

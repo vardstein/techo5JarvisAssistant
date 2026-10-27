@@ -1,0 +1,469 @@
+{
+  "_note": "Written by tests/fixtures/make_board_catalogue_baseline.py (GENBU-190). Do not edit by hand.",
+  "profiles": {
+    "crown": {
+      "board": "crown",
+      "fastboot_product": "CROWN",
+      "model": "Echo Show 8 1st gen / C7H6N3",
+      "product_id": "genbu-crown-v1",
+      "display_width": 1280,
+      "display_height": 800,
+      "amonet_dir_name": "amonet-crown-v2.0.1",
+      "amonet_kaeru_name": "crown-kaeru.bin",
+      "unlock_confirmation": "UNLOCK",
+      "install_confirmation": "ERASE"
+    },
+    "checkers": {
+      "board": "checkers",
+      "fastboot_product": "CHECKERS",
+      "model": "Echo Show 5 1st gen / H23K37",
+      "product_id": "genbu-checkers-v1",
+      "display_width": 960,
+      "display_height": 480,
+      "amonet_dir_name": "amonet-checkers-v2.0.1",
+      "amonet_kaeru_name": "checkers-kaeru.bin",
+      "unlock_confirmation": "UNLOCK",
+      "install_confirmation": "ERASE"
+    },
+    "cronos": {
+      "board": "cronos",
+      "fastboot_product": "CRONOS",
+      "model": "Echo Show 5 2nd gen / C76N8S",
+      "product_id": "genbu-cronos-v1",
+      "display_width": 960,
+      "display_height": 480,
+      "amonet_dir_name": "amonet-cronos-v2.0.1",
+      "amonet_kaeru_name": "cronos-kaeru.bin",
+      "unlock_confirmation": "UNLOCK",
+      "install_confirmation": "ERASE"
+    }
+  },
+  "product_to_board": {
+    "CROWN": "crown",
+    "CHECKERS": "checkers",
+    "CRONOS": "cronos"
+  },
+  "known_unsupported_products": {},
+  "supported_summary": "CHECKERS (Echo Show 5 1st gen), CRONOS (Echo Show 5 2nd gen) and CROWN (Echo Show 8 1st gen)",
+  "unsupported_product_message": {
+    "CROWN": "'CROWN' is not a supported Jarvis Show target. Jarvis Show v1 supports only CHECKERS (Echo Show 5 1st gen), CRONOS (Echo Show 5 2nd gen) and CROWN (Echo Show 8 1st gen). This may be a newer generation; do not flash it. No write was attempted.",
+    "CHECKERS": "'CHECKERS' is not a supported Jarvis Show target. Jarvis Show v1 supports only CHECKERS (Echo Show 5 1st gen), CRONOS (Echo Show 5 2nd gen) and CROWN (Echo Show 8 1st gen). This may be a newer generation; do not flash it. No write was attempted.",
+    "CRONOS": "'CRONOS' is not a supported Jarvis Show target. Jarvis Show v1 supports only CHECKERS (Echo Show 5 1st gen), CRONOS (Echo Show 5 2nd gen) and CROWN (Echo Show 8 1st gen). This may be a newer generation; do not flash it. No write was attempted.",
+    "crown": "'CROWN' is not a supported Jarvis Show target. Jarvis Show v1 supports only CHECKERS (Echo Show 5 1st gen), CRONOS (Echo Show 5 2nd gen) and CROWN (Echo Show 8 1st gen). This may be a newer generation; do not flash it. No write was attempted.",
+    " checkers ": "'CHECKERS' is not a supported Jarvis Show target. Jarvis Show v1 supports only CHECKERS (Echo Show 5 1st gen), CRONOS (Echo Show 5 2nd gen) and CROWN (Echo Show 8 1st gen). This may be a newer generation; do not flash it. No write was attempted.",
+    "Cronos": "'CRONOS' is not a supported Jarvis Show target. Jarvis Show v1 supports only CHECKERS (Echo Show 5 1st gen), CRONOS (Echo Show 5 2nd gen) and CROWN (Echo Show 8 1st gen). This may be a newer generation; do not flash it. No write was attempted.",
+    "": "'' is not a supported Jarvis Show target. Jarvis Show v1 supports only CHECKERS (Echo Show 5 1st gen), CRONOS (Echo Show 5 2nd gen) and CROWN (Echo Show 8 1st gen). This may be a newer generation; do not flash it. No write was attempted.",
+    "LAGUNA": "'LAGUNA' is not a supported Jarvis Show target. Jarvis Show v1 supports only CHECKERS (Echo Show 5 1st gen), CRONOS (Echo Show 5 2nd gen) and CROWN (Echo Show 8 1st gen). This may be a newer generation; do not flash it. No write was attempted.",
+    "CHECKERS2": "'CHECKERS2' is not a supported Jarvis Show target. Jarvis Show v1 supports only CHECKERS (Echo Show 5 1st gen), CRONOS (Echo Show 5 2nd gen) and CROWN (Echo Show 8 1st gen). This may be a newer generation; do not flash it. No write was attempted."
+  },
+  "profile_for_board": {
+    "crown": {
+      "ok": {
+        "board": "crown",
+        "fastboot_product": "CROWN",
+        "model": "Echo Show 8 1st gen / C7H6N3",
+        "product_id": "genbu-crown-v1",
+        "display_width": 1280,
+        "display_height": 800,
+        "amonet_dir_name": "amonet-crown-v2.0.1",
+        "amonet_kaeru_name": "crown-kaeru.bin",
+        "unlock_confirmation": "UNLOCK",
+        "install_confirmation": "ERASE"
+      }
+    },
+    "checkers": {
+      "ok": {
+        "board": "checkers",
+        "fastboot_product": "CHECKERS",
+        "model": "Echo Show 5 1st gen / H23K37",
+        "product_id": "genbu-checkers-v1",
+        "display_width": 960,
+        "display_height": 480,
+        "amonet_dir_name": "amonet-checkers-v2.0.1",
+        "amonet_kaeru_name": "checkers-kaeru.bin",
+        "unlock_confirmation": "UNLOCK",
+        "install_confirmation": "ERASE"
+      }
+    },
+    "cronos": {
+      "ok": {
+        "board": "cronos",
+        "fastboot_product": "CRONOS",
+        "model": "Echo Show 5 2nd gen / C76N8S",
+        "product_id": "genbu-cronos-v1",
+        "display_width": 960,
+        "display_height": 480,
+        "amonet_dir_name": "amonet-cronos-v2.0.1",
+        "amonet_kaeru_name": "cronos-kaeru.bin",
+        "unlock_confirmation": "UNLOCK",
+        "install_confirmation": "ERASE"
+      }
+    },
+    "Crown": {
+      "error": "ValueError",
+      "message": "unsupported Jarvis Show board 'Crown'; did you mean 'crown'?"
+    },
+    " CHECKERS ": {
+      "error": "ValueError",
+      "message": "unsupported Jarvis Show board ' CHECKERS '; did you mean 'checkers'?"
+    },
+    "CRONOS": {
+      "error": "ValueError",
+      "message": "unsupported Jarvis Show board 'CRONOS'; did you mean 'cronos'?"
+    },
+    "": {
+      "error": "ValueError",
+      "message": "unsupported Jarvis Show board ''; choose crown, checkers or cronos"
+    },
+    "laguna": {
+      "error": "ValueError",
+      "message": "unsupported Jarvis Show board 'laguna'; choose crown, checkers or cronos"
+    },
+    "echo-show-8-gen2": {
+      "error": "ValueError",
+      "message": "unsupported Jarvis Show board 'echo-show-8-gen2'; choose crown, checkers or cronos"
+    }
+  },
+  "profile_for_product": {
+    "CROWN": {
+      "ok": {
+        "board": "crown",
+        "fastboot_product": "CROWN",
+        "model": "Echo Show 8 1st gen / C7H6N3",
+        "product_id": "genbu-crown-v1",
+        "display_width": 1280,
+        "display_height": 800,
+        "amonet_dir_name": "amonet-crown-v2.0.1",
+        "amonet_kaeru_name": "crown-kaeru.bin",
+        "unlock_confirmation": "UNLOCK",
+        "install_confirmation": "ERASE"
+      }
+    },
+    "CHECKERS": {
+      "ok": {
+        "board": "checkers",
+        "fastboot_product": "CHECKERS",
+        "model": "Echo Show 5 1st gen / H23K37",
+        "product_id": "genbu-checkers-v1",
+        "display_width": 960,
+        "display_height": 480,
+        "amonet_dir_name": "amonet-checkers-v2.0.1",
+        "amonet_kaeru_name": "checkers-kaeru.bin",
+        "unlock_confirmation": "UNLOCK",
+        "install_confirmation": "ERASE"
+      }
+    },
+    "CRONOS": {
+      "ok": {
+        "board": "cronos",
+        "fastboot_product": "CRONOS",
+        "model": "Echo Show 5 2nd gen / C76N8S",
+        "product_id": "genbu-cronos-v1",
+        "display_width": 960,
+        "display_height": 480,
+        "amonet_dir_name": "amonet-cronos-v2.0.1",
+        "amonet_kaeru_name": "cronos-kaeru.bin",
+        "unlock_confirmation": "UNLOCK",
+        "install_confirmation": "ERASE"
+      }
+    },
+    "crown": {
+      "error": "ValueError",
+      "message": "unsupported fastboot product 'crown'; did you mean 'CROWN'?"
+    },
+    " checkers ": {
+      "error": "ValueError",
+      "message": "unsupported fastboot product ' checkers '; did you mean 'CHECKERS'?"
+    },
+    "Cronos": {
+      "error": "ValueError",
+      "message": "unsupported fastboot product 'Cronos'; did you mean 'CRONOS'?"
+    },
+    "": {
+      "error": "ValueError",
+      "message": "unsupported fastboot product ''"
+    },
+    "LAGUNA": {
+      "error": "ValueError",
+      "message": "unsupported fastboot product 'LAGUNA'"
+    },
+    "CHECKERS2": {
+      "error": "ValueError",
+      "message": "unsupported fastboot product 'CHECKERS2'"
+    }
+  },
+  "device_gate_supported_products": [
+    "CHECKERS",
+    "CRONOS",
+    "CROWN"
+  ],
+  "install": {
+    "BOOT_SHA256_BY_BOARD": {
+      "crown": "e00bed964d9b2ce31df152d183d2aeb45a7839cc5f7460a93dd97d70715ad1b7",
+      "checkers": "6fd696dce2592d2237a432e23ed7c032f1643bd1fe475d3094eccd9f7d2079b2",
+      "cronos": "7e9ce93a54fc613cbfab5d15929aa06bfd6f63c2c432d6f8261b3599fc3cd791"
+    },
+    "CROWN_BOOT_SHA256": "e00bed964d9b2ce31df152d183d2aeb45a7839cc5f7460a93dd97d70715ad1b7",
+    "CHECKERS_BOOT_SHA256": "6fd696dce2592d2237a432e23ed7c032f1643bd1fe475d3094eccd9f7d2079b2",
+    "CRONOS_BOOT_SHA256": "7e9ce93a54fc613cbfab5d15929aa06bfd6f63c2c432d6f8261b3599fc3cd791",
+    "SUPPORTED_BOARDS": [
+      "crown",
+      "checkers",
+      "cronos"
+    ],
+    "PROFILE_ID": "genbu-show-v1",
+    "FINAL_CONFIRM_PHRASE": "ERASE"
+  },
+  "recovery": {
+    "TWRP_SHA256": "b6b1446436de27cf860ebc170d4e3dffe3068ab90396ec915a123589d0d6f7d8",
+    "TWRP_SHA256_BY_BOARD": {
+      "crown": "b6b1446436de27cf860ebc170d4e3dffe3068ab90396ec915a123589d0d6f7d8",
+      "checkers": "dcc75bb651894c343039d45af73c4d900594762f6f55187c1ebdaf12d0ae59f5",
+      "cronos": "09a72dab093e9f4d444733bd4517af09444a0904a9a5243277df0ecd263873d8"
+    }
+  },
+  "unlock": {
+    "CONFIRM_PHRASE": "UNLOCK",
+    "AMONET_UNLOCK_SHA256": {
+      "fastbrick.sh": "aa93be2a752f8f4d4da31fa4bb733e9ce1dcdb9a55feda3795f52b95a9062ec5",
+      "profile.sh": "844e584acc0bda882ff4c897cf2f55a5c9b8b9d913b9f5b7f897e6780371605a",
+      "device.prop": "4313cbc0c8a75d418ec96890a317b89eae71bc78c7c92ace358000cb7d8d7bd5",
+      "bin/fastbrick.img": "6b899c2919933b94a8c3e3454c22fe733d1a346d87c27640554a828aae9c6e9a",
+      "bin/fastboot": "cb3d13b850143da85eb4b2099462514894459213da93d03d6ff4782d927d6e20",
+      "bin/fastboot32": "8912e9926cfc45503ad960866501305a684462b1dd1a44c5d82b1f075d6dd8c1"
+    }
+  },
+  "assets": {
+    "ASSETS": {
+      "crown": [
+        {
+          "kind": "lineage",
+          "name": "lineage-18.1-20260904-UNOFFICIAL-crown.zip",
+          "url": "https://github.com/amazon-oss/releases/releases/download/lineage-18.1-crown-v0.5/lineage-18.1-20260904-UNOFFICIAL-crown.zip",
+          "sha256": "a01359a5e13dad8ac24c5507e8a747163b992012410b14d2ca9a8711ec4a1491",
+          "size": 489922458,
+          "source": "amazon-oss/releases lineage-18.1-crown-v0.5",
+          "manual": false
+        },
+        {
+          "kind": "boot",
+          "name": "techo5-boot-crown-v1.0.1.img",
+          "url": "https://github.com/HuskerMinion/techo5/releases/download/v1.0.1/techo5-boot-crown-v1.0.1.img",
+          "sha256": "e00bed964d9b2ce31df152d183d2aeb45a7839cc5f7460a93dd97d70715ad1b7",
+          "size": 13156352,
+          "source": "HuskerMinion/techo5 v1.0.1 (signed manifest)",
+          "manual": false
+        },
+        {
+          "kind": "amonet",
+          "name": "amonet-crown-v2.0.1.zip",
+          "url": "https://xdaforums.com/attachments/amonet-crown-v2-0-1-zip.6373841/",
+          "sha256": "5db974c321ae2f4586f7c51c95b7bdffb61ef85bde05ce7e62f78196a984c24f",
+          "size": 44233517,
+          "source": "XDA thread 4762900 (R0rt1z2), needs an XDA login",
+          "manual": true
+        }
+      ],
+      "checkers": [
+        {
+          "kind": "lineage",
+          "name": "lineage-18.1-20260904-UNOFFICIAL-checkers.zip",
+          "url": "https://github.com/amazon-oss/releases/releases/download/lineage-18.1-checkers-v0.7/lineage-18.1-20260904-UNOFFICIAL-checkers.zip",
+          "sha256": "785fa643fd68b2e6f6f02d96a2da58373c6a577b92a27cf6cec69603bb94068e",
+          "size": 485795474,
+          "source": "amazon-oss/releases lineage-18.1-checkers-v0.7",
+          "manual": false
+        },
+        {
+          "kind": "boot",
+          "name": "techo5-boot-checkers-v1.0.1.img",
+          "url": "https://github.com/HuskerMinion/techo5/releases/download/v1.0.1/techo5-boot-checkers-v1.0.1.img",
+          "sha256": "6fd696dce2592d2237a432e23ed7c032f1643bd1fe475d3094eccd9f7d2079b2",
+          "size": 13172736,
+          "source": "HuskerMinion/techo5 v1.0.1 (signed manifest)",
+          "manual": false
+        },
+        {
+          "kind": "amonet",
+          "name": "amonet-checkers-v2.0.1.zip",
+          "url": "https://xdaforums.com/attachments/amonet-checkers-v2-0-1-zip.6373840/",
+          "sha256": "770324a8ed5ab922c0383f8ba072d70fc0190cc2c879f12f67b8d6cfa3ad30ee",
+          "size": 63836775,
+          "source": "XDA thread 4762900 (R0rt1z2), browser download (XDA's CDN refuses scripts)",
+          "manual": true
+        }
+      ],
+      "cronos": [
+        {
+          "kind": "lineage",
+          "name": "lineage-18.1-20260904-UNOFFICIAL-cronos.zip",
+          "url": "https://github.com/amazon-oss/releases/releases/download/lineage-18.1-cronos-v0.4/lineage-18.1-20260904-UNOFFICIAL-cronos.zip",
+          "sha256": "4c355998061a454792128d4b730932b47ed05a3d2a6d2628599218f44cc84678",
+          "size": 484847340,
+          "source": "amazon-oss/releases lineage-18.1-cronos-v0.4",
+          "manual": false
+        },
+        {
+          "kind": "boot",
+          "name": "techo5-boot-v0.7.16.img",
+          "url": "https://github.com/HuskerMinion/techo5/releases/download/v0.7.16/techo5-boot-v0.7.16.img",
+          "sha256": "7e9ce93a54fc613cbfab5d15929aa06bfd6f63c2c432d6f8261b3599fc3cd791",
+          "size": 13553664,
+          "source": "HuskerMinion/techo5 v0.7.16 (signed manifest)",
+          "manual": false
+        },
+        {
+          "kind": "amonet",
+          "name": "amonet-cronos-v2.0.1.zip",
+          "url": "https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-show-5-2nd-gen-2021-cronos.4772596/",
+          "sha256": "07a49c8fb2b244330297810b261333ba23976eca5ab3e0d9032f45f4c9847621",
+          "size": 44403627,
+          "source": "XDA thread 4772596 (R0rt1z2), browser download (XDA's CDN refuses scripts)",
+          "manual": true
+        }
+      ]
+    },
+    "assets_for": {
+      "crown": {
+        "ok": {
+          "assets": [
+            {
+              "kind": "lineage",
+              "name": "lineage-18.1-20260904-UNOFFICIAL-crown.zip",
+              "url": "https://github.com/amazon-oss/releases/releases/download/lineage-18.1-crown-v0.5/lineage-18.1-20260904-UNOFFICIAL-crown.zip",
+              "sha256": "a01359a5e13dad8ac24c5507e8a747163b992012410b14d2ca9a8711ec4a1491",
+              "size": 489922458,
+              "source": "amazon-oss/releases lineage-18.1-crown-v0.5",
+              "manual": false
+            },
+            {
+              "kind": "boot",
+              "name": "techo5-boot-crown-v1.0.1.img",
+              "url": "https://github.com/HuskerMinion/techo5/releases/download/v1.0.1/techo5-boot-crown-v1.0.1.img",
+              "sha256": "e00bed964d9b2ce31df152d183d2aeb45a7839cc5f7460a93dd97d70715ad1b7",
+              "size": 13156352,
+              "source": "HuskerMinion/techo5 v1.0.1 (signed manifest)",
+              "manual": false
+            },
+            {
+              "kind": "amonet",
+              "name": "amonet-crown-v2.0.1.zip",
+              "url": "https://xdaforums.com/attachments/amonet-crown-v2-0-1-zip.6373841/",
+              "sha256": "5db974c321ae2f4586f7c51c95b7bdffb61ef85bde05ce7e62f78196a984c24f",
+              "size": 44233517,
+              "source": "XDA thread 4762900 (R0rt1z2), needs an XDA login",
+              "manual": true
+            }
+          ]
+        }
+      },
+      "checkers": {
+        "ok": {
+          "assets": [
+            {
+              "kind": "lineage",
+              "name": "lineage-18.1-20260904-UNOFFICIAL-checkers.zip",
+              "url": "https://github.com/amazon-oss/releases/releases/download/lineage-18.1-checkers-v0.7/lineage-18.1-20260904-UNOFFICIAL-checkers.zip",
+              "sha256": "785fa643fd68b2e6f6f02d96a2da58373c6a577b92a27cf6cec69603bb94068e",
+              "size": 485795474,
+              "source": "amazon-oss/releases lineage-18.1-checkers-v0.7",
+              "manual": false
+            },
+            {
+              "kind": "boot",
+              "name": "techo5-boot-checkers-v1.0.1.img",
+              "url": "https://github.com/HuskerMinion/techo5/releases/download/v1.0.1/techo5-boot-checkers-v1.0.1.img",
+              "sha256": "6fd696dce2592d2237a432e23ed7c032f1643bd1fe475d3094eccd9f7d2079b2",
+              "size": 13172736,
+              "source": "HuskerMinion/techo5 v1.0.1 (signed manifest)",
+              "manual": false
+            },
+            {
+              "kind": "amonet",
+              "name": "amonet-checkers-v2.0.1.zip",
+              "url": "https://xdaforums.com/attachments/amonet-checkers-v2-0-1-zip.6373840/",
+              "sha256": "770324a8ed5ab922c0383f8ba072d70fc0190cc2c879f12f67b8d6cfa3ad30ee",
+              "size": 63836775,
+              "source": "XDA thread 4762900 (R0rt1z2), browser download (XDA's CDN refuses scripts)",
+              "manual": true
+            }
+          ]
+        }
+      },
+      "cronos": {
+        "ok": {
+          "assets": [
+            {
+              "kind": "lineage",
+              "name": "lineage-18.1-20260904-UNOFFICIAL-cronos.zip",
+              "url": "https://github.com/amazon-oss/releases/releases/download/lineage-18.1-cronos-v0.4/lineage-18.1-20260904-UNOFFICIAL-cronos.zip",
+              "sha256": "4c355998061a454792128d4b730932b47ed05a3d2a6d2628599218f44cc84678",
+              "size": 484847340,
+              "source": "amazon-oss/releases lineage-18.1-cronos-v0.4",
+              "manual": false
+            },
+            {
+              "kind": "boot",
+              "name": "techo5-boot-v0.7.16.img",
+              "url": "https://github.com/HuskerMinion/techo5/releases/download/v0.7.16/techo5-boot-v0.7.16.img",
+              "sha256": "7e9ce93a54fc613cbfab5d15929aa06bfd6f63c2c432d6f8261b3599fc3cd791",
+              "size": 13553664,
+              "source": "HuskerMinion/techo5 v0.7.16 (signed manifest)",
+              "manual": false
+            },
+            {
+              "kind": "amonet",
+              "name": "amonet-cronos-v2.0.1.zip",
+              "url": "https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-show-5-2nd-gen-2021-cronos.4772596/",
+              "sha256": "07a49c8fb2b244330297810b261333ba23976eca5ab3e0d9032f45f4c9847621",
+              "size": 44403627,
+              "source": "XDA thread 4772596 (R0rt1z2), browser download (XDA's CDN refuses scripts)",
+              "manual": true
+            }
+          ]
+        }
+      },
+      "Crown": {
+        "error": "ValueError",
+        "message": "no pinned assets for board 'Crown'"
+      },
+      " CHECKERS ": {
+        "error": "ValueError",
+        "message": "no pinned assets for board ' CHECKERS '"
+      },
+      "CRONOS": {
+        "error": "ValueError",
+        "message": "no pinned assets for board 'CRONOS'"
+      },
+      "": {
+        "error": "ValueError",
+        "message": "no pinned assets for board ''"
+      },
+      "laguna": {
+        "error": "ValueError",
+        "message": "no pinned assets for board 'laguna'"
+      },
+      "echo-show-8-gen2": {
+        "error": "ValueError",
+        "message": "no pinned assets for board 'echo-show-8-gen2'"
+      }
+    },
+    "amonet_bundle_dir": {
+      "crown": "CACHE/crown/amonet-crown-v2.0.1",
+      "checkers": "CACHE/checkers/amonet-checkers-v2.0.1",
+      "cronos": "CACHE/cronos/amonet-cronos-v2.0.1"
+    }
+  },
+  "board_choices": {
+    "tools/jarvis-show.py": [
+      "crown",
+      "checkers",
+      "cronos"
+    ],
+    "tools/fetch-show-assets.py": [
+      "crown",
+      "checkers",
+      "cronos"
+    ]
+  }
+}

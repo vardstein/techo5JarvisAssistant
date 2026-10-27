@@ -24,6 +24,8 @@ The updater and host installer both require the expected product and the physica
 
 `cronos` came after the first release, so it reads a signed manifest of its own, `manifest-cronos.json`, with `"boards": ["cronos"]`. The `manifest.json` that older Crown and Checkers Shows read never names it: those Shows were built before `cronos` was a board and would refuse the whole manifest (`supportedBoards` and `ownManifestBoards` in `echod/internal/update/manifest.go`).
 
+Every release also signs `manifest-v2.json`, naming every board the rootfs lists. A Show reads it only once its `board.json` agrees with the board echod finds, and it passes over boards it doesn't know instead of refusing the manifest. Duplicate boards and a missing own board still fail closed. See "Manifest names" in `release-pipeline.md`.
+
 This is deliberately separate from CPU architecture. All three boards are MT8163; architecture alone cannot prevent a cross-product/cross-board release mistake.
 
 ## Download integrity and rootfs identity

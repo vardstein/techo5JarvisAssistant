@@ -16,29 +16,27 @@ import sys
 import tarfile
 from typing import Callable
 
-from jarvis_crown.boards import profile_for_board
+from jarvis_crown import catalogue
+from jarvis_crown.catalogue import profile_for_board
 from jarvis_crown.recovery import RecoveryError, verify_backup
 
-CHECKERS_BOOT_SHA256 = "6fd696dce2592d2237a432e23ed7c032f1643bd1fe475d3094eccd9f7d2079b2"
-CROWN_BOOT_SHA256 = "e00bed964d9b2ce31df152d183d2aeb45a7839cc5f7460a93dd97d70715ad1b7"
-CRONOS_BOOT_SHA256 = "7e9ce93a54fc613cbfab5d15929aa06bfd6f63c2c432d6f8261b3599fc3cd791"
+# Boot pins come from the catalogue (catalogue/assets/<boot asset>.json), where the review notes for
+# each image live too. These names stay so callers and tests keep working; None means not pinned.
+SUPPORTED_BOARDS = catalogue.supported_boards()
 BOOT_SHA256_BY_BOARD: dict[str, str | None] = {
-    # Upstream TECHO5 v1.0.1 techo5-boot-crown-v1.0.1.img, for the same reasons as checkers below. Its
-    # ramdisk is v0.8.0's byte for byte; the kernel only adds the quick-tap unmute fix (upstream #17).
-    "crown": CROWN_BOOT_SHA256,
-    # Upstream TECHO5 v1.0.1 techo5-boot-checkers-v1.0.1.img: listed in the v1.0.1 manifest signed by
-    # the upstream release key, kernel 4.9.337-g8d928c5176cc (the Jarvis vendor-module ABI).
-    "checkers": CHECKERS_BOOT_SHA256,
-    # Upstream TECHO5 v0.7.16 techo5-boot-v0.7.16.img, the last release with a cronos boot image (its
-    # 11 DTBs are all cronos) and the one upstream's own install-show.py picks for cronos. Same kernel
-    # 4.9.337-g8d928c5176cc as checkers v1.0.1, and the same init; only four ramdisk tools differ.
-    "cronos": CRONOS_BOOT_SHA256,
+    board: catalogue.default().resolve(board)["assets"]["boot"].get("sha256") for board in SUPPORTED_BOARDS
 }
+CHECKERS_BOOT_SHA256 = BOOT_SHA256_BY_BOARD["checkers"]
+CROWN_BOOT_SHA256 = BOOT_SHA256_BY_BOARD["crown"]
+CRONOS_BOOT_SHA256 = BOOT_SHA256_BY_BOARD["cronos"]
 ROOTFS_MARKER = "etc/jarvis-show-release.json"
-PROFILE_ID = "genbu-show-v1"
-SUPPORTED_BOARDS = ("crown", "checkers", "cronos")
+# The rootfs marker's "product" while the catalogue has one product. With more, an install names the one
+# it puts on the unit (catalogue.pick_product, GENBU-192) and this is None.
+_PRODUCTS = catalogue.default().products()
+PROFILE_ID = _PRODUCTS[0] if len(_PRODUCTS) == 1 else None
 UPDATE_CHANNELS = ("stable", "staging", "dev")  # echod/internal/update/channel.go
-FINAL_CONFIRM_PHRASE = "ERASE"  # compatibility alias
+# What the person types before the install formats userdata. The same on every board, so the step owns it.
+FINAL_CONFIRM_PHRASE = "ERASE"
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -113,9 +111,15 @@ def _read_marker(archive: tarfile.TarFile, marker_name: str) -> bytes | None:
     return None
 
 
-def verify_jarvis_rootfs(path: Path, expected_sha256: str, *, board: str = "crown") -> RootfsIdentity:
-    """Require caller-pinned bytes plus a Jarvis Show product marker allowing board."""
+def verify_jarvis_rootfs(path: Path, expected_sha256: str, *, board: str = "crown",
+                         product: str | None = None) -> RootfsIdentity:
+    """Require caller-pinned bytes plus a marker naming product (default: the catalogue's only one) and
+    allowing board."""
     profile = profile_for_board(board)
+    try:
+        want = catalogue.default().product(product)
+    except catalogue.CatalogueError as exc:
+        raise InstallError(str(exc)) from None
     expected = expected_sha256.strip().lower()
     if not SHA256_RE.fullmatch(expected):
         raise InstallError("rootfs SHA-256 must be exactly 64 lowercase hex characters")
@@ -142,9 +146,9 @@ def verify_jarvis_rootfs(path: Path, expected_sha256: str, *, board: str = "crow
 
     product = payload.get("product")
     raw_boards = payload.get("boards")
-    if product != PROFILE_ID or not isinstance(raw_boards, list):
+    if product != want["id"] or not isinstance(raw_boards, list):
         raise InstallError(
-            f"rootfs marker is not {PROFILE_ID!r} with an explicit boards list"
+            f"rootfs marker is not {want['id']!r} with an explicit boards list"
         )
     # Boards newer than the first release go in "more_boards", which Shows from before them
     # ignore: they refuse a marker whose "boards" names a board they don't know.
@@ -152,7 +156,7 @@ def verify_jarvis_rootfs(path: Path, expected_sha256: str, *, board: str = "crow
     if not isinstance(more_boards, list):
         raise InstallError("rootfs marker has an invalid more_boards list")
     boards = tuple(str(value).lower() for value in raw_boards + more_boards)
-    if not boards or any(value not in SUPPORTED_BOARDS for value in boards):
+    if not boards or any(value not in want["boards"] for value in boards):
         raise InstallError(f"rootfs marker has invalid supported boards: {boards!r}")
     if len(set(boards)) != len(boards):
         raise InstallError("rootfs marker contains duplicate board entries")
@@ -204,6 +208,7 @@ def make_install_plan(
     rootfs_sha256: str,
     confirmation: str,
     board: str = "crown",
+    product: str | None = None,
     boot_sha256: str | None = None,
     wifi: str | None = None,
     wifi_passphrase_file: Path | None = None,
@@ -217,9 +222,9 @@ def make_install_plan(
     update_channel: str | None = None,
 ) -> InstallPlan:
     profile = profile_for_board(board)
-    if confirmation != profile.install_confirmation:
+    if confirmation != FINAL_CONFIRM_PHRASE:
         raise InstallError(
-            f"final confirmation must be exactly: {profile.install_confirmation}"
+            f"final confirmation must be exactly: {FINAL_CONFIRM_PHRASE}"
         )
     if not adb_serial.strip():
         raise InstallError("ADB recovery serial is required")
@@ -228,7 +233,7 @@ def make_install_plan(
         raise InstallError("device name must be 1-64 printable characters")
 
     verify_boot(boot_image, profile.board, expected_sha256=boot_sha256)
-    rootfs_identity = verify_jarvis_rootfs(rootfs, rootfs_sha256, board=profile.board)
+    rootfs_identity = verify_jarvis_rootfs(rootfs, rootfs_sha256, board=profile.board, product=product)
     backup = verify_install_backup(backup_root, adb_serial=adb_serial, board=profile.board)
 
     installer = repo_root / "tools" / "install-show.py"

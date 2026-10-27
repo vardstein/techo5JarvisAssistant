@@ -14,9 +14,9 @@ import subprocess
 import sys
 from typing import Callable, Mapping
 
-from jarvis_crown.boards import BoardProfile, profile_for_board
+from jarvis_crown.catalogue import BoardProfile, profile_for_board
 from jarvis_crown.device_gate import DeviceIdentity, identify_show
-from jarvis_crown.install import InstallPlan, execute_install, make_install_plan
+from jarvis_crown.install import FINAL_CONFIRM_PHRASE, InstallPlan, execute_install, make_install_plan
 from jarvis_crown.preflight import Check, preflight_ok, run_preflight
 from jarvis_crown.shows import record_show
 from jarvis_crown.recovery import (
@@ -59,6 +59,7 @@ class InstallInputs:
     expected_fastboot_serial: str | None = None
     root_password_file: Path | None = None
     update_channel: str | None = None
+    product: str | None = None  # catalogue product id (GENBU-192); None: the catalogue's only one
 
 
 @dataclass(frozen=True)
@@ -201,8 +202,9 @@ def run_install_flow(
         boot_sha256=inputs.boot_sha256,
         rootfs=inputs.rootfs,
         rootfs_sha256=inputs.rootfs_sha256,
-        confirmation=profile.install_confirmation,
+        confirmation=FINAL_CONFIRM_PHRASE,
         board=profile.board,
+        product=inputs.product,
         wifi=inputs.wifi,
         wifi_passphrase_file=inputs.wifi_passphrase_file,
         ssh_key=inputs.ssh_key,
@@ -216,8 +218,8 @@ def run_install_flow(
     )
 
     phrase = confirm_install(profile)
-    if phrase != profile.install_confirmation:
-        raise FlowError(f"final confirmation must be exactly: {profile.install_confirmation}")
+    if phrase != FINAL_CONFIRM_PHRASE:
+        raise FlowError(f"final confirmation must be exactly: {FINAL_CONFIRM_PHRASE}")
 
     say("stage-lineage")
     stage_lineage(inputs, session.adb_serial)

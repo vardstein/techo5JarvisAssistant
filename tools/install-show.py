@@ -52,10 +52,14 @@ import sys
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from techo5lib import (CONSOLE_TECHO5, JARVIS_SHOW_BOARDS, Adb, Console, Fastboot, Release, ask_name, ask_wifi,  # noqa: E402
+from jarvis_crown.catalogue import load_or_exit  # noqa: E402
+
+load_or_exit()  # GENBU-173: a broken catalogue stops here, in plain words
+from techo5lib import (CONSOLE_TECHO5, JARVIS_SHOW_PRODUCT, Adb, Console, Fastboot, Release, ask_name, ask_wifi,  # noqa: E402
                        check_serial_access, confirm, console_hint, default_dir, fail, fetch_json, md5, need,
                        new_api_key, note, pick_unit, run_main, sha512_crypt, step, valid_api_key, wait_for,
                        wifi_conf, write_private)
+from jarvis_crown import catalogue  # noqa: E402
 from jarvis_crown.show_ssh import pin_host_key  # noqa: E402
 from jarvis_crown.timing import (FASTBOOT_REENUM_TIMEOUT_SECONDS, FIRST_BOOT_TIMEOUT_SECONDS,
                                   RESCUE_CONSOLE_TIMEOUT_SECONDS, TWRP_DATA_REBOOT_TIMEOUT_SECONDS)  # noqa: E402
@@ -67,15 +71,17 @@ KERNEL_RELEASE = '4.9.337-g8d928c5176cc'
 WIFI_MODULE = 'vendor/lib/modules/mt76x8_wlan.ko'
 BT_MODULE = 'vendor/lib/modules/mt76x8_bt.ko'
 
-# The boards this installs on, as `getprop ro.product.device` reports them. They share the SoC, the
-# kernel commit, the partition numbers this script writes (MISC p8, boot p9, system p12) and the
-# daemon binary; they differ in the panel, the microphone array, the speaker codec and the mute
-# driver, which the daemon settles at run time from the board name in the kernel command line.
-BOARDS = {
-    'cronos': 'Echo Show 5 2nd gen',
-    'checkers': 'Echo Show 5 1st gen',
-    'crown': 'Echo Show 8 1st gen',
-}
+# The boards this installs on, as LineageOS's `getprop ro.product.device` reports them, with their
+# model from the board catalogue ('Echo Show 8 1st gen / C7H6N3' shows as 'Echo Show 8 1st gen').
+# They share the SoC, the kernel commit, the partition numbers this script writes (MISC p8, boot p9,
+# system p12) and the daemon binary; they differ in the panel, the microphone array, the speaker
+# codec and the mute driver, which the daemon settles at run time from the board name in the kernel
+# command line.
+BOARDS = {b: catalogue.default().resolve(b)['model'].split(' / ')[0] for b in catalogue.supported_boards()}
+# TWRP reports the catalogue's twrp_device instead, which need not be the board name (GENBU-178).
+TWRP_BOARDS = dict((catalogue.default().resolve(b)['identity']['twrp_device'].lower(), b)
+                   for b in catalogue.supported_boards()
+                   if catalogue.default().resolve(b)['identity'].get('twrp_device'))
 
 
 def root_password_hash(path):
@@ -178,6 +184,18 @@ def describe_settings(ssh, settings):
     return out
 
 
+BOARD_PATH = '/data/misc/techo5/board.json'
+
+
+def board_json_cmd(board, path=BOARD_PATH):
+    """A shell command that writes the board's board.json (catalogue.on_show) and says BOARD-OK. Its own
+    command, like the root password's: the line is over two hundred characters. Written new on every
+    install, through a temporary file, so a cut leaves the old one or none, never half of one."""
+    text = catalogue.on_show_text(catalogue.default(), board).rstrip('\n')
+    return ("printf '%%s\\n' %s > %s.new && mv -f %s.new %s && sync && echo BOARD-OK"
+            % (quote(text), path, path, path))
+
+
 def write_once_cmd(path, text):
     """A shell command that writes text to path, private, unless the file is there already."""
     return ("if [ -e %s ]; then echo WRITE-KEPT; else (umask 077; printf '%%s\\n' %s > %s) && echo WRITE-OK; fi"
@@ -201,14 +219,12 @@ LOGO_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'boot-logo'
 LOGO_SHA = '1354914c8a2498a7f69a8ebc4a23782ff3369f9e4f980de04f7b9b77734c3403'
 LOGO_SIZE = 6105
 # Per board: where the slot is in kaeru, kaeru's length, and kaeru's sha256 without and with the logo.
-LOGO_KAERU = {
-    'cronos': dict(offset=335736, length=399440,  # amonet-cronos v2.0.1
-                   stock='a9fb5acb08ee99ab5562da612b329249157f96dabc5702fad6e14ec6cf5a415b',
-                   logo='8f062790f7d150928bfcf4967039e38926739f10f22325c5f64a471b29e765cd'),
-    'crown': dict(offset=288716, length=481792,  # amonet-crown
-                  stock='6a717f0f8bd3502df2e2a811f1a90a2ec83e58f151874e11c2920a9a63dc4fa1',
-                  logo='926bc8449b1a9e0ce894c0df1bc66f549c2b294247bc73da9e8998b5e9344f64'),
-}
+# From the catalogue's amonet assets (GENBU-175), where boot_logo.py reads the OpenJade logo's from.
+LOGO_KAERU = {}
+for _board in catalogue.supported_boards():
+    _w = catalogue.default().resolve(_board)['assets']['amonet'].get('wordmark')
+    if _w and 'techo5' in _w['logos']:
+        LOGO_KAERU[_board] = dict(offset=_w['offset'], length=_w['length'], stock=_w['stock'], logo=_w['logos']['techo5'])
 
 
 def lineage_board(zip_path):
@@ -502,7 +518,7 @@ def boot_image(rel, work, dev):
         # image also served the list. Releases made before the manifest covered boot images are passed
         # over here rather than trusted, which is why the search keeps going.
         earlier = Release(REPO, r['tag_name'], work,
-                          expected_product='genbu-show-v1', expected_board=dev)
+                          expected_product=JARVIS_SHOW_PRODUCT, expected_board=dev)
         if not earlier.signed(name):
             note('release %s has %s but does not name it in its signed manifest; looking further back'
                  % (r['tag_name'], name))
@@ -528,7 +544,7 @@ def main():
     ap.add_argument('--lineage-zip', help='install from TWRP: the LineageOS 18.1 zip for this board, installed only for its drivers')
     ap.add_argument('--jarvis-show-prestaged', action='store_true', help=argparse.SUPPRESS)
     ap.add_argument('--jarvis-show-stage-lineage-only', action='store_true', help=argparse.SUPPRESS)
-    ap.add_argument('--jarvis-show-board', choices=JARVIS_SHOW_BOARDS, help=argparse.SUPPRESS)
+    ap.add_argument('--jarvis-show-board', choices=catalogue.supported_boards(), help=argparse.SUPPRESS)
     ap.add_argument('--jarvis-show-version', help=argparse.SUPPRESS)
     # Legacy private flags retained only so an older Crown wrapper fails safely into the same path.
     ap.add_argument('--jarvis-crown-prestaged', action='store_true', help=argparse.SUPPRESS)
@@ -606,6 +622,8 @@ def main():
         fail("adb does not see %s running LineageOS (state '%s'): turn on USB debugging and accept this computer, "
              "or install from TWRP with --lineage-zip%s" % (a.serial, state, console_hint((CONSOLE_TECHO5,))))
     dev = adb.sh('getprop ro.product.device')
+    if twrp:
+        dev = TWRP_BOARDS.get(dev.lower(), dev)
     if dev not in BOARDS:
         fail("%s reports '%s', which is none of: %s"
              % (a.serial, dev, ', '.join('%s (%s)' % (b, n) for b, n in BOARDS.items())))
@@ -619,8 +637,8 @@ def main():
     elif a.jarvis_show_prestaged:
         if dev != a.jarvis_show_board:
             fail('--jarvis-show-prestaged was pinned for %s, but TWRP reports %s' % (a.jarvis_show_board, dev))
-        if dev not in JARVIS_SHOW_BOARDS:
-            fail('--jarvis-show-prestaged supports %s only, got %s' % ('/'.join(JARVIS_SHOW_BOARDS), dev))
+        if dev not in catalogue.supported_boards():
+            fail('--jarvis-show-prestaged supports %s only, got %s' % ('/'.join(catalogue.supported_boards()), dev))
         note('%s in TWRP; verified LineageOS vendor tree will be consumed without formatting/installing again' % dev)
     else:
         kr = adb.sh('uname -r')
@@ -710,7 +728,7 @@ def main():
         note('%s boot image: wrapper-verified pinned local input %s' % (dev, boot))
     else:
         rel = Release(REPO, a.release, a.work,
-                      expected_product='genbu-show-v1', expected_board=dev)
+                      expected_product=JARVIS_SHOW_PRODUCT, expected_board=dev)
         version = rel.version
         if a.rootfs:
             rootfs = os.path.abspath(a.rootfs)
@@ -888,6 +906,12 @@ def main():
         if 'PW-OK' not in o:
             fail('the root password was not written:\n%s' % o)
         note('root password written (its hash)')
+    # What board this is, from the catalogue, for echod to read beside its own guess (GENBU-163 stage c).
+    # Factory reset keeps it, like the profile: it says what the unit is, not how it was set up.
+    o = console.run(board_json_cmd(dev), 15) or ''
+    if 'BOARD-OK' not in o:
+        fail('board.json was not written:\n%s' % o)
+    note('board.json written for %s' % dev)
     # The daemon's settings, each its own short command: a line typed into the console's shell has a
     # length limit, and the token alone is a couple of hundred characters.
     first = initial_state(bool(pub), settings)

@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import pathlib
 import sys
@@ -8,7 +9,7 @@ from unittest import mock
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
-from jarvis_crown.boards import profile_for_board  # noqa: E402
+from jarvis_crown.catalogue import profile_for_board  # noqa: E402
 from jarvis_crown.device_gate import DeviceIdentity  # noqa: E402
 from jarvis_crown.flow import (  # noqa: E402
     FlowDeps,
@@ -19,7 +20,8 @@ from jarvis_crown.flow import (  # noqa: E402
 )
 from jarvis_crown.preflight import Check  # noqa: E402
 from jarvis_crown.recovery import BackupResult, RecoverySession  # noqa: E402
-from jarvis_crown.unlock import UnlockResult  # noqa: E402
+from jarvis_crown.install import FINAL_CONFIRM_PHRASE  # noqa: E402
+from jarvis_crown.unlock import CONFIRM_PHRASE as UNLOCK_PHRASE, UnlockResult  # noqa: E402
 
 
 class FlowHarness:
@@ -112,9 +114,9 @@ class FlowAcceptanceTests(unittest.TestCase):
             td = pathlib.Path(td_s)
             h = FlowHarness(board="crown", locked=False)
             result = run_install_flow(
-                inputs(td, "crown"),
+                dataclasses.replace(inputs(td, "crown"), product="genbu-show-v1"),
                 confirm_unlock=lambda _p: self.fail("unlock confirmation must not be requested"),
-                confirm_install=lambda p: p.install_confirmation,
+                confirm_install=lambda p: FINAL_CONFIRM_PHRASE,
                 deps=h.deps(),
             )
             self.assertEqual(
@@ -123,8 +125,9 @@ class FlowAcceptanceTests(unittest.TestCase):
             )
             self.assertEqual(result.profile.board, "crown")
             self.assertEqual(h.identify_kwargs["expected_board"], "crown")
-            self.assertEqual(h.plan_kwargs["confirmation"], profile_for_board("crown").install_confirmation)
+            self.assertEqual(h.plan_kwargs["confirmation"], FINAL_CONFIRM_PHRASE)
             self.assertEqual(h.plan_kwargs["board"], "crown")
+            self.assertEqual(h.plan_kwargs["product"], "genbu-show-v1")
             self.assertEqual(h.stage_serial, "ADB123")
             record = json.loads((td / "backups" / "ADB123" / "show.json").read_text())
             self.assertEqual((record["name"], record["board"]), ("Living Room", "crown"))
@@ -135,7 +138,7 @@ class FlowAcceptanceTests(unittest.TestCase):
             result = run_install_flow(
                 inputs(pathlib.Path(td_s), "crown"),
                 confirm_unlock=lambda _p: self.fail("recovery identity is already unlocked"),
-                confirm_install=lambda p: p.install_confirmation,
+                confirm_install=lambda p: FINAL_CONFIRM_PHRASE,
                 deps=h.deps(),
                 initial_identity=h.identity,
             )
@@ -148,8 +151,8 @@ class FlowAcceptanceTests(unittest.TestCase):
             h = FlowHarness(board="crown", locked=True)
             run_install_flow(
                 inputs(pathlib.Path(td_s), "crown"),
-                confirm_unlock=lambda p: p.unlock_confirmation,
-                confirm_install=lambda p: p.install_confirmation,
+                confirm_unlock=lambda p: UNLOCK_PHRASE,
+                confirm_install=lambda p: FINAL_CONFIRM_PHRASE,
                 deps=h.deps(),
             )
             self.assertEqual(h.calls[:4], ["preflight", "identify", "unlock", "recovery"])
@@ -161,8 +164,8 @@ class FlowAcceptanceTests(unittest.TestCase):
             data = inputs(pathlib.Path(td_s), "checkers")
             result = run_install_flow(
                 data,
-                confirm_unlock=lambda p: p.unlock_confirmation,
-                confirm_install=lambda p: p.install_confirmation,
+                confirm_unlock=lambda p: UNLOCK_PHRASE,
+                confirm_install=lambda p: FINAL_CONFIRM_PHRASE,
                 deps=h.deps(),
             )
             self.assertEqual(result.profile.board, "checkers")
@@ -182,8 +185,8 @@ class FlowAcceptanceTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "expected crown"):
                 run_install_flow(
                     inputs(pathlib.Path(td_s), "crown"),
-                    confirm_unlock=lambda p: p.unlock_confirmation,
-                    confirm_install=lambda p: p.install_confirmation,
+                    confirm_unlock=lambda p: UNLOCK_PHRASE,
+                    confirm_install=lambda p: FINAL_CONFIRM_PHRASE,
                     deps=deps,
                 )
             self.assertEqual(h.calls, ["preflight", "identify"])
@@ -198,8 +201,8 @@ class FlowAcceptanceTests(unittest.TestCase):
             with self.assertRaisesRegex(FlowError, "preflight failed"):
                 run_install_flow(
                     inputs(pathlib.Path(td_s)),
-                    confirm_unlock=lambda p: p.unlock_confirmation,
-                    confirm_install=lambda p: p.install_confirmation,
+                    confirm_unlock=lambda p: UNLOCK_PHRASE,
+                    confirm_install=lambda p: FINAL_CONFIRM_PHRASE,
                     deps=deps,
                 )
             self.assertEqual(h.calls, ["preflight"])
@@ -210,7 +213,7 @@ class FlowAcceptanceTests(unittest.TestCase):
             with self.assertRaisesRegex(FlowError, "final confirmation"):
                 run_install_flow(
                     inputs(pathlib.Path(td_s)),
-                    confirm_unlock=lambda p: p.unlock_confirmation,
+                    confirm_unlock=lambda p: UNLOCK_PHRASE,
                     confirm_install=lambda _p: "yes",
                     deps=h.deps(),
                 )
@@ -229,7 +232,7 @@ class FlowAcceptanceTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "bad rootfs"):
                 run_install_flow(
                     inputs(pathlib.Path(td_s)),
-                    confirm_unlock=lambda p: p.unlock_confirmation,
+                    confirm_unlock=lambda p: UNLOCK_PHRASE,
                     confirm_install=confirm,
                     deps=deps,
                 )
@@ -247,8 +250,8 @@ class FlowAcceptanceTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "backup hash mismatch"):
                 run_install_flow(
                     inputs(pathlib.Path(td_s)),
-                    confirm_unlock=lambda p: p.unlock_confirmation,
-                    confirm_install=lambda p: p.install_confirmation,
+                    confirm_unlock=lambda p: UNLOCK_PHRASE,
+                    confirm_install=lambda p: FINAL_CONFIRM_PHRASE,
                     deps=deps,
                 )
             self.assertEqual(h.calls, ["preflight", "identify", "recovery", "client", "backup"])
@@ -263,8 +266,8 @@ class FlowAcceptanceTests(unittest.TestCase):
             with self.assertRaisesRegex(FlowError, "Lineage failed"):
                 run_install_flow(
                     inputs(pathlib.Path(td_s)),
-                    confirm_unlock=lambda p: p.unlock_confirmation,
-                    confirm_install=lambda p: p.install_confirmation,
+                    confirm_unlock=lambda p: UNLOCK_PHRASE,
+                    confirm_install=lambda p: FINAL_CONFIRM_PHRASE,
                     deps=deps,
                 )
             self.assertNotIn("execute", h.calls)

@@ -1,0 +1,38 @@
+# GENBU-180 / GENBU-181: board identity read off running Shows, 2026-10-19.
+# One unit per board, read-only over ssh as root. The Shows run techo5 (no getprop, no dumpsys), so the
+# display line is the framebuffer size instead of DisplayDeviceInfo. Only the lines below were kept;
+# the command line was filtered to board, panel and product keys, so no serial or address is in it.
+#
+# Commands, per unit:
+#   tr '\0' ' ' < /proc/device-tree/compatible
+#   tr '\0' ' ' < /proc/device-tree/model
+#   uname -r
+#   tr ' ' '\n' < /proc/cmdline | grep -E '^(androidboot.hardware|androidboot.product|lcm)='
+#   cat /sys/class/graphics/fb0/virtual_size        (width,height of all 3 buffers stacked)
+
+== crown
+compatible: amzn,crown-pvt
+model: MT8163
+kernel: 4.9.337-g8d928c5176cc
+androidboot.hardware=mt8163
+androidboot.product=crown
+lcm=1-jd936x_wxga_dsi_vdo_crown_st_kd_hsd
+fb0 virtual_size: 800,3840
+
+== checkers
+compatible: mediatek,mt8163
+model: MT8163
+kernel: 4.9.337-g8d928c5176cc
+androidboot.hardware=mt8163
+androidboot.product=checkers
+lcm=1-st7701s_wsvga_dsi_vdo_checkers_st_kd_hsd
+fb0 virtual_size: 480,2880
+
+== cronos
+compatible: mediatek,mt8163
+model: MT8163
+kernel: 4.9.337-g8d928c5176cc
+androidboot.hardware=mt8163
+androidboot.product=cronos
+lcm=1-st7701s_wsvga_dsi_vdo_cronos_st_truly
+fb0 virtual_size: 480,2880

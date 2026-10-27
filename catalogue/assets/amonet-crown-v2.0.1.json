@@ -1,0 +1,54 @@
+{
+  "id": "amonet-crown-v2.0.1",
+  "kind": "amonet",
+  "file": "amonet-crown-v2.0.1.zip",
+  "url": "https://xdaforums.com/attachments/amonet-crown-v2-0-1-zip.6373841/",
+  "sha256": "5db974c321ae2f4586f7c51c95b7bdffb61ef85bde05ce7e62f78196a984c24f",
+  "size": 44233517,
+  "source": "XDA thread 4762900 (R0rt1z2), needs an XDA login",
+  "manual": true,
+  "upstream": {
+    "repo": "R0rt1z2/amonet",
+    "branches": ["mt8163-echo-show", "mt8163-crown"]
+  },
+  "kaeru": "amonet/bin/crown-kaeru.bin",
+  "wordmark": {
+    "offset": 288716,
+    "length": 481792,
+    "stock": "6a717f0f8bd3502df2e2a811f1a90a2ec83e58f151874e11c2920a9a63dc4fa1",
+    "logos": {
+      "openjade": "e8d1fe05273ff74c0224ad98240df5319c46fa4459ebeeb2a24b5a365d50aa10",
+      "techo5": "926bc8449b1a9e0ce894c0df1bc66f549c2b294247bc73da9e8998b5e9344f64"
+    },
+    "openjade_large": {
+      "file": "openjade-wordmark-crown.bin",
+      "sha256": "a29902b3ab2977c13a7253da62c1b5f13a9355b679e19b4a825c1ff3fc818dc3",
+      "code_at": 63488,
+      "code_stock": "6ff49d73184444080ef0aefaaa380df1180c4108029404f23b12114c01f1aa05",
+      "code": "6ff4ee73184444080ef0aefaff380df1180c4108029404f2dd12114c01f1ff05",
+      "kaeru_sha256": "32aa461d8a5d3bacb3b3d0a374293e7cd6348ece30ac09bde2ba5364693d4e44"
+    }
+  },
+  "members": {
+    "amonet/bin/fastboot": "cb3d13b850143da85eb4b2099462514894459213da93d03d6ff4782d927d6e20",
+    "amonet/bin/fastboot32": "8912e9926cfc45503ad960866501305a684462b1dd1a44c5d82b1f075d6dd8c1",
+    "amonet/bin/fastbrick.img": "6b899c2919933b94a8c3e3454c22fe733d1a346d87c27640554a828aae9c6e9a",
+    "amonet/bin/twrp.img": "b6b1446436de27cf860ebc170d4e3dffe3068ab90396ec915a123589d0d6f7d8",
+    "amonet/device.prop": "4313cbc0c8a75d418ec96890a317b89eae71bc78c7c92ace358000cb7d8d7bd5",
+    "amonet/fastbrick.sh": "aa93be2a752f8f4d4da31fa4bb733e9ce1dcdb9a55feda3795f52b95a9062ec5",
+    "amonet/profile.sh": "844e584acc0bda882ff4c897cf2f55a5c9b8b9d913b9f5b7f897e6780371605a"
+  },
+  "licence": {
+    "checked": "2026-10-27",
+    "parts": [
+      {"part": "amonet/modules/*.py, amonet's Python modules", "spdx": "MIT", "sources": ["https://github.com/R0rt1z2/amonet/blob/d6179b8a2ba45fb641acc38b1cf3e848e8ff235d/README.md", "https://github.com/R0rt1z2/amonet/blob/d6179b8a2ba45fb641acc38b1cf3e848e8ff235d/LICENSE.MIT"]},
+      {"part": "amonet/brom-payload/build/payload.bin and pl.bin, both built from amonet's brom-payload, which links idmetool's idmelib and carries Marco Paland's printf.c", "spdx": "GPL-2.0-only AND GPL-2.0-or-later AND MIT", "sources": ["https://github.com/R0rt1z2/amonet/blob/d6179b8a2ba45fb641acc38b1cf3e848e8ff235d/README.md", "https://github.com/R0rt1z2/amonet/blob/d6179b8a2ba45fb641acc38b1cf3e848e8ff235d/brom-payload/Makefile", "https://github.com/R0rt1z2/amonet/blob/d6179b8a2ba45fb641acc38b1cf3e848e8ff235d/brom-payload/printf.c"]},
+      {"part": "kaeru's code in amonet/bin/crown-kaeru.bin: every SPDX header in kaeru's source at this commit (which files this board's build pulls in is not checked); files without a header fall under its LICENSE", "spdx": "AGPL-3.0-or-later AND MIT AND (MIT OR Apache-2.0 WITH LLVM-exception) AND (BSD-3-Clause OR GPL-2.0-or-later) AND Unlicense AND (0BSD OR Unlicense)", "sources": ["https://github.com/R0rt1z2/kaeru/blob/1c71d635f3829a1ae566da7cc1bc76c6ee1358b3/LICENSE", "https://github.com/R0rt1z2/kaeru/blob/1c71d635f3829a1ae566da7cc1bc76c6ee1358b3/README.md", "https://github.com/R0rt1z2/kaeru/tree/1c71d635f3829a1ae566da7cc1bc76c6ee1358b3"]},
+      {"part": "Amazon/MediaTek boot chain: amonet/bin/preloader.img, lk.bin, tz.img, tee-payload.bin, and the stock LK that crown-kaeru.bin patches. Not in the amonet repo; the zip carries no licence or notice file", "spdx": "LicenseRef-not-stated", "sources": ["asset:amonet/bin/preloader.img", "asset:amonet/bin/lk.bin", "asset:amonet/bin/tz.img", "asset:amonet/bin/tee-payload.bin", "asset:amonet/bin/crown-kaeru.bin"]},
+      {"part": "amonet/bin/twrp.img and amonet/bin/fastbrick.img: prebuilt images with no licence or notice file", "spdx": "LicenseRef-not-stated", "sources": ["asset:amonet/bin/twrp.img", "asset:amonet/bin/fastbrick.img"]},
+      {"part": "amonet/bin/fastboot, fastboot32, fastboot.exe, AdbWinApi.dll, AdbWinUsbApi.dll: prebuilt Android platform tools with no licence or notice file", "spdx": "LicenseRef-not-stated", "sources": ["asset:amonet/bin/fastboot", "asset:amonet/bin/fastboot32", "asset:amonet/bin/fastboot.exe", "asset:amonet/bin/AdbWinApi.dll", "asset:amonet/bin/AdbWinUsbApi.dll"]},
+      {"part": "amonet's shell, bat and ps1 scripts, device.prop, profile.sh, profile.ps1 and META-INF's update-binary and updater-script: the repo has LICENSE.MIT and LICENSE.GPL2, but the README gives them only to modules, pl-payload, brom-payload and idmetool", "spdx": "LicenseRef-not-stated", "sources": ["https://github.com/R0rt1z2/amonet/blob/d6179b8a2ba45fb641acc38b1cf3e848e8ff235d/README.md"]}
+    ]
+  },
+  "notes": "Pinned from a known-good amonet-crown-v2.0.1 archive. Reviewed 2026-10-09: the scripts match R0rt1z2/amonet (main.py/common.py as of 999f8d0ab5). unlock.py checks the six unlock members before it runs fastbrick.sh, and recovery.py checks bin/twrp.img before it boots it. Extract the zip and pass the folder as --amonet-dir."
+}

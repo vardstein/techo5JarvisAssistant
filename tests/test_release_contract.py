@@ -1,11 +1,16 @@
+import json
 import os
 import pathlib
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
+
+from jarvis_crown.catalogue import first_boards, later_boards  # noqa: E402
 
 
 class ReleaseContractTests(unittest.TestCase):
@@ -27,9 +32,10 @@ class ReleaseContractTests(unittest.TestCase):
         source = (ROOT / "tools/linux/mkrootfs.sh").read_text(encoding="utf-8")
         self.assertIn('jarvis-show-release.json', source)
         self.assertIn('"product": "genbu-show-v1"', source)
-        self.assertIn('"boards": ["crown", "checkers"]', source)
-        # cronos sits apart so older Shows, whose echod refuses unknown boards, still take the release.
-        self.assertIn('"more_boards": ["cronos"]', source)
+        # mkrootfs.sh runs on the device too, so it spells the catalogue's split out itself (GENBU-176).
+        # Later boards sit apart so older Shows, whose echod refuses unknown boards, still take the release.
+        self.assertIn(f'"boards": {json.dumps(list(first_boards()))}', source)
+        self.assertIn(f'"more_boards": {json.dumps(list(later_boards()))}', source)
         self.assertIn('"version": "$VERSION"', source)
 
     def test_release_workflow_uses_secret_and_attests_payloads(self):
@@ -92,9 +98,24 @@ if __name__ == "__main__":
 class SupplyChainReleaseContractTests(unittest.TestCase):
     def test_release_manifest_is_bound_to_product_and_both_first_gen_boards(self):
         source = (ROOT / "tools/release-jarvis-show.sh").read_text(encoding="utf-8")
-        self.assertIn('-product "genbu-show-v1"', source)
-        self.assertIn('-board crown', source)
-        self.assertIn('-board checkers', source)
+        self.assertIn('-product "$PRODUCT"', source)
+        self.assertIn('print(load_or_exit().product()["id"])', source)
+        # The first-release boards share manifest.json, read from the catalogue (GENBU-176).
+        self.assertIn("print(*first_boards())", source)
+        self.assertIn('for board in $FIRST; do mk+=(-board "$board"); done', source)
+        self.assertIn("for board in first_boards():", source)
+        self.assertNotRegex(source, r"-board (%s)\b" % "|".join(first_boards()))
+        # Each later board has a manifest of its own, and this script has to know how to make it.
+        for board in later_boards():
+            self.assertIn(f"-board {board}", source)
+            self.assertIn(f"manifest-{board}.json", source)
+        # And every release carries manifest-v2.json for every board the rootfs lists, with every boot
+        # image: the name Shows with a checked board.json read (GENBU-191).
+        self.assertIn('-out "$OUT/manifest-v2.json"', source)
+        self.assertIn('for board in $boards; do mkv+=(-board "$board"); done', source)
+        self.assertIn('for asset in "${assets[@]}" "${cronos_assets[@]}"; do mkv+=(-asset "$asset"); done', source)
+        self.assertIn('"$OUT/manifest-v2.json" "$OUT/manifest-v2.json.sig"', source)
+        self.assertIn("manifest-v2.json manifest-v2.json.sig)", source)
         self.assertIn('ident.version != sys.argv[3]', source)
         self.assertIn("signing key permissions are too open", source)
         self.assertIn("signing key must not be a symlink", source)
@@ -135,7 +156,7 @@ class SupplyChainReleaseContractTests(unittest.TestCase):
         self.assertIn("expected_product=None, expected_board=None", lib)
         self.assertIn("signed but belongs to product", lib)
         self.assertIn("signed but does not support board", lib)
-        self.assertIn("expected_product='genbu-show-v1', expected_board=dev", installer)
+        self.assertEqual(installer.count("expected_product=JARVIS_SHOW_PRODUCT, expected_board=dev"), 2)
 
     def test_release_script_rejects_world_readable_signing_seed(self):
         with tempfile.TemporaryDirectory() as tmp:

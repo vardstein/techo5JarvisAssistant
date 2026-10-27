@@ -12,7 +12,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
 sys.path.insert(0, str(TOOLS))
 
-from jarvis_crown.boards import profile_for_board  # noqa: E402
+from jarvis_crown.catalogue import profile_for_board  # noqa: E402
 from jarvis_crown.device_gate import DeviceGateError, DeviceIdentity  # noqa: E402
 from jarvis_crown import unlock  # noqa: E402
 
@@ -78,7 +78,7 @@ class UnlockTests(unittest.TestCase):
             self.enterContext(mock.patch.dict(unlock.AMONET_UNLOCK_SHA256, hashes))
         return root.parent, hashes
 
-    def unlock(self, amonet, hashes, *, run=None, adb_run=None, identify=None, said=None):
+    def unlock(self, amonet, hashes, *, run=None, adb_run=None, identify=None, said=None, log_dir=None):
         return unlock.unlock_crown(
             self.identity(), amonet,
             confirmation=unlock.CONFIRM_PHRASE,
@@ -88,6 +88,7 @@ class UnlockTests(unittest.TestCase):
             sleep=lambda _: None,
             expected_hashes=hashes,
             say=(said.append if said is not None else lambda _line: None),
+            log_dir=log_dir,
         )
 
     def test_already_unlocked_skips_amonet_without_confirmation(self):
@@ -188,6 +189,76 @@ class UnlockTests(unittest.TestCase):
             self.assertTrue(all(argv[0] == "adb" for argv in adb.calls))
             self.assertEqual(adb.calls[:40], [["adb", "devices"]] * 40)
             self.assertTrue(any("do not unplug" in line for line in said))
+
+    def test_a_run_leaves_its_log(self):
+        # GENBU-212: the record the evidence gate will read, written as the run goes.
+        def talking(root, say, timeout):
+            for line in ("Sending payload, this might take a few attempts...",
+                         "serial ABC123 answered", "Exploit most likely successful!"):
+                say(line)
+            # On disk while Amonet still runs, so a host that dies half way still leaves it.
+            (log,) = logs.iterdir()
+            self.assertIn("Exploit most likely successful!", log.read_text())
+            return unlock.FastbrickResult(0, LANDED)
+
+        with tempfile.TemporaryDirectory() as td:
+            amonet, hashes = self.bundle(td)
+            logs = pathlib.Path(td) / "state" / "unlock"
+            said = []
+            result = self.unlock(amonet, hashes, run=talking, said=said, log_dir=logs)
+            self.assertEqual([p.name for p in logs.iterdir()], [result.log.name])
+            self.assertRegex(result.log.name, r"^crown-unlock-\d{8}T\d{6}Z\.log$")
+            text = result.log.read_text()
+            self.assertIn(f"this run's log: {result.log}", said)
+            for line in ("unlock of a", "(crown, fastboot product CROWN)", "bootloader build: lk",
+                         f"checked amonet/bin/fastbrick.img sha256 {hashes['bin/fastbrick.img']}",
+                         "confirmed with UNLOCK; Amonet starts", "Exploit most likely successful!",
+                         "do not unplug", "result: unlocked"):
+                self.assertIn(line, text)
+            self.assertNotIn("ABC123", text)  # blanked, so the log can be committed as it is
+            self.assertIn("serial <serial> answered", text)
+            for line in text.splitlines():
+                self.assertRegex(line, r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ ")
+
+    def test_a_failed_run_leaves_its_log_too(self):
+        with tempfile.TemporaryDirectory() as td:
+            amonet, hashes = self.bundle(td)
+            logs = pathlib.Path(td) / "unlock"
+            with self.assertRaisesRegex(unlock.UnlockError, "TWRP came up with serial OTHER") as caught:
+                self.unlock(amonet, hashes, adb_run=FakeTwrp(serial="OTHER"), log_dir=logs)
+            log = caught.exception.log
+            self.assertEqual(log.parent, logs)
+            text = log.read_text()
+            self.assertIn("result: failed: TWRP came up with serial OTHER, not fastboot serial <serial>", text)
+            self.assertNotIn("ABC123", text)
+
+    def test_no_log_before_amonet_or_without_a_log_dir(self):
+        with tempfile.TemporaryDirectory() as td:
+            amonet, hashes = self.bundle(td)
+            logs = pathlib.Path(td) / "unlock"
+            run = mock.Mock()
+            with self.assertRaisesRegex(unlock.UnlockError, "exact confirmation"):
+                unlock.unlock_crown(self.identity(), amonet, confirmation="unlock", run=run,
+                                    expected_hashes=hashes, log_dir=logs)
+            (amonet / "amonet" / "profile.sh").write_bytes(b"tampered")
+            with self.assertRaisesRegex(unlock.UnlockError, "hash mismatch"):
+                unlock.unlock_crown(self.identity(), amonet, confirmation=unlock.CONFIRM_PHRASE, run=run,
+                                    expected_hashes=hashes, log_dir=logs)
+            run.assert_not_called()
+            self.assertFalse(logs.exists())
+            self.assertIsNone(self.unlock(*self.bundle(pathlib.Path(td) / "b"), log_dir=None).log)
+
+    def test_the_log_lives_in_the_state_dir(self):
+        with mock.patch.dict(os.environ, {"XDG_STATE_HOME": "/x/state"}):
+            self.assertEqual(unlock.default_log_dir(), pathlib.Path("/x/state/jarvis-show/unlock"))
+        with mock.patch.dict(os.environ, {"XDG_STATE_HOME": "", "HOME": "/x/home"}):
+            self.assertEqual(unlock.default_log_dir(), pathlib.Path("/x/home/.local/state/jarvis-show/unlock"))
+
+    def test_every_unlock_caller_keeps_a_log(self):
+        # The installer's install and unlock commands, and the old crown entry point.
+        for script, count in (("jarvis-show.py", 2), ("jarvis-crown.py", 1)):
+            source = (TOOLS / script).read_text(encoding="utf-8")
+            self.assertEqual(source.count("log_dir=default_log_dir()"), count, script)
 
     def test_twrp_wait_outlasts_the_five_minute_write(self):
         self.assertGreaterEqual(unlock.VERIFY_ATTEMPTS * unlock.VERIFY_INTERVAL_SECONDS, 600)

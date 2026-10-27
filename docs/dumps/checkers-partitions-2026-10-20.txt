@@ -1,0 +1,40 @@
+# GENBU-184: the partitions of a running checkers, 2026-10-20.
+# One unit, read-only over ssh as root, running Genbu Show on Amonet 2.x. There is no by-name folder on
+# the running image, so the names are the GPT names the kernel reports in each partition's uevent.
+#
+# Command:
+#   for p in /sys/class/block/mmcblk0p*; do
+#     echo "$(basename $p) $(grep PARTNAME $p/uevent | cut -d= -f2) $(( $(cat $p/size)*512 ))"
+#   done
+#
+# partition   PARTNAME   bytes
+mmcblk0p1     kb         1048576
+mmcblk0p2     dkb        1048576
+mmcblk0p3     lk         1048576
+mmcblk0p4     tee1       5242880
+mmcblk0p5     logo       1048576
+mmcblk0p6     tee2       5242880
+mmcblk0p7     expdb      16777216
+mmcblk0p8     MISC       524288
+mmcblk0p9     boot       16777216
+mmcblk0p10    recovery   16777216
+mmcblk0p11    swdl       33554432
+mmcblk0p12    system     3253731328
+mmcblk0p13    cache      268434432
+mmcblk0p14    persist    16778240
+mmcblk0p15    metadata   41418752
+mmcblk0p16    userdata   4137664000
+#
+# Against the amonet-upgrade map (now catalogue/boards/checkers.json, amonet_upgrade.writes):
+#   lk_real            -> mmcblk0p3   lk         same partition
+#   tee2_real          -> mmcblk0p6   tee2       same partition
+#   tee1_real          -> mmcblk0p4   tee1       same partition
+#   expdb              -> mmcblk0p7   expdb      same partition, same name
+#   recovery           -> mmcblk0p10  recovery   same partition, same name
+#   swdl_real, swdl    -> mmcblk0p11  swdl       same partition, second name matches
+#   MISC, misc         -> mmcblk0p8   MISC       same partition, first name matches
+#
+# What this does not show: the names lk_real, tee1_real, tee2_real and swdl_real aren't in this unit's
+# GPT. The upgrade runs on a unit still on Amonet 1.x, from TWRP, and what that unit's by-name folder
+# holds wasn't seen. resolve_targets() checks each name against the map in TWRP before anything is
+# written, and refuses on a mismatch.

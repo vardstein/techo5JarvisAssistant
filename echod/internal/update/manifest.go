@@ -87,8 +87,12 @@ var arch = runtime.GOARCH + archSuffix
 // refuse any manifest naming it, which is why newer boards read a manifest of their own (ManifestName).
 var supportedBoards = map[string]bool{"crown": true, "checkers": true, "cronos": true}
 
+// KnownBoard is whether this build knows board as one a Jarvis Show release may name.
+func KnownBoard(board string) bool { return supportedBoards[board] }
+
 // ownManifestBoards came after the first release: each has its own signed manifest-<board>.json, so the
-// manifest.json older crown and checkers Shows read never names a board they don't know.
+// manifest.json older crown and checkers Shows read never names a board they don't know. It must be the
+// product's boards minus its first_boards in catalogue/products/ (tests/test_show_board_lists.py).
 var ownManifestBoards = map[string]bool{"cronos": true}
 
 // ManifestName is the signed manifest this board reads in a release: manifest.json, or
@@ -100,11 +104,33 @@ func ManifestName(board string) string {
 	return "manifest.json"
 }
 
+// V2Manifest is the signed manifest of releases whose echod goes by board.json alone (GENBU-191). Every
+// board reads the same one, and a Show reads it only once its own board.json is known good, so a Show
+// that could not be told which board it is never sees such a release: it stays on the old names, which
+// those releases fill with the last release that still finds the board itself.
+const V2Manifest = "manifest-v2.json"
+
+// byBoardFile is whether this Show reads V2Manifest. Set once at start, before anything is fetched.
+var byBoardFile bool
+
+// GoByBoardFile switches this Show to V2Manifest. The caller has read board.json and found that it
+// names the board echod found itself (board.Note's match); nothing else may call it.
+func GoByBoardFile() { byBoardFile = true }
+
+// manifestName is the signed manifest this Show reads in a release.
+func manifestName() string {
+	if byBoardFile {
+		return V2Manifest
+	}
+	return ManifestName(deviceBoard)
+}
+
 // deviceBoard is variable only so tests can emulate Crown/Checkers without running on the hardware.
 var deviceBoard = layout.Board
 
 // JarvisShowProduct is the signed product identity every Jarvis Show release carries. Exported so
-// release tooling can reject a typo before it signs and publishes a manifest devices would refuse.
+// release tooling can reject a typo before it signs and publishes a manifest devices would refuse. It
+// must match catalogue/products/ (tests/test_board_catalogue.py checks, GENBU-174).
 const JarvisShowProduct = "genbu-show-v1"
 
 // manifestTimeout bounds the fetch. Home Assistant asks for this on connect and after every selection
@@ -162,7 +188,7 @@ func fetch(ctx context.Context, url string) (Manifest, error) {
 
 // channelURL is where this board reads the channel's manifest, a variable so a test can serve the
 // channel itself.
-var channelURL = func(c Channel) string { return c.URLFor(deviceBoard) }
+var channelURL = func(c Channel) string { return c.at(manifestName()) }
 
 // get fetches a small file through the updater's own client, refusing anything over max bytes.
 func get(ctx context.Context, url string, max int64) ([]byte, error) {
@@ -190,6 +216,9 @@ func get(ctx context.Context, url string, max int64) ([]byte, error) {
 
 // ValidFor binds a signed manifest to one product and one detected board. A valid signature proves
 // who produced a manifest; these fields prove that what they produced was intended for this appliance.
+// A board this build doesn't know is passed over rather than refused: V2Manifest names every board of
+// its release, newer ones too, and only whether it names this one matters here. mkmanifest refuses an
+// unknown board where a release is made (KnownBoard), so a typo still cannot be published.
 func (m Manifest) ValidFor(product, board string) error {
 	if m.Product != product {
 		return mark(ErrNotForThisShow, fmt.Errorf("update: manifest product %q is not %q", m.Product, product))
@@ -203,9 +232,6 @@ func (m Manifest) ValidFor(product, board string) error {
 	found := false
 	seen := make(map[string]bool, len(m.Boards))
 	for _, candidate := range m.Boards {
-		if !supportedBoards[candidate] {
-			return fmt.Errorf("update: manifest names unsupported board %q", candidate)
-		}
 		if seen[candidate] {
 			return fmt.Errorf("update: manifest names board %q more than once", candidate)
 		}

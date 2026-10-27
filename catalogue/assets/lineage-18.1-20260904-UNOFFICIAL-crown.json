@@ -1,0 +1,20 @@
+{
+  "id": "lineage-18.1-20260904-UNOFFICIAL-crown",
+  "kind": "lineage",
+  "file": "lineage-18.1-20260904-UNOFFICIAL-crown.zip",
+  "url": "https://github.com/amazon-oss/releases/releases/download/lineage-18.1-crown-v0.5/lineage-18.1-20260904-UNOFFICIAL-crown.zip",
+  "sha256": "a01359a5e13dad8ac24c5507e8a747163b992012410b14d2ca9a8711ec4a1491",
+  "size": 489922458,
+  "source": "amazon-oss/releases lineage-18.1-crown-v0.5",
+  "manual": false,
+  "licence": {
+    "checked": "2026-10-27",
+    "parts": [
+      {"part": "boot.img kernel, 4.9.337-g8d928c5176cc", "spdx": "GPL-2.0-only WITH Linux-syscall-note", "sources": ["https://github.com/amazon-oss/android_kernel_amazon_mt8163/blob/8d928c5176cc1ced93a564dd8a949a6cda3b8231/COPYING"]},
+      {"part": "system.new.dat.br: AOSP and LineageOS code, each covered by its entry in the system image's own notice file (157 licence texts)", "spdx": "LicenseRef-per-file-notices", "sources": ["asset:system.new.dat.br /system/etc/NOTICE.html.gz"]},
+      {"part": "system.new.dat.br: Amazon/MediaTek vendor blobs (141 of the 146 files in /system/vendor/lib have no notice entry); the vendor repo they come from has no licence file", "spdx": "LicenseRef-not-stated", "sources": ["https://github.com/amazon-oss/android_vendor_amazon_crown/tree/fb8a7ecafd127d263138a7a2f3cd71af77c929e4", "asset:system.new.dat.br /system/etc/NOTICE.html.gz"]},
+      {"part": "META-INF/ and install/: the release page and the zip state no terms", "spdx": "LicenseRef-not-stated", "sources": ["asset:META-INF/com/google/android/updater-script", "asset:install/bin/backuptool.sh"]}
+    ]
+  },
+  "notes": "20260904 is the first build whose kernel is 4.9.337-g8d928c5176cc, the ABI the Jarvis boot images and the vendor-module gate require. Checked 2026-10-19 (GENBU-187): the sha256 equals the sha256sum in the release notes and GitHub's asset digest at https://github.com/amazon-oss/releases/releases/tag/lineage-18.1-crown-v0.5. Upstream signs nothing, so this rests on that GitHub account; see docs/dumps/upstream-pins-2026-10-19.txt."
+}

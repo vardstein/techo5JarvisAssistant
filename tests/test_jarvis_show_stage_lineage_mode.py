@@ -13,7 +13,7 @@ import zipfile
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
-from jarvis_crown import recovery  # noqa: E402
+from jarvis_crown import catalogue, recovery  # noqa: E402
 
 
 def load_install_show():
@@ -75,7 +75,7 @@ class FakeAdb:
 
 
 class StageLineageModeTests(unittest.TestCase):
-    def exercise(self, board, product):
+    def exercise(self, board, product, reports=None):
         module = load_install_show()
         with tempfile.TemporaryDirectory() as td_s:
             td = pathlib.Path(td_s)
@@ -87,7 +87,7 @@ class StageLineageModeTests(unittest.TestCase):
             calls = []
 
             def fake_adb(serial_arg, binary):
-                return FakeAdb(serial_arg, binary, board)
+                return FakeAdb(serial_arg, binary, reports or board)
 
             argv = [
                 "install-show.py",
@@ -113,6 +113,23 @@ class StageLineageModeTests(unittest.TestCase):
             self.assertEqual(calls, [(str(lineage), False)])
             self.assertIn(f"LineageOS drivers for {board} are in place", out.getvalue())
             self.assertNotIn("Done.", out.getvalue())
+
+    def test_twrp_reports_the_catalogue_name_not_the_board(self):
+        # GENBU-178: TWRP's ro.product.device is the catalogue's identity.twrp_device, mapped back to the board.
+        real = catalogue.Catalogue()
+
+        class Renamed:
+            def resolve(self, board):
+                out = real.resolve(board)
+                if board == "crown":
+                    out["identity"]["twrp_device"] = "crown_twrp"
+                return out
+
+            def __getattr__(self, name):
+                return getattr(real, name)
+
+        with mock.patch.object(catalogue, "default", Renamed):
+            self.exercise("crown", "CROWN", reports="crown_twrp")
 
     def test_crown_stage_only_returns_before_release_flash_store(self):
         self.exercise("crown", "CROWN")

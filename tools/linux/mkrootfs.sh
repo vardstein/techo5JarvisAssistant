@@ -125,6 +125,9 @@ mkdir -p "$R/store" "$R/data" "$R/run" "$R/proc" "$R/sys" "$R/dev" "$R/tmp" "$R/
 chmod 1777 "$R/tmp"
 # The daemon's own version line comes from running it, which on a host goes through QEMU.
 echo "Genbu Show rootfs $VERSION built $(date -u '+%Y-%m-%dT%H:%MZ'), daemon $("$R/usr/local/bin/techo5" --version 2>/dev/null | head -1)" > "$R/etc/techo5-release"
+# The product id, boards (its first_boards) and more_boards (the rest) must match catalogue/products/;
+# this runs on the device too, so it can't read it (tests/test_board_catalogue.py and
+# test_release_contract.py check, GENBU-174 and GENBU-176).
 cat > "$R/etc/jarvis-show-release.json" <<EOF
 {
   "product": "genbu-show-v1",
