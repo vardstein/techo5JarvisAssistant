@@ -22,7 +22,13 @@ import (
 //
 // Otherwise it is asked, through Home Assistant, which opens the microphone after the question: "yes"
 // installs it there and then, and "not now" leaves it for the next reminder. An answer nobody could make
-// out is asked for once more. With no Home Assistant to ask through, it is only said.
+// out is asked for once more; when that one answers nothing either, the device says so and leaves it for
+// the next reminder (GENBU-252). With no Home Assistant to ask through, it is only said.
+//
+// A Show whose quiet hours are Never still asks nothing between nightWithout's hours: Never is about its
+// own noises, and nobody wants an update question at five in the morning (GENBU-264). A new dev build
+// does not start the reminders over either; dev makes several a day, and each one asked about at once
+// had a Show asking more often than every remindEvery.
 //
 // A yes is for the house, not only this Show (GENBU-125): Genbu is asked to install the update on every
 // other Show that has one waiting too, so nobody has to answer each of them. Without Genbu that call
@@ -34,7 +40,7 @@ var (
 	say         = func(words string) { safe.Go("update notice", func() { remind.Say(words) }) }
 	ask         = remind.Ask
 	canSay      = func() bool { return remind.CanSay() && i18n.Known() } // never a guessed language
-	quiet       = config.Quiet
+	quiet       = askQuiet
 	install     = func(u *Firmware) { safe.Go("update install", func() { u.Install(context.Background()) }) }
 	updateHouse = func() { safe.Go("house update", func() { installHouse(context.Background()) }) }
 )
@@ -46,7 +52,27 @@ const (
 	answerWithin = time.Minute
 	// houseWithin is how long asking Genbu for the house-wide update may take.
 	houseWithin = 30 * time.Second
+	// nightWithout is when a Show whose quiet hours are Never asks nothing out loud.
+	nightWithout = "22-8"
 )
+
+func askQuiet() bool { return quietAt(time.Now()) }
+
+// quietAt is whether asking out loud waits at now: the Show's quiet hours, or nightWithout when it has
+// none.
+func quietAt(now time.Time) bool {
+	sp := config.Get().Speaker
+	if sp.QuietHours == "" {
+		return config.InWindow(nightWithout, now)
+	}
+	return sp.Quiet(now)
+}
+
+// devBuild is whether v is a CI dev build, vX.Y.Z-dev.N.
+func devBuild(v string) bool {
+	_, pre, _ := strings.Cut(v, "-")
+	return strings.HasPrefix(pre, "dev.")
+}
 
 func (u *Firmware) tell() { u.tellOf(u.channelOffered(), time.Now()) }
 
@@ -66,6 +92,9 @@ func (u *Firmware) tellAbout(v string, now time.Time, house bool) {
 	if v == c.Told && (auto || now.Sub(c.ToldAt) < remindEvery) {
 		return
 	}
+	if v != c.Told && c.Told != "" && devBuild(v) && now.Sub(c.ToldAt) < remindEvery {
+		return // the newer dev build is said when the wait is up
+	}
 	if err := config.Set().Update().Told(v, now); err != nil {
 		slog.Error("saving the update notice failed", "err", err)
 		return
@@ -83,7 +112,7 @@ func (u *Firmware) tellAbout(v string, now time.Time, house bool) {
 			say(i18n.T("Okay, I'll remind you later."))
 		}, func() {
 			ask(i18n.T("Sorry, I didn't catch that. Should I install the update now, yes or no?"))
-		})
+		}, unclear)
 		words := i18n.F("An update for this Show is ready, version {version}. Want me to install it now?", "version", spoken(v))
 		if house {
 			words = i18n.F("An update for your Shows is ready, version {version}. Want me to install it now?", "version", spoken(v))
@@ -138,3 +167,6 @@ func spoken(v string) string {
 	}
 	return core + " " + strings.ReplaceAll(pre, ".", " ")
 }
+
+// unclear is said when the second asking got words that answer nothing; the next reminder asks again.
+func unclear() { say(i18n.T("That wasn't a yes or no. I'll ask again later.")) }

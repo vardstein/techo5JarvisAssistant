@@ -531,7 +531,7 @@ func (u *Firmware) askToAlign(v string, now time.Time) {
 		say(i18n.T("Okay, I'll remind you later."))
 	}, func() {
 		ask(i18n.T("Sorry, I didn't catch that. Should I switch to the version of your other Shows now, yes or no?"))
-	})
+	}, unclear)
 	if !ask(i18n.F("This Show is on version {running}, your other Shows are on {house}. Want me to switch to it now?",
 		"running", spoken(layout.Version), "house", spoken(v))) {
 		question.Withdraw("house")

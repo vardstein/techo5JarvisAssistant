@@ -194,13 +194,18 @@ state of `sensor.genbu_house_version` and its attributes. **No HA token is neede
   quiet hours. Only that one Show asks, so the question is not heard in every room at once. A Show with
   older firmware stays quiet; then the card and the voice ("installiere die Updates", or asking the
   assistant) do the asking.
+- A reply that is not a yes or no gets the question once more. When the second reply isn't one either,
+  the Show says "That wasn't a yes or no. I'll ask again later." and asks at the next reminder.
+- A Show whose quiet hours are Never asks nothing between 22:00 and 8:00. A new dev build waits for the
+  4 hour reminder instead of being asked about at once; a staging or stable release is asked about at
+  once.
 
 ### When a following Show moves
 
 | Situation | What happens |
 |---|---|
 | Fresh install, its version differs from the house (older **or newer**) | It moves to the house version without asking. The installer has already said so. |
-| It was off and boots on a different version than the house | It asks once by voice and on screen: "This Show is on version 1.0.2, your other Shows are on 1.0.3. Want me to switch to it now?" "Yes" installs. "No" asks again on the next boot or in 24 hours, never during quiet hours. |
+| It was off and boots on a different version than the house | It asks once by voice and on screen: "This Show is on version 1.0.2, your other Shows are on 1.0.3. Want me to switch to it now?" "Yes" installs. "No", or two replies that are neither, asks again on the next boot or in 24 hours, never during quiet hours (22:00 to 8:00 when they are Never). |
 | It is running when the house version changes | It follows straight away once nobody is using it: no music playing (its own or Music Assistant's) or paused in the last 30 minutes, no call, and no timer or alarm due soon. It does not ask, because your Install counts for the house (Jade's choice). |
 | The house version is not installable here | It stays and says so in `update_status`, for example when the release has no manifest for its product or board. |
 

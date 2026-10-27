@@ -10,7 +10,9 @@
 // A turn opened for the question can also end with no words at all: Whisper takes a short, quiet "joa"
 // for silence, or nobody answers before listening runs out. Then the question is asked once more, and
 // the same goes for words in that turn that answer nothing: a television gets one more asking, and a
-// "yes" said some way this does not know gets a second chance.
+// "yes" said some way this does not know gets a second chance. When the second asking gets words that
+// answer nothing too, the device says so (unclear) rather than leave the room wondering whether it heard
+// (GENBU-252).
 //
 // In that turn a short reply is also read more kindly (see Kindly): Whisper does not know Hessian, and
 // writes "Joa gerne" as "Jörg Erne!", "Joggerne!", "Du auch gerne!" or "Und ich auch gerne.".
@@ -31,6 +33,7 @@ type open struct {
 	d              time.Duration
 	until          time.Time
 	yes, no, again func()
+	unclear        func()
 	missed         bool
 }
 
@@ -45,11 +48,13 @@ var (
 
 // Ask opens a question, what naming it in the log, answered by the next thing said within d. yes or no
 // runs on the answer, and again asks it once more if its turn hears nothing (see Missed); nil asks
-// only once. A question already open is replaced: only the last one asked is the one heard.
-func Ask(what string, d time.Duration, yes, no, again func()) {
+// only once. unclear runs when words in the question's own turn answer nothing and it cannot be asked
+// again; nil says nothing. A question already open is replaced: only the last one asked is the one
+// heard.
+func Ask(what string, d time.Duration, yes, no, again, unclear func()) {
 	mu.Lock()
 	defer mu.Unlock()
-	cur = &open{what: what, d: d, until: now().Add(d), yes: yes, no: no, again: again}
+	cur = &open{what: what, d: d, until: now().Add(d), yes: yes, no: no, again: again, unclear: unclear}
 }
 
 // Missed is told that the turn opened for the question ended with no words in it. The first time, the
@@ -103,7 +108,7 @@ func Answer(text string) bool { return Take(text, false) }
 // Take is Answer for a turn that may have been opened for the question rather than by a wake word. In
 // that one a transcript that does not answer it is dropped as well, and Take reports it as taken; the
 // question is then asked once more, as after a silence, since it may have been an answer this did not
-// know.
+// know. When it was asked once more already, the question is over and its unclear runs.
 func Take(text string, forIt bool) bool {
 	if strings.TrimSpace(text) == "" {
 		return false
@@ -129,7 +134,9 @@ func Take(text string, forIt bool) bool {
 	default:
 		if forIt {
 			slog.Info("not an answer to the question, dropped", "question", q.what, "text", text)
-			askAgain(q)
+			if !askAgain(q) && q.unclear != nil {
+				safe.Go("unclear "+q.what, q.unclear)
+			}
 			return true
 		}
 		slog.Info("question left unanswered", "question", q.what, "text", text)

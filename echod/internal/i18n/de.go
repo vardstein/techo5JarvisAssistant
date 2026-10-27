@@ -628,6 +628,7 @@ var de = lang{
 		"Okay, I'll remind you later.": "Okay, ich erinnere dich später.",
 		"Sorry, I didn't catch that. Should I install the update now, yes or no?":                        "Das habe ich nicht verstanden. Soll ich das Update jetzt installieren, ja oder nein?",
 		"Sorry, I didn't catch that. Should I switch to the version of your other Shows now, yes or no?": "Das habe ich nicht verstanden. Soll ich jetzt auf die Version deiner anderen Shows wechseln, ja oder nein?",
+		"That wasn't a yes or no. I'll ask again later.":                                                 "Das war kein Ja oder Nein. Ich frag später nochmal.",
 		"and {count} more today":                "und heute noch {count}",
 		"Or say \"show {name}\"":                "Oder sag „zeig {name}“",
 		"{time} left":                           "noch {time}",
