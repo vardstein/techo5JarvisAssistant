@@ -623,6 +623,7 @@ var nl = lang{
 		"Okay, I'll remind you later.": "Oké, ik herinner je er later aan.",
 		"Sorry, I didn't catch that. Should I install the update now, yes or no?":                        "Sorry, dat verstond ik niet. Zal ik de update nu installeren, ja of nee?",
 		"Sorry, I didn't catch that. Should I switch to the version of your other Shows now, yes or no?": "Sorry, dat verstond ik niet. Zal ik nu overstappen op de versie van je andere Shows, ja of nee?",
+		"That wasn't a yes or no. I'll ask again later.":                                                 "Dat was geen ja of nee. Ik vraag het later nog eens.",
 		"and {count} more today":                "en vandaag nog {count}",
 		"Or say \"show {name}\"":                "Of zeg ‘laat {name} zien’",
 		"{time} left":                           "nog {time}",

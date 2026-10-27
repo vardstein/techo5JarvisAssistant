@@ -636,6 +636,7 @@ var es = lang{
 		"Okay, I'll remind you later.": "Vale, te lo recuerdo más tarde.",
 		"Sorry, I didn't catch that. Should I install the update now, yes or no?":                        "Perdona, no te he entendido. ¿Instalo la actualización ahora, sí o no?",
 		"Sorry, I didn't catch that. Should I switch to the version of your other Shows now, yes or no?": "Perdona, no te he entendido. ¿Cambio ahora a la versión de tus otros Shows, sí o no?",
+		"That wasn't a yes or no. I'll ask again later.":                                                 "Eso no fue ni un sí ni un no. Te lo vuelvo a preguntar más tarde.",
 		"and {count} more today":                "y {count} más hoy",
 		"Or say \"show {name}\"":                "O di «muestra {name}»",
 		"{time} left":                           "quedan {time}",

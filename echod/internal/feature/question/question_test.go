@@ -34,7 +34,7 @@ func TestAnswer(t *testing.T) {
 
 	answered := make(chan string, 1)
 	ask := func() {
-		Ask("update", time.Minute, func() { answered <- "yes" }, func() { answered <- "no" }, nil)
+		Ask("update", time.Minute, func() { answered <- "yes" }, func() { answered <- "no" }, nil, nil)
 	}
 
 	if Answer("yes") {
@@ -107,7 +107,7 @@ func TestKindly(t *testing.T) {
 func TestTakeDropsWhatIsNotAnAnswer(t *testing.T) {
 	answered := make(chan string, 1)
 	ask := func() {
-		Ask("update", time.Minute, func() { answered <- "yes" }, func() { answered <- "no" }, nil)
+		Ask("update", time.Minute, func() { answered <- "yes" }, func() { answered <- "no" }, nil, nil)
 	}
 
 	ask()
@@ -157,7 +157,7 @@ func TestMissedAsksOnceMore(t *testing.T) {
 	}
 	answered := make(chan string, 1)
 	again := make(chan bool, 2)
-	Ask("update", time.Minute, func() { answered <- "yes" }, func() { answered <- "no" }, func() { again <- true })
+	Ask("update", time.Minute, func() { answered <- "yes" }, func() { answered <- "no" }, func() { again <- true }, nil)
 
 	at = at.Add(50 * time.Second)
 	if !Missed() || !<-again {
@@ -172,14 +172,26 @@ func TestMissedAsksOnceMore(t *testing.T) {
 	}
 
 	// Words that answer nothing, in the question's own turn, ask it once more as well; the second time
-	// they are only dropped.
+	// they are dropped, and the device says it did not get an answer (GENBU-252).
 	again2 := make(chan bool, 2)
-	Ask("update", time.Minute, func() { answered <- "yes" }, func() { answered <- "no" }, func() { again2 <- true })
+	unclear := make(chan bool, 2)
+	Ask("update", time.Minute, func() { answered <- "yes" }, func() { answered <- "no" }, func() { again2 <- true },
+		func() { unclear <- true })
 	if !Take("Untertitel im Auftrag des ZDF", true) || !<-again2 {
 		t.Fatal("the question was not asked again after words that answer nothing")
 	}
+	select {
+	case <-unclear:
+		t.Fatal("said it got no answer while asking again")
+	default:
+	}
 	if !Take("Mal sehen", true) {
 		t.Fatal("the second unclear reply went on to the assistant")
+	}
+	select {
+	case <-unclear:
+	case <-time.After(time.Second):
+		t.Fatal("the second reply that answers nothing got no word back")
 	}
 	select {
 	case <-again2:
@@ -190,19 +202,23 @@ func TestMissedAsksOnceMore(t *testing.T) {
 		t.Fatal("the question outlived its second asking")
 	}
 
-	// A wake word's request is not an answer either, but it is not asked again for.
-	Ask("update", time.Minute, func() {}, func() {}, func() { again2 <- true })
+	// A wake word's request is not an answer either, but it is not asked again for, and the assistant
+	// answers it rather than the question.
+	Ask("update", time.Minute, func() {}, func() {}, func() { again2 <- true }, func() { unclear <- true })
 	if Take("Wie spät ist es?", false) {
 		t.Fatal("a request after a wake word was dropped")
 	}
+	time.Sleep(20 * time.Millisecond)
 	select {
 	case <-again2:
 		t.Fatal("asked again after a request said after a wake word")
+	case <-unclear:
+		t.Fatal("said it got no answer to a request said after a wake word")
 	default:
 	}
 
 	// Asked only once when there is nothing to ask again with.
-	Ask("house", time.Minute, func() {}, func() {}, nil)
+	Ask("house", time.Minute, func() {}, func() {}, nil, nil)
 	if Missed() {
 		t.Fatal("asked again without a way to ask")
 	}
@@ -210,7 +226,7 @@ func TestMissedAsksOnceMore(t *testing.T) {
 
 	// A question replaced before it is asked again is not asked for the old one.
 	againAfter = 50 * time.Millisecond
-	Ask("update", time.Minute, func() {}, func() {}, func() { again <- true })
+	Ask("update", time.Minute, func() {}, func() {}, func() { again <- true }, nil)
 	Missed()
 	Withdraw("update")
 	time.Sleep(150 * time.Millisecond)

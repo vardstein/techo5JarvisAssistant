@@ -51,9 +51,9 @@ func TestUpdateIsSaidAndRepeated(t *testing.T) {
 	if len(said) != 2 {
 		t.Fatalf("not said again after %s: %q", remindEvery, said)
 	}
-	u.tellOf("v1.0.1-dev.7", at.Add(remindEvery+time.Minute))
+	u.tellOf("v1.0.1-dev.7", at.Add(2*remindEvery))
 	if len(said) != 3 {
-		t.Fatalf("a newer version was not said: %q", said)
+		t.Fatalf("a newer version was not said at the next reminder: %q", said)
 	}
 
 	if err := config.Set().Update().AutoInstall(true); err != nil {
@@ -110,6 +110,98 @@ func TestUpdateIsAsked(t *testing.T) {
 	case w := <-said:
 		t.Fatalf("also said %q", w)
 	default:
+	}
+}
+
+// A reply that answers nothing, twice in the question's own turns, is told so and left for the next
+// reminder (GENBU-252).
+func TestUnclearAnswerIsTold(t *testing.T) {
+	config.Use(filepath.Join(t.TempDir(), "state.json"))
+	oldSay, oldAsk, oldCan, oldQuiet := say, ask, canSay, quiet
+	t.Cleanup(func() { say, ask, canSay, quiet = oldSay, oldAsk, oldCan, oldQuiet })
+	said := make(chan string, 4)
+	say = func(words string) { said <- words }
+	ask = func(string) bool { return true }
+	canSay = func() bool { return true }
+	quiet = func() bool { return false }
+
+	u := &Firmware{}
+	u.tellOf("v1.0.1-dev.6", time.Date(2026, 10, 9, 18, 0, 0, 0, time.Local))
+	if !question.Take("Hallo!", true) {
+		t.Fatal("the first reply that answers nothing went on to the assistant")
+	}
+	select {
+	case w := <-said:
+		t.Fatalf("said %q while asking again", w)
+	default:
+	}
+	if !question.Take("Hallo!", true) {
+		t.Fatal("the second reply that answers nothing went on to the assistant")
+	}
+	select {
+	case w := <-said:
+		if w != "That wasn't a yes or no. I'll ask again later." {
+			t.Fatalf("said %q", w)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("nothing said after the second reply that answers nothing")
+	}
+}
+
+// A newer dev build waits for the reminder that is due; any other release is said at once (GENBU-264).
+func TestNewDevBuildWaitsForTheReminder(t *testing.T) {
+	config.Use(filepath.Join(t.TempDir(), "state.json"))
+	oldSay, oldAsk, oldCan, oldQuiet := say, ask, canSay, quiet
+	t.Cleanup(func() { say, ask, canSay, quiet = oldSay, oldAsk, oldCan, oldQuiet })
+	var said []string
+	say = func(words string) { said = append(said, words) }
+	ask = func(string) bool { return false }
+	canSay = func() bool { return true }
+	quiet = func() bool { return false }
+
+	u := &Firmware{}
+	at := time.Date(2026, 10, 9, 18, 0, 0, 0, time.Local)
+	u.tellOf("v1.0.1-dev.6", at)
+	u.tellOf("v1.0.1-dev.7", at.Add(time.Hour))
+	u.tellOf("v1.0.1-dev.8", at.Add(3*time.Hour))
+	if len(said) != 1 {
+		t.Fatalf("new dev builds were said before the reminder was due: %q", said)
+	}
+	u.tellOf("v1.0.1-dev.8", at.Add(remindEvery))
+	if len(said) != 2 || !strings.Contains(said[1], "dev 8") {
+		t.Fatalf("the newest dev build was not said when the reminder was due: %q", said)
+	}
+	u.tellOf("v1.0.1-staging.9", at.Add(remindEvery+time.Hour))
+	if len(said) != 3 || !strings.Contains(said[2], "staging 9") {
+		t.Fatalf("a staging release waited for the reminder: %q", said)
+	}
+}
+
+// Quiet hours set to Never still keep the night free of questions; set hours are kept as they are
+// (GENBU-264).
+func TestQuietWithoutQuietHours(t *testing.T) {
+	config.Use(filepath.Join(t.TempDir(), "state.json"))
+	day := func(h, m int) time.Time { return time.Date(2026, 10, 21, h, m, 0, 0, time.Local) }
+	for _, c := range []struct {
+		hours string
+		at    time.Time
+		want  bool
+	}{
+		{"", day(5, 10), true},
+		{"", day(22, 0), true},
+		{"", day(7, 59), true},
+		{"", day(8, 0), false},
+		{"", day(17, 10), false},
+		{"23-6", day(22, 30), false},
+		{"23-6", day(5, 10), true},
+		{"23-6", day(7, 0), false},
+	} {
+		if err := config.Set().Speaker().QuietHours(c.hours); err != nil {
+			t.Fatal(err)
+		}
+		if got := quietAt(c.at); got != c.want {
+			t.Errorf("quiet hours %q at %s: quiet %v, want %v", c.hours, c.at.Format("15:04"), got, c.want)
+		}
 	}
 }
 
