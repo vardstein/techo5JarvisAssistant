@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import techo5lib
-from jarvis_crown.install import PROFILE_ID
+from jarvis_crown import catalogue
 
 CHANNELS = ("stable", "staging", "dev")
 DEFAULT_CHANNEL = "stable"
@@ -39,13 +39,18 @@ def channel_tag(channel: str) -> str:
         raise ReleaseError(f"no release channel {channel!r}; one of {', '.join(CHANNELS)}") from None
 
 
-def fetch_rootfs(channel: str, board: str, work_dir: Path, *, release=techo5lib.Release,
-                 repo: str | None = None) -> ReleaseRootfs:
-    """Downloads the channel's root filesystem into work_dir, checked against the signed manifest."""
+def fetch_rootfs(channel: str, board: str, work_dir: Path, *, product: str | None = None,
+                 release=techo5lib.Release, repo: str | None = None) -> ReleaseRootfs:
+    """Downloads the channel's root filesystem of product (default: the catalogue's only one) into
+    work_dir, checked against the signed manifest."""
     tag = channel_tag(channel)
     repo = repo or techo5lib.JARVIS_SHOW_REPO
     try:
-        rel = release(repo, tag, str(work_dir), expected_product=PROFILE_ID, expected_board=board)
+        product = catalogue.default().product(product)["id"]
+    except catalogue.CatalogueError as exc:
+        raise ReleaseError(str(exc)) from None
+    try:
+        rel = release(repo, tag, str(work_dir), expected_product=product, expected_board=board)
         path = Path(rel.rootfs("arm"))
     except techo5lib.Fail as exc:
         others = [c for c in CHANNELS if c != channel]

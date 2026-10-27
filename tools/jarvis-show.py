@@ -25,7 +25,9 @@ load_or_exit()  # GENBU-173: a broken catalogue stops here, in plain words
 from jarvis_crown.amonet_upgrade import AdbUpgradeClient, UpgradeError, upgrade_amonet  # noqa: E402
 from jarvis_crown.assets import amonet_bundle_dir, asset_path, assets_for, default_cache_dir  # noqa: E402
 from jarvis_crown.boot_logo import BootLogoError, SshClient, put_logo  # noqa: E402
-from jarvis_crown.catalogue import profile_for_board, profile_for_product, supported_boards  # noqa: E402
+from jarvis_crown.catalogue import (  # noqa: E402
+    CatalogueError, default as catalogue, profile_for_board, profile_for_product, supported_boards,
+)
 from jarvis_crown.device_gate import DeviceGateError, identify_show, in_plain_words  # noqa: E402
 from jarvis_crown.flow import FlowDeps, FlowError, InstallInputs, run_install_flow  # noqa: E402
 from jarvis_crown.install import FINAL_CONFIRM_PHRASE  # noqa: E402
@@ -79,6 +81,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="jarvis-show")
     parser.add_argument("command", help="what to do (default preflight); docs/jarvis-crown-installer.md, \"Commands and switches\"", choices=["preflight", "identify", "unlock", "install", "amonet-upgrade", "wifi", "home-assistant", "boot-logo", "shows"], nargs="?")
     parser.add_argument("--board", choices=supported_boards(), help="optional board cross-check; install/identify auto-detect by default")
+    parser.add_argument("--product", choices=catalogue().products(),
+                        help="install: the product it gets; default the one that lists its board, asked when two do")
     parser.add_argument("--amonet-dir", type=Path, help="the unpacked Amonet 2.x package; default ../third_party/<board> or the asset cache")
     parser.add_argument("--amonet-zip", type=Path, help="amonet-upgrade: the pinned Amonet 2.x zip; default from the asset cache")
     parser.add_argument("--amonet-hashes", type=Path, help="trusted JSON SHA-256 map of the six unlock files, for a board whose Amonet bytes are not built-in (not crown)")
@@ -296,10 +300,10 @@ def _load_fetcher():
     return module
 
 
-def _install_files(args, board: str, amonet: Path, work: Path, *, fetcher=_load_fetcher,
-                   rootfs_from=fetch_rootfs) -> dict:
+def _install_files(args, board: str, amonet: Path, work: Path, *, product: str | None = None,
+                   fetcher=_load_fetcher, rootfs_from=fetch_rootfs) -> dict:
     """The LineageOS zip, boot image and Amonet folder (passed in, else fetch-show-assets for this board)
-    and the root filesystem (passed in, else the --channel release's)."""
+    and the root filesystem (passed in, else the --channel release's of product)."""
     import techo5lib
     files: dict = {"lineage": args.lineage_zip, "boot": args.boot_image, "amonet_dir": amonet}
     if not (args.lineage_zip and args.boot_image and amonet.is_dir()):
@@ -316,7 +320,7 @@ def _install_files(args, board: str, amonet: Path, work: Path, *, fetcher=_load_
             raise InstallFilesError(f"no Amonet package for {board}; fetch-show-assets.py --board {board} "
                                     "says where to download it")
     if not args.rootfs:
-        rel = rootfs_from(args.channel, board, work)
+        rel = rootfs_from(args.channel, board, work, product=product)
         ui.out.done(f"Jarvis Show {rel.version} from the {rel.channel} channel, signature checked")
         files["rootfs"], files["rootfs_sha256"] = rel.path, rel.sha256
     return files
@@ -393,6 +397,15 @@ def _install_name(args, asker: Asker | None = None) -> str | None:
     asker = asker or _asker(args)
     asker.heading("Name", "What Home Assistant calls the Show, and what the other commands find it by.")
     return asker.text("the Show's name", None, _show_name, "", help="Such as Kitchen or Bathroom.")
+
+
+def _product(args, board: str, asker: Asker) -> str:
+    """The product this install puts on the unit (GENBU-192): --product, else the one product that lists
+    its board; when two do, the person picks, and with nobody to ask the install stops."""
+    def ask(ids: list[str]) -> str | None:
+        return asker.pick("Which product goes on this Show?", "", ids, help=(
+            f"More than one product lists the {board} board. --product picks one without asking."))
+    return catalogue().pick_product(board, args.product, ask)["id"]
 
 
 def _asker(args) -> Asker:
@@ -1245,11 +1258,18 @@ def _main(args=None) -> int:
             ui.out.fail(f"{exc}")
             return 1
 
+        asker = _asker(args)
+        try:
+            product = _product(args, profile.board, asker)
+        except CatalogueError as exc:
+            ui.out.fail(f"{exc}")
+            return 1
+
         # Whatever was not passed in comes from the pinned asset cache and the signed release, for the
-        # board that was detected, before a single question is asked: a missing file stops the run here.
+        # board that was detected, before the setup questions: a missing file stops the run here.
         ui.out.heading(f"Install files for the {profile.model}")
         try:
-            files = _install_files(args, profile.board, amonet, work)
+            files = _install_files(args, profile.board, amonet, work, product=product)
         except (InstallFilesError, ReleaseError) as exc:
             ui.out.fail(f"{exc}")
             return 1
@@ -1259,7 +1279,6 @@ def _main(args=None) -> int:
 
         # Everything the Show starts with, asked before anything on it is touched.
         try:
-            asker = _asker(args)
             settings = gather(args, asker, want_root_password=True)
         except SettingsError as exc:
             ui.out.fail(f"{exc}")
@@ -1310,6 +1329,7 @@ def _main(args=None) -> int:
                 rootfs=rootfs.resolve(),
                 rootfs_sha256=rootfs_sha256,
                 update_channel=args.channel,
+                product=product,
                 twrp_sha256=twrp_sha256,
                 amonet_hashes=amonet_hashes,
                 wifi=settings.wifi,

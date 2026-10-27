@@ -27,7 +27,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Any
+from typing import Any, Callable
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2] / "catalogue"
@@ -361,17 +361,55 @@ class Catalogue:
     def boards(self) -> list[str]:
         return sorted(self._boards)
 
-    def product(self) -> dict:
-        """The one product in the catalogue. A second product needs someone to decide who picks it."""
-        if len(self._products) != 1:
-            raise CatalogueError(f"expected exactly one product, found {sorted(self._products)}; refusing")
-        (_, p), = self._products.values()
-        return json.loads(json.dumps(p))
+    def products(self) -> list[str]:
+        return sorted(self._products)
+
+    def product(self, product_id: str | None = None) -> dict:
+        """The product named, exactly (GENBU-170). With none named, the only one there is: with two or more,
+        whoever asks has to say which (GENBU-192), so this refuses."""
+        if product_id is None:
+            if len(self._products) != 1:
+                raise CatalogueError(f"expected exactly one product, found {self.products()}; "
+                                     "name one with --product; refusing")
+            product_id, = self._products
+        if product_id not in self._products:
+            names = tuple(self.products())
+            raise CatalogueError(f"no catalogue product {product_id!r}"
+                                 + (_near(product_id, names) or f"; choose {_or_list(names)}") + "; refusing")
+        return json.loads(json.dumps(self._products[product_id][1]))
+
+    def products_for(self, board: str) -> list[str]:
+        """The products that list board."""
+        return sorted(n for n, (_, p) in self._products.items() if board in p["boards"])
+
+    def pick_product(self, board: str, override: str | None = None,
+                     ask: Callable[[list[str]], str | None] | None = None) -> dict:
+        """The product an install puts on a unit with this board (GENBU-192). --product (override) wins
+        but has to list the board; otherwise the one product that lists it. When two or more do, ask gets
+        their ids and returns one; with nobody to ask (ask missing or answering None) this refuses."""
+        if override is not None:
+            p = self.product(override)
+            if board not in p["boards"]:
+                raise CatalogueError(f"product {override!r} lists {_or_list(tuple(p['boards']))}, "
+                                     f"not {board!r}; refusing")
+            return p
+        hits = self.products_for(board)
+        if not hits:
+            raise CatalogueError(f"no catalogue product lists board {board!r}; refusing")
+        if len(hits) == 1:
+            return self.product(hits[0])
+        picked = ask(hits) if ask else None
+        if picked is None:
+            raise CatalogueError(f"{_or_list(tuple(hits))} all list board {board!r}: "
+                                 "say which with --product; refusing")
+        if picked not in hits:
+            raise CatalogueError(f"{picked!r} is not one of {_or_list(tuple(hits))}; refusing")
+        return self.product(picked)
 
     def profile(self, board: str) -> "BoardProfile":
-        """The installer's view of one board the product lists."""
-        if board not in self.product()["boards"]:
-            raise CatalogueError(f"no catalogue board {board!r} in the product; refusing")
+        """The installer's view of one board a product lists."""
+        if not self.products_for(board):
+            raise CatalogueError(f"no catalogue board {board!r} in a product; refusing")
         r = self.resolve(board)
         amonet = r["assets"]["amonet"]
         return BoardProfile(
@@ -467,19 +505,24 @@ def load_or_exit() -> Catalogue:
 
 
 def supported_boards() -> tuple[str, ...]:
-    """The product's boards, in the order the product lists them."""
-    return tuple(default().product()["boards"])
+    """Every board a product lists: the products by id, each in the order it lists its boards. With one
+    product, its boards in its order."""
+    cat = default()
+    seen: dict[str, None] = {}
+    for product_id in cat.products():
+        seen.update(dict.fromkeys(cat.product(product_id)["boards"]))
+    return tuple(seen)
 
 
-def first_boards() -> tuple[str, ...]:
-    """The boards the first release named, which every Show already knows."""
-    return tuple(default().product()["first_boards"])
+def first_boards(product_id: str | None = None) -> tuple[str, ...]:
+    """The boards the product's first release named, which every Show of it already knows."""
+    return tuple(default().product(product_id)["first_boards"])
 
 
-def later_boards() -> tuple[str, ...]:
+def later_boards(product_id: str | None = None) -> tuple[str, ...]:
     """The product's other boards, in its order: each reads manifest-<board>.json (GENBU-176)."""
-    first = first_boards()
-    return tuple(b for b in supported_boards() if b not in first)
+    p = default().product(product_id)
+    return tuple(b for b in p["boards"] if b not in p["first_boards"])
 
 
 def amonet_upgrade_writes(board: str) -> tuple[tuple[tuple[str, ...], str, str | None], ...]:

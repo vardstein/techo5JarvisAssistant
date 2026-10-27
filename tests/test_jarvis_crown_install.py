@@ -120,6 +120,15 @@ class JarvisCrownInstallTests(unittest.TestCase):
         with self.assertRaisesRegex(InstallError, "does not contain a regular"):
             verify_jarvis_rootfs(UPSTREAM_ROOTFS, sha256(UPSTREAM_ROOTFS))
 
+    def test_rootfs_is_held_to_the_product_named(self):
+        # GENBU-192: the picked product is what the marker must name; an unknown one stops before reading.
+        with tempfile.TemporaryDirectory() as td:
+            rootfs = make_rootfs(td)
+            self.assertEqual(verify_jarvis_rootfs(rootfs, sha256(rootfs), product="genbu-show-v1").product,
+                             "genbu-show-v1")
+            with self.assertRaisesRegex(InstallError, "no catalogue product 'genbu-show-v2'"):
+                verify_jarvis_rootfs(rootfs, sha256(rootfs), product="genbu-show-v2")
+
     def test_upstream_or_wrong_board_rootfs_is_rejected(self):
         with tempfile.TemporaryDirectory() as td:
             rootfs = make_rootfs(td, product="techo5", board="crown")

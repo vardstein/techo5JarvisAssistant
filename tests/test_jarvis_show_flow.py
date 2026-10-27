@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import pathlib
 import sys
@@ -113,7 +114,7 @@ class FlowAcceptanceTests(unittest.TestCase):
             td = pathlib.Path(td_s)
             h = FlowHarness(board="crown", locked=False)
             result = run_install_flow(
-                inputs(td, "crown"),
+                dataclasses.replace(inputs(td, "crown"), product="genbu-show-v1"),
                 confirm_unlock=lambda _p: self.fail("unlock confirmation must not be requested"),
                 confirm_install=lambda p: FINAL_CONFIRM_PHRASE,
                 deps=h.deps(),
@@ -126,6 +127,7 @@ class FlowAcceptanceTests(unittest.TestCase):
             self.assertEqual(h.identify_kwargs["expected_board"], "crown")
             self.assertEqual(h.plan_kwargs["confirmation"], FINAL_CONFIRM_PHRASE)
             self.assertEqual(h.plan_kwargs["board"], "crown")
+            self.assertEqual(h.plan_kwargs["product"], "genbu-show-v1")
             self.assertEqual(h.stage_serial, "ADB123")
             record = json.loads((td / "backups" / "ADB123" / "show.json").read_text())
             self.assertEqual((record["name"], record["board"]), ("Living Room", "crown"))
