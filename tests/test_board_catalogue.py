@@ -121,8 +121,8 @@ class BaselineParityTest(unittest.TestCase):
         for product, board in BASELINE["product_to_board"].items():
             self.assertEqual(cat.board_for("fastboot_product", product), board)
 
-    def test_lookups_including_case_folding(self):
-        # OPEN DECISION (GENBU-163 Q8): today's lookups fold case and strip spaces. Kept as it was.
+    def test_lookups_match_exactly(self):
+        # GENBU-170: exact match or refuse; a near miss gets the right spelling in the message.
         for name, frozen in BASELINE["profile_for_board"].items():
             with self.subTest(board=name):
                 self.assertEqual(outcome(catalogue.profile_for_board, name), frozen_outcome(frozen))
@@ -236,7 +236,7 @@ class CatalogueRefusesTest(unittest.TestCase):
                 self.cat.profile(name)
 
     def test_unknown_or_inexact_product(self):
-        # profile_for_product folds case and strips spaces before it asks (Q8); the catalogue itself does not.
+        # Neither the catalogue nor profile_for_product folds case or strips spaces (GENBU-170).
         for product in ("crown", "CROWN ", "CHECKERS2", "", "LAGUNA"):
             with self.subTest(product=product), self.assertRaises(CatalogueError):
                 self.cat.board_for("fastboot_product", product)
