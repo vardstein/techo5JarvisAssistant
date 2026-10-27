@@ -48,3 +48,27 @@ func TestCronosReadsItsOwnManifest(t *testing.T) {
 		t.Fatalf("cronos tag URL = %q, want %q", got, want)
 	}
 }
+
+// A Show whose board.json agrees with its own finding reads manifest-v2.json, the same name on every
+// board (GENBU-191); every other Show keeps the names above.
+func TestABoardFileShowReadsTheV2Manifest(t *testing.T) {
+	old, oldBoard, oldBy := releases, deviceBoard, byBoardFile
+	t.Cleanup(func() { releases, deviceBoard, byBoardFile = old, oldBoard, oldBy })
+	releases = defaultReleases
+	for _, board := range []string{"crown", "checkers", "cronos"} {
+		deviceBoard, byBoardFile = board, false
+		if got := channelURL(Dev); got == Dev.at(V2Manifest) {
+			t.Fatalf("%s read %s before board.json was checked", board, V2Manifest)
+		}
+		GoByBoardFile()
+		if got, want := channelURL(Dev), "https://github.com/vardstein/techo5JarvisAssistant/releases/download/channel-dev/manifest-v2.json"; got != want {
+			t.Fatalf("%s dev URL = %q, want %q", board, got, want)
+		}
+		if got, want := channelURL(Stable), "https://github.com/vardstein/techo5JarvisAssistant/releases/latest/download/manifest-v2.json"; got != want {
+			t.Fatalf("%s stable URL = %q, want %q", board, got, want)
+		}
+		if got, want := tagURL("v1.3.0"), "https://github.com/vardstein/techo5JarvisAssistant/releases/download/v1.3.0/manifest-v2.json"; got != want {
+			t.Fatalf("%s tag URL = %q, want %q", board, got, want)
+		}
+	}
+}

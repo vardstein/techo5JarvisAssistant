@@ -109,6 +109,13 @@ class SupplyChainReleaseContractTests(unittest.TestCase):
         for board in later_boards():
             self.assertIn(f"-board {board}", source)
             self.assertIn(f"manifest-{board}.json", source)
+        # And every release carries manifest-v2.json for every board the rootfs lists, with every boot
+        # image: the name Shows with a checked board.json read (GENBU-191).
+        self.assertIn('-out "$OUT/manifest-v2.json"', source)
+        self.assertIn('for board in $boards; do mkv+=(-board "$board"); done', source)
+        self.assertIn('for asset in "${assets[@]}" "${cronos_assets[@]}"; do mkv+=(-asset "$asset"); done', source)
+        self.assertIn('"$OUT/manifest-v2.json" "$OUT/manifest-v2.json.sig"', source)
+        self.assertIn("manifest-v2.json manifest-v2.json.sig)", source)
         self.assertIn('ident.version != sys.argv[3]', source)
         self.assertIn("signing key permissions are too open", source)
         self.assertIn("signing key must not be a symlink", source)

@@ -219,6 +219,9 @@ func run(m update.Manifest, from string, builds map[string]string, rootfses map[
 			return fmt.Errorf("mkmanifest: Jarvis Show release names no supported boards")
 		}
 		for _, board := range m.Boards {
+			if !update.KnownBoard(board) {
+				return fmt.Errorf("mkmanifest: %q is no board this release knows", board)
+			}
 			if err := m.ValidFor(m.Product, board); err != nil {
 				return err
 			}

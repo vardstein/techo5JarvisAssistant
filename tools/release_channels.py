@@ -38,6 +38,8 @@ PAIR = ("manifest.json", "manifest.json.sig")
 # those are comes from the board catalogue's first_boards (GENBU-176), of the product these releases are
 # (GENBU-192: another product would have its own releases).
 EXTRA_PAIRS = tuple((f"manifest-{b}.json", f"manifest-{b}.json.sig") for b in later_boards(JARVIS_SHOW_PRODUCT))
+# And Shows whose board.json is checked read manifest-v2.json, every board alike (GENBU-191).
+EXTRA_PAIRS += (("manifest-v2.json", "manifest-v2.json.sig"),)
 EXTRA = tuple(name for two in EXTRA_PAIRS for name in two)
 RANK = {"dev": 0, "staging": 1, "stable": 2}
 # Which releases a channel may carry.

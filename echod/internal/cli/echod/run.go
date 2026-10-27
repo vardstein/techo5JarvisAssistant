@@ -15,6 +15,7 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/layout"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/profile"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/safe"
+	"github.com/HuskerMinion/techo5/echod/internal/update"
 )
 
 func newRunCmd() *cobra.Command {
@@ -48,7 +49,16 @@ func newRunCmd() *cobra.Command {
 			if layout.BoardFile != "" {
 				cmdline, _ := os.ReadFile("/proc/cmdline")
 				board.Migrate(layout.BoardFile, string(cmdline))
-				board.Note(layout.BoardFile, layout.Board, layout.Hardware)
+				// Only a board.json that agrees with echod's own finding moves this Show to the
+				// releases that go by board.json alone (GENBU-191). Any other state is logged by Note
+				// and keeps it on the old manifest names.
+				if state := board.Note(layout.BoardFile, layout.Board, layout.Hardware); state == board.Match {
+					update.GoByBoardFile()
+					slog.Info("update", "manifest", update.V2Manifest)
+				} else {
+					slog.Warn("update: board.json is not one to go by; staying on the old manifest names",
+						"board_json", state)
+				}
 			}
 			safe.Go("profile", func() { profile.Watch(ctx) })
 			return boot.Run(ctx)

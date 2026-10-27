@@ -272,10 +272,11 @@ func TestJarvisShowIdentityMustBeExactBeforeManifestIsWritten(t *testing.T) {
 	out := filepath.Join(dir, "manifest.json")
 
 	for name, m := range map[string]update.Manifest{
-		"wrong product": {Product: "jarvis-show-vl", Boards: []string{"crown", "checkers"}, Version: "v1.2.3"},
-		"no boards":     {Product: update.JarvisShowProduct, Version: "v1.2.3"},
-		"newer board":   {Product: update.JarvisShowProduct, Boards: []string{"rooks"}, Version: "v1.2.3"},
-		"duplicate":     {Product: update.JarvisShowProduct, Boards: []string{"crown", "crown"}, Version: "v1.2.3"},
+		"wrong product":          {Product: "jarvis-show-vl", Boards: []string{"crown", "checkers"}, Version: "v1.2.3"},
+		"no boards":              {Product: update.JarvisShowProduct, Version: "v1.2.3"},
+		"newer board":            {Product: update.JarvisShowProduct, Boards: []string{"rooks"}, Version: "v1.2.3"},
+		"unknown beside a known": {Product: update.JarvisShowProduct, Boards: []string{"crown", "rooks"}, Version: "v1.2.3"},
+		"duplicate":              {Product: update.JarvisShowProduct, Boards: []string{"crown", "crown"}, Version: "v1.2.3"},
 	} {
 		err := run(m, "https://example/download/v1.2.3", map[string]string{"arm": build}, nil, nil, out)
 		if err == nil {
