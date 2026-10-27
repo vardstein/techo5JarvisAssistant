@@ -443,27 +443,29 @@ def _or_list(items: tuple[str, ...]) -> str:
     return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " or " + items[-1]
 
 
-# OPEN DECISION (GENBU-163 Q8): the two lookups below strip spaces and fold case before they match,
-# exactly as boards.py did, so "Crown" picks crown and "crown" picks CROWN. The catalogue itself
-# matches exactly (board_for, resolve). Whether the installer should stop folding is Jade's call;
-# until then this keeps today's behaviour, and tests/test_board_catalogue.py pins it.
+def _near(given: str, names: tuple[str, ...]) -> str:
+    """"; did you mean 'x'?" when the name differs from one of names only in case or spaces, else "". Only
+    the message helps; the lookup itself stays exact (GENBU-170)."""
+    near = [n for n in names if n.lower() == given.strip().lower()]
+    return f"; did you mean {near[0]!r}?" if near else ""
+
+
+# Exact match or refuse, like the rest of the catalogue (GENBU-170): "Crown" and " CHECKERS " are refused
+# with the right spelling in the message. What a device reports is spelled the catalogue's way before it
+# gets here (device_gate upper-cases fastboot's product, recovery lower-cases TWRP's device name).
 def profile_for_board(board: str) -> BoardProfile:
-    key = board.strip().lower()
     boards = supported_boards()
-    if key not in boards:
-        raise ValueError(f"unsupported Jarvis Show board {board!r}; choose {_or_list(boards)}")
-    return default().profile(key)
+    if board not in boards:
+        raise ValueError(f"unsupported Jarvis Show board {board!r}" + (_near(board, boards)
+                                                                        or f"; choose {_or_list(boards)}"))
+    return default().profile(board)
 
 
 def profile_for_product(product: str) -> BoardProfile:
-    key = product.strip().upper()
-    try:
-        board = default().board_for("fastboot_product", key)
-    except CatalogueError:
-        raise ValueError(f"unsupported fastboot product {product!r}") from None
-    if board not in supported_boards():
-        raise ValueError(f"unsupported fastboot product {product!r}")
-    return default().profile(board)
+    products = tuple(default().profile(b).fastboot_product for b in supported_boards())
+    if product not in products:
+        raise ValueError(f"unsupported fastboot product {product!r}" + _near(product, products))
+    return default().profile(default().board_for("fastboot_product", product))
 
 
 def on_show_text(cat: Catalogue, board: str) -> str:

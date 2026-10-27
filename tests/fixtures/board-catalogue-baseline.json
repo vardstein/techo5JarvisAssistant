@@ -100,46 +100,16 @@
       }
     },
     "Crown": {
-      "ok": {
-        "board": "crown",
-        "fastboot_product": "CROWN",
-        "model": "Echo Show 8 1st gen / C7H6N3",
-        "product_id": "genbu-crown-v1",
-        "display_width": 1280,
-        "display_height": 800,
-        "amonet_dir_name": "amonet-crown-v2.0.1",
-        "amonet_kaeru_name": "crown-kaeru.bin",
-        "unlock_confirmation": "UNLOCK",
-        "install_confirmation": "ERASE"
-      }
+      "error": "ValueError",
+      "message": "unsupported Jarvis Show board 'Crown'; did you mean 'crown'?"
     },
     " CHECKERS ": {
-      "ok": {
-        "board": "checkers",
-        "fastboot_product": "CHECKERS",
-        "model": "Echo Show 5 1st gen / H23K37",
-        "product_id": "genbu-checkers-v1",
-        "display_width": 960,
-        "display_height": 480,
-        "amonet_dir_name": "amonet-checkers-v2.0.1",
-        "amonet_kaeru_name": "checkers-kaeru.bin",
-        "unlock_confirmation": "UNLOCK",
-        "install_confirmation": "ERASE"
-      }
+      "error": "ValueError",
+      "message": "unsupported Jarvis Show board ' CHECKERS '; did you mean 'checkers'?"
     },
     "CRONOS": {
-      "ok": {
-        "board": "cronos",
-        "fastboot_product": "CRONOS",
-        "model": "Echo Show 5 2nd gen / C76N8S",
-        "product_id": "genbu-cronos-v1",
-        "display_width": 960,
-        "display_height": 480,
-        "amonet_dir_name": "amonet-cronos-v2.0.1",
-        "amonet_kaeru_name": "cronos-kaeru.bin",
-        "unlock_confirmation": "UNLOCK",
-        "install_confirmation": "ERASE"
-      }
+      "error": "ValueError",
+      "message": "unsupported Jarvis Show board 'CRONOS'; did you mean 'cronos'?"
     },
     "": {
       "error": "ValueError",
@@ -198,46 +168,16 @@
       }
     },
     "crown": {
-      "ok": {
-        "board": "crown",
-        "fastboot_product": "CROWN",
-        "model": "Echo Show 8 1st gen / C7H6N3",
-        "product_id": "genbu-crown-v1",
-        "display_width": 1280,
-        "display_height": 800,
-        "amonet_dir_name": "amonet-crown-v2.0.1",
-        "amonet_kaeru_name": "crown-kaeru.bin",
-        "unlock_confirmation": "UNLOCK",
-        "install_confirmation": "ERASE"
-      }
+      "error": "ValueError",
+      "message": "unsupported fastboot product 'crown'; did you mean 'CROWN'?"
     },
     " checkers ": {
-      "ok": {
-        "board": "checkers",
-        "fastboot_product": "CHECKERS",
-        "model": "Echo Show 5 1st gen / H23K37",
-        "product_id": "genbu-checkers-v1",
-        "display_width": 960,
-        "display_height": 480,
-        "amonet_dir_name": "amonet-checkers-v2.0.1",
-        "amonet_kaeru_name": "checkers-kaeru.bin",
-        "unlock_confirmation": "UNLOCK",
-        "install_confirmation": "ERASE"
-      }
+      "error": "ValueError",
+      "message": "unsupported fastboot product ' checkers '; did you mean 'CHECKERS'?"
     },
     "Cronos": {
-      "ok": {
-        "board": "cronos",
-        "fastboot_product": "CRONOS",
-        "model": "Echo Show 5 2nd gen / C76N8S",
-        "product_id": "genbu-cronos-v1",
-        "display_width": 960,
-        "display_height": 480,
-        "amonet_dir_name": "amonet-cronos-v2.0.1",
-        "amonet_kaeru_name": "cronos-kaeru.bin",
-        "unlock_confirmation": "UNLOCK",
-        "install_confirmation": "ERASE"
-      }
+      "error": "ValueError",
+      "message": "unsupported fastboot product 'Cronos'; did you mean 'CRONOS'?"
     },
     "": {
       "error": "ValueError",

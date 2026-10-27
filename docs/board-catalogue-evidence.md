@@ -30,7 +30,7 @@ same answers, run below (section 5).
 |---|---|---|
 | P1 | All three profiles give the same fields and values as `boards.PROFILES` did, in the same board order; `BoardProfile` lost only the two phrases | `test_profiles`, `test_profile_fields_are_the_old_ones_minus_the_phrases` |
 | P2 | `UNLOCK` and `ERASE` were the same on every board, and are now `unlock.CONFIRM_PHRASE` and `install.FINAL_CONFIRM_PHRASE` | checked inside every profile comparison |
-| P3 | `profile_for_board` and `profile_for_product` give the same profile, or the same `ValueError` with the same text, for 9 inputs each, including `Crown`, ` CHECKERS `, `crown`, `Cronos`, empty and unknown names. Case folding is kept (open question Q8) | `test_lookups_including_case_folding` |
+| P3 | `profile_for_board` and `profile_for_product` give the same profile, or the same `ValueError` with the same text, for 9 inputs each, including `Crown`, ` CHECKERS `, `crown`, `Cronos`, empty and unknown names. Since GENBU-170 the near misses are refused with the right spelling | `test_lookups_match_exactly` |
 | P4 | fastboot product to board map, `KNOWN_UNSUPPORTED_PRODUCTS`, `SUPPORTED_SUMMARY`, `SUPPORTED_PRODUCTS` and `unsupported_product_message` for 9 inputs | `test_product_to_board`, `test_device_gate` |
 | P5 | `install.py`: the boot pins per board and the three named ones, `SUPPORTED_BOARDS`, `PROFILE_ID`, `FINAL_CONFIRM_PHRASE` | `test_install_constants` |
 | P6 | `recovery.py`: `TWRP_SHA256` and the TWRP pins per board (cronos: none) | `test_recovery_constants` |

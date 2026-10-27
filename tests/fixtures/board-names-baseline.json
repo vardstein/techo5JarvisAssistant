@@ -49,7 +49,7 @@
  "tools/jarvis-crown.py": 10,
  "tools/jarvis-show.py": 4,
  "tools/jarvis_crown/boot_logo.py": 1,
- "tools/jarvis_crown/catalogue.py": 5,
+ "tools/jarvis_crown/catalogue.py": 3,
  "tools/jarvis_crown/device_gate.py": 9,
  "tools/jarvis_crown/install.py": 10,
  "tools/jarvis_crown/preflight.py": 4,

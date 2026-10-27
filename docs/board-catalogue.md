@@ -25,8 +25,8 @@ The catalogue gives each fact one owner. Code reads the resolved values and neve
 
 - One owner per fact. A board names shared things (assets) by id and never copies them.
 - No inheritance and no defaults. A missing value stays missing, and whoever needs it refuses.
-- Exact match or refuse. No case folding, no "closest board", no generic fallback board. (One exception
-  is left on purpose for now: the installer's two lookups still fold case, see open question Q8.)
+- Exact match or refuse. No case folding, no "closest board", no generic fallback board. The installer's
+  lookups too (Q8, GENBU-170): `Crown` is refused, and the message names the right spelling.
 - Policy fields take values from closed sets. An unknown value is an error, not a warning.
 - Behaviour comes from policy or quirk data, never from a hardware fact ("has a camera, so turn it on").
 - The resolver is Python and runs on the PC. The Show only reads the resolved file.
@@ -414,7 +414,7 @@ b. **Installer reads the catalogue.** Done. `boards.py`, `profiles/` and the pin
    `install.py`, `recovery.py`, `unlock.py` and `assets.py` are gone; the product entity moved in. Parity
    against a baseline frozen before the move proves the installer gives the same answers. Two things
    planned for b were held back because they'd change behaviour: the evidence check (Q9) and exact-match
-   lookups (Q8).
+   lookups (Q8). Exact-match lookups came in with GENBU-170.
 c. board.json written at flash time. echod reads it next to its constants with a test that they match,
    then the constants go, the guess with them. The first half is done: the key is `android_product`
    (the DT compatibles don't tell checkers from cronos), and echod reads and logs board.json. The second
@@ -435,9 +435,10 @@ e. CI grep for board names and build tags outside the catalogue and the mains, w
 
 For Jade. None of them is decided in code; the code keeps what it did before.
 
-- **Q8, case folding.** `profile_for_board` and `profile_for_product` still strip spaces and fold case
-  (`Crown` and ` CHECKERS ` work), as `boards.py` did. The rule says exact. Changing it changes what the
-  installer accepts, so it's left as is, marked in `catalogue.py`, and pinned by the parity test.
+- **Q8, case folding.** Decided 2026-10-27 (GENBU-170): exact. `profile_for_board` and
+  `profile_for_product` refuse `Crown` and ` CHECKERS `, and the message names the right spelling. What a
+  device reports is still brought into the catalogue's spelling first (fastboot's product upper-cased,
+  TWRP's device name lower-cased), since that's reading the device, not a name someone typed.
 - **Q9, evidence check.** Designed above, not built. Unlock stays crown-only in code until it exists.
   Decided 2026-10-20 (GENBU-212): pin and log first, then build the check once each board has a logged
   run; cronos opens through the check, not before.
