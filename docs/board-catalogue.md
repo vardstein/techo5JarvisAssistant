@@ -169,9 +169,17 @@ real unit, never guessed.
   ([boot logos](../tools/boot-logo/README.md)). `boot_logo.py` writes the OpenJade logo,
   `install-show.py` the TECHO5 one; before GENBU-175 each had its own table. A kaeru carrying one tool's
   logo is one the other tool doesn't know, so it refuses to write over it.
-- Not there yet: `version` and `licence`. oddc's asset entities have both. Nobody has written down the
-  licence of the Amonet zips or the LineageOS builds, and making one up would be worse than leaving it
-  out. Jade's call whether a destructive step should refuse an asset without a licence.
+- `licence` (GENBU-186) says which terms each part of the file comes under: `checked` is the date it was
+  read, and each entry in `parts` names a part, its SPDX expression and the `sources` it was read from.
+  A source is an https address, pinned to a commit or tag where there is one, or `asset:<where inside the
+  file>`. Two values stand for findings, not gaps: `LicenseRef-not-stated` means the part's source states
+  no terms at all (Amazon's and MediaTek's boot chain and vendor blobs, the prebuilt TWRP and fastboot
+  binaries, amonet's scripts), and `LicenseRef-per-file-notices` means the file carries its own notice
+  list (LineageOS's `/system/etc/NOTICE.html.gz`). Nothing in it was guessed: a part whose terms nobody
+  states is recorded as not stated, never filled in. A pinned asset without a `licence` is refused, and
+  since every tool loads the catalogue first, so is every step. An unpinned asset may leave it out,
+  because nothing uses it.
+- Not there yet: `version`. oddc's asset entities have it.
 
 ### Resolver and explain
 
@@ -442,7 +450,10 @@ For Jade. None of them is decided in code; the code keeps what it did before.
 - **Q9, evidence check.** Designed above, not built. Unlock stays crown-only in code until it exists.
   Decided 2026-10-20 (GENBU-212): pin and log first, then build the check once each board has a logged
   run; cronos opens through the check, not before.
-- **Asset licences.** Unknown for all nine assets.
+- **Asset licences.** Decided 2026-10-27 (GENBU-186): every pinned asset has a licence record, and a pin
+  without one is refused. Many parts state no terms at all (see `licence` above); those are recorded as
+  not stated. Nothing is redistributed: the zips and images are fetched from where upstream publishes
+  them.
 - **The remaining owners** above, especially `mkrootfs.sh`'s marker and `PROFILE_ID`, which several
   scripts and echod spell out themselves.
 
