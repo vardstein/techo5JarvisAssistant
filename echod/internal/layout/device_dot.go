@@ -39,6 +39,10 @@ const (
 
 	// BoardFile is empty: the Dot is in no board catalogue, so it has no board.json.
 	BoardFile = ""
+	// OTABoard is the board updates go by; with no board.json that is the build's own.
+	OTABoard = Board
+	// BoardFrom is where a Show took its board from; the build names this one.
+	BoardFrom = ""
 
 	// DefaultName is the fallback display name when a device has none recorded.
 	DefaultName = "Echo Dot"

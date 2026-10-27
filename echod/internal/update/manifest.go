@@ -101,8 +101,9 @@ func ManifestName(board string) string {
 	return "manifest.json"
 }
 
-// deviceBoard is variable only so tests can emulate Crown/Checkers without running on the hardware.
-var deviceBoard = layout.Board
+// deviceBoard is the board updates go by: on a Show, board.json's and nothing else, so a Show without
+// one refuses every manifest (GENBU-193). Variable only so tests can stand on any board.
+var deviceBoard = layout.OTABoard
 
 // JarvisShowProduct is the signed product identity every Jarvis Show release carries. Exported so
 // release tooling can reject a typo before it signs and publishes a manifest devices would refuse. It
