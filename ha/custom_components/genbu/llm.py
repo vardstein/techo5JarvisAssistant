@@ -9,7 +9,10 @@ never see it.
 genbu__firmware answers questions about the Shows' software and does what the house's update card does:
 installs a waiting update or goes back to the version before, after asking, skips an update, picks the
 release channel and turns Install at night on or off. A Show with Updates by voice on gets it, and so does
-an admin typing in the app; another voice device never does. See docs/genbu-assistant.md §1 and §4.
+an admin typing in the app; another voice device never does. At a Show it only tells, installs and turns
+night installs on or off; going back, a new channel and skipping are the app's (GENBU-262). Whoever is
+standing there, or a web page the model read, can't talk it into those, since the model sets the yes
+itself. See docs/genbu-assistant.md §1 and §4.
 
 And when a wake word cut the Show's last reply off, the turn after it is told how much of the reply was
 heard (reply_cut.py, GENBU-250); that comes with no tool.
@@ -223,6 +226,7 @@ async def _show(hass: HomeAssistant, show: Show) -> bool:
 
 
 ACTIONS = ["status", "install", "go_back", "skip", "channel", "night"]
+AT_A_SHOW = ["status", "install", "night"]  # the rest only an admin in the app (GENBU-262)
 NEEDS_YES = {"install": "install {version} on all Shows now", "go_back": "go back to {version} on all Shows",
              "channel": "switch the Shows to the {channel} channel"}
 
@@ -253,6 +257,18 @@ class FirmwareTool(llm.Tool):
 
     def __init__(self, show: Show | None) -> None:
         self.show = show  # None: asked in the app
+        if show is not None:
+            # At a Show the model is told only of what it may do there.
+            self.description = self.description.split(" action status:")[0] + (
+                " action status: versions, channel and the waiting update. install: installs the waiting update "
+                "on all Shows; ask first and set confirm only after the person said yes. night: on or off. "
+                "Going back, skipping an update or another channel are done in the Home Assistant app by an "
+                "admin; say so when asked.")
+            self.parameters = vol.Schema({
+                vol.Required("action", description="status, install or night"): vol.In(AT_A_SHOW),
+                vol.Optional("confirm", description="True only after the person said yes"): bool,
+                vol.Optional("on", description="night only: true to install updates at night"): bool,
+            })
 
     async def async_call(self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext):
         if self.show is None:
@@ -260,29 +276,38 @@ class FirmwareTool(llm.Tool):
             user = await hass.auth.async_get_user(user_id) if user_id else None
             if user is None or not user.is_admin:
                 return llm.ToolResult(data={"error": "Only an admin can ask about the Shows' software"}, error=True)
+            who = user.name or "an admin"
+        else:
+            who = self.show.name
         hub = _hub(hass)
         if hub is None:
             return llm.ToolResult(data={"error": "Genbu Assistant is not running"}, error=True)
         args = tool_input.tool_args
         action = args.get("action", "status")
+        if self.show is not None and action not in AT_A_SHOW:
+            # The schema has kept it out already; this is for a model that calls it anyway.
+            return llm.ToolResult(data={"error": "Not from a Show: going back, skipping an update and the "
+                                        "channel are done in the Home Assistant app, by an admin"}, error=True)
         status = self._status(hass, hub)
         if action == "status":
             return llm.ToolResult(data=status)
         if action == "night":
-            await hub.async_set_night(bool(args.get("on")))
+            await hub.async_set_night(bool(args.get("on")), who)
             return llm.ToolResult(data={"install_at_night": hub.house.night})
         if action == "skip":
             if not hub.waiting:
                 return llm.ToolResult(data={**status, "skipped": "nothing, no update is waiting"})
-            await hass.services.async_call("update", "skip", {"entity_id": UPDATE_ENTITY}, blocking=True)
+            await hass.services.async_call("update", "skip", {"entity_id": UPDATE_ENTITY}, blocking=True,
+                                           context=llm_context.context)
             return llm.ToolResult(data={"skipped": status["update_waiting"],
                                         "note": "A newer update will be offered again."})
         try:
-            return await self._change(hass, hub, action, args, status)
+            return await self._change(hass, hub, action, args, status, who, llm_context)
         except HomeAssistantError as err:
             return llm.ToolResult(data={"error": str(err)}, error=True)
 
-    async def _change(self, hass: HomeAssistant, hub, action: str, args: dict, status: dict) -> llm.ToolResult:
+    async def _change(self, hass: HomeAssistant, hub, action: str, args: dict, status: dict, who: str,
+                      llm_context: llm.LLMContext) -> llm.ToolResult:
         """install, go_back and channel: each asks first."""
         if action == "install":
             if not status["update_waiting"]:
@@ -306,15 +331,16 @@ class FirmwareTool(llm.Tool):
             return llm.ToolResult(data={**status, "ask_first": "Ask whether to " + NEEDS_YES[action].format(**words)
                                         + ". Do it only after a yes."})
         if action == "install":
-            started = await hub.async_install_updates()
+            started = await hub.async_install_updates(who=who)
             return llm.ToolResult(data={"installing_on": started["updating"], "up_to_date": started["current"],
                                         "note": "Each Show restarts when its update is in."})
         if action == "go_back":
             await hass.services.async_call("update", "install", {"entity_id": UPDATE_ENTITY,
-                                                                 "version": words["version"]}, blocking=True)
+                                                                 "version": words["version"]}, blocking=True,
+                                           context=llm_context.context)
             return llm.ToolResult(data={"house_version": hub.house.version,
                                         "note": "Each Show goes back and restarts. The newer one is skipped."})
-        await hub.async_pick_channel(words["channel"])
+        await hub.async_pick_channel(words["channel"], who)
         return llm.ToolResult(data={"channel": hub.house.channel, "update_waiting": hub.waiting or None})
 
     def _status(self, hass: HomeAssistant, hub) -> dict:

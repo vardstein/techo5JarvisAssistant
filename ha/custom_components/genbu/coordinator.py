@@ -18,9 +18,10 @@ from datetime import datetime, timedelta
 import aiohttp
 
 from homeassistant.auth import EVENT_USER_ADDED, EVENT_USER_REMOVED, EVENT_USER_UPDATED
+from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_STATE_CHANGED, STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import Event, EventOrigin, HomeAssistant, callback
+from homeassistant.core import Context, Event, EventOrigin, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.exceptions import HomeAssistantError
@@ -49,6 +50,7 @@ READ_EVERY = timedelta(hours=1)  # the channel's manifest; 6 hours kept a new re
 ASKED_GAP = timedelta(minutes=1)  # a Show's Check for updates reads the channel at most this often (GENBU-157)
 SETTLE = timedelta(minutes=30)  # how long after an install the card shows how far the Shows are
 TELL_EVERY = timedelta(hours=1)  # how often a Show mentions a speaker that is off (GENBU-161)
+SYSTEM = "Home Assistant"  # who asked, when no person or Show did: an automation, or Genbu itself (GENBU-262)
 
 
 class NoRelease(HomeAssistantError):
@@ -407,10 +409,11 @@ class GenbuHouse:
             raise HomeAssistantError(f"{url} is no Genbu manifest")
         return data
 
-    async def async_install_house(self, version: str | None = None, backup: bool = False) -> str:
+    async def async_install_house(self, version: str | None = None, backup: bool = False, who: str = SYSTEM) -> str:
         """Moves the house to version, or to the one waiting; every Show follows. Going to a version the
         channel doesn't offer (back, or a build of its own) first checks that the release is there.
-        Answers with the version the house moved to, "" when there was nothing to install."""
+        Answers with the version the house moved to, "" when there was nothing to install. who asked goes
+        in the log, and going back leaves a notification too (GENBU-262)."""
         version = (version or "").strip()
         if version and not valid(version):
             raise HomeAssistantError(f"{version} is no version")
@@ -423,20 +426,31 @@ class GenbuHouse:
             await self.store.async_save(self.house.data)
             if self.hass.services.has_service("backup", "create_automatic"):
                 await self.hass.services.async_call("backup", "create_automatic", blocking=True)
+        was = self.house.version
         self.house.move(target, dt_util.utcnow())
         self.installed_at = dt_util.utcnow()
-        LOGGER.info("The house moves to %s; the Shows follow", target)
+        LOGGER.info("The house moves to %s, asked by %s; the Shows follow", target, who)
+        if was and newer(was, target):
+            self._tell("went_back", "Genbu Shows go back",
+                       f"The Genbu Shows go back from {was} to {target}. Asked by {who}.")
         await self.store.async_save(self.house.data)
         await self.async_refresh()
         return target
 
-    async def async_pick_channel(self, channel: str) -> None:
+    async def async_pick_channel(self, channel: str, who: str = SYSTEM) -> None:
+        was = self.house.channel
         self.house.pick_channel(channel)
+        if channel != was:
+            LOGGER.info("The release channel is now %s (was %s), asked by %s", channel, was, who)
+            self._tell("channel", "Genbu release channel changed",
+                       f"The Genbu Shows' release channel is now {channel} (was {was}). Asked by {who}.")
         self.release = {}
         self._save()
         await self.async_read_release()
 
-    async def async_set_night(self, on: bool) -> None:
+    async def async_set_night(self, on: bool, who: str = SYSTEM) -> None:
+        if on != self.house.night:
+            LOGGER.info("Install at night is now %s, asked by %s", "on" if on else "off", who)
         self.house.set_night(on)
         self._save()
         async_dispatcher_send(self.hass, CHANGED)
@@ -451,16 +465,38 @@ class GenbuHouse:
             return
         await self.async_read_release()
         if self.waiting:
-            await self.async_install_house()
+            await self.async_install_house(who="the night install")
 
-    async def async_install_updates(self, skip: str = "") -> dict[str, list[str]]:
+    async def async_install_updates(self, skip: str = "", who: str = SYSTEM) -> dict[str, list[str]]:
         """genbu.install_updates and the voice: a waiting house update moves the house, and every Show
         follows it; without one, any Show still behind the house is started on its own update."""
         if waiting := self.waiting:
-            await self.async_install_house(waiting)
+            await self.async_install_house(waiting, who=who)
             names = [s.name for s in self.shows if s.online]
             return {"updating": names, "current": []}
-        return await install_waiting(self.hass, skip)
+        started = await install_waiting(self.hass, skip)
+        if started["updating"]:
+            LOGGER.info("Updates started on %s, asked by %s", ", ".join(started["updating"]), who)
+        return started
+
+    # Who changed the firmware (GENBU-262): every change is logged with who asked for it, and a new
+    # channel or going back also leaves a notification, since those two are the ones nobody expects.
+
+    async def async_who(self, context: Context | None) -> str:
+        """Who a change came from: a Show by its own user, a person by name, else Home Assistant itself
+        (an automation, or Genbu)."""
+        user_id = context.user_id if context else None
+        if not user_id:
+            return SYSTEM
+        if show := await self.keycare.show_of(user_id, list(self.shows)):
+            return show.name
+        user = await self.hass.auth.async_get_user(user_id)
+        return user.name if user and user.name else "a user without a name"
+
+    @callback
+    def _tell(self, what: str, title: str, message: str) -> None:
+        persistent_notification.async_create(self.hass, message, title=title,
+                                             notification_id=f"{DOMAIN}_{what}")
 
     # What the services and the selects do.
 

@@ -1,6 +1,7 @@
 """The genbu integration inside a real Home Assistant: finding the Shows, the house version sensor, and the
 house's update card with its release channel and Install at night (GENBU-119)."""
 
+import logging
 from datetime import timedelta
 
 import pytest
@@ -406,6 +407,44 @@ async def test_install_updates_moves_the_house(hass: HomeAssistant):
     assert sorted(answer["updating"]) == ["Hall", "Kitchen"] and answer["current"] == []
     assert entry.runtime_data.house.version == "v1.0.4"
     assert installs == []  # the Shows follow the house by themselves
+
+
+async def test_who_may_install_updates_and_forget(hass: HomeAssistant, hass_admin_user, hass_read_only_user,
+                                                  caplog):
+    """GENBU-262: install_updates takes an admin, an automation (no user, as the voice kit's sentence runs)
+    and a Show's own user (its spoken yes); forget_show only an admin. Each install says who asked."""
+    from homeassistant.core import Context
+    from homeassistant.exceptions import Unauthorized
+    from pytest_homeassistant_custom_component.common import async_mock_service
+
+    caplog.set_level(logging.INFO, logger="custom_components.genbu")
+    hall = add_show(hass, "hall", "v1.0.3")
+    entry = await setup(hass)
+    hub = entry.runtime_data
+    async_mock_service(hass, "update", "install")
+    show = hub.show(er.async_get(hass).async_get(hall).device_id)
+    show_user = await hass.auth.async_create_user("Hall Show", local_only=True)
+    hub.keycare.recorded[show.device] = {"user": show_user.id}
+
+    async def install(user_id):
+        return await hass.services.async_call("genbu", "install_updates", {}, blocking=True,
+                                              return_response=True, context=Context(user_id=user_id))
+
+    with pytest.raises(Unauthorized):
+        await install(hass_read_only_user.id)
+    for patch, (user_id, who) in enumerate(((hass_admin_user.id, hass_admin_user.name), (None, "Home Assistant"),
+                                            (show_user.id, "Hall")), start=4):
+        release(f"v1.0.{patch}")
+        await read(hass, entry)
+        await install(user_id)
+        assert f"asked by {who}" in caplog.text, who
+
+    for user_id in (hass_read_only_user.id, show_user.id):
+        with pytest.raises(Unauthorized):
+            await hass.services.async_call("genbu", "forget_show", {"node": "hall"}, blocking=True,
+                                           return_response=True, context=Context(user_id=user_id))
+    await hass.services.async_call("genbu", "forget_show", {"node": "hall"}, blocking=True,
+                                   return_response=True, context=Context(user_id=hass_admin_user.id))
 
 
 async def test_what_1_3_left_is_cleared(hass: HomeAssistant, hass_storage):

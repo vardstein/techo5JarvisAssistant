@@ -126,7 +126,7 @@ class InstallAtNight(HouseSwitch):
         return self.hub.house.night
 
     async def _set(self, on: bool) -> None:
-        await self.hub.async_set_night(on)
+        await self.hub.async_set_night(on, await self.hub.async_who(self._context))
 
 
 class UsesLlm(HouseSwitch):

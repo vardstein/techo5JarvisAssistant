@@ -15,7 +15,7 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse, callback
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import ServiceValidationError, Unauthorized, UnknownUser
 from homeassistant.helpers import config_validation as cv, device_registry as dr, entity_registry as er
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.storage import Store
@@ -59,7 +59,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not hass.services.has_service(DOMAIN, SERVICE_FORGET):
         async def forget(call: ServiceCall) -> ServiceResponse:
             return await _forget_show(hass, call)
-        hass.services.async_register(DOMAIN, SERVICE_FORGET, forget, schema=FORGET_SCHEMA,
+        # Admins only (GENBU-262): the installer's --remove-show signs in as one.
+        async_register_admin_service(hass, DOMAIN, SERVICE_FORGET, forget, schema=FORGET_SCHEMA,
                                      supports_response=SupportsResponse.OPTIONAL)
     if not hass.services.has_service(DOMAIN, SERVICE_INSTALL):
         async def install(call: ServiceCall) -> ServiceResponse:
@@ -100,7 +101,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def _add_panel(hass: HomeAssistant) -> None:
     """The Genbu Control Center in the sidebar: one card per Show, built in the browser from the Show's own
     ESPHome entities, so there is nothing to copy or keep in step. The version in the script's address
-    makes browsers load it again after an update."""
+    makes browsers load it again after an update. Admins only (GENBU-262); the dashboard cards stay for
+    everyone."""
     if not hass.data.get(f"{DOMAIN}_files"):
         # Static paths can't be taken back, so only once per Home Assistant run.
         await hass.http.async_register_static_paths(
@@ -111,7 +113,7 @@ async def _add_panel(hass: HomeAssistant) -> None:
     await panel_custom.async_register_panel(
         hass, frontend_url_path=PANEL, webcomponent_name="genbu-panel", sidebar_title=PANEL_TITLE,
         sidebar_icon="mdi:tablet-dashboard", module_url=f"{PANEL_FILES}/genbu-panel.js?v={version}",
-        config={"manufacturers": sorted(MANUFACTURERS), "title": PANEL_TITLE}, require_admin=False)
+        config={"manufacturers": sorted(MANUFACTURERS), "title": PANEL_TITLE}, require_admin=True)
     await _add_cards(hass)
 
 
@@ -211,12 +213,24 @@ async def _install_updates(hass: HomeAssistant, call: ServiceCall) -> ServiceRes
     Show follows. Without one, each Show still behind with an update of its own installs it, except
     except_node, the Show that asked and is installing already (a Show from before 1.4.0 does): a second
     install on top of its own would start the same download twice. Answers with who started and who is
-    up to date; a Show that is offline is left out."""
+    up to date; a Show that is offline is left out.
+
+    Who may (GENBU-262): an admin, an automation (the voice kit's sentence runs as one), and a Show with
+    its own key, which is how its yes arrives. No other user: a family login or DashCast's key moves no
+    Show. That closes Genbu's own door only; update.install on the house's card is Home Assistant's, open
+    to every user."""
     entry = next((e for e in hass.config_entries.async_entries(DOMAIN) if e.state is ConfigEntryState.LOADED),
                  None)
     if entry is None:
         raise ServiceValidationError("Genbu is not running")
-    return await entry.runtime_data.async_install_updates(call.data.get("except_node", ""))
+    hub = entry.runtime_data
+    if user_id := call.context.user_id:
+        user = await hass.auth.async_get_user(user_id)
+        if user is None:
+            raise UnknownUser(context=call.context)
+        if not user.is_admin and await hub.keycare.show_of(user_id, list(hub.shows)) is None:
+            raise Unauthorized(context=call.context)
+    return await hub.async_install_updates(call.data.get("except_node", ""), await hub.async_who(call.context))
 
 
 def _music_route(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:

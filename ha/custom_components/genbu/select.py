@@ -72,7 +72,7 @@ class ReleaseChannel(SelectEntity):
         self.async_write_ha_state()
 
     async def async_select_option(self, option: str) -> None:
-        await self.hub.async_pick_channel(option)
+        await self.hub.async_pick_channel(option, await self.hub.async_who(self._context))
 
 
 class MusicPlaysOn(SelectEntity):

@@ -1,6 +1,9 @@
-"""genbu__firmware: who gets it, the admin check in the app, what a status says, and that installing asks
-first."""
+"""genbu__firmware: who gets it, the admin check in the app, what a status says, that installing asks
+first, and what a Show may ask for (GENBU-262)."""
 
+import logging
+
+from homeassistant.components import persistent_notification
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import llm
@@ -127,15 +130,57 @@ async def test_install_asks_first_then_moves_the_house(hass: HomeAssistant):
     assert entry.runtime_data.house.version == "v1.4.1-stable.61"
 
 
-async def test_go_back_skip_channel_and_night(hass: HomeAssistant):
+def told(hass: HomeAssistant, what: str) -> str:
+    note = persistent_notification._async_get_or_create_notifications(hass).get(f"{DOMAIN}_{what}")
+    return note["message"] if note else ""
+
+
+async def test_a_show_only_tells_installs_and_sets_night(hass: HomeAssistant):
+    """GENBU-262: the model sets the yes itself, so from a Show it isn't offered going back, skipping or
+    another channel, and is refused if it asks anyway."""
     kitchen_up = add_show(hass, "kitchen", "v1.4.0-stable.60")
     kitchen = device_of(hass, kitchen_up)
     entry = await setup(hass)
     hub = entry.runtime_data
     tool = genbu_llm.FirmwareTool(hub.show(kitchen))
+    assert "go_back" not in tool.description and "app" in tool.description
+    assert tool.parameters({"action": "night", "on": True}) == {"action": "night", "on": True}
+    for action in ("go_back", "skip", "channel"):
+        try:
+            tool.parameters({"action": action})
+        except Exception:  # noqa: BLE001 - voluptuous' Invalid
+            pass
+        else:
+            raise AssertionError(f"{action} is offered at a Show")
+
+    RELEASES[manifest_url("stable")] = {"version": "v1.4.1-stable.61"}
+    RELEASES[manifest_url("dev")] = {"version": "v1.4.3-dev.70"}
+    await read(hass, entry)
+    for action, args in (("go_back", {"version": "v1.3.0-stable.50"}), ("skip", {}), ("channel", {"channel": "dev"})):
+        result = await tool.async_call(hass, *ask(kitchen, action, confirm=True, **args))
+        assert result.error and "app" in result.data["error"], action
+    await hass.async_block_till_done()
+    assert hub.waiting == "v1.4.1-stable.61"
+    assert hass.states.get("select.genbu_release_channel").state == "stable"
+
+    full = genbu_llm.FirmwareTool(None)
+    assert "go_back" in full.description
+    full.parameters({"action": "channel", "channel": "dev"})
+
+
+async def test_go_back_skip_channel_and_night(hass: HomeAssistant, hass_admin_user, caplog):
+    """In the app, an admin can do all of it; going back and a new channel leave a notification, and every
+    change says who asked (GENBU-262)."""
+    caplog.set_level(logging.INFO, logger="custom_components.genbu")
+    kitchen_up = add_show(hass, "kitchen", "v1.4.0-stable.60")
+    kitchen = device_of(hass, kitchen_up)
+    entry = await setup(hass)
+    hub = entry.runtime_data
+    tool = genbu_llm.FirmwareTool(None)
+    who = hass_admin_user.name
 
     async def say(action, **args):
-        result = await tool.async_call(hass, *ask(kitchen, action, **args))
+        result = await tool.async_call(hass, *ask(None, action, hass_admin_user.id, **args))
         await hass.async_block_till_done()
         return result.data
 
@@ -157,14 +202,23 @@ async def test_go_back_skip_channel_and_night(hass: HomeAssistant):
 
     RELEASES[tag_url("v1.4.0-stable.60")] = {"version": "v1.4.0-stable.60"}
     assert "v1.4.0-stable.60" in (await say("go_back"))["ask_first"]
+    assert not told(hass, "went_back")
     data = await say("go_back", confirm=True)
     assert data["house_version"] == "v1.4.0-stable.60" and hub.waiting == ""
+    assert "from v1.4.2-stable.62 to v1.4.0-stable.60" in told(hass, "went_back")
+    assert f"Asked by {who}" in told(hass, "went_back")
 
     RELEASES[manifest_url("dev")] = {"version": "v1.4.3-dev.70"}
     assert "dev" in (await say("channel", channel="dev"))["ask_first"]
     data = await say("channel", channel="dev", confirm=True)
     assert data == {"channel": "dev", "update_waiting": "v1.4.3-dev.70"}
     assert hass.states.get("select.genbu_release_channel").state == "dev"
+    assert "dev" in told(hass, "channel") and who in told(hass, "channel")
 
     assert (await say("night", on=True)) == {"install_at_night": True}
     assert hass.states.get("switch.genbu_install_at_night").state == "on"
+
+    log = caplog.text
+    for line in ("The update to v1.4.1-stable.61 is skipped, asked by", "The house moves to v1.4.0-stable.60, asked by",
+                 "The release channel is now dev (was stable), asked by", "Install at night is now on, asked by"):
+        assert f"{line} {who}" in log, line
