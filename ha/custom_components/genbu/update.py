@@ -21,7 +21,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 
 from .const import CHANGED, UPDATE_ENTITY
-from .coordinator import house_device
+from .coordinator import LOGGER, house_device
 from .house import newer, oldest_behind, overview
 
 
@@ -86,10 +86,16 @@ class HouseUpdate(UpdateEntity):
         return "\n\n---\n\n".join(p for p in (notes, shows) if p) or None
 
     async def async_install(self, version: str | None, backup: bool, **kwargs: Any) -> None:
-        await self.hub.async_install_house(version, backup)
+        await self.hub.async_install_house(version, backup, await self.hub.async_who(self._context))
         if self.hub.offered:
             # Gone back past what the channel has: that one stays skipped, so neither the night install
             # nor the Shows bring it back. A newer release is offered again.
             self._changed()
             await self.async_skip()
             async_dispatcher_send(self.hass, CHANGED)  # the sensor's update_waiting
+
+    async def async_skip(self) -> None:
+        if self.latest_version:
+            LOGGER.info("The update to %s is skipped, asked by %s", self.latest_version,
+                        await self.hub.async_who(self._context))
+        await super().async_skip()

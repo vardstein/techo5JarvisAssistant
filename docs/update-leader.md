@@ -66,7 +66,8 @@ The device also carries `switch.genbu_llm_assistant`, which is not about updates
 The action `genbu.forget_show` (from 1.1.0) drops one Show by its node name:
 its last version, its music choice and its switches. The installer's `--remove-show` calls it after
 removing the Show's ESPHome entry, so Genbu does not find it again first. A Genbu before 1.4.0 also picked
-a new main update Show and named it in the answer (`new_main`).
+a new main update Show and named it in the answer (`new_main`). From 1.4.18 only an admin may call it; the
+installer signs in as one.
 
 **Moving over from 1.3.** On the first start of 1.4.0 the house version stays what it was. The main update
 Show select, the Repairs issues about a missing main Show and what Genbu kept about main Shows are removed.
@@ -77,7 +78,14 @@ update, so every Show follows; without one, it starts any Show still behind the 
 It answers with who started (`updating`) and who has nothing to install (`current`); a Show that is
 offline is left out. The voice kit's sentence calls it too: "installiere die Updates" or "aktualisiere die
 Shows" at any Show starts every update, even when that Show has none of its own, and says which Shows
-started.
+started. From 1.4.18 it takes an admin, an automation (the voice kit's sentence runs as one) or a Show
+with its own key (its spoken yes); any other user is refused. The card's Install is Home Assistant's own
+`update.install` and stays open to every user.
+
+**Who changed the firmware** (from 1.4.18). Every install, skip, new channel and Install at night switch
+is logged with who asked: the person's name, the Show's, or Home Assistant for an automation or the night
+install. Going back to an older version and a new channel also leave a notification, since those are
+the two nobody expects.
 
 **Asking the assistant** (from 1.4.0). With an AI conversation agent, Genbu Assistant gives it the tool
 `genbu__firmware`, so it understands what was meant rather than fixed sentences: "Gibt es ein Update für
@@ -85,14 +93,18 @@ dich?", "What's new?", "Welche Version hast du?", "Update the Shows". It answers
 entities: each version and channel, the waiting release and its summary. Installing always asks first and
 then starts every Show with an update, as above. A Show gets the tool while its **Updates by voice** switch
 is on (on until you turn it off); in the app only an admin does. Other voice devices never get it. The
-voice kit's fixed sentences still answer first where they match.
+voice kit's fixed sentences still answer first where they match. From 1.4.18 a Show only tells, installs
+and turns Install at night on or off. Going back, skipping and changing the channel are an admin's, in
+the app: the model sets the yes itself, so whoever stands at a Show, or a web page the model read, could
+talk it into them.
 
 **The dashboard cards** (from 1.3.1). Genbu brings the Jarvis dashboard's cards (weather, room, timer,
 calendar, recipe) and loads them on every page, so a dashboard that uses them needs nothing copied and no
 resource. See [ha-dashboard](../ha-dashboard/README.md).
 
 **The Genbu Control Center** (from 1.3.0, named so in 1.4.0). Genbu Assistant adds **Genbu Control Center** to
-the sidebar, at /genbu, with one card per Show. A card has
+the sidebar, at /genbu, with one card per Show. From 1.4.18 only admins see it; the dashboard cards stay
+for everyone. A card has
 what you would use on the Show: the media player, the voice satellite, screen and LED ring lights, night
 mode, microphone mute, white noise, the alarm buttons and the music choice; then under **Settings** the
 Show's settings, like volume and which assistant and wake word it uses; and a link to the device page.

@@ -45,7 +45,7 @@ async def test_page_is_in_the_sidebar(hass: HomeAssistant, hass_client):
     assert panel.sidebar_title == "Genbu Control Center"
     assert panel.config["title"] == "Genbu Control Center"
     assert panel.sidebar_icon == "mdi:tablet-dashboard"
-    assert not panel.require_admin
+    assert panel.require_admin  # GENBU-262: the panel is for admins; the dashboard cards stay for everyone
     custom = panel.config["_panel_custom"]
     assert custom["name"] == "genbu-panel"
     assert custom["module_url"].startswith("/genbu_panel/genbu-panel.js?v=")
