@@ -1105,3 +1105,109 @@ class StopInARoomTests(unittest.TestCase):
         self.assertEqual(self.run_stop(self.de, "Dachboden"), ([], "In Dachboden läuft gerade nichts."))
         self.assertEqual(self.run_stop(self.de, "Mond"), ([], "Den Raum kenne ich nicht."))
         self.assertEqual(self.run_stop(self.en, "moon"), ([], "I don't know that room."))
+
+
+class WeatherAndRoomAnswerTests(unittest.TestCase):
+    """GENBU-162: the local answers say a bit more (the sky, the wind, the heating) and say properly
+    why they have no number, still without the model."""
+
+    def setUp(self):
+        try:
+            self.env = _ha_env()
+        except ImportError:
+            self.skipTest("no jinja2 here")
+        import datetime
+        self.area = {"climate.living_1": "living_room", "climate.living_2": "living_room",
+                     "sensor.kitchen_temperature": "kitchen", "sensor.kitchen_humidity": "kitchen"}
+        self.states = {"weather.home": "rainy", "sensor.kitchen_temperature": "19.04",
+                       "sensor.kitchen_humidity": "55.4", "climate.living_1": "off", "climate.living_2": "off"}
+        self.attrs = {"weather.home": {"temperature": 10.6, "humidity": 96, "wind_speed": 9.7,
+                                       "wind_speed_unit": "km/h"},
+                      "climate.living_1": {"current_temperature": None, "temperature": None},
+                      "climate.living_2": {"current_temperature": 16.2, "temperature": None,
+                                           "current_humidity": 61}}
+        names = {"living_room": "Wohnzimmer", "kitchen": "Küche", "attic": "Dachboden"}
+        g = self.env.globals
+        g["states"] = lambda e: self.states.get(e, "unknown")
+        g["state_attr"] = self.env.filters["state_attr"] = lambda e, k: self.attrs.get(e, {}).get(k)
+        g["area_id"] = lambda d: None
+        g["area_entities"] = lambda a: [e for e, x in self.area.items() if x == a]
+        g["areas"] = lambda: list(names)
+        g["area_name"] = names.get
+        g["now"] = lambda: datetime.datetime(2026, 10, 28, 1, 19)
+        g["timedelta"] = datetime.timedelta
+        self.env.tests["match"] = lambda v, find: re.match(find, v) is not None
+        house = kit.House(german=True, english=True, areas={"living_room": "Wohnzimmer", "kitchen": "Küche"},
+                          temperatures={"kitchen": "sensor.kitchen_temperature"},
+                          humidities={"kitchen": "sensor.kitchen_humidity"}, weather="weather.home")
+        self.house = house
+
+    def say(self, automation: dict, sentence: str, raum: str = "", fc: list | None = None) -> str:
+        template = automation["actions"][-1]["set_conversation_response"]
+        ctx = {"trigger": {"sentence": sentence, "slots": {"raum": raum} if raum else {}, "device_id": None},
+               "fc": {"weather.home": {"forecast": fc or []}}}
+        return self.env.from_string(template).render(**ctx).strip()
+
+    def test_outside_says_the_sky_and_strong_wind(self):
+        de, en = kit.room_temperature(self.house), kit.room_temperature_en(self.house)
+        self.assertEqual(self.say(de, "wie warm ist es draußen"), "Draußen sind es 10,6 Grad, und es regnet.")
+        self.assertEqual(self.say(en, "how warm is it outside"), "It's 10.6 degrees outside and raining.")
+        self.attrs["weather.home"].update(wind_speed=12, wind_speed_unit="m/s")
+        self.states["weather.home"] = "cloudy"
+        self.assertEqual(self.say(de, "wie warm ist es draußen"),
+                         "Draußen sind es 10,6 Grad, und es ist bewölkt. Es ist windig.")
+        self.attrs["weather.home"].update(wind_speed=70, wind_speed_unit="km/h")
+        self.assertEqual(self.say(en, "how warm is it outside"), "It's 10.6 degrees outside and cloudy. It's stormy.")
+        # A sky that already says windy isn't said twice, and an unknown sky or unit is left out.
+        self.states["weather.home"] = "windy"
+        self.assertEqual(self.say(de, "wie warm ist es draußen"), "Draußen sind es 10,6 Grad, und es ist windig.")
+        self.states["weather.home"] = "unavailable"
+        self.attrs["weather.home"].update(wind_speed_unit="Bft")
+        self.assertEqual(self.say(de, "wie warm ist es draußen"), "Draußen sind es 10,6 Grad.")
+
+    def test_a_room_says_its_heating_when_it_heats(self):
+        de, en = kit.room_temperature(self.house), kit.room_temperature_en(self.house)
+        self.assertEqual(self.say(de, "wie warm ist es im wohnzimmer", "wohnzimmer"), "Im Wohnzimmer sind es 16,2 Grad.")
+        self.states["climate.living_2"] = "heat"
+        self.attrs["climate.living_2"]["temperature"] = 20.5
+        self.assertEqual(self.say(de, "wie warm ist es im wohnzimmer", "wohnzimmer"),
+                         "Im Wohnzimmer sind es 16,2 Grad, die Heizung steht auf 20,5.")
+        self.assertEqual(self.say(en, "how warm is it in the living room", "living room"),
+                         "It's 16.2 degrees in the living room, and the heating is set to 20.5.")
+        self.assertEqual(self.say(de, "wie warm ist es in der küche", "küche"), "In der Küche sind es 19 Grad.")
+
+    def test_no_number_says_why(self):
+        de, en = kit.room_temperature(self.house), kit.room_temperature_en(self.house)
+        self.states["sensor.kitchen_temperature"] = "unavailable"
+        self.assertEqual(self.say(de, "wie warm ist es in der küche", "küche"),
+                         "In der Küche meldet das Thermometer gerade nichts.")
+        self.assertEqual(self.say(en, "how warm is it in the kitchen", "kitchen"),
+                         "The thermometer in the kitchen isn't reporting right now.")
+        self.assertEqual(self.say(de, "wie warm ist es im dachboden", "dachboden"), "In Dachboden hab ich kein Thermometer.")
+        self.assertEqual(self.say(en, "how warm is it in the dachboden", "dachboden"), "There's no thermometer in Dachboden.")
+        self.assertEqual(self.say(de, "wie warm ist es im mond", "mond"), "Den Raum kenne ich nicht.")
+        hd, he = kit.room_humidity(self.house), kit.room_humidity_en(self.house)
+        self.assertEqual(self.say(hd, "wie feucht ist es im wohnzimmer", "wohnzimmer"),
+                         "Im Wohnzimmer sind es 61 Prozent Luftfeuchtigkeit.")
+        self.states["sensor.kitchen_humidity"] = "unknown"
+        self.assertEqual(self.say(hd, "wie feucht ist es in der küche", "küche"),
+                         "In der Küche meldet der Sensor gerade keine Luftfeuchtigkeit.")
+        self.assertEqual(self.say(he, "how humid is it in the kitchen", "kitchen"),
+                         "The sensor in the kitchen isn't reporting humidity right now.")
+        self.assertEqual(self.say(hd, "wie feucht ist es im dachboden", "dachboden"),
+                         "In Dachboden misst nichts die Luftfeuchtigkeit.")
+
+    def test_the_forecast_says_strong_wind(self):
+        day = {"datetime": "2026-10-29T11:00:00+00:00", "condition": "partlycloudy", "templow": 4.2,
+               "temperature": 12.8, "precipitation": 0, "wind_speed": 12}
+        de, en = kit.forecast(self.house), kit.forecast_en(self.house)
+        self.assertEqual(self.say(de, "wie wird das wetter morgen", fc=[day]), "Morgen teils bewölkt, 4 bis 13 Grad.")
+        day["wind_speed"] = 41
+        self.assertEqual(self.say(de, "wie wird das wetter morgen", fc=[day]),
+                         "Morgen teils bewölkt, 4 bis 13 Grad. Es wird windig.")
+        day.update(wind_speed=65, precipitation=3.4)
+        self.assertEqual(self.say(en, "what's the weather tomorrow", fc=[day]),
+                         "Tomorrow: partly cloudy, 4 to 13 degrees. About 3 millimeters of rain. It'll be stormy.")
+        day["condition"] = "windy"
+        self.assertEqual(self.say(de, "brauche ich morgen einen schirm", fc=[day]),
+                         "Morgen windig, 4 bis 13 Grad. Etwa 3 Millimeter Regen.")

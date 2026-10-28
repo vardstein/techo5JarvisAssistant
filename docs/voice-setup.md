@@ -419,6 +419,27 @@ The answer is "Im Schlafzimmer sind es 57 Prozent Luftfeuchtigkeit." With no roo
 ist es?", or "Wie warm ist es?" for the temperature), it answers for the Show's own room. "Wie feucht
 ist das?" counts too, because that is what speech to text sometimes makes of it.
 
+### A bit more in the same answers
+
+The installer's versions of these three say a little more than the examples above, still from fixed
+templates and without the model:
+
+- Outside, the sky as it is now, and the wind once it's strong: "Draußen sind es 10,6 Grad, und es
+  regnet." From 30 km/h on it adds "Es ist windig.", from 62 km/h on "Es ist stürmisch.", unless the
+  sky already says windy. The weather entity's own wind unit is converted; an unknown unit leaves the
+  wind out.
+- A room whose thermostat is heating gets the set point too: "Im Wohnzimmer sind es 16,2 Grad, die
+  Heizung steht auf 20." A thermostat that is off isn't mentioned.
+- No number says why: "In der Küche meldet das Thermometer gerade nichts." when the sensor is
+  unavailable, "Im Bad hab ich kein Thermometer." when nothing in the room measures it. Humidity
+  says the same in its own words. The old answer, "Für Küche hab ich gerade keinen Wert", had no
+  article and didn't say which of the two it was.
+- The forecast adds "Es wird windig." or "Es wird stürmisch." from the day's wind speed, with the
+  same limits.
+
+The English answers say the same. Rendered by Home Assistant, the old and the new templates take the
+same time, within a millisecond.
+
 ### Room climate for the model
 
 Questions the sentences don't cover still go to the model: "Wo ist es am wärmsten?", "Ist es im Bad
