@@ -217,11 +217,15 @@ func scoreWake(t *testing.T, raw []byte, mixer Mixer, m wake.Model) []float64 {
 	}
 	c, l := newCanceller(), newLeveler()
 	setReplayEngine(c)
+	played := replayPlayed(c)
 
 	frameBytes := Channels * Bits / 8
 	period := FrameSamples * frameBytes
 	var trace []float64
 	for off := 0; off+period <= len(raw); off += period {
+		if played != nil {
+			played()
+		}
 		block := raw[off : off+period]
 		mics := Decode(block)
 		frame := mixer.Mix(mics)
