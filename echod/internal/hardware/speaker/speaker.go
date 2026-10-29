@@ -18,6 +18,7 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/alsa"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/asp"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/echoref"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/hook"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/safe"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/spectrum"
@@ -409,6 +410,9 @@ func (p *Player) Run(ctx context.Context) error {
 			s.push(buf)
 			to = silence
 		}
+		// What the codec is given, after the sink took its share, is what the echo canceller has to
+		// remove: the loopback the codec reports is not exact enough (echoref).
+		echoref.Played.Push(to)
 		if err := p.send(ctx, pb, to); err != nil {
 			if ctx.Err() != nil {
 				return nil
@@ -450,6 +454,9 @@ func (p *Player) send(ctx context.Context, to io.Writer, buf []byte) error {
 		if err != alsa.ErrUnderrun {
 			return err
 		}
+		// The codec ran dry and plays on later than it would have, so everything after sits further
+		// from the capture than before.
+		echoref.Played.Break()
 		if n := p.underruns.Add(1); n == 1 || n%100 == 0 {
 			slog.Warn("playback underrun", "times", n)
 		}

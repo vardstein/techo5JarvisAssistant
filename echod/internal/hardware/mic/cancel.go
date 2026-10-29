@@ -7,13 +7,17 @@ import (
 
 	"github.com/HuskerMinion/techo5/echod/internal/lib/aec"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/audio"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/echoref"
 )
 
-// cancelTaps is how far the filter reaches, in samples, so 64 ms of tail. Not a setting: measured on
+// cancelTaps is how far the filter reaches, in samples, so 128 ms of tail. Not a setting: measured on
 // this enclosure, cancellation rises with every tap available — 16.5 dB at 256, 18.6 at 512, 23.0 at
 // 1024, 27.2 at 2048 — so there is no room-dependent best value to look for, only what the device can
-// afford. This costs 6.4% of a core, and only while something is playing.
-const cancelTaps = 1024
+// afford. Given the speaker reference, a recorded take under music scored a wake word at 0.45 with
+// 1024 taps and 0.64 with 2048, against 0.66 for the same filter run offline with nothing held back.
+// On the 32-bit build on a Cortex-A53 it costs 24% of one core against 12.5% for 1024, and only while
+// something is playing.
+const cancelTaps = 2048
 
 // cancelMu is how fast the filter adapts. Fast enough to converge inside the first second of a reply,
 // which matters because a reply is all the time there is.
@@ -62,6 +66,18 @@ type canceller struct {
 	ref  []int16
 	mono []int16
 
+	// align finds what the speaker played for each frame, into played. The loopback in ref is what
+	// the codec says it played, and on some boards it is not: it holds below 500 Hz and comes apart
+	// above, which leaves the filter able to remove 10 dB of music where the real output lets it
+	// remove 28. The loopback still gates everything below and gives align its timing; the filter is
+	// fed played whenever align knows where that sits. onPlayed and moves are what the filter was last
+	// trained on, so it can be reset when that changes: a filter that learned one reference has
+	// learned nothing about the other. Reader-only.
+	align    *echoref.Aligner
+	played   []int16
+	onPlayed bool
+	moves    uint64
+
 	// erle is published for diagnostics, as thousandths of a dB so it fits an integer. best is the most
 	// it reached during the current run: ERLE is averaged over the last half second, so reading it as
 	// playback ends catches the reference fading out and says the filter did worse than it did.
@@ -87,7 +103,7 @@ func newCanceller() *canceller {
 		slog.Error("echo cancellation unavailable", "err", err)
 		return nil
 	}
-	return &canceller{filter: f, engine: "builtin"}
+	return &canceller{filter: f, engine: "builtin", align: echoref.NewAligner(echoref.Played)}
 }
 
 // setEngine picks the canceller: "builtin" is the LMS filter above, "webrtc" the helper process.
@@ -142,6 +158,18 @@ func (c *canceller) apply(raw []byte, mic []int16) []int16 {
 	c.ref = c.ref[:n]
 	referenceInto(raw, c.ref)
 
+	// Every frame, playing or not, so align keeps count of where the capture is.
+	ref, onPlayed := c.ref, false
+	if c.align != nil {
+		if cap(c.played) < n {
+			c.played = make([]int16, n)
+		}
+		c.played = c.played[:n]
+		if c.align.Fill(c.ref, c.played) {
+			ref, onPlayed = c.played, true
+		}
+	}
+
 	level := meanSquare(c.ref)
 	switch {
 	case level > refLoud:
@@ -169,12 +197,13 @@ func (c *canceller) apply(raw []byte, mic []int16) []int16 {
 		return nil
 	}
 
+	c.follow(onPlayed)
 	if !c.active.Swap(true) {
 		slog.Info("echo cancellation running", "engine", c.engine, "taps", cancelTaps,
-			"ref_dbfs", blockDBFS(c.ref), "mic_dbfs", blockDBFS(mic))
+			"ref", c.reference(), "ref_dbfs", blockDBFS(c.ref), "mic_dbfs", blockDBFS(mic))
 	}
 
-	out, erleDB, err := c.process(mic, c.ref)
+	out, erleDB, err := c.process(mic, ref)
 	if err != nil {
 		slog.Error("echo cancellation failed", "err", err)
 		return nil
@@ -195,6 +224,32 @@ func (c *canceller) apply(raw []byte, mic []int16) []int16 {
 	c.mono = c.mono[:len(out)]
 	copy(c.mono, out)
 	return c.mono
+}
+
+// follow resets the filter when its reference changes under it: from the loopback to what was
+// played or back, or to what was played lined up somewhere new.
+func (c *canceller) follow(onPlayed bool) {
+	var moves uint64
+	if c.align != nil {
+		moves = c.align.Moves()
+	}
+	if onPlayed == c.onPlayed && moves == c.moves {
+		return
+	}
+	switched := onPlayed != c.onPlayed
+	c.onPlayed, c.moves = onPlayed, moves
+	c.filter.Reset()
+	if switched && c.active.Load() {
+		slog.Info("echo reference changed", "ref", c.reference())
+	}
+}
+
+// reference names what the filter is fed, for the log.
+func (c *canceller) reference() string {
+	if c.onPlayed {
+		return "speaker"
+	}
+	return "loopback"
 }
 
 // blockDBFS is the RMS of a block in dBFS, rounded, for the log.
