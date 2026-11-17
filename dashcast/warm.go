@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chromedp/cdproto/inspector"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
@@ -44,6 +45,11 @@ type warmTab struct {
 	ctx   context.Context
 	close func()
 
+	// crashed is closed once Chrome says the tab's page crashed (out of memory, mostly). Such a tab
+	// shows nothing again and is closed, never parked or handed out (health.go).
+	crashed   chan struct{}
+	crashOnce sync.Once
+
 	mu      sync.Mutex
 	onFrame func(*page.EventScreencastFrame)
 	key     string
@@ -51,8 +57,12 @@ type warmTab struct {
 }
 
 func newWarmTab(tab context.Context, closeTab func(), key string) *warmTab {
-	w := &warmTab{ctx: tab, close: closeTab, key: key}
+	w := &warmTab{ctx: tab, close: closeTab, key: key, crashed: make(chan struct{})}
 	chromedp.ListenTarget(tab, func(ev any) {
+		if _, ok := ev.(*inspector.EventTargetCrashed); ok {
+			w.crash()
+			return
+		}
 		f, ok := ev.(*page.EventScreencastFrame)
 		if !ok {
 			return
@@ -65,6 +75,21 @@ func newWarmTab(tab context.Context, closeTab func(), key string) *warmTab {
 		}
 	})
 	return w
+}
+
+// crash marks the tab's page crashed.
+func (w *warmTab) crash() { w.crashOnce.Do(func() { close(w.crashed) }) }
+
+// dead is whether the tab is no use any more: its page crashed, or the tab itself is gone.
+func (w *warmTab) dead() bool {
+	select {
+	case <-w.crashed:
+		return true
+	case <-w.ctx.Done():
+		return true
+	default:
+		return false
+	}
 }
 
 func (w *warmTab) watch(on func(*page.EventScreencastFrame)) {
@@ -97,7 +122,8 @@ func (p *warmPool) take(key string) *warmTab {
 		return nil
 	}
 	w.expiry.Stop()
-	if err := chromedp.Run(w.ctx, chromedp.Evaluate(`1`, nil)); err != nil {
+	if w.dead() || within(w.ctx, answerWithin, chromedp.Evaluate(`1`, nil)) != nil {
+		slog.Info("the parked dashboard was no use any more; opening a new one", "screen", w.key)
 		w.close()
 		return nil
 	}
@@ -129,7 +155,7 @@ func (p *warmPool) discard(key string) {
 // park stops a tab's stream and keeps it for warmFor.
 func (p *warmPool) park(w *warmTab) {
 	w.watch(nil)
-	if err := chromedp.Run(w.ctx, page.StopScreencast()); err != nil {
+	if w.dead() || within(w.ctx, answerWithin, page.StopScreencast()) != nil {
 		w.close()
 		return
 	}

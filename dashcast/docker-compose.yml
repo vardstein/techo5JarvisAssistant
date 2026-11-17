@@ -17,3 +17,7 @@ services:
       DASHCAST_KEY: ${DASHCAST_KEY}
     # Chrome wants more shared memory than Docker gives by default.
     shm_size: 256m
+    # A limit with no swap, so a tab that grows without end is killed in here rather than the whole
+    # machine slowing to a crawl (README, "When it gets stuck"). About 250 MB a screen.
+    mem_limit: 2560m
+    memswap_limit: 2560m

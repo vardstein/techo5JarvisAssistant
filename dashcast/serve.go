@@ -291,10 +291,11 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 		slog.Info("dashboard picked up where it was left", "name", h.Name)
 	}
 	// Parked when this session ends, for the screen to come back to; closed when its key was turned
-	// away, so nothing of it is handed out again.
-	var turnedAway atomic.Bool
+	// away, so nothing of it is handed out again, or when the tab crashed or got stuck (health.go),
+	// so the screen gets a new one when it connects again.
+	var turnedAway, broken atomic.Bool
 	defer func() {
-		if turnedAway.Load() {
+		if turnedAway.Load() || broken.Load() || w.dead() {
 			w.watch(nil)
 			w.close()
 			return
@@ -313,7 +314,7 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 			changed := false
 			defer func() {
 				d.wait(changed)
-				_ = chromedp.Run(tab, page.ScreencastFrameAck(f.SessionID))
+				_ = within(tab, answerWithin, page.ScreencastFrameAck(f.SessionID))
 			}()
 			raw, err := base64.StdEncoding.DecodeString(f.Data)
 			if err != nil {
@@ -339,7 +340,7 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 	// something is drawn, and a page left standing may draw nothing new for a while.
 	if reused {
 		var shot []byte
-		if err := chromedp.Run(tab, chromedp.ActionFunc(func(ctx context.Context) error {
+		if err := within(tab, answerWithin, chromedp.ActionFunc(func(ctx context.Context) error {
 			var err error
 			shot, err = page.CaptureScreenshot().WithFormat(page.CaptureScreenshotFormatPng).Do(ctx)
 			return err
@@ -351,8 +352,9 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 	}
 	// PNG from Chrome rather than JPEG: lossless, so two frames of an unchanged page are the same
 	// bytes and what changed can be found exactly. The JPEG is made here, of the changed part only.
-	if err := chromedp.Run(tab, page.StartScreencast().WithFormat(page.ScreencastFormatPng).
+	if err := within(tab, answerWithin, page.StartScreencast().WithFormat(page.ScreencastFormatPng).
 		WithMaxWidth(int64(h.W)).WithMaxHeight(int64(h.H))); err != nil {
+		broken.Store(true)
 		out.problem("The dashboard would not stream: " + err.Error())
 		return
 	}
@@ -361,6 +363,13 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 		<-sctx.Done()
 		c.Close()
 	}()
+	// A tab that crashed or stopped answering ends the session; the Show connects again by itself and
+	// gets a new tab.
+	go watchTab(sctx, w, h.Name, func(why string) {
+		broken.Store(true)
+		slog.Warn("the screen's tab is broken; closing it so the screen gets a new one", "name", h.Name, "why", why)
+		cancel()
+	})
 	go keepOnDashboards(sctx, tab, b.cfg.ha+h.Path, haOrigin(g.cfg.ha), allows, music, h.Name)
 	if token != "" {
 		mine := cfg
@@ -380,7 +389,7 @@ func serve(ctx context.Context, b *browser, g *guard, cfg config, raw net.Conn) 
 		if json.Unmarshal(lines.Bytes(), &t) != nil {
 			continue
 		}
-		if err := chromedp.Run(tab, chromedp.ActionFunc(func(ctx context.Context) error { return touch(ctx, t) })); err != nil {
+		if err := within(tab, answerWithin, chromedp.ActionFunc(func(ctx context.Context) error { return touch(ctx, t) })); err != nil {
 			slog.Warn("touch", "err", err)
 		}
 		d.touched()
@@ -736,21 +745,21 @@ func keepOnDashboards(ctx context.Context, tab context.Context, home, origin str
 			Path      string `json:"path"`
 			Connected *bool  `json:"connected"`
 		}
-		if err := chromedp.Run(tab, chromedp.Evaluate(`({origin: location.origin, path: location.pathname,
+		if err := within(tab, answerWithin, chromedp.Evaluate(`({origin: location.origin, path: location.pathname,
 			connected: document.querySelector("home-assistant")?.hass?.connected})`, &where)); err != nil {
 			continue
 		}
 		switch down.next(where.Connected != nil && !*where.Connected) {
 		case nudge:
 			slog.Info("the page lost Home Assistant; reconnecting it", "name", name)
-			_ = chromedp.Run(tab, chromedp.Evaluate(`document.querySelector("home-assistant")?.hass?.connection?.reconnect(true)`, nil))
+			_ = within(tab, answerWithin, chromedp.Evaluate(`document.querySelector("home-assistant")?.hass?.connection?.reconnect(true)`, nil))
 		case reload:
 			slog.Warn("the page stayed cut off from Home Assistant; reloading it", "name", name)
-			_ = chromedp.Run(tab, chromedp.Reload())
+			_ = within(tab, loadWithin, chromedp.Reload())
 		}
 		if music {
 			var out bool
-			if chromedp.Run(tab, chromedp.Evaluate(musicSettingsOut, &out)) == nil && out {
+			if within(tab, answerWithin, chromedp.Evaluate(musicSettingsOut, &out)) == nil && out {
 				slog.Warn("Music Assistant's settings came up; taking it back to its library", "name", name)
 			}
 		}
@@ -761,7 +770,7 @@ func keepOnDashboards(ctx context.Context, tab context.Context, home, origin str
 		}
 		path := where.Origin + where.Path
 		slog.Warn("the page left the dashboards; taking it back", "name", name, "was", path)
-		_ = chromedp.Run(tab, chromedp.Navigate(home))
+		_ = within(tab, loadWithin, chromedp.Navigate(home))
 	}
 }
 
