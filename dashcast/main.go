@@ -13,6 +13,10 @@
 //	LISTEN        where devices connect (default :9555)
 //	CHROME        the browser to run (default: found on the PATH, or the headless-shell image's)
 //	DASHCAST_WARM how long a screen's tab is kept after it goes, for it to come back to (default 30m)
+//	DASHCAST_TAB_MEMORY  the most a screen's page may hold, in MB, before it is loaded again (default 512)
+//
+// When Chrome dies or stops answering, dashcast stops with an error, for Docker's restart policy to
+// start it again (health.go).
 package main
 
 import (
@@ -55,6 +59,9 @@ func main() {
 	if v := os.Getenv("DASHCAST_WARM"); v != "" {
 		warmFor = warmFrom(v)
 	}
+	if v := os.Getenv("DASHCAST_TAB_MEMORY"); v != "" {
+		tabMemory = tabMemoryFrom(v)
+	}
 	if cfg.listen == "" {
 		cfg.listen = ":9555"
 	}
@@ -78,6 +85,15 @@ func main() {
 		os.Exit(1)
 	}
 	defer b.close()
+	// Chrome gone or stuck is not something dashcast can mend from inside: it stops, Chrome with it,
+	// and the container is started again. Every Show connects again by itself.
+	go func() {
+		if err := watchBrowser(ctx, b.gone(), b.answer, browserEvery, browserMisses); err != nil {
+			slog.Error("the browser is broken; stopping, for dashcast to be started again", "err", err)
+			b.kill()
+			os.Exit(1)
+		}
+	}()
 
 	g := &guard{cfg: cfg}
 	go warnIfAdmin(ctx, cfg) // a question for the log, which starting up does not wait on

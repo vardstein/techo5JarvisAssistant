@@ -261,16 +261,21 @@ func (b *browser) open(ctx context.Context, token, path string, w, h int, allowe
 	// machine would otherwise be handed the token too.
 	origin, _ := json.Marshal(haOrigin(b.cfg.ha))
 	script := initScript(origin, quoted, list, kiosk, music)
-	err := chromedp.Run(tab,
-		chromedp.ActionFunc(func(ctx context.Context) error {
+	// The tab itself is made with its own context: chromedp ties a new tab's life to the context it
+	// was made with, so one with a time limit would end the tab with it. Loading the page into it
+	// then gets loadWithin, so a Chrome that never finishes it does not hold the screen for good.
+	err := chromedp.Run(tab)
+	if err == nil {
+		err = within(tab, loadWithin, chromedp.ActionFunc(func(ctx context.Context) error {
 			_, err := page.AddScriptToEvaluateOnNewDocument(script).Do(ctx)
 			return err
 		}),
-		emulation.SetDeviceMetricsOverride(int64(w), int64(h), 1, false),
-		emulation.SetTouchEmulationEnabled(true).WithMaxTouchPoints(1),
-		emulation.SetEmulatedMedia().WithFeatures([]*emulation.MediaFeature{{Name: "prefers-color-scheme", Value: "dark"}}),
-		chromedp.Navigate(b.cfg.ha+path),
-	)
+			emulation.SetDeviceMetricsOverride(int64(w), int64(h), 1, false),
+			emulation.SetTouchEmulationEnabled(true).WithMaxTouchPoints(1),
+			emulation.SetEmulatedMedia().WithFeatures([]*emulation.MediaFeature{{Name: "prefers-color-scheme", Value: "dark"}}),
+			chromedp.Navigate(b.cfg.ha+path),
+		)
+	}
 	if err != nil {
 		stop()
 		cancel()

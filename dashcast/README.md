@@ -38,11 +38,31 @@ A screen that goes away leaves its tab open for half an hour, at most four of th
 same dashboard again is quick instead of a full load of Home Assistant's page. `DASHCAST_WARM` changes
 the half hour (`2h`, `10m`); a smaller machine may want it shorter.
 
+### When it gets stuck
+
+dashcast watches its browser and every screen's tab, and mends what breaks by itself:
+
+- **Chrome dies or stops answering** for about a minute and a half: dashcast stops with an error,
+  and Docker's restart policy (`unless-stopped`) starts it again with a fresh Chrome. Every screen
+  connects again by itself
+- **A tab's page crashes, or stops answering** for half a minute: that screen is closed rather than
+  kept for later, and it gets a new tab when it connects again, a few seconds later
+- **A page holds more than 512 MB** (`DASHCAST_TAB_MEMORY`, in MB): it is loaded again, at most once
+  every half hour. Each tab's memory is in the log once an hour (`tab memory`), so a leak shows
+- **The container's memory limit** is the last wall. The compose file sets 2.5 GB with no swap, and
+  `update.sh` keeps the running container's limit or sets the same. Without one, a tab that keeps
+  growing takes the whole machine's memory and everything on it crawls for hours; with one, Chrome
+  loses a tab inside the container and the watch above picks up after it
+
+Plan about 250 MB a screen, plus four parked tabs, plus 300 MB for Chrome itself. On a machine with
+more screens, raise the limit (`mem_limit` and `memswap_limit` in the compose file, or
+`DASHCAST_MEMORY=3g sh update.sh <commit>`).
+
 ### Updating a container you started by hand
 
 If dashcast runs as a plain `docker run` container rather than from the compose file,
 `update.sh` builds a given commit of this repository and swaps it in, with the running container's
-address and port, shared memory, restart policy and settings:
+address and port, shared memory, memory limit, restart policy and settings:
 
 ```sh
 sh update.sh <commit>
@@ -113,3 +133,5 @@ touch. So treat the token and the key with care:
 | `DASHCAST_KEY` |                  | what a device has to present                            |
 | `LISTEN`       | `:9555`          | where devices connect                                   |
 | `CHROME`       | found for itself | the browser to run                                      |
+| `DASHCAST_WARM` | `30m`           | how long a screen's tab is kept after it goes           |
+| `DASHCAST_TAB_MEMORY` | `512`     | the most a page may hold, in MB, before it is loaded again |
