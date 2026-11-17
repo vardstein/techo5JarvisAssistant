@@ -228,3 +228,50 @@ func TestBrokenBrowserAndTabsAreNoticed(t *testing.T) {
 		t.Fatal("the watch did not notice Chrome was gone")
 	}
 }
+
+// TestADashboardThatNeverLoadsIsGivenUp is what held every Show on 2026-11-17: three screens
+// connected, opening their dashboards never finished, and nothing ended it for an hour and a half.
+// Opening now gives up after loadWithin. Skipped without a browser, unless DASHCAST_REQUIRE_BROWSER
+// is set (browser_test.go).
+func TestADashboardThatNeverLoadsIsGivenUp(t *testing.T) {
+	if chromePath("") == "" {
+		if os.Getenv("DASHCAST_REQUIRE_BROWSER") != "" {
+			t.Fatal("no Chrome or headless-shell to run")
+		}
+		t.Skip("no Chrome or headless-shell to run")
+	}
+	release := make(chan struct{})
+	ha := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Half a page, and then nothing: the load never ends.
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<!doctype html><title>dashboard</title><p>a dash"))
+		w.(http.Flusher).Flush()
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer ha.Close()
+	defer close(release)
+
+	ctx, cancel := context.WithTimeout(context.Background(), loadWithin+60*time.Second)
+	defer cancel()
+	b, err := newBrowser(ctx, config{ha: ha.URL})
+	if err != nil {
+		t.Fatalf("the browser did not start: %v", err)
+	}
+	defer b.close()
+
+	start := time.Now()
+	_, closeTab, err := b.open(ctx, "", "/", 320, 240, nil, false, false)
+	if err == nil {
+		closeTab()
+		t.Fatal("a page that never finished loading was taken as opened")
+	}
+	if took := time.Since(start); took > loadWithin+10*time.Second {
+		t.Fatalf("opening took %s to give up, want about %s", took, loadWithin)
+	}
+	if err := b.answer(ctx); err != nil {
+		t.Fatalf("Chrome stopped answering after a page that never loaded: %v", err)
+	}
+}
